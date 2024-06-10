@@ -1,0 +1,7 @@
+[package]
+name = "willow-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = "1.4"
