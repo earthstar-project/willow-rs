@@ -1,7 +1,4 @@
-[package]
-name = "willow-rs"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[dependencies]
-bytes = "1.4"
+members = ["willow-data-model"]
+resolver = "2"
