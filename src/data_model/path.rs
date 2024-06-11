@@ -35,7 +35,7 @@ pub fn path_eq<P: Path>(a: &P, b: &P) -> bool {
     a.components().eq(b.components())
 }
 
-pub fn lowest_common_prefix<P: Path>(a: &P, b: &P) -> P {
+pub fn longest_common_prefix<P: Path>(a: &P, b: &P) -> P {
     let mut new_path: P = Path::empty();
 
     a.components()
@@ -48,8 +48,6 @@ pub fn lowest_common_prefix<P: Path>(a: &P, b: &P) -> P {
 
     new_path
 }
-
-// Implement fns that can do partialeq, eq, etc, which people can use for their Path implementations
 
 pub fn validate<P: Path>(path: &P) -> Result<&P, InvalidPathError> {
     if path.components().count() > P::MAX_COMPONENT_COUNT {
