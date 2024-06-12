@@ -47,9 +47,13 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     }
 
     fn is_prefix_of(&self, other: &Self) -> bool {
-        let lcp = self.longest_common_prefix(other);
+        for (comp_a, comp_b) in self.components().zip(other.components()) {
+            if comp_a != comp_b {
+                return false;
+            }
+        }
 
-        lcp.components().count() == self.components().count()
+        true
     }
 
     fn is_prefixed_by(&self, other: &Self) -> bool {
