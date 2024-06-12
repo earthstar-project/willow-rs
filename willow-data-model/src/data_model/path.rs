@@ -61,13 +61,13 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut new_path = Self::empty();
 
-        self.components()
-            .zip(other.components())
-            .for_each(|(a_comp, b_comp)| {
-                if a_comp == b_comp {
-                    new_path.append(a_comp.clone()).unwrap();
-                }
-            });
+        for (comp_a, comp_b) in self.components().zip(other.components()) {
+            if comp_a != comp_b {
+                break;
+            }
+
+            new_path.append(comp_a.clone()).unwrap()
+        }
 
         new_path
     }
@@ -382,5 +382,18 @@ mod tests {
         let lcp_a_x = path_a.longest_common_prefix(&path_c);
 
         assert_eq!(lcp_a_x, PathLocal::empty());
+
+        let path_d = PathLocal::<MCL, MCC, MPL>(vec![
+            PathComponentLocal(vec![b'a']),
+            PathComponentLocal(vec![b'x']),
+            PathComponentLocal(vec![b'c']),
+        ]);
+
+        let lcp_b_d = path_b.longest_common_prefix(&path_d);
+
+        assert_eq!(
+            lcp_b_d,
+            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a']),])
+        )
     }
 }
