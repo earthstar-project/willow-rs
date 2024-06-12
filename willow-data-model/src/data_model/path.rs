@@ -26,24 +26,16 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
 
     fn components(&self) -> impl Iterator<Item = &Self::Component>;
 
-    fn prefix(&self, length: usize) -> Self {
+    fn create_prefix(&self, length: usize) -> Self {
         if length == 0 {
             return Self::empty();
         }
 
-        if length > self.components().count() {
-            return self.clone();
-        }
-
         let mut new_path: Self = Self::empty();
 
-        for (i, component) in self.components().enumerate() {
-            new_path.append(component.clone()).unwrap();
-
-            if i + 1 >= length {
-                break;
-            }
-        }
+        self.components()
+            .take(length)
+            .for_each(|component| new_path.append(component.clone()).unwrap());
 
         new_path
     }
@@ -51,7 +43,7 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     fn prefixes(&self) -> Vec<Self> {
         let self_len = self.components().count();
 
-        (0..=self_len).map(|i| self.prefix(i)).collect()
+        (0..=self_len).map(|i| self.create_prefix(i)).collect()
     }
 
     fn is_prefix_of(&self, other: &Self) -> bool {
@@ -239,18 +231,18 @@ mod tests {
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let prefix0 = path.prefix(0);
+        let prefix0 = path.create_prefix(0);
 
         assert_eq!(prefix0, PathLocal::empty());
 
-        let prefix1 = path.prefix(1);
+        let prefix1 = path.create_prefix(1);
 
         assert_eq!(
             prefix1,
             PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a'])])
         );
 
-        let prefix2 = path.prefix(2);
+        let prefix2 = path.create_prefix(2);
 
         assert_eq!(
             prefix2,
@@ -260,7 +252,7 @@ mod tests {
             ])
         );
 
-        let prefix3 = path.prefix(3);
+        let prefix3 = path.create_prefix(3);
 
         assert_eq!(
             prefix3,
@@ -271,7 +263,7 @@ mod tests {
             ])
         );
 
-        let prefix4 = path.prefix(4);
+        let prefix4 = path.create_prefix(4);
 
         assert_eq!(
             prefix4,
