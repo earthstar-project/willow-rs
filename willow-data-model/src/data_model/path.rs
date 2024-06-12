@@ -1,11 +1,18 @@
 #[derive(Debug)]
+pub struct ComponentTooLongError;
+
+pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
+    fn new(components: &[u8]) -> Result<Self, ComponentTooLongError>;
+}
+
+#[derive(Debug)]
 pub enum InvalidPathError {
     PathTooLong,
     TooManyComponents,
 }
 
 pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
-    type Component: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord;
+    type Component: PathComponent;
 
     const MAX_COMPONENT_LENGTH: usize;
     const MAX_COMPONENT_COUNT: usize;
@@ -79,11 +86,8 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PathComponentLocal<const MCL: usize>(Vec<u8>);
 
-#[derive(Debug)]
-pub struct ComponentTooLongError;
-
-impl<const MCL: usize> PathComponentLocal<MCL> {
-    pub fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError> {
+impl<const MCL: usize> PathComponent for PathComponentLocal<MCL> {
+    fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError> {
         if bytes.len() > MCL {
             return Err(ComponentTooLongError);
         }
