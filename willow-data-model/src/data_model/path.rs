@@ -40,7 +40,7 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
         new_path
     }
 
-    fn prefixes(&self) -> Vec<Self> {
+    fn all_prefixes(&self) -> Vec<Self> {
         let self_len = self.components().count();
 
         (0..=self_len).map(|i| self.create_prefix(i)).collect()
@@ -283,7 +283,7 @@ mod tests {
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let prefixes = path.prefixes();
+        let prefixes = path.all_prefixes();
 
         assert_eq!(
             prefixes,
