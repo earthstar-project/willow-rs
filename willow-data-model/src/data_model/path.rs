@@ -1,12 +1,5 @@
 #[derive(Debug)]
 pub enum InvalidPathError {
-    ComponentTooLong(usize),
-    PathTooLong,
-    TooManyComponents,
-}
-
-#[derive(Debug)]
-pub enum AppendPathError {
     PathTooLong,
     TooManyComponents,
 }
@@ -18,31 +11,11 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     const MAX_COMPONENT_COUNT: usize;
     const MAX_PATH_LENGTH: usize;
 
+    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError>;
+
     fn empty() -> Self;
 
-    fn validate(path: &Self) -> Result<&Self, InvalidPathError> {
-        if path.components().count() > Self::MAX_COMPONENT_COUNT {
-            return Err(InvalidPathError::TooManyComponents);
-        }
-
-        let mut total_length = 0;
-
-        for (i, component) in path.components().enumerate() {
-            let length = component.as_ref().len();
-            if length > Self::MAX_COMPONENT_LENGTH {
-                return Err(InvalidPathError::ComponentTooLong(i));
-            }
-            total_length += length;
-        }
-
-        if total_length > Self::MAX_PATH_LENGTH {
-            return Err(InvalidPathError::PathTooLong);
-        }
-
-        Ok(path)
-    }
-
-    fn append(&mut self, component: Self::Component) -> Result<(), AppendPathError>;
+    fn append(&mut self, component: Self::Component) -> Result<(), InvalidPathError>;
 
     fn components(&self) -> impl Iterator<Item = &Self::Component>;
 
@@ -140,24 +113,39 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
     const MAX_COMPONENT_COUNT: usize = MCC;
     const MAX_PATH_LENGTH: usize = MPL;
 
+    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError> {
+        let mut path: Self = Path::empty();
+
+        let res = components
+            .iter()
+            .try_for_each(|component| path.append(component.clone()));
+
+        match res {
+            Ok(_) => Ok(path),
+            Err(e) => Err(e),
+        }
+    }
+
     fn empty() -> Self {
         PathLocal(Vec::new())
     }
 
-    fn append(&mut self, component: Self::Component) -> Result<(), AppendPathError> {
+    fn append(&mut self, component: Self::Component) -> Result<(), InvalidPathError> {
+        let total_component_count = self.0.len();
+
+        if total_component_count + 1 > MCC {
+            return Err(InvalidPathError::TooManyComponents);
+        }
+
+        let total_path_length = self.0.iter().fold(0, |acc, item| acc + item.0.len());
+
+        if total_path_length + component.as_ref().len() > MPL {
+            return Err(InvalidPathError::PathTooLong);
+        }
+
         self.0.push(component);
 
-        match Path::validate(self) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                self.0.pop();
-                match err {
-                    InvalidPathError::ComponentTooLong(_) => panic!("Component length was too long for a component that was apparently not too long?!"),
-                    InvalidPathError::PathTooLong => Err(AppendPathError::PathTooLong),
-                    InvalidPathError::TooManyComponents => Err(AppendPathError::TooManyComponents),
-                }
-            }
-        }
+        Ok(())
     }
 
     fn components(&self) -> impl Iterator<Item = &Self::Component> {
@@ -181,47 +169,35 @@ mod tests {
     }
 
     #[test]
-    fn validate() {
-        let empty_path = PathLocal::<MCL, MCC, MPL>::empty();
-        let empty_is_valid = PathLocal::<MCL, MCC, MPL>::validate(&empty_path);
-
-        assert!(empty_is_valid.is_ok());
-
-        let component_too_long = PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![
+    fn new() {
+        /*
+        let component_too_long = PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![
             b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z',
         ])]);
-        let component_too_long_valid = PathLocal::<MCL, MCC, MPL>::validate(&component_too_long);
 
-        assert!(matches!(
-            component_too_long_valid,
-            Err(InvalidPathError::ComponentTooLong(0))
-        ));
+        assert!(matches!(component_too_long, Err(ComponentTooLongError)));
+        */
 
-        let too_many_components = PathLocal::<MCL, MCC, MPL>(vec![
+        let too_many_components = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'z']),
         ]);
-        let too_many_components_valid = PathLocal::<MCL, MCC, MPL>::validate(&too_many_components);
 
         assert!(matches!(
-            too_many_components_valid,
+            too_many_components,
             Err(InvalidPathError::TooManyComponents)
         ));
 
-        let path_too_long = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_too_long = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']),
             PathComponentLocal(vec![b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']),
             PathComponentLocal(vec![b'z']),
         ]);
-        let path_too_long_valid = PathLocal::<MCL, MCC, MPL>::validate(&path_too_long);
 
-        assert!(matches!(
-            path_too_long_valid,
-            Err(InvalidPathError::PathTooLong)
-        ));
+        assert!(matches!(path_too_long, Err(InvalidPathError::PathTooLong)));
     }
 
     #[test]
