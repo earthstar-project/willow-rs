@@ -32,19 +32,7 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
 
     fn components(&self) -> impl Iterator<Item = &Self::Component>;
 
-    fn create_prefix(&self, length: usize) -> Self {
-        if length == 0 {
-            return Self::empty();
-        }
-
-        let prefix_components = self
-            .components()
-            .take(length)
-            .cloned()
-            .collect::<Vec<Self::Component>>();
-
-        Path::new(prefix_components.as_slice()).unwrap()
-    }
+    fn create_prefix(&self, length: usize) -> Self;
 
     fn all_prefixes(&self) -> Vec<Self> {
         let self_len = self.components().count();
@@ -148,6 +136,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
 
     fn empty() -> Self {
         PathLocal(Vec::new())
+    }
+
+    fn create_prefix(&self, length: usize) -> Self {
+        if length == 0 {
+            return Self::empty();
+        }
+
+        let until = std::cmp::min(length, self.0.len());
+        let slice = &self.0.as_slice()[0..until];
+
+        Path::new(slice).unwrap()
     }
 
     fn append(&self, component: Self::Component) -> Result<Self, InvalidPathError> {
