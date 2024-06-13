@@ -67,17 +67,17 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     }
 
     fn longest_common_prefix(&self, other: &Self) -> Self {
-        let mut prefix_components = Vec::new();
+        let mut lcp_len = 0;
 
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
                 break;
             }
 
-            prefix_components.push(comp_a.clone())
+            lcp_len += 1
         }
 
-        Path::new(prefix_components.as_slice()).unwrap()
+        self.create_prefix(lcp_len)
     }
 }
 
