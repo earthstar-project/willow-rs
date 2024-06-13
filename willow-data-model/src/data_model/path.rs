@@ -1,8 +1,17 @@
+use std::{
+    borrow::Borrow,
+    ops::{Deref, DerefMut},
+};
+
 #[derive(Debug)]
 pub struct ComponentTooLongError;
 
 pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
-    fn new(components: &[u8]) -> Result<Self, ComponentTooLongError>;
+    fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError>;
+
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -11,39 +20,19 @@ pub enum InvalidPathError {
     TooManyComponents,
 }
 
-pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
+pub trait Path: PartialEq + Eq + PartialOrd + Ord {
     type Component: PathComponent;
-
-    const MAX_COMPONENT_LENGTH: usize;
-    const MAX_COMPONENT_COUNT: usize;
-    const MAX_PATH_LENGTH: usize;
-
-    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError>;
-
-    fn empty() -> Self;
-
-    fn append(&mut self, component: Self::Component) -> Result<(), InvalidPathError>;
 
     fn components(&self) -> impl Iterator<Item = &Self::Component>;
 
-    fn create_prefix(&self, length: usize) -> Self {
-        if length == 0 {
-            return Self::empty();
-        }
+    fn count(&self) -> usize;
 
-        let mut new_path: Self = Self::empty();
+    fn total_length(&self) -> usize;
 
-        self.components()
-            .take(length)
-            .for_each(|component| new_path.append(component.clone()).unwrap());
+    fn as_prefix(&self, length: usize) -> &Self;
 
-        new_path
-    }
-
-    fn all_prefixes(&self) -> Vec<Self> {
-        let self_len = self.components().count();
-
-        (0..=self_len).map(|i| self.create_prefix(i)).collect()
+    fn all_prefixes(&self) -> impl Iterator<Item = &Self> {
+        (0..self.count() + 1).map(|i| self.as_prefix(i))
     }
 
     fn is_prefix_of(&self, other: &Self) -> bool {
@@ -60,19 +49,42 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
         other.is_prefix_of(self)
     }
 
-    fn longest_common_prefix(&self, other: &Self) -> Self {
-        let mut new_path = Self::empty();
+    fn longest_common_prefix(&self, other: &Self) -> &Self {
+        let mut i = 0;
 
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
-                break;
+                return self.as_prefix(i);
             }
 
-            new_path.append(comp_a.clone()).unwrap()
+            i += 1;
         }
 
-        new_path
+        self.as_prefix(i)
     }
+}
+
+pub trait PathBuf:
+    Deref<Target = Self::P>
+    + DerefMut<Target = Self::P>
+    + AsRef<Self::P>
+    + Borrow<Self::P>
+    + PartialEq
+    + Eq
+    + PartialOrd
+    + Ord
+    + Clone
+    + Default
+{
+    type P: ?Sized + Path;
+
+    fn from_slice(components: &[<Self::P as Path>::Component]) -> Result<Self, InvalidPathError>;
+
+    fn from_path(path: &Self::P) -> Self;
+
+    fn empty() -> Self;
+
+    fn append(&mut self, component: <Self::P as Path>::Component) -> Result<(), InvalidPathError>;
 }
 
 // Single threaded default.
@@ -91,6 +103,14 @@ impl<const MCL: usize> PathComponent for PathComponentLocal<MCL> {
 
         Ok(Self(vec))
     }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
@@ -99,55 +119,122 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
+impl<const MCL: usize> Path for [PathComponentLocal<MCL>] {
+    type Component = PathComponentLocal<MCL>;
+
+    fn components(&self) -> impl Iterator<Item = &Self::Component> {
+        self.iter()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
+
+    fn total_length(&self) -> usize {
+        self.iter().fold(0, |acc, component| acc + component.len())
+    }
+
+    fn as_prefix(&self, length: usize) -> &Self {
+        let upper_bound = std::cmp::min(self.len(), length);
+
+        &self[0..upper_bound]
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+struct PathBufLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
     Vec<PathComponentLocal<MCL>>,
 );
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MCL, MCC, MPL> {
-    type Component = PathComponentLocal<MCL>;
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Default for PathBufLocal<MCL, MCC, MPL> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
-    const MAX_COMPONENT_LENGTH: usize = MCL;
-    const MAX_COMPONENT_COUNT: usize = MCC;
-    const MAX_PATH_LENGTH: usize = MPL;
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    Borrow<<PathBufLocal<MCL, MCC, MPL> as PathBuf>::P> for PathBufLocal<MCL, MCC, MPL>
+{
+    fn borrow(&self) -> &<PathBufLocal<MCL, MCC, MPL> as PathBuf>::P {
+        self.0.borrow()
+    }
+}
 
-    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError> {
-        let mut path: Self = Path::empty();
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Deref for PathBufLocal<MCL, MCC, MPL> {
+    type Target = <PathBufLocal<MCL, MCC, MPL> as PathBuf>::P;
 
-        let res = components
-            .iter()
-            .try_for_each(|component| path.append(component.clone()));
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
 
-        match res {
-            Ok(_) => Ok(path),
-            Err(e) => Err(e),
+impl<const MCL: usize, const MCC: usize, const MPL: usize> DerefMut
+    for PathBufLocal<MCL, MCC, MPL>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.deref_mut()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    AsRef<<PathBufLocal<MCL, MCC, MPL> as PathBuf>::P> for PathBufLocal<MCL, MCC, MPL>
+{
+    fn as_ref(&self) -> &<PathBufLocal<MCL, MCC, MPL> as PathBuf>::P {
+        self.0.as_ref()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuf for PathBufLocal<MCL, MCC, MPL> {
+    type P = [PathComponentLocal<MCL>];
+
+    fn from_slice(components: &[<Self::P as Path>::Component]) -> Result<Self, InvalidPathError> {
+        let mut total_count = 0;
+        let mut total_path_length = 0;
+
+        for component in components {
+            total_count += 1;
+            total_path_length += component.len();
         }
-    }
 
-    fn empty() -> Self {
-        PathLocal(Vec::new())
-    }
-
-    fn append(&mut self, component: Self::Component) -> Result<(), InvalidPathError> {
-        let total_component_count = self.0.len();
-
-        if total_component_count + 1 > MCC {
+        if total_count > MCC {
             return Err(InvalidPathError::TooManyComponents);
         }
 
-        let total_path_length = self.0.iter().fold(0, |acc, item| acc + item.0.len());
+        if total_path_length > MPL {
+            return Err(InvalidPathError::PathTooLong);
+        }
 
-        if total_path_length + component.as_ref().len() > MPL {
+        let mut vec = Vec::new();
+
+        vec.clone_from_slice(components);
+
+        Ok(PathBufLocal(vec))
+    }
+
+    fn from_path(path: &Self::P) -> Self {
+        let mut vec = Vec::new();
+
+        vec.clone_from_slice(path);
+
+        PathBufLocal(vec)
+    }
+
+    fn empty() -> Self {
+        PathBufLocal(Vec::new())
+    }
+
+    fn append(&mut self, component: <Self::P as Path>::Component) -> Result<(), InvalidPathError> {
+        if self.0.len() + 1 > MCC {
+            return Err(InvalidPathError::TooManyComponents);
+        }
+
+        if self.0.total_length() > MPL {
             return Err(InvalidPathError::PathTooLong);
         }
 
         self.0.push(component);
 
         Ok(())
-    }
-
-    fn components(&self) -> impl Iterator<Item = &Self::Component> {
-        self.0.iter()
     }
 }
 
@@ -161,22 +248,14 @@ mod tests {
 
     #[test]
     fn empty() {
-        let empty_path = PathLocal::<MCL, MCC, MPL>::empty();
+        let empty_path = PathBufLocal::<MCL, MCC, MPL>::empty();
 
         assert_eq!(empty_path.components().count(), 0);
     }
 
     #[test]
     fn new() {
-        /*
-        let component_too_long = PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![
-            b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z',
-        ])]);
-
-        assert!(matches!(component_too_long, Err(ComponentTooLongError)));
-        */
-
-        let too_many_components = PathLocal::<MCL, MCC, MPL>::new(&[
+        let too_many_components = PathBufLocal::<MCL, MCC, MPL>::from_slice(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'a']),
@@ -189,7 +268,7 @@ mod tests {
             Err(InvalidPathError::TooManyComponents)
         ));
 
-        let path_too_long = PathLocal::<MCL, MCC, MPL>::new(&[
+        let path_too_long = PathBufLocal::<MCL, MCC, MPL>::from_slice(&[
             PathComponentLocal(vec![b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']),
             PathComponentLocal(vec![b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']),
             PathComponentLocal(vec![b'z']),
@@ -200,7 +279,7 @@ mod tests {
 
     #[test]
     fn append() {
-        let mut path = PathLocal::<MCL, MCC, MPL>::empty();
+        let mut path = PathBufLocal::<MCL, MCC, MPL>::empty();
 
         let r1 = path.append(PathComponentLocal(vec![b'a']));
         assert!(r1.is_ok());
@@ -227,98 +306,105 @@ mod tests {
 
     #[test]
     fn prefix() {
-        let path = PathLocal::<MCL, MCC, MPL>(vec![
+        let path = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let prefix0 = path.create_prefix(0);
+        let prefix0 = path.as_prefix(0);
 
-        assert_eq!(prefix0, PathLocal::empty());
+        assert_eq!(prefix0, &[]);
 
-        let prefix1 = path.create_prefix(1);
+        let prefix1 = path.as_prefix(1);
 
-        assert_eq!(
-            prefix1,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a'])])
-        );
+        assert_eq!(prefix1, &[PathComponentLocal(vec![b'a'])]);
 
-        let prefix2 = path.create_prefix(2);
+        let prefix2 = path.as_prefix(2);
 
         assert_eq!(
             prefix2,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            &[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b'])
-            ])
+            ]
         );
 
-        let prefix3 = path.create_prefix(3);
+        let prefix3 = path.as_prefix(3);
 
         assert_eq!(
             prefix3,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            &[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b']),
                 PathComponentLocal(vec![b'c'])
-            ])
+            ]
         );
 
-        let prefix4 = path.create_prefix(4);
+        let prefix4 = path.as_prefix(4);
 
         assert_eq!(
             prefix4,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            &[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b']),
                 PathComponentLocal(vec![b'c'])
-            ])
-        )
-    }
-
-    #[test]
-    fn prefixes() {
-        let path = PathLocal::<MCL, MCC, MPL>(vec![
-            PathComponentLocal(vec![b'a']),
-            PathComponentLocal(vec![b'b']),
-            PathComponentLocal(vec![b'c']),
-        ]);
-
-        let prefixes = path.all_prefixes();
-
-        assert_eq!(
-            prefixes,
-            vec![
-                PathLocal::<MCL, MCC, MPL>(vec![]),
-                PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a'])]),
-                PathLocal::<MCL, MCC, MPL>(vec![
-                    PathComponentLocal(vec![b'a']),
-                    PathComponentLocal(vec![b'b'])
-                ]),
-                PathLocal::<MCL, MCC, MPL>(vec![
-                    PathComponentLocal(vec![b'a']),
-                    PathComponentLocal(vec![b'b']),
-                    PathComponentLocal(vec![b'c'])
-                ]),
             ]
         )
     }
 
     #[test]
-    fn is_prefix_of() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
-            PathComponentLocal(vec![b'a']),
-            PathComponentLocal(vec![b'b']),
-        ]);
-
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+    fn prefixes() {
+        let path = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let mut prefixes = path.all_prefixes();
+
+        let p1 = prefixes.next().unwrap();
+        assert_eq!(p1, &[]);
+
+        let p2 = prefixes.next().unwrap();
+        assert_eq!(p2, &[PathComponentLocal(vec![b'a'])]);
+
+        let p3 = prefixes.next().unwrap();
+        assert_eq!(
+            p3,
+            &[
+                PathComponentLocal(vec![b'a']),
+                PathComponentLocal(vec![b'b'])
+            ]
+        );
+
+        let p4 = prefixes.next().unwrap();
+        assert_eq!(
+            p4,
+            &[
+                PathComponentLocal(vec![b'a']),
+                PathComponentLocal(vec![b'b']),
+                PathComponentLocal(vec![b'c'])
+            ]
+        );
+
+        assert!(prefixes.next().is_none())
+    }
+
+    #[test]
+    fn is_prefix_of() {
+        let path_a = PathBufLocal::<MCL, MCC, MPL>(vec![
+            PathComponentLocal(vec![b'a']),
+            PathComponentLocal(vec![b'b']),
+        ]);
+
+        let path_b = PathBufLocal::<MCL, MCC, MPL>(vec![
+            PathComponentLocal(vec![b'a']),
+            PathComponentLocal(vec![b'b']),
+            PathComponentLocal(vec![b'c']),
+        ]);
+
+        let path_c = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
@@ -330,18 +416,18 @@ mod tests {
 
     #[test]
     fn is_prefixed_by() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_a = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
         ]);
 
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_b = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_c = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
@@ -353,18 +439,18 @@ mod tests {
 
     #[test]
     fn longest_common_prefix() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_a = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'x']),
         ]);
 
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_b = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
         ]);
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_c = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
@@ -372,10 +458,7 @@ mod tests {
 
         let lcp_a_b = path_a.longest_common_prefix(&path_b);
 
-        assert_eq!(
-            lcp_a_b,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a']),])
-        );
+        assert_eq!(lcp_a_b, &[PathComponentLocal(vec![b'a']),]);
 
         let lcp_b_a = path_b.longest_common_prefix(&path_a);
 
@@ -383,9 +466,9 @@ mod tests {
 
         let lcp_a_x = path_a.longest_common_prefix(&path_c);
 
-        assert_eq!(lcp_a_x, PathLocal::empty());
+        assert_eq!(lcp_a_x, &[]);
 
-        let path_d = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_d = PathBufLocal::<MCL, MCC, MPL>(vec![
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'c']),
@@ -393,9 +476,6 @@ mod tests {
 
         let lcp_b_d = path_b.longest_common_prefix(&path_d);
 
-        assert_eq!(
-            lcp_b_d,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a']),])
-        )
+        assert_eq!(lcp_b_d, &[PathComponentLocal(vec![b'a']),])
     }
 }
