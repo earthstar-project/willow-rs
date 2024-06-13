@@ -6,7 +6,9 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
 
     fn len(&self) -> usize;
 
-    fn is_empty(&self) -> bool;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[derive(Debug)]
