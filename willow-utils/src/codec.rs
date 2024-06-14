@@ -16,12 +16,12 @@ pub trait Encoder: Debug {
 /// 8-bit, 16-bit, 32-bit, or 64-bit unsigned integers.
 ///
 /// https://willowprotocol.org/specs/encodings/index.html#compact_width
-pub fn compact_width(value: &usize) -> usize {
-    if *value < 256 {
+pub fn compact_width(value: usize) -> usize {
+    if value < 256 {
         1
-    } else if *value < 65536 {
+    } else if value < 65536 {
         2
-    } else if *value < 2147483648 {
+    } else if value < 2147483648 {
         4
     } else {
         8
@@ -30,24 +30,24 @@ pub fn compact_width(value: &usize) -> usize {
 
 /// Encode a `usize` integer using the smallest number of bytes possible.
 pub fn encode_usize<Con: BulkConsumer<Item = u8>>(
-    value: &usize,
+    value: usize,
     consumer: &mut Con,
 ) -> Result<(), Con::Error> {
     match compact_width(value) {
         1 => {
-            let compact_value = *value as u8;
+            let compact_value = value as u8;
             sync::consume_all(&compact_value.to_be_bytes(), consumer)?;
         }
         2 => {
-            let compact_value = *value as u16;
+            let compact_value = value as u16;
             sync::consume_all(&compact_value.to_be_bytes(), consumer)?;
         }
         4 => {
-            let compact_value = *value as u32;
+            let compact_value = value as u32;
             sync::consume_all(&compact_value.to_be_bytes(), consumer)?;
         }
         8 => {
-            let compact_value = *value as u64;
+            let compact_value = value as u64;
             sync::consume_all(&compact_value.to_be_bytes(), consumer)?;
         }
         _ => unreachable!(),
@@ -109,9 +109,9 @@ mod tests {
 
     #[test]
     fn returns_correct_compact_width() {
-        assert_eq!(compact_width(&200), 1);
-        assert_eq!(compact_width(&7000), 2);
-        assert_eq!(compact_width(&80000), 4);
-        assert_eq!(compact_width(&3000000000), 8);
+        assert_eq!(compact_width(200), 1);
+        assert_eq!(compact_width(7000), 2);
+        assert_eq!(compact_width(80000), 4);
+        assert_eq!(compact_width(3000000000), 8);
     }
 }
