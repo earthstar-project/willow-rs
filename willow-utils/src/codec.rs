@@ -28,7 +28,8 @@ pub fn compact_width(value: &usize) -> usize {
     }
 }
 
-pub fn encode_compact_width<Con: BulkConsumer<Item = u8>>(
+/// Encode a `usize` integer using the smallest number of bytes possible.
+pub fn encode_usize<Con: BulkConsumer<Item = u8>>(
     value: &usize,
     consumer: &mut Con,
 ) -> Result<(), Con::Error> {
@@ -66,7 +67,8 @@ pub trait Decoder: Sized {
     // unimplemented!();
 }
 
-pub fn decode_compact_width<Pro: BulkProducer<Item = u8>>(
+/// Decode the bytes representing a variable width integer into a `usize`.
+pub fn decode_usize<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
 ) -> Result<usize, DecodeError<Pro::Error>> {
     // The encoded value will be 8 bytes at most.
@@ -101,12 +103,6 @@ pub fn decode_compact_width<Pro: BulkProducer<Item = u8>>(
     Ok(value)
 }
 
-pub fn decode_usize<Pro: BulkProducer<Item = u8>>(
-    producer: &mut Pro,
-) -> Result<u8, DecodeError<Pro::Error>> {
-    unimplemented!()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,47 +115,3 @@ mod tests {
         assert_eq!(compact_width(&3000000000), 8);
     }
 }
-
-/*
-// iroh/iroh-willow/src/util/codec.rs
-
-//! Traits for encoding and decoding values to and from bytes.
-
-use std::{fmt, io};
-
-/// Trait for encoding values into bytes.
-pub trait Encoder: fmt::Debug {
-    /// Returns the length (in bytes) of the encoded value.
-    fn encoded_len(&self) -> usize;
-
-    /// Encode [`Self`] into a writable buffer which implements `io::Write`.
-    fn encode_into<W: io::Write>(&self, out: &mut W) -> anyhow::Result<()>;
-
-    /// Encode [`Self`] into a vector of bytes.
-    fn encode(&self) -> anyhow::Result<Vec<u8>> {
-        let mut out = Vec::with_capacity(self.encoded_len());
-        self.encode_into(&mut out)?;
-        Ok(out)
-    }
-}
-
-/// Trait for decoding values from bytes.
-pub trait Decoder: Sized {
-    /// Decode [`Self`] from a byte slice.
-    fn decode_from(data: &[u8]) -> anyhow::Result<DecodeOutcome<Self>>;
-}
-
-/// The outcome of [`Decoder::decode_from`]
-#[derive(Debug)]
-pub enum DecodeOutcome<T> {
-    /// Not enough data to decode the value.
-    NeedMoreData,
-    /// Decoded a value.
-    Decoded {
-        /// The decoded value.
-        item: T,
-        /// The number of bytes used for decoding the value.
-        consumed: usize,
-    },
-}
-*/
