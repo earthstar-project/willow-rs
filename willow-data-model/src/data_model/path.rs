@@ -105,7 +105,7 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
-    Rc<Vec<PathComponentLocal<MCL>>>,
+    Rc<[PathComponentLocal<MCL>]>,
 );
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MCL, MCC, MPL> {
@@ -133,11 +133,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
             }
         }
 
-        Ok(PathLocal(Rc::new(path_vec)))
+        Ok(PathLocal(path_vec.into()))
     }
 
     fn empty() -> Self {
-        PathLocal(Rc::new(Vec::new()))
+        PathLocal(Vec::new().into())
     }
 
     fn create_prefix(&self, length: usize) -> Self {
@@ -146,7 +146,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
         }
 
         let until = std::cmp::min(length, self.0.len());
-        let slice = &self.0.as_slice()[0..until];
+        let slice = &self.0[0..until];
 
         Path::new(slice).unwrap()
     }
@@ -172,7 +172,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
 
         new_path_vec.push(component);
 
-        Ok(PathLocal(Rc::new(new_path_vec)))
+        Ok(PathLocal(new_path_vec.into()))
     }
 
     fn components(&self) -> impl Iterator<Item = &Self::Component> {
