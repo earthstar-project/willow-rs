@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 #[derive(Debug)]
 pub struct ComponentTooLongError;
 
@@ -103,7 +105,7 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
-    Vec<PathComponentLocal<MCL>>,
+    Rc<Vec<PathComponentLocal<MCL>>>,
 );
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MCL, MCC, MPL> {
@@ -131,11 +133,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
             }
         }
 
-        Ok(PathLocal(path_vec))
+        Ok(PathLocal(Rc::new(path_vec)))
     }
 
     fn empty() -> Self {
-        PathLocal(Vec::new())
+        PathLocal(Rc::new(Vec::new()))
     }
 
     fn create_prefix(&self, length: usize) -> Self {
@@ -170,7 +172,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
 
         new_path_vec.push(component);
 
-        Ok(PathLocal(new_path_vec))
+        Ok(PathLocal(Rc::new(new_path_vec)))
     }
 
     fn components(&self) -> impl Iterator<Item = &Self::Component> {
@@ -262,11 +264,12 @@ mod tests {
 
     #[test]
     fn prefix() {
-        let path = PathLocal::<MCL, MCC, MPL>(vec![
+        let path = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
         let prefix0 = path.create_prefix(0);
 
@@ -276,88 +279,97 @@ mod tests {
 
         assert_eq!(
             prefix1,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a'])])
+            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![b'a'])]).unwrap()
         );
 
         let prefix2 = path.create_prefix(2);
 
         assert_eq!(
             prefix2,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            PathLocal::<MCL, MCC, MPL>::new(&[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b'])
             ])
+            .unwrap()
         );
 
         let prefix3 = path.create_prefix(3);
 
         assert_eq!(
             prefix3,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            PathLocal::<MCL, MCC, MPL>::new(&[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b']),
                 PathComponentLocal(vec![b'c'])
             ])
+            .unwrap()
         );
 
         let prefix4 = path.create_prefix(4);
 
         assert_eq!(
             prefix4,
-            PathLocal::<MCL, MCC, MPL>(vec![
+            PathLocal::<MCL, MCC, MPL>::new(&[
                 PathComponentLocal(vec![b'a']),
                 PathComponentLocal(vec![b'b']),
                 PathComponentLocal(vec![b'c'])
             ])
+            .unwrap()
         )
     }
 
     #[test]
     fn prefixes() {
-        let path = PathLocal::<MCL, MCC, MPL>(vec![
+        let path = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
         let prefixes = path.all_prefixes();
 
         assert_eq!(
             prefixes,
             vec![
-                PathLocal::<MCL, MCC, MPL>(vec![]),
-                PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a'])]),
-                PathLocal::<MCL, MCC, MPL>(vec![
+                PathLocal::<MCL, MCC, MPL>::new(&[]).unwrap(),
+                PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![b'a'])]).unwrap(),
+                PathLocal::<MCL, MCC, MPL>::new(&[
                     PathComponentLocal(vec![b'a']),
                     PathComponentLocal(vec![b'b'])
-                ]),
-                PathLocal::<MCL, MCC, MPL>(vec![
+                ])
+                .unwrap(),
+                PathLocal::<MCL, MCC, MPL>::new(&[
                     PathComponentLocal(vec![b'a']),
                     PathComponentLocal(vec![b'b']),
                     PathComponentLocal(vec![b'c'])
-                ]),
+                ])
+                .unwrap(),
             ]
         )
     }
 
     #[test]
     fn is_prefix_of() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
-        ]);
+        ])
+        .unwrap();
 
         assert!(path_a.is_prefix_of(&path_b));
         assert!(!path_a.is_prefix_of(&path_c));
@@ -365,22 +377,25 @@ mod tests {
 
     #[test]
     fn is_prefixed_by() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
-        ]);
+        ])
+        .unwrap();
 
         assert!(path_b.is_prefixed_by(&path_a));
         assert!(!path_c.is_prefixed_by(&path_a));
@@ -388,28 +403,31 @@ mod tests {
 
     #[test]
     fn longest_common_prefix() {
-        let path_a = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'x']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'b']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'y']),
             PathComponentLocal(vec![b'z']),
-        ]);
+        ])
+        .unwrap();
 
         let lcp_a_b = path_a.longest_common_prefix(&path_b);
 
         assert_eq!(
             lcp_a_b,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a']),])
+            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![b'a']),]).unwrap()
         );
 
         let lcp_b_a = path_b.longest_common_prefix(&path_a);
@@ -420,17 +438,18 @@ mod tests {
 
         assert_eq!(lcp_a_x, PathLocal::empty());
 
-        let path_d = PathLocal::<MCL, MCC, MPL>(vec![
+        let path_d = PathLocal::<MCL, MCC, MPL>::new(&[
             PathComponentLocal(vec![b'a']),
             PathComponentLocal(vec![b'x']),
             PathComponentLocal(vec![b'c']),
-        ]);
+        ])
+        .unwrap();
 
         let lcp_b_d = path_b.longest_common_prefix(&path_d);
 
         assert_eq!(
             lcp_b_d,
-            PathLocal::<MCL, MCC, MPL>(vec![PathComponentLocal(vec![b'a']),])
+            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal(vec![b'a']),]).unwrap()
         )
     }
 }
