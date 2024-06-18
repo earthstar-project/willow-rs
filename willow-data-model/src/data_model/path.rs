@@ -1,47 +1,68 @@
 use std::rc::Rc;
 
 #[derive(Debug)]
+/// An error indicating a [`PathComponent`'s bytestring is too long.
 pub struct ComponentTooLongError;
 
+/// A bytestring representing an individual component of a [`Path`].
 pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
+    /// The maximum bytelength of a path component.
+    const MAX_COMPONENT_LENGTH: usize;
+
+    /// Construct a new [`PathComponent`] from the provided slice, or return a [`ComponentTooLongError`] if the resulting component would be too long.
     fn new(components: &[u8]) -> Result<Self, ComponentTooLongError>;
 
+    /// The length of the component in bytes.
     fn len(&self) -> usize;
 
+    /// Whether the component is an empty bytestring or not.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
 #[derive(Debug)]
+/// An error arising from trying to construct a invalid [`Path`] from valid [`PathComponent`].
 pub enum InvalidPathError {
+    /// The path's total length in bytes is too long.
     PathTooLong,
+    /// The path has too many components.
     TooManyComponents,
 }
 
+/// A sequence of [`PathComponent`], used to name and query entries in [Willow's data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
+///
 pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     type Component: PathComponent;
 
-    const MAX_COMPONENT_LENGTH: usize;
+    /// The maximum number of [`PathComponent`] a [`Path`] may have.
     const MAX_COMPONENT_COUNT: usize;
+    /// The maximum total number of bytes a [`Path`] may have.
     const MAX_PATH_LENGTH: usize;
 
+    /// Contruct a new [`Path`] from a slice of [`PathComponent`], or return a [`InvalidPathError`] if the resulting path would be too long or have too many components.
     fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError>;
 
+    /// Construct a new [`Path`] with no components.
     fn empty() -> Self;
 
+    /// Return a new [`Path`] with the components of this path suffixed with the given [`PathComponent`](PathComponent), or return [`InvalidPathError`] if the resulting path would be invalid in some way.
     fn append(&self, component: Self::Component) -> Result<Self, InvalidPathError>;
 
+    /// Return an iterator of all this path's components.
     fn components(&self) -> impl Iterator<Item = &Self::Component>;
 
+    /// Create a new [`Path`] by taking the first `length` components of this path.
     fn create_prefix(&self, length: usize) -> Self;
 
+    /// Return all possible prefixes of a path, including the empty path and the path itself.
     fn all_prefixes(&self) -> Vec<Self> {
         let self_len = self.components().count();
 
         (0..=self_len).map(|i| self.create_prefix(i)).collect()
     }
 
+    /// Test whether this path is a prefix of the given path.
     fn is_prefix_of(&self, other: &Self) -> bool {
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
@@ -52,10 +73,12 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
         true
     }
 
+    /// Test whether this path is prefixed by the given path.
     fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
     }
 
+    /// Return the longest common prefix of this path and the given path.
     fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
 
@@ -71,14 +94,18 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     }
 }
 
-// Single threaded default.
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+// Not very happy with this rather redundant description. Axe?
+/// A [`PathComponent`] built upon a [`Vec<u8>`].
 pub struct PathComponentLocal<const MCL: usize>(Vec<u8>);
 
+// How do I document what MCL is meant to represent?
 impl<const MCL: usize> PathComponent for PathComponentLocal<MCL> {
+    const MAX_COMPONENT_LENGTH: usize = MCL;
+
+    /// Creates a new component by cloning and appending all bytes from the slice into a [`Vec<u8>`], or returns a [`ComponentTooLongError`].
     fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError> {
-        if bytes.len() > MCL {
+        if bytes.len() > Self::MAX_COMPONENT_LENGTH {
             return Err(ComponentTooLongError);
         }
 
@@ -104,6 +131,8 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+// Again, feels very redundant. Better not to have anything? Some other way I'm not thinking of?
+/// A Path built upon a `Rc<[PathComponentLocal<MCL>]>`.
 pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
     Rc<[PathComponentLocal<MCL>]>,
 );
@@ -111,10 +140,10 @@ pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MCL, MCC, MPL> {
     type Component = PathComponentLocal<MCL>;
 
-    const MAX_COMPONENT_LENGTH: usize = MCL;
     const MAX_COMPONENT_COUNT: usize = MCC;
     const MAX_PATH_LENGTH: usize = MPL;
 
+    /// Creates a new [`PathLocal`] by cloning the contents of a slice of [`PathComponentLocal`].
     fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError> {
         if components.len() > Self::MAX_COMPONENT_COUNT {
             return Err(InvalidPathError::TooManyComponents);
@@ -140,6 +169,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
         PathLocal(Vec::new().into())
     }
 
+    /// Creates a completely new [`Path`] by cloning the a portion of the `Rc`'s inner slice.
     fn create_prefix(&self, length: usize) -> Self {
         if length == 0 {
             return Self::empty();
@@ -151,6 +181,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
         Path::new(slice).unwrap()
     }
 
+    // Do the docs of an implementation override that of a trait?
+    // If so, do I need to explain the what *and* how in an implementation's docs?
+    /// Return a new path with the components of this path suffixed with the given [`PathComponentLocal`], by cloning the path's individual components into a new slice.
     fn append(&self, component: Self::Component) -> Result<Self, InvalidPathError> {
         let total_component_count = self.0.len();
 
