@@ -104,14 +104,14 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PathComponentLocal<const MCL: usize>(Box<[u8]>);
+pub struct PathComponentBox<const MCL: usize>(Box<[u8]>);
 
-/// An implementation of [`PathComponent`] for [`PathComponentLocal`].
+/// An implementation of [`PathComponent`] for [`PathComponentBox`].
 ///
 /// ## Type parameters
 ///
 /// - `MCL`: A [`usize`] used as [`PathComponent::MAX_COMPONENT_LENGTH`].
-impl<const MCL: usize> PathComponent for PathComponentLocal<MCL> {
+impl<const MCL: usize> PathComponent for PathComponentBox<MCL> {
     const MAX_COMPONENT_LENGTH: usize = MCL;
 
     /// Create a new component by cloning and appending all bytes from the slice into a [`Vec<u8>`], or return a [`ComponentTooLongError`] if the bytelength of the slice exceeds [`PathComponent::MAX_COMPONENT_LENGTH`].
@@ -132,21 +132,21 @@ impl<const MCL: usize> PathComponent for PathComponentLocal<MCL> {
     }
 }
 
-impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
+impl<const MCL: usize> AsRef<[u8]> for PathComponentBox<MCL> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-/// A cheaply cloneable [`Path`] using a `Rc<[PathComponentLocal]>`.
+/// A cheaply cloneable [`Path`] using a `Rc<[PathComponentBox]>`.
 /// While cloning is cheap, operations which return modified forms of the path (e.g. [`Path::append`]) are not, as they have to clone and adjust the contents of the underlying [`Rc`].
-pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
-    Rc<[PathComponentLocal<MCL>]>,
+pub struct PathRc<const MCL: usize, const MCC: usize, const MPL: usize>(
+    Rc<[PathComponentBox<MCL>]>,
 );
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MCL, MCC, MPL> {
-    type Component = PathComponentLocal<MCL>;
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathRc<MCL, MCC, MPL> {
+    type Component = PathComponentBox<MCL>;
 
     const MAX_COMPONENT_COUNT: usize = MCC;
     const MAX_PATH_LENGTH: usize = MPL;
@@ -169,11 +169,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
             }
         }
 
-        Ok(PathLocal(path_vec.into()))
+        Ok(PathRc(path_vec.into()))
     }
 
     fn empty() -> Self {
-        PathLocal(Vec::new().into())
+        PathRc(Vec::new().into())
     }
 
     fn create_prefix(&self, length: usize) -> Self {
@@ -208,7 +208,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathLocal<MC
 
         new_path_vec.push(component);
 
-        Ok(PathLocal(new_path_vec.into()))
+        Ok(PathRc(new_path_vec.into()))
     }
 
     fn components(&self) -> impl Iterator<Item = &Self::Component> {
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let empty_path = PathLocal::<MCL, MCC, MPL>::empty();
+        let empty_path = PathRc::<MCL, MCC, MPL>::empty();
 
         assert_eq!(empty_path.components().count(), 0);
     }
@@ -234,16 +234,16 @@ mod tests {
     #[test]
     fn new() {
         let component_too_long =
-            PathComponentLocal::<MCL>::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z']);
+            PathComponentBox::<MCL>::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z']);
 
         assert!(matches!(component_too_long, Err(ComponentTooLongError)));
 
-        let too_many_components = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'z']).unwrap(),
+        let too_many_components = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'z']).unwrap(),
         ]);
 
         assert!(matches!(
@@ -251,10 +251,10 @@ mod tests {
             Err(InvalidPathError::TooManyComponents)
         ));
 
-        let path_too_long = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentLocal::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentLocal::new(&[b'z']).unwrap(),
+        let path_too_long = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
+            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
+            PathComponentBox::new(&[b'z']).unwrap(),
         ]);
 
         assert!(matches!(path_too_long, Err(InvalidPathError::PathTooLong)));
@@ -262,29 +262,29 @@ mod tests {
 
     #[test]
     fn append() {
-        let path = PathLocal::<MCL, MCC, MPL>::empty();
+        let path = PathRc::<MCL, MCC, MPL>::empty();
 
-        let r1 = path.append(PathComponentLocal::new(&[b'a']).unwrap());
+        let r1 = path.append(PathComponentBox::new(&[b'a']).unwrap());
         assert!(r1.is_ok());
         let p1 = r1.unwrap();
         assert_eq!(p1.components().count(), 1);
 
-        let r2 = p1.append(PathComponentLocal::new(&[b'b']).unwrap());
+        let r2 = p1.append(PathComponentBox::new(&[b'b']).unwrap());
         assert!(r2.is_ok());
         let p2 = r2.unwrap();
         assert_eq!(p2.components().count(), 2);
 
-        let r3 = p2.append(PathComponentLocal::new(&[b'c']).unwrap());
+        let r3 = p2.append(PathComponentBox::new(&[b'c']).unwrap());
         assert!(r3.is_ok());
         let p3 = r3.unwrap();
         assert_eq!(p3.components().count(), 3);
 
-        let r4 = p3.append(PathComponentLocal::new(&[b'd']).unwrap());
+        let r4 = p3.append(PathComponentBox::new(&[b'd']).unwrap());
         assert!(r4.is_ok());
         let p4 = r4.unwrap();
         assert_eq!(p4.components().count(), 4);
 
-        let r5 = p4.append(PathComponentLocal::new(&[b'z']).unwrap());
+        let r5 = p4.append(PathComponentBox::new(&[b'z']).unwrap());
         assert!(r5.is_err());
 
         let collected = p4
@@ -297,31 +297,31 @@ mod tests {
 
     #[test]
     fn prefix() {
-        let path = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
         let prefix0 = path.create_prefix(0);
 
-        assert_eq!(prefix0, PathLocal::empty());
+        assert_eq!(prefix0, PathRc::empty());
 
         let prefix1 = path.create_prefix(1);
 
         assert_eq!(
             prefix1,
-            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
         );
 
         let prefix2 = path.create_prefix(2);
 
         assert_eq!(
             prefix2,
-            PathLocal::<MCL, MCC, MPL>::new(&[
-                PathComponentLocal::new(&[b'a']).unwrap(),
-                PathComponentLocal::new(&[b'b']).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[
+                PathComponentBox::new(&[b'a']).unwrap(),
+                PathComponentBox::new(&[b'b']).unwrap()
             ])
             .unwrap()
         );
@@ -330,10 +330,10 @@ mod tests {
 
         assert_eq!(
             prefix3,
-            PathLocal::<MCL, MCC, MPL>::new(&[
-                PathComponentLocal::new(&[b'a']).unwrap(),
-                PathComponentLocal::new(&[b'b']).unwrap(),
-                PathComponentLocal::new(&[b'c']).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[
+                PathComponentBox::new(&[b'a']).unwrap(),
+                PathComponentBox::new(&[b'b']).unwrap(),
+                PathComponentBox::new(&[b'c']).unwrap()
             ])
             .unwrap()
         );
@@ -342,10 +342,10 @@ mod tests {
 
         assert_eq!(
             prefix4,
-            PathLocal::<MCL, MCC, MPL>::new(&[
-                PathComponentLocal::new(&[b'a']).unwrap(),
-                PathComponentLocal::new(&[b'b']).unwrap(),
-                PathComponentLocal::new(&[b'c']).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[
+                PathComponentBox::new(&[b'a']).unwrap(),
+                PathComponentBox::new(&[b'b']).unwrap(),
+                PathComponentBox::new(&[b'c']).unwrap()
             ])
             .unwrap()
         )
@@ -353,30 +353,29 @@ mod tests {
 
     #[test]
     fn prefixes() {
-        let path = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
-        let prefixes: Vec<PathLocal<MCL, MCC, MPL>> = path.all_prefixes().collect();
+        let prefixes: Vec<PathRc<MCL, MCC, MPL>> = path.all_prefixes().collect();
 
         assert_eq!(
             prefixes,
             vec![
-                PathLocal::<MCL, MCC, MPL>::new(&[]).unwrap(),
-                PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal::new(&[b'a']).unwrap()])
-                    .unwrap(),
-                PathLocal::<MCL, MCC, MPL>::new(&[
-                    PathComponentLocal::new(&[b'a']).unwrap(),
-                    PathComponentLocal::new(&[b'b']).unwrap()
+                PathRc::<MCL, MCC, MPL>::new(&[]).unwrap(),
+                PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+                PathRc::<MCL, MCC, MPL>::new(&[
+                    PathComponentBox::new(&[b'a']).unwrap(),
+                    PathComponentBox::new(&[b'b']).unwrap()
                 ])
                 .unwrap(),
-                PathLocal::<MCL, MCC, MPL>::new(&[
-                    PathComponentLocal::new(&[b'a']).unwrap(),
-                    PathComponentLocal::new(&[b'b']).unwrap(),
-                    PathComponentLocal::new(&[b'c']).unwrap()
+                PathRc::<MCL, MCC, MPL>::new(&[
+                    PathComponentBox::new(&[b'a']).unwrap(),
+                    PathComponentBox::new(&[b'b']).unwrap(),
+                    PathComponentBox::new(&[b'c']).unwrap()
                 ])
                 .unwrap(),
             ]
@@ -385,23 +384,23 @@ mod tests {
 
     #[test]
     fn is_prefix_of() {
-        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
+        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
         ])
         .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'x']).unwrap(),
-            PathComponentLocal::new(&[b'y']).unwrap(),
-            PathComponentLocal::new(&[b'z']).unwrap(),
+        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'x']).unwrap(),
+            PathComponentBox::new(&[b'y']).unwrap(),
+            PathComponentBox::new(&[b'z']).unwrap(),
         ])
         .unwrap();
 
@@ -411,23 +410,23 @@ mod tests {
 
     #[test]
     fn is_prefixed_by() {
-        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
+        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
         ])
         .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'x']).unwrap(),
-            PathComponentLocal::new(&[b'y']).unwrap(),
-            PathComponentLocal::new(&[b'z']).unwrap(),
+        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'x']).unwrap(),
+            PathComponentBox::new(&[b'y']).unwrap(),
+            PathComponentBox::new(&[b'z']).unwrap(),
         ])
         .unwrap();
 
@@ -437,23 +436,23 @@ mod tests {
 
     #[test]
     fn longest_common_prefix() {
-        let path_a = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'x']).unwrap(),
+        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'x']).unwrap(),
         ])
         .unwrap();
 
-        let path_b = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'b']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
-        let path_c = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'x']).unwrap(),
-            PathComponentLocal::new(&[b'y']).unwrap(),
-            PathComponentLocal::new(&[b'z']).unwrap(),
+        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'x']).unwrap(),
+            PathComponentBox::new(&[b'y']).unwrap(),
+            PathComponentBox::new(&[b'z']).unwrap(),
         ])
         .unwrap();
 
@@ -461,7 +460,7 @@ mod tests {
 
         assert_eq!(
             lcp_a_b,
-            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
         );
 
         let lcp_b_a = path_b.longest_common_prefix(&path_a);
@@ -470,12 +469,12 @@ mod tests {
 
         let lcp_a_x = path_a.longest_common_prefix(&path_c);
 
-        assert_eq!(lcp_a_x, PathLocal::empty());
+        assert_eq!(lcp_a_x, PathRc::empty());
 
-        let path_d = PathLocal::<MCL, MCC, MPL>::new(&[
-            PathComponentLocal::new(&[b'a']).unwrap(),
-            PathComponentLocal::new(&[b'x']).unwrap(),
-            PathComponentLocal::new(&[b'c']).unwrap(),
+        let path_d = PathRc::<MCL, MCC, MPL>::new(&[
+            PathComponentBox::new(&[b'a']).unwrap(),
+            PathComponentBox::new(&[b'x']).unwrap(),
+            PathComponentBox::new(&[b'c']).unwrap(),
         ])
         .unwrap();
 
@@ -483,7 +482,7 @@ mod tests {
 
         assert_eq!(
             lcp_b_d,
-            PathLocal::<MCL, MCC, MPL>::new(&[PathComponentLocal::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
         )
     }
 }
