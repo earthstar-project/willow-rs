@@ -7,7 +7,7 @@ Eventually, this repo will house Rust implementations of
 - The [Willow Data Model](https://willowprotocol.org/specs/data-model/index.html#data_model), a mutable eventually-consistent store with improved deletion,
 - [Willow Sideloading protocol](https://willowprotocol.org/specs/sideloading/index.html#sideloading), eventually consistent data delivered by any means possible,
 - [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap), a capability system configurable to different social contexts,
-- and [Willow General Purpose Sync Protoco](https://willowprotocol.org/specs/sync/index.html#sync), private and efficient synchronisation of Willow stores,
+- and [Willow General Purpose Sync Protocol](https://willowprotocol.org/specs/sync/index.html#sync), private and efficient synchronisation of Willow stores,
 
 probably implemented in that order.
 
