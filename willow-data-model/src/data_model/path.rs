@@ -140,7 +140,7 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentLocal<MCL> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 /// A cheaply cloneable [`Path`] using a `Rc<[PathComponentLocal]>`.
-/// While cloning is cheap, operations which return modified forms of the path (e.g. [`Path::append`]) are not, as they have to clone the contents of the undelying [`Rc`].
+/// While cloning is cheap, operations which return modified forms of the path (e.g. [`Path::append`]) are not, as they have to clone and adjust the contents of the underlying [`Rc`].
 pub struct PathLocal<const MCL: usize, const MCC: usize, const MPL: usize>(
     Rc<[PathComponentLocal<MCL>]>,
 );
