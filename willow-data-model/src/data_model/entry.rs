@@ -1,4 +1,7 @@
-use super::path::Path;
+use super::{
+    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    path::Path,
+};
 
 /// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 - 1 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
@@ -11,21 +14,25 @@ pub trait WriteAuthorisable<AuthorisationToken> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-// So I was wondering whether this should be a trait, but traits can't have fields/members.
 /// The metadata associated with each Payload.
-// const generics can only be u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, char and bool. Not flexible enough for our namespaceId, SubspaceId, etc.
-pub struct Entry<NamespaceId, SubspaceId, P, PayloadDigest>
+///
+/// ## Type parameters
+///
+/// - `N` - The type used for [`NamespaceId`].
+/// - `S` - The type used for [`SubspceId`].
+/// - `P` - The type used for [`Path`]s.
+/// - `PD` - The type used for [`PayloadDigest`].
+pub struct Entry<N, S, P, PD>
 where
-    NamespaceId: PartialEq + Eq,
-    SubspaceId: PartialOrd + Ord + PartialEq + Eq,
-    // Naming things...
+    N: NamespaceId,
+    S: SubspaceId,
     P: Path,
-    PayloadDigest: PartialOrd + Ord + PartialEq + Eq,
+    PD: PayloadDigest,
 {
     /// The identifier of the namespace to which the [`Entry`] belongs.
-    pub namespace_id: NamespaceId,
+    pub namespace_id: N,
     /// The identifier of the subspace to which the [`Entry`] belongs.
-    pub subspace_id: SubspaceId,
+    pub subspace_id: S,
     /// The [`Path`] to which the [`Entry`] was written.
     pub path: P,
     /// The claimed creation time of the [`Entry`].
@@ -33,19 +40,19 @@ where
     /// The length of the Payload in bytes.
     pub payload_length: u64,
     /// The result of applying hash_payload to the Payload.
-    pub payload_digest: PayloadDigest,
+    pub payload_digest: PD,
 }
 
-impl<NamespaceId, SubspaceId, P, PayloadDigest> Entry<NamespaceId, SubspaceId, P, PayloadDigest>
+impl<N, S, P, PD> Entry<N, S, P, PD>
 where
-    NamespaceId: PartialEq + Eq,
-    SubspaceId: PartialOrd + Ord + PartialEq + Eq,
+    N: NamespaceId,
+    S: SubspaceId,
     P: Path,
-    PayloadDigest: PartialOrd + Ord + PartialEq + Eq,
+    PD: PayloadDigest,
 {
     /// Return if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
-    pub fn is_newer_than(&self, other: &Entry<NamespaceId, SubspaceId, P, PayloadDigest>) -> bool {
+    pub fn is_newer_than(&self, other: &Entry<N, S, P, PD>) -> bool {
         other.timestamp < self.timestamp
             || (other.timestamp == self.timestamp && other.payload_digest < self.payload_digest)
             || (other.timestamp == self.timestamp
@@ -59,34 +66,33 @@ where
 pub struct UnauthorisedWriteError;
 
 /// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
-pub struct AuthorisedEntry<'a, NamespaceId, SubspaceId, P, PayloadDigest, AuthorisationToken>(
-    // Not sure what I'm getting myself into here.
-    // Additionally, I'm being warned that these two fields are never being read?
-    &'a Entry<NamespaceId, SubspaceId, P, PayloadDigest>,
-    &'a AuthorisationToken,
-)
+///
+/// ## Type parameters
+///
+/// - `N` - The type used for [`NamespaceId`].
+/// - `S` - The type used for [`SubspceId`].
+/// - `P` - The type used for [`Path`]s.
+/// - `PD` - The type used for [`PayloadDigest`].
+/// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
+pub struct AuthorisedEntry<N, S, P, PD, A>(pub Entry<N, S, P, PD>, pub A)
 where
-    Entry<NamespaceId, SubspaceId, P, PayloadDigest>: WriteAuthorisable<AuthorisationToken>,
-    NamespaceId: PartialEq + Eq,
-    SubspaceId: PartialOrd + Ord + PartialEq + Eq,
+    Entry<N, S, P, PD>: WriteAuthorisable<A>,
+    N: NamespaceId,
+    S: SubspaceId,
     P: Path,
-    PayloadDigest: PartialOrd + Ord + PartialEq + Eq;
+    PD: PayloadDigest;
 
-impl<'a, NamespaceId, SubspaceId, P, PayloadDigest, AuthorisationToken>
-    AuthorisedEntry<'a, NamespaceId, SubspaceId, P, PayloadDigest, AuthorisationToken>
+impl<N, S, P, PD, A> AuthorisedEntry<N, S, P, PD, A>
 where
-    Entry<NamespaceId, SubspaceId, P, PayloadDigest>: WriteAuthorisable<AuthorisationToken>,
-    NamespaceId: PartialEq + Eq,
-    SubspaceId: PartialOrd + Ord + PartialEq + Eq,
+    Entry<N, S, P, PD>: WriteAuthorisable<A>,
+    N: NamespaceId,
+    S: SubspaceId,
     P: Path,
-    PayloadDigest: PartialOrd + Ord + PartialEq + Eq,
+    PD: PayloadDigest,
 {
     /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return a [`UnauthorisedWriteError`]
-    pub fn new(
-        entry: &'a Entry<NamespaceId, SubspaceId, P, PayloadDigest>,
-        token: &'a AuthorisationToken,
-    ) -> Result<Self, UnauthorisedWriteError> {
-        if !entry.is_authorised_write(token) {
+    pub fn new(entry: Entry<N, S, P, PD>, token: A) -> Result<Self, UnauthorisedWriteError> {
+        if !entry.is_authorised_write(&token) {
             return Err(UnauthorisedWriteError);
         }
 
