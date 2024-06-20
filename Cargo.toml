@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["willow-data-model"]
+members = ["willow-data-model", "willow-utils"]
 resolver = "2"

@@ -1,0 +1,10 @@
+[package]
+name = "willow-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+either = "1.10.0"
+thiserror = "1.0.61"
+# TODO: Replace with crates.io package version once published.
+ufotofu = { path = "../../ufotofu" }
