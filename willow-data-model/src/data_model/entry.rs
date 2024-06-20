@@ -1,5 +1,5 @@
 use super::{
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
 
@@ -7,19 +7,13 @@ use super::{
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
 pub type Timestamp = u64;
 
-/// Writing of this to a store can be authorised using an [`AuthorisationToken`].
-// Is the right design for Willow parameters which are functions?
-pub trait WriteAuthorisable<AuthorisationToken> {
-    fn is_authorised_write(&self, token: &AuthorisationToken) -> bool;
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 /// The metadata associated with each Payload.
 ///
 /// ## Type parameters
 ///
 /// - `N` - The type used for [`NamespaceId`].
-/// - `S` - The type used for [`SubspceId`].
+/// - `S` - The type used for [`SubspaceId`].
 /// - `P` - The type used for [`Path`]s.
 /// - `PD` - The type used for [`PayloadDigest`].
 pub struct Entry<N, S, P, PD>
@@ -70,32 +64,30 @@ pub struct UnauthorisedWriteError;
 /// ## Type parameters
 ///
 /// - `N` - The type used for [`NamespaceId`].
-/// - `S` - The type used for [`SubspceId`].
+/// - `S` - The type used for [`SubspaceId`].
 /// - `P` - The type used for [`Path`]s.
 /// - `PD` - The type used for [`PayloadDigest`].
 /// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
-pub struct AuthorisedEntry<N, S, P, PD, A>(pub Entry<N, S, P, PD>, pub A)
+pub struct AuthorisedEntry<N, S, P, PD, AT>(pub Entry<N, S, P, PD>, pub AT)
 where
-    Entry<N, S, P, PD>: WriteAuthorisable<A>,
     N: NamespaceId,
     S: SubspaceId,
     P: Path,
     PD: PayloadDigest;
 
-impl<N, S, P, PD, A> AuthorisedEntry<N, S, P, PD, A>
+impl<N, S, P, PD, AT> AuthorisedEntry<N, S, P, PD, AT>
 where
-    Entry<N, S, P, PD>: WriteAuthorisable<A>,
     N: NamespaceId,
     S: SubspaceId,
     P: Path,
     PD: PayloadDigest,
 {
     /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return a [`UnauthorisedWriteError`]
-    pub fn new(entry: Entry<N, S, P, PD>, token: A) -> Result<Self, UnauthorisedWriteError> {
-        if !entry.is_authorised_write(&token) {
-            return Err(UnauthorisedWriteError);
-        }
-
-        Ok(Self(entry, token))
+    pub fn new<IAW: IsAuthorisedWrite<N, S, P, PD, AT>>(
+        entry: Entry<N, S, P, PD>,
+        token: AT,
+        is_authorised_write: IAW,
+    ) -> Result<Self, UnauthorisedWriteError> {
+        is_authorised_write(entry, token)
     }
 }
