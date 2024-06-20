@@ -5,6 +5,7 @@ use super::{
 
 /// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 - 1 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
+/// [Read more](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -46,7 +47,8 @@ where
 {
     /// Return if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
-    pub fn is_newer_than(&self, other: &Entry<N, S, P, PD>) -> bool {
+    /// [Read more](https://willowprotocol.org/specs/data-model/index.html#entry_newer).
+    pub fn is_newer_than(&self, other: &Self) -> bool {
         other.timestamp < self.timestamp
             || (other.timestamp == self.timestamp && other.payload_digest < self.payload_digest)
             || (other.timestamp == self.timestamp
@@ -60,6 +62,7 @@ where
 pub struct UnauthorisedWriteError;
 
 /// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
+/// [Read more](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 ///
 /// ## Type parameters
 ///

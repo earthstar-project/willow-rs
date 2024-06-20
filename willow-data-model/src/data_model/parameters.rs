@@ -25,6 +25,7 @@ pub trait PayloadDigest: PartialOrd + Ord + PartialEq + Eq {
 }
 
 /// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
+/// [Read more](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
 ///
 /// This function intentionally deviates from the specification's definition (in which `is_authorised_write` returns a `bool`) so that the result of the function cannot be accidentally ignored.
 ///
