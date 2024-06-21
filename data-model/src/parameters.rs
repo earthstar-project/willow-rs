@@ -4,28 +4,24 @@ use super::{
 };
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
-pub trait NamespaceId: PartialEq + Eq {
-    /// A [`NamespaceId`] for when we have to provide one but its meaning doesn't matter.
-    const DEFAULT_NAMESPACE_ID: Self;
-}
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
+
+pub trait NamespaceId: Eq + Default {}
 
 /// A type SubspaceId for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).
-pub trait SubspaceId: PartialOrd + Ord + PartialEq + Eq {
-    /// A [`SubspaceId`] for when we have to provide one but its meaning doesn't matter.
-    const DEFAULT_SUBSPACE_ID: Self;
-}
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).
+///
+/// ## Implementation notes
+///
+/// The [`Default`] implementation **must** return the least element in the total order of [`SubspaceId`].
+pub trait SubspaceId: Ord + Default {}
 
 /// A totally ordered type for [content-addressing](https://en.wikipedia.org/wiki/Content_addressing) the data that Willow stores.
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
-pub trait PayloadDigest: PartialOrd + Ord + PartialEq + Eq {
-    /// A [`PayloadDigest`] for when we have to provide one but its meaning doesn't matter.
-    const DEFAULT_PAYLOAD_DIGEST: Self;
-}
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
+pub trait PayloadDigest: Ord + Default {}
 
 /// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
 ///
 /// This function intentionally deviates from the specification's definition (in which `is_authorised_write` returns a `bool`) so that the result of the function cannot be accidentally ignored.
 ///

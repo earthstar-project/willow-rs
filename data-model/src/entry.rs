@@ -8,7 +8,6 @@ use super::{
 /// [Read more](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
 /// The metadata associated with each Payload.
 ///
 /// ## Type parameters
@@ -17,6 +16,7 @@ pub type Timestamp = u64;
 /// - `S` - The type used for [`SubspaceId`].
 /// - `P` - The type used for [`Path`]s.
 /// - `PD` - The type used for [`PayloadDigest`].
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Entry<N, S, P, PD>
 where
     N: NamespaceId,
@@ -47,7 +47,7 @@ where
 {
     /// Return if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
-    /// [Read more](https://willowprotocol.org/specs/data-model/index.html#entry_newer).
+    /// [Definition](https://willowprotocol.org/specs/data-model/index.html#entry_newer).
     pub fn is_newer_than(&self, other: &Self) -> bool {
         other.timestamp < self.timestamp
             || (other.timestamp == self.timestamp && other.payload_digest < self.payload_digest)
@@ -57,12 +57,12 @@ where
     }
 }
 
-#[derive(Debug)]
 /// An error indicating an [`AuthorisationToken`] does not authorise the writing of this entry.
+#[derive(Debug)]
 pub struct UnauthorisedWriteError;
 
 /// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 ///
 /// ## Type parameters
 ///
