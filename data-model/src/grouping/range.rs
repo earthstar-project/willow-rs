@@ -52,10 +52,6 @@ pub struct Range<T: Ord> {
     pub end: RangeEnd<T>,
 }
 
-/// An error indicating a range is [empty](https://willowprotocol.org/specs/grouping-entries/index.html#range_empty) and will never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
-#[derive(Debug)]
-pub struct EmptyRangeError;
-
 impl<T> Range<T>
 where
     T: Ord + Clone,
@@ -68,16 +64,16 @@ where
         }
     }
 
-    /// Construct a new [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) from a [start](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value), or a [`UselessRangeError`] if the resulting range would never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
-    pub fn new_closed(start: T, end: T) -> Result<Self, EmptyRangeError> {
+    /// Construct a new [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) from a [start](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value), or [`None`] if the resulting range would never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
+    pub fn new_closed(start: T, end: T) -> Option<Self> {
         if start < end {
-            return Ok(Self {
+            return Some(Self {
                 start,
                 end: RangeEnd::Closed(end),
             });
         }
 
-        Err(EmptyRangeError)
+        None
     }
 
     /// Return whether a given value is [included](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) by the [`Range`] or not.
@@ -162,9 +158,9 @@ mod tests {
 
     #[test]
     fn range_new_closed() {
-        assert!(Range::new_closed(0, 0).is_err());
-        assert!(Range::new_closed(2, 1).is_err());
-        assert!(Range::new_closed(5, 10).is_ok());
+        assert!(Range::new_closed(0, 0).is_none());
+        assert!(Range::new_closed(2, 1).is_none());
+        assert!(Range::new_closed(5, 10).is_some());
     }
 
     #[test]
