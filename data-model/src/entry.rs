@@ -94,3 +94,89 @@ where
         is_authorised_write(entry, token)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::path::{PathComponent, PathComponentBox, PathRc};
+
+    use super::*;
+
+    #[derive(Default, PartialEq, Eq)]
+    struct FakeNamespaceId(usize);
+    impl NamespaceId for FakeNamespaceId {}
+
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+    struct FakeSubspaceId(usize);
+    impl SubspaceId for FakeSubspaceId {}
+
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+    struct FakePayloadDigest(usize);
+    impl PayloadDigest for FakePayloadDigest {}
+
+    const MCL: usize = 8;
+    const MCC: usize = 4;
+    const MPL: usize = 16;
+
+    #[test]
+    fn entry_newer_than() {
+        let e_a1 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest::default(),
+            payload_length: 0,
+            timestamp: 20,
+        };
+
+        let e_a2 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest::default(),
+            payload_length: 0,
+            timestamp: 10,
+        };
+
+        assert!(e_a1.is_newer_than(&e_a2));
+
+        let e_b1 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest(2),
+            payload_length: 0,
+            timestamp: 10,
+        };
+
+        let e_b2 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest(1),
+            payload_length: 0,
+            timestamp: 10,
+        };
+
+        assert!(e_b1.is_newer_than(&e_b2));
+
+        let e_c1 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest::default(),
+            payload_length: 2,
+            timestamp: 20,
+        };
+
+        let e_c2 = Entry {
+            namespace_id: FakeNamespaceId::default(),
+            subspace_id: FakeSubspaceId::default(),
+            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            payload_digest: FakePayloadDigest::default(),
+            payload_length: 1,
+            timestamp: 20,
+        };
+
+        assert!(e_c1.is_newer_than(&e_c2));
+    }
+}
