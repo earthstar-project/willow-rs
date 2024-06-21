@@ -1,2 +1,2 @@
-pub mod groupings;
+pub mod grouping;
 pub mod path;
