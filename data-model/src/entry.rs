@@ -92,7 +92,11 @@ where
         token: AT,
         is_authorised_write: IAW,
     ) -> Result<Self, UnauthorisedWriteError> {
-        is_authorised_write(entry, token)
+        if is_authorised_write(&entry, &token) {
+            return Ok(Self(entry, token));
+        }
+
+        Err(UnauthorisedWriteError)
     }
 }
 

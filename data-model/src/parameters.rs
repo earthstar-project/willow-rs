@@ -8,7 +8,7 @@ use super::{
 
 pub trait NamespaceId: Eq + Default {}
 
-/// A type SubspaceId for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).
+/// A type for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).
 ///
 /// ## Implementation notes
@@ -23,8 +23,6 @@ pub trait PayloadDigest: Ord + Default {}
 /// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
 ///
-/// This function intentionally deviates from the specification's definition (in which `is_authorised_write` returns a `bool`) so that the result of the function cannot be accidentally ignored.
-///
 /// ## Type parameters
 ///
 /// - `N` - The type used for [`NamespaceId`].
@@ -33,6 +31,6 @@ pub trait PayloadDigest: Ord + Default {}
 /// - `PD` - The type used for [`PayloadDigest`].
 /// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
 pub trait IsAuthorisedWrite<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest, AT>:
-    Fn(Entry<N, S, P, PD>, AT) -> Result<AuthorisedEntry<N, S, P, PD, AT>, UnauthorisedWriteError>
+    Fn(&Entry<N, S, P, PD>, &AT) -> bool
 {
 }
