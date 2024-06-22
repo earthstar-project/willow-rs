@@ -86,7 +86,7 @@ where
     P: Path,
     PD: PayloadDigest,
 {
-    /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return a [`UnauthorisedWriteError`]
+    /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return an [`UnauthorisedWriteError`]
     pub fn new<IAW: IsAuthorisedWrite<N, S, P, PD, AT>>(
         entry: Entry<N, S, P, PD>,
         token: AT,
