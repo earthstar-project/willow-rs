@@ -9,6 +9,7 @@ use super::{
 pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
 ///
 /// ## Type parameters
 ///
