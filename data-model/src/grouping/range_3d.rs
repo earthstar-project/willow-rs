@@ -65,7 +65,7 @@ mod tests {
     struct FakeNamespaceId(usize);
     impl NamespaceId for FakeNamespaceId {}
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
     struct FakeSubspaceId(usize);
     impl SubspaceId for FakeSubspaceId {}
 
@@ -139,5 +139,117 @@ mod tests {
         };
 
         assert!(!range_times_excluding.includes_entry(&entry));
+    }
+
+    #[test]
+    fn intersection() {
+        let empty_intersection_subspace = Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(11), FakeSubspaceId(13))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'1']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        }
+        .intersection(&Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'1']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        });
+
+        assert!(empty_intersection_subspace.is_none());
+
+        let empty_intersection_path = Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'1']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        }
+        .intersection(&Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'4']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'6']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        });
+
+        assert!(empty_intersection_path.is_none());
+
+        let empty_intersection_time = Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'1']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        }
+        .intersection(&Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'1']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(200, 300).unwrap(),
+        });
+
+        assert!(empty_intersection_time.is_none());
+
+        let intersection = Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'0']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'6']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
+        }
+        .intersection(&Range3d {
+            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(2), FakeSubspaceId(4))
+                .unwrap(),
+            paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                PathRc::new(&[PathComponentBox::new(&[b'3']).unwrap()]).unwrap(),
+                PathRc::new(&[PathComponentBox::new(&[b'9']).unwrap()]).unwrap(),
+            )
+            .unwrap(),
+            times: Range::<Timestamp>::new_closed(50, 150).unwrap(),
+        });
+
+        assert!(intersection.is_some());
+
+        assert_eq!(
+            intersection.unwrap(),
+            Range3d {
+                subspaces: Range::<FakeSubspaceId>::new_closed(
+                    FakeSubspaceId(2),
+                    FakeSubspaceId(3)
+                )
+                .unwrap(),
+                paths: Range::<PathRc<MCL, MCC, MPL>>::new_closed(
+                    PathRc::new(&[PathComponentBox::new(&[b'3']).unwrap()]).unwrap(),
+                    PathRc::new(&[PathComponentBox::new(&[b'6']).unwrap()]).unwrap(),
+                )
+                .unwrap(),
+                times: Range::<Timestamp>::new_closed(50, 100).unwrap(),
+            }
+        )
     }
 }
