@@ -31,7 +31,7 @@ impl<S: SubspaceId, P: Path> Range3d<S, P> {
             && self.times.includes(&entry.timestamp)
     }
 
-    /// Return the intersection between this [`Range3d`] and another [`Range3d`].
+    /// Return the intersection between this [`Range3d`] and another.
     pub fn intersection(&self, other: &Range3d<S, P>) -> Option<Self> {
         let paths = self.paths.intersection(&other.paths)?;
         let times = self.times.intersection(&other.times)?;

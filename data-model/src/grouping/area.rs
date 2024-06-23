@@ -79,7 +79,7 @@ impl<S: SubspaceId, P: Path> Area<S, P> {
             && self.times.includes(&entry.timestamp)
     }
 
-    /// Return the intersection of two [`Area`]s.
+    /// Return the intersection of this [`Area`] with another.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#area_intersection).
     pub fn intersection(&self, other: &Area<S, P>) -> Option<Self> {
         let subspace_id = self.subspace.intersection(&other.subspace)?;
