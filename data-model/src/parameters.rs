@@ -1,4 +1,4 @@
-use super::{entry::Entry, path::Path};
+use crate::{entry::Entry, path::Path};
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).

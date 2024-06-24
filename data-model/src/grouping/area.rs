@@ -97,11 +97,6 @@ impl<S: SubspaceId, P: Path> Area<S, P> {
             path,
         })
     }
-
-    /// Return a [`Range3d`] with equivalent inclusion to this [`Area`].
-    pub fn into_range(&self) -> Range3d<S, P> {
-        todo!("Need to add successor fns to SubspaceId and Paths first.")
-    }
 }
 
 #[cfg(test)]

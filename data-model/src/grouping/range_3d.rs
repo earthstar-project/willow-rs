@@ -1,6 +1,6 @@
-use super::range::Range;
 use crate::{
     entry::{Entry, Timestamp},
+    grouping::{area::Area, range::Range},
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -48,10 +48,16 @@ impl<S: SubspaceId, P: Path> Default for Range3d<S, P> {
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#default_3d_range).
     fn default() -> Self {
         Self {
-            subspaces: Default::default(),
+            subspaces: Range::<S>::default(),
             paths: Range::new_open(P::empty()),
             times: Range::new_open(0),
         }
+    }
+}
+
+impl<S: SubspaceId, P: Path> From<Area<S, P>> for Range3d<S, P> {
+    fn from(_value: Area<S, P>) -> Self {
+        todo!("Need to add successor fns to SubspaceId and Paths first.")
     }
 }
 

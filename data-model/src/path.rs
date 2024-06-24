@@ -181,7 +181,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathRc<MCL, 
             return Self::empty();
         }
 
-        let until = std::cmp::min(length, self.0.len());
+        let until = core::cmp::min(length, self.0.len());
         let slice = &self.0[0..until];
 
         Path::new(slice).unwrap()

@@ -1,6 +1,4 @@
-use crate::{parameters::SubspaceId, path::Path};
-
-use super::area::Area;
+use crate::{grouping::area::Area, parameters::SubspaceId, path::Path};
 
 /// A grouping of [`Entry`]s that are among the newest in some [`Store`].
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aois).
@@ -21,7 +19,7 @@ impl<S: SubspaceId, P: Path> AreaOfInterest<S, P> {
             None => None,
             Some(area_intersection) => Some(Self {
                 area: area_intersection,
-                max_count: self.max_count.min(other.max_count),
+                max_count: core::cmp::min(self.max_count, other.max_count),
                 max_size: self.max_size.min(other.max_size),
             }),
         }
