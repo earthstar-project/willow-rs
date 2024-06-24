@@ -77,8 +77,8 @@ where
     }
 
     /// Return whether a given value is [included](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) by the [`Range`] or not.
-    pub fn includes(&self, value: T) -> bool {
-        self.start <= value && self.end.gt_val(&value)
+    pub fn includes(&self, value: &T) -> bool {
+        &self.start <= value && self.end.gt_val(value)
     }
 
     /// Returns `true` if `other` range is fully [included](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) in this [`Range`].
@@ -167,15 +167,15 @@ mod tests {
     fn range_includes() {
         let open_range = Range::new_open(20);
 
-        assert!(open_range.includes(20));
-        assert!(open_range.includes(30));
-        assert!(!open_range.includes(10));
+        assert!(open_range.includes(&20));
+        assert!(open_range.includes(&30));
+        assert!(!open_range.includes(&10));
 
         let closed_range = Range::new_closed(5, 10).unwrap();
 
-        assert!(closed_range.includes(5));
-        assert!(closed_range.includes(8));
-        assert!(!closed_range.includes(1));
+        assert!(closed_range.includes(&5));
+        assert!(closed_range.includes(&8));
+        assert!(!closed_range.includes(&1));
     }
 
     #[test]

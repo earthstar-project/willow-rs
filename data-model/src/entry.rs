@@ -106,15 +106,15 @@ mod tests {
 
     use super::*;
 
-    #[derive(Default, PartialEq, Eq)]
+    #[derive(Default, PartialEq, Eq, Clone)]
     struct FakeNamespaceId(usize);
     impl NamespaceId for FakeNamespaceId {}
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakeSubspaceId(usize);
     impl SubspaceId for FakeSubspaceId {}
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakePayloadDigest(usize);
     impl PayloadDigest for FakePayloadDigest {}
 

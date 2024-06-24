@@ -1,12 +1,9 @@
-use super::{
-    entry::{AuthorisedEntry, Entry, UnauthorisedWriteError},
-    path::Path,
-};
+use crate::{entry::Entry, path::Path};
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
 
-pub trait NamespaceId: Eq + Default {}
+pub trait NamespaceId: Eq + Default + Clone {}
 
 /// A type for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).
@@ -14,11 +11,11 @@ pub trait NamespaceId: Eq + Default {}
 /// ## Implementation notes
 ///
 /// The [`Default`] implementation **must** return the least element in the total order of [`SubspaceId`].
-pub trait SubspaceId: Ord + Default {}
+pub trait SubspaceId: Ord + Default + Clone {}
 
 /// A totally ordered type for [content-addressing](https://en.wikipedia.org/wiki/Content_addressing) the data that Willow stores.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
-pub trait PayloadDigest: Ord + Default {}
+pub trait PayloadDigest: Ord + Default + Clone {}
 
 /// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
