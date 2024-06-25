@@ -1,5 +1,7 @@
 // Encoders and decoders.
 
+// TODO: Move encoders and decoders into separate modules.
+
 use core::mem::MaybeUninit;
 
 use std::fmt::Debug;
@@ -7,16 +9,11 @@ use std::fmt::Debug;
 use thiserror::Error;
 use ufotofu::sync::{self, BulkConsumer, BulkProducer};
 
-/// Trait for encoding values into bytes.
-pub trait Encoder: Debug {
-    fn encode<Con: BulkConsumer<Item = u8>>(&self, consumer: &mut Con) -> Result<(), Con::Error>;
-}
-
 /// Returns the number of octets needed to store a number, along the lines of
 /// 8-bit, 16-bit, 32-bit, or 64-bit unsigned integers.
 ///
 /// https://willowprotocol.org/specs/encodings/index.html#compact_width
-pub fn compact_width(value: usize) -> usize {
+pub fn compact_width(value: usize) -> u8 {
     if value < 256 {
         1
     } else if value < 65536 {
@@ -28,8 +25,9 @@ pub fn compact_width(value: usize) -> usize {
     }
 }
 
-/// Encode a `usize` integer using the smallest number of bytes possible.
-pub fn encode_usize<Con: BulkConsumer<Item = u8>>(
+/// Encode a `usize` integer using the smallest possible number of
+/// big-endian bytes.
+pub fn encode_be_usize<Con: BulkConsumer<Item = u8>>(
     value: usize,
     consumer: &mut Con,
 ) -> Result<(), Con::Error> {
@@ -63,13 +61,9 @@ pub enum DecodeError<ProducerError> {
     GarbageInput,
 }
 
-pub trait Decoder: Sized {
-    // unimplemented!();
-}
-
-fn decode_u8<Pro: BulkProducer<Item = u8>>(
+fn decode_be_u8<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
-) -> Result<usize, DecodeError<Pro::Error>> {
+) -> Result<u8, DecodeError<Pro::Error>> {
     // An array of 1 byte is required to decode the length.
     let mut buf: [MaybeUninit<u8>; 1] = MaybeUninit::uninit_array();
 
@@ -81,29 +75,29 @@ fn decode_u8<Pro: BulkProducer<Item = u8>>(
     let byte_array: [u8; 1] = buf_init.try_into().expect("array to be correctly sized");
 
     // Create an integer value from the bytes and cast to usize.
-    let value = u8::from_be_bytes(byte_array) as usize;
+    let value = u8::from_be_bytes(byte_array);
 
     Ok(value)
 }
 
-fn decode_u16<Pro: BulkProducer<Item = u8>>(
+fn decode_be_u16<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
-) -> Result<usize, DecodeError<Pro::Error>> {
-    let mut buf: [MaybeUninit<u8>; 1] = MaybeUninit::uninit_array();
+) -> Result<u16, DecodeError<Pro::Error>> {
+    let mut buf: [MaybeUninit<u8>; 2] = MaybeUninit::uninit_array();
 
     let (buf_init, _buf_maybe_uninit) =
         sync::fill_all(&mut buf, producer).map_err(DecodeError::Producer)?;
 
     let byte_array: [u8; 2] = buf_init.try_into().expect("array to be correctly sized");
 
-    let value = u16::from_be_bytes(byte_array) as usize;
+    let value = u16::from_be_bytes(byte_array);
 
     Ok(value)
 }
 
-fn decode_u32<Pro: BulkProducer<Item = u8>>(
+fn decode_be_u32<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
-) -> Result<usize, DecodeError<Pro::Error>> {
+) -> Result<u32, DecodeError<Pro::Error>> {
     let mut buf: [MaybeUninit<u8>; 4] = MaybeUninit::uninit_array();
 
     let (buf_init, _buf_maybe_uninit) =
@@ -111,14 +105,16 @@ fn decode_u32<Pro: BulkProducer<Item = u8>>(
 
     let byte_array: [u8; 4] = buf_init.try_into().expect("array to be correctly sized");
 
-    let value = u32::from_be_bytes(byte_array) as usize;
+    let value = u32::from_be_bytes(byte_array);
 
     Ok(value)
 }
 
-fn decode_u64<Pro: BulkProducer<Item = u8>>(
+/// Decode a `u64` value from big-endian bytes produced by the given
+/// `Producer`.
+fn decode_be_u64<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
-) -> Result<usize, DecodeError<Pro::Error>> {
+) -> Result<u64, DecodeError<Pro::Error>> {
     let mut buf: [MaybeUninit<u8>; 8] = MaybeUninit::uninit_array();
 
     let (buf_init, _buf_maybe_uninit) =
@@ -126,30 +122,32 @@ fn decode_u64<Pro: BulkProducer<Item = u8>>(
 
     let byte_array: [u8; 8] = buf_init.try_into().expect("array to be correctly sized");
 
-    let value = u64::from_be_bytes(byte_array) as usize;
+    let value = u64::from_be_bytes(byte_array);
 
     Ok(value)
 }
 
 /// Decode the bytes representing a variable width integer into a `usize`.
 ///
-/// The `max` parameter defines the largest possible number which may be
-/// decoded.
-pub fn decode_usize<Pro: BulkProducer<Item = u8>>(
+/// The `compact_width` parameter defines the number of bytes required
+/// to store the decoded the value.
+pub fn decode_be_usize<Pro: BulkProducer<Item = u8>>(
     producer: &mut Pro,
-    max: usize,
+    compact_width: u8,
 ) -> Result<usize, DecodeError<Pro::Error>> {
-    match compact_width(max) {
-        1 => decode_u8(producer),
-        2 => decode_u16(producer),
-        4 => decode_u32(producer),
-        8 => decode_u64(producer),
+    match compact_width {
+        1 => decode_be_u8(producer).map(|val| val as usize),
+        2 => decode_be_u16(producer).map(|val| val as usize),
+        4 => decode_be_u32(producer).map(|val| val as usize),
+        8 => decode_be_u64(producer).map(|val| val as usize),
         _ => unreachable!(),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use ufotofu::sync::producer::SliceProducer;
+
     use super::*;
 
     #[test]
@@ -158,5 +156,37 @@ mod tests {
         assert_eq!(compact_width(7000), 2);
         assert_eq!(compact_width(80000), 4);
         assert_eq!(compact_width(3000000000), 8);
+    }
+
+    #[test]
+    fn decodes_be_u8() {
+        // Define the encoded value (7) followed by additional bytes.
+        let encoded_bytes: [u8; 8] = [7, 119, 104, 105, 115, 112, 101, 114];
+
+        // Create a `Producer` with encoded bytes.
+        let mut producer = SliceProducer::new(&encoded_bytes);
+
+        // Decode the `u8` from the `Producer`.
+        let decoded_width = decode_be_usize(&mut producer, 1).unwrap();
+        assert_eq!(decoded_width, 7);
+
+        // Ensure that the remaining bytes are correct.
+        let mut buf: [MaybeUninit<u8>; 8] = MaybeUninit::uninit_array();
+        let (remaining_bytes, _buf_maybe_uninit) = sync::fill_all(&mut buf, &mut producer).unwrap();
+        assert_eq!(remaining_bytes, [119, 104, 105, 115, 112, 101, 114]);
+    }
+
+    #[test]
+    fn decodes_be_u16() {
+        let encoded_bytes: [u8; 8] = [255, 220, 119, 104, 105, 115, 112, 101];
+
+        let mut producer = SliceProducer::new(&encoded_bytes);
+
+        let decoded_width = decode_be_usize(&mut producer, 2).unwrap();
+        assert_eq!(decoded_width, 65500);
+
+        let mut buf: [MaybeUninit<u8>; 8] = MaybeUninit::uninit_array();
+        let (remaining_bytes, _buf_maybe_uninit) = sync::fill_all(&mut buf, &mut producer).unwrap();
+        assert_eq!(remaining_bytes, [119, 104, 105, 115, 112, 101]);
     }
 }
