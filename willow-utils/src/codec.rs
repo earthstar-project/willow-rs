@@ -161,7 +161,9 @@ mod tests {
     #[test]
     fn decodes_be_u8() {
         // Define the encoded value (7) followed by additional bytes.
-        let encoded_bytes: [u8; 8] = [7, 119, 104, 105, 115, 112, 101, 114];
+        let encoded_value = [7];
+        let encoded_remainder = [119, 104, 105, 115, 112, 101, 114];
+        let encoded_bytes = [&encoded_value[..], &encoded_remainder[..]].concat();
 
         // Create a `Producer` with encoded bytes.
         let mut producer = SliceProducer::new(&encoded_bytes);
@@ -173,12 +175,14 @@ mod tests {
         // Ensure that the remaining bytes are correct.
         let mut buf: [MaybeUninit<u8>; 8] = MaybeUninit::uninit_array();
         let (remaining_bytes, _buf_maybe_uninit) = sync::fill_all(&mut buf, &mut producer).unwrap();
-        assert_eq!(remaining_bytes, [119, 104, 105, 115, 112, 101, 114]);
+        assert_eq!(remaining_bytes, encoded_remainder);
     }
 
     #[test]
     fn decodes_be_u16() {
-        let encoded_bytes: [u8; 8] = [255, 220, 119, 104, 105, 115, 112, 101];
+        let encoded_value = [255, 220];
+        let encoded_remainder = [119, 104, 105, 115, 112, 101];
+        let encoded_bytes = [&encoded_value[..], &encoded_remainder[..]].concat();
 
         let mut producer = SliceProducer::new(&encoded_bytes);
 
@@ -187,6 +191,6 @@ mod tests {
 
         let mut buf: [MaybeUninit<u8>; 8] = MaybeUninit::uninit_array();
         let (remaining_bytes, _buf_maybe_uninit) = sync::fill_all(&mut buf, &mut producer).unwrap();
-        assert_eq!(remaining_bytes, [119, 104, 105, 115, 112, 101]);
+        assert_eq!(remaining_bytes, encoded_remainder);
     }
 }
