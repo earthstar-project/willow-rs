@@ -112,7 +112,11 @@ mod tests {
 
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakeSubspaceId(usize);
-    impl SubspaceId for FakeSubspaceId {}
+    impl SubspaceId for FakeSubspaceId {
+        fn successor(&self) -> Option<Self> {
+            Some(FakeSubspaceId(self.0 + 1))
+        }
+    }
 
     #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakePayloadDigest(usize);
