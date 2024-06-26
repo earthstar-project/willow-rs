@@ -18,24 +18,19 @@ pub enum EntryIngestionSuccess<
     AEI: Iterator<Item = AuthorisedEntry<N, S, P, PD, AT>>,
 > {
     /// The entry was successfully ingested.
-    Success(AuthorisedEntry<N, S, P, PD, AT>),
+    Success,
     /// The entry was successfully ingested and prefix pruned some entries.
     SuccessAndPruned(AEI),
-}
-
-pub enum EntryIngestionError<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest, AT> {
-    NewerPrefix {
-        /// The obsolete entry which is pruned by the newer entry.
-        pruned: AuthorisedEntry<N, S, P, PD, AT>,
-        /// The newer entry whose path prefixes the obsolete entry's.
-        newer: AuthorisedEntry<N, S, P, PD, AT>,
-    },
+    /// The entry was not ingested because a newer entry with same prfieiuhnsuthaeusntaheouonsth
     Obsolete {
         /// The obsolete entry which was not ingested.
         obsolete: AuthorisedEntry<N, S, P, PD, AT>,
         /// The newer entry which was not overwritten.
         newer: AuthorisedEntry<N, S, P, PD, AT>,
     },
+}
+
+pub enum EntryIngestionError<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest, AT> {
     /// The entry belonged to another namespace.
     WrongNamespace(AuthorisedEntry<N, S, P, PD, AT>),
 }
@@ -70,19 +65,27 @@ pub trait Store<
     FP,
 >
 {
+    // associtade type named AEI, which must implement the ufotofu producer trait / or std Iterator
+    // associated type of something went wrong error.
+
     /// Attempt to store an [`AuthorisedEntry`] in the [`Store`].
     fn ingest_entry(
+        // this will end up not working but in theory it's right. ask aljoscha later.
+        // later came.
         &self,
-        expected_digest: PD,
         authorised_entry: AuthorisedEntry<N, S, P, PD, AT>,
     ) -> Result<EntryIngestionSuccess<N, S, P, PD, AT, AEI>, EntryIngestionError<N, S, P, PD, AT>>;
     // I'm told this is too complex, but I'm also told trait bounds can't be enforced on type aliases.
 
     /// Attempt to ingest a payload for a given [`AuthorisedEntry`].
-    fn ingest_payload(&self, payload: Payload) -> Result<(), PayloadIngestionError>;
+    fn ingest_payload(
+        &self,
+        expected_digest: PD,
+        payload: Payload,
+    ) -> Result<(), PayloadIngestionError>;
 
     /// Query the store's set of [`AuthorisedEntry`] using an [`Area`].
-    fn query_area(&self, area: Area<S, P>) -> AEI;
+    fn query_area(&self, area: Area<S, P>, order: QueryOrder, reverse: bool) -> AEI;
 
     /// Query the store's set of [`AuthorisedEntry`] using a [`Range3d`].
     fn query_range(&self, area: Range3d<S, P>, order: QueryOrder, reverse: bool) -> AEI;
