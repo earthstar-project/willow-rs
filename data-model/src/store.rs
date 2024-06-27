@@ -75,7 +75,12 @@ pub trait Store<
         &self,
         authorised_entry: AuthorisedEntry<N, S, P, PD, AT>,
     ) -> Result<EntryIngestionSuccess<N, S, P, PD, AT, AEI>, EntryIngestionError<N, S, P, PD, AT>>;
-    // I'm told this is too complex, but I'm also told trait bounds can't be enforced on type aliases.
+
+    // commit / barf - ingest becomes queue_ingestion_entry?
+    // we want bulk ingestion of entries too
+    // forget_entry
+    // forget_range
+    // forget_area
 
     /// Attempt to ingest a payload for a given [`AuthorisedEntry`].
     fn ingest_payload(
