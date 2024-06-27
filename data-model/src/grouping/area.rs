@@ -4,7 +4,7 @@ use crate::{
     path::Path,
 };
 
-use super::{range::Range, range_3d::Range3d};
+use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

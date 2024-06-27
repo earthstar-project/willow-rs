@@ -1,4 +1,5 @@
 [workspace]
 
-members = ["data-model"]
+members = ["data-model", "fuzz"]
 resolver = "2"
+
