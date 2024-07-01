@@ -11,7 +11,11 @@ pub trait NamespaceId: Eq + Default + Clone {}
 /// ## Implementation notes
 ///
 /// The [`Default`] implementation **must** return the least element in the total order of [`SubspaceId`].
-pub trait SubspaceId: Ord + Default + Clone {}
+pub trait SubspaceId: Ord + Default + Clone {
+    /// Return the next possible value in the set of all [`SubspaceId`].
+    /// e.g. the successor of 3 is 4.
+    fn successor(&self) -> Option<Self>;
+}
 
 /// A totally ordered type for [content-addressing](https://en.wikipedia.org/wiki/Content_addressing) the data that Willow stores.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).

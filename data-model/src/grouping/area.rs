@@ -4,7 +4,7 @@ use crate::{
     path::Path,
 };
 
-use super::{range::Range, range_3d::Range3d};
+use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -112,7 +112,11 @@ mod tests {
 
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakeSubspaceId(usize);
-    impl SubspaceId for FakeSubspaceId {}
+    impl SubspaceId for FakeSubspaceId {
+        fn successor(&self) -> Option<Self> {
+            Some(FakeSubspaceId(self.0 + 1))
+        }
+    }
 
     #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakePayloadDigest(usize);
