@@ -1,0 +1,56 @@
+[package]
+name = "willow-data-model-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.willow-data-model]
+path = "../data-model"
+
+[[bin]]
+name = "path_successor"
+path = "fuzz_targets/path_successor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_successor_more"
+path = "fuzz_targets/path_successor_more.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_successor_even_more"
+path = "fuzz_targets/path_successor_even_more.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "successor_of_prefix"
+path = "fuzz_targets/successor_of_prefix.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "successor_of_prefix_more"
+path = "fuzz_targets/successor_of_prefix_more.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "successor_of_prefix_even_more"
+path = "fuzz_targets/successor_of_prefix_even_more.rs"
+test = false
+doc = false
+bench = false
