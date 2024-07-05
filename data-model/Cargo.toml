@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+either = "1.10.0"
 arbitrary = { version = "1.0.2", features = ["derive"]}
+ufotofu = { path = "../../ufotofu" }
+
+[dev-dependencies]
+smol = "2.0.0"
