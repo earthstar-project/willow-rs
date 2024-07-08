@@ -9,6 +9,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+ufotofu = { path = "../../ufotofu" }
+smol = "2.0.0"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -51,6 +53,13 @@ bench = false
 [[bin]]
 name = "successor_of_prefix_even_more"
 path = "fuzz_targets/successor_of_prefix_even_more.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding"
+path = "fuzz_targets/path_encoding.rs"
 test = false
 doc = false
 bench = false

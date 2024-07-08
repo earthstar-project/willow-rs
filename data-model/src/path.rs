@@ -135,6 +135,9 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
     /// Return the number of [`PathComponent`] in the path.
     fn component_count(&self) -> usize;
 
+    /// Return the total number of bytes in the path.
+    fn len(&self) -> usize;
+
     /// Return whether the path has any [`PathComponent`] or not.
     fn is_empty(&self) -> bool {
         self.component_count() == 0
@@ -368,6 +371,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathRc<MCL, 
 
     fn component_count(&self) -> usize {
         self.0.len()
+    }
+
+    fn len(&self) -> usize {
+        self.0.as_ref().iter().fold(0, |acc, comp| acc + comp.len())
     }
 }
 

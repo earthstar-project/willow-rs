@@ -1,3 +1,5 @@
+#![feature(new_uninit)]
+
 pub mod encoding;
 pub mod entry;
 pub mod grouping;

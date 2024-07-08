@@ -490,7 +490,6 @@ dependencies = [
 name = "ufotofu"
 version = "0.1.0"
 dependencies = [
- "arbitrary",
  "either",
  "thiserror-core",
  "trait-variant",
@@ -500,9 +499,9 @@ dependencies = [
 
 [[package]]
 name = "ufotofu_queues"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebb35efc56317bdec9fd506f11f11bc74ca5bd9f61955bbb50b593522b3aa4f3"
+checksum = "5db205b4fb8f540cf2eeeb7c626a4ab318f9e901f50f06b4159b765ed765b51e"
 
 [[package]]
 name = "unicode-ident"
@@ -525,6 +524,8 @@ name = "willow-data-model-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "smol",
+ "ufotofu",
  "willow-data-model",
 ]
 
