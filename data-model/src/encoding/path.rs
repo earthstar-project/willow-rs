@@ -1,10 +1,11 @@
 use crate::path::PathComponent;
-use ufotofu::common::errors::ConsumeFullSliceError;
 use ufotofu::local_nb::BulkConsumer;
 use ufotofu::local_nb::BulkProducer;
 
 use crate::encoding::error::DecodeError;
 use crate::path::Path;
+
+use crate::encoding::error::EncodingConsumerError;
 
 /// Return the least natural number such that 256^`n` is greater than or equal to `n`.
 ///
@@ -38,7 +39,7 @@ pub async fn encode_path<
 >(
     path: &P,
     consumer: &mut Consumer,
-) -> Result<(), ConsumeFullSliceError<Consumer::Error>> {
+) -> Result<(), EncodingConsumerError<Consumer::Error>> {
     let path_length_power = get_max_power(MCL);
     let path_count_power = get_max_power(MCC);
 
@@ -70,7 +71,6 @@ pub async fn decode_path<
     P: Path,
 >(
     producer: &mut Producer,
-    // Use producer error here, not this either thing.
 ) -> Result<P, DecodeError<Producer::Error>> {
     let mut component_count_slice = [0u8; 8];
     let path_count_power = get_max_power(MCC);

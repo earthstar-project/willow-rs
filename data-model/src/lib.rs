@@ -1,4 +1,4 @@
-#![feature(new_uninit)]
+#![feature(new_uninit, async_fn_traits)]
 
 pub mod encoding;
 pub mod entry;

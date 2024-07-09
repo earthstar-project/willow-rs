@@ -1,5 +1,4 @@
-use crate::encoding::error::DecodeError;
-use ufotofu::common::errors::ConsumeFullSliceError;
+use crate::encoding::error::{DecodeError, EncodingConsumerError};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 /// A minimum width of bytes needed to represent a unsigned integer.
@@ -52,7 +51,7 @@ pub fn compact_width(value: u64) -> CompactWidth {
 pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     value: u64,
     consumer: &mut Consumer,
-) -> Result<(), ConsumeFullSliceError<Consumer::Error>> {
+) -> Result<(), EncodingConsumerError<Consumer::Error>> {
     let width = match compact_width(value) {
         CompactWidth::One => 1,
         CompactWidth::Two => 2,
@@ -62,7 +61,9 @@ pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
 
     consumer
         .bulk_consume_full_slice(&value.to_be_bytes()[8 - width..])
-        .await
+        .await?;
+
+    Ok(())
 }
 
 pub async fn decode_u8_be<Producer: BulkProducer<Item = u8>>(
