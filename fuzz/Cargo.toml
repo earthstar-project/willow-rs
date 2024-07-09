@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-ufotofu = { path = "../../ufotofu" }
+ufotofu = { path = "../../ufotofu", features = ["dev"] }
 smol = "2.0.0"
 
 [dependencies.willow-data-model]
