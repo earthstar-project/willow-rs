@@ -28,7 +28,7 @@ fuzz_target!(|data: (PathRc<MCL, MCC, MPL>, TestConsumer<u8, u8, u8>)| {
 
         new_vec.extend_from_slice(consumer.as_ref());
 
-        // THis should eventually be a testproducer, when we can initialise one of those with some known data.
+        // THis should eventually be a testproducer, when we are able to initialise one with some known data.
         let mut producer = FromVec::new(new_vec);
 
         // Check for correct errors

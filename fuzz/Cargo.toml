@@ -63,3 +63,10 @@ path = "fuzz_targets/path_encoding.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "path_encoding_random"
+path = "fuzz_targets/path_encoding_random.rs"
+test = false
+doc = false
+bench = false
