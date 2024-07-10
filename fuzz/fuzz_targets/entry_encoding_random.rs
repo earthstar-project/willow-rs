@@ -11,10 +11,10 @@ use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 
 use willow_data_model::{
     encoding::{
-        entry::{decode_entry, encode_entry},
         error::{DecodeError, EncodingConsumerError},
         parameters::{Decoder, Encoder},
     },
+    entry::Entry,
     parameters::PayloadDigest,
     path::PathRc,
 };
@@ -54,17 +54,17 @@ fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
         let mut producer = SliceProducer::new(data);
 
-        match decode_entry::<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest, _>(
+        match Entry::<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest>::decode(
             &mut producer,
         )
         .await
         {
-            Ok(path) => {
+            Ok(entry) => {
                 // It decoded to a valid path! Gasp!
                 // Can we turn it back into the same encoding?
                 let mut consumer = IntoVec::<u8>::new();
 
-                encode_entry(&path, &mut consumer).await.unwrap();
+                entry.encode(&mut consumer).await.unwrap();
 
                 let encoded = consumer.as_ref().as_slice();
 

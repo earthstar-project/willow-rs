@@ -1,7 +1,12 @@
 use arbitrary::size_hint::and_all;
 use arbitrary::Arbitrary;
+use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
+    encoding::{
+        error::{DecodeError, EncodingConsumerError},
+        parameters::{Decoder, Encoder},
+    },
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -61,22 +66,18 @@ where
     }
 }
 
-/*
-impl<const MCL: usize, const MCC: usize, N, S, P, PD, C> Encoder<C> for Entry<N, S, P, PD>
+impl<N, S, P, PD, C> Encoder<C> for Entry<N, S, P, PD>
 where
     N: NamespaceId + Encoder<C>,
     S: SubspaceId + Encoder<C>,
-    P: Path,
+    P: Path + Encoder<C>,
     PD: PayloadDigest + Encoder<C>,
     C: BulkConsumer<Item = u8>,
 {
-    async fn encode(
-        &self,
-        consumer: &mut C,
-    ) -> Result<(), crate::encoding::error::EncodingConsumerError<<C>::Error>> {
+    async fn encode(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>> {
         self.namespace_id.encode(consumer).await?;
         self.subspace_id.encode(consumer).await?;
-        encode_path::<MCL, MCC, _, _>(&self.path, consumer).await?;
+        self.path.encode(consumer).await?;
 
         consumer
             .bulk_consume_full_slice(&self.timestamp.to_be_bytes())
@@ -91,7 +92,44 @@ where
         Ok(())
     }
 }
-*/
+
+impl<N, S, P, PD, Prod> Decoder<Prod> for Entry<N, S, P, PD>
+where
+    N: NamespaceId + Decoder<Prod>,
+    S: SubspaceId + Decoder<Prod>,
+    P: Path + Decoder<Prod>,
+    PD: PayloadDigest + Decoder<Prod>,
+    Prod: BulkProducer<Item = u8>,
+{
+    async fn decode(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>> {
+        let namespace_id = N::decode(producer).await?;
+        let subspace_id = S::decode(producer).await?;
+        let path = P::decode(producer).await?;
+
+        let mut timestamp_bytes = [0u8; 8];
+        producer
+            .bulk_overwrite_full_slice(&mut timestamp_bytes)
+            .await?;
+        let timestamp = u64::from_be_bytes(timestamp_bytes);
+
+        let mut payload_length_bytes = [0u8; 8];
+        producer
+            .bulk_overwrite_full_slice(&mut payload_length_bytes)
+            .await?;
+        let payload_length = u64::from_be_bytes(payload_length_bytes);
+
+        let payload_digest = PD::decode(producer).await?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
+    }
+}
 
 impl<'a, N, S, P, PD> Arbitrary<'a> for Entry<N, S, P, PD>
 where
