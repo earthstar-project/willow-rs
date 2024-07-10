@@ -1,4 +1,7 @@
-use super::{
+use arbitrary::size_hint::and_all;
+use arbitrary::Arbitrary;
+
+use crate::{
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -55,6 +58,36 @@ where
             || (other.timestamp == self.timestamp
                 && other.payload_digest == self.payload_digest
                 && other.payload_length < self.payload_length)
+    }
+}
+
+impl<'a, N, S, P, PD> Arbitrary<'a> for Entry<N, S, P, PD>
+where
+    N: NamespaceId + Arbitrary<'a>,
+    S: SubspaceId + Arbitrary<'a>,
+    PD: PayloadDigest + Arbitrary<'a>,
+    P: Path + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            namespace_id: Arbitrary::arbitrary(u)?,
+            subspace_id: Arbitrary::arbitrary(u)?,
+            path: Arbitrary::arbitrary(u)?,
+            payload_digest: Arbitrary::arbitrary(u)?,
+            payload_length: Arbitrary::arbitrary(u)?,
+            timestamp: Arbitrary::arbitrary(u)?,
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        and_all(&[
+            N::size_hint(depth),
+            S::size_hint(depth),
+            P::size_hint(depth),
+            PD::size_hint(depth),
+            u64::size_hint(depth),
+            u64::size_hint(depth),
+        ])
     }
 }
 

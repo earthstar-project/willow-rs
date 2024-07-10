@@ -3,7 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use crate::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
-        parameters::{DecodingFunction, EncodingFunction},
+        parameters::{Decoder, Encoder},
         path::{decode_path, encode_path},
     },
     entry::Entry,
@@ -11,25 +11,19 @@ use crate::{
     path::Path,
 };
 
-pub async fn encode_entry<const MCL: usize, const MCC: usize, N, NE, S, SE, P, PD, PDE, Consumer>(
+pub async fn encode_entry<const MCL: usize, const MCC: usize, N, S, P, PD, Consumer>(
     entry: &Entry<N, S, P, PD>,
-    encode_namespace_id: NE,
-    encode_subspace_id: SE,
-    encode_payload_digest: PDE,
     consumer: &mut Consumer,
 ) -> Result<(), EncodingConsumerError<Consumer::Error>>
 where
-    N: NamespaceId,
-    NE: EncodingFunction<N, Consumer>,
-    S: SubspaceId,
-    SE: EncodingFunction<S, Consumer>,
+    N: NamespaceId + Encoder<Consumer>,
+    S: SubspaceId + Encoder<Consumer>,
     P: Path,
-    PD: PayloadDigest,
-    PDE: EncodingFunction<PD, Consumer>,
+    PD: PayloadDigest + Encoder<Consumer>,
     Consumer: BulkConsumer<Item = u8>,
 {
-    encode_namespace_id(&entry.namespace_id, consumer).await?;
-    encode_subspace_id(&entry.subspace_id, consumer).await?;
+    entry.namespace_id.encode(consumer).await?;
+    entry.subspace_id.encode(consumer).await?;
     encode_path::<MCL, MCC, _, _>(&entry.path, consumer).await?;
 
     consumer
@@ -40,30 +34,24 @@ where
         .bulk_consume_full_slice(&entry.payload_length.to_be_bytes())
         .await?;
 
-    encode_payload_digest(&entry.payload_digest, consumer).await?;
+    entry.payload_digest.encode(consumer).await?;
 
     Ok(())
 }
 
-pub async fn decode_entry<const MCL: usize, const MCC: usize, N, ND, S, SD, P, PD, PDD, Producer>(
-    decode_namespace_id: ND,
-    decode_subspace_id: SD,
-    decode_payload_digest: PDD,
+pub async fn decode_entry<const MCL: usize, const MCC: usize, N, S, P, PD, Producer>(
     producer: &mut Producer,
 ) -> Result<Entry<N, S, P, PD>, DecodeError<Producer::Error>>
 where
-    N: NamespaceId,
-    ND: DecodingFunction<N, Producer>,
-    S: SubspaceId,
-    SD: DecodingFunction<S, Producer>,
+    N: NamespaceId + Decoder<Producer>,
+    S: SubspaceId + Decoder<Producer>,
     P: Path,
-    PD: PayloadDigest,
-    PDD: DecodingFunction<PD, Producer>,
+    PD: PayloadDigest + Decoder<Producer>,
     Producer: BulkProducer<Item = u8>,
 {
-    let namespace_id: N = decode_namespace_id(producer).await?;
-    let subspace_id: S = decode_subspace_id(producer).await?;
-    let path: P = decode_path::<MCL, MCC, _, _>(producer).await?;
+    let namespace_id = N::decode(producer).await?;
+    let subspace_id = S::decode(producer).await?;
+    let path = decode_path::<MCL, MCC, Producer, P>(producer).await?;
 
     let mut timestamp_bytes = [0u8; 8];
     producer
@@ -77,7 +65,7 @@ where
         .await?;
     let payload_length = u64::from_be_bytes(payload_length_bytes);
 
-    let payload_digest = decode_payload_digest(producer).await?;
+    let payload_digest = PD::decode(producer).await?;
 
     Ok(Entry {
         namespace_id,

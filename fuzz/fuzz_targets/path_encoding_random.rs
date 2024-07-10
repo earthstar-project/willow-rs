@@ -16,7 +16,6 @@ const MCC: usize = 111111;
 const MPL: usize = 111111;
 
 fuzz_target!(|data: &[u8]| {
-    // fuzzed code goes here
     smol::block_on(async {
         let mut producer = SliceProducer::new(data);
 

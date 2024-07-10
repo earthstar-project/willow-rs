@@ -11,9 +11,13 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 ufotofu = { path = "../../ufotofu", features = ["dev"] }
 smol = "2.0.0"
+arbitrary = { version = "1.0.2", features = ["derive"]}
 
 [dependencies.willow-data-model]
 path = "../data-model"
+
+[dependencies.earthstar]
+path = "../earthstar"
 
 [[bin]]
 name = "path_successor"
@@ -67,6 +71,20 @@ bench = false
 [[bin]]
 name = "path_encoding_random"
 path = "fuzz_targets/path_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_encoding"
+path = "fuzz_targets/entry_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_encoding_random"
+path = "fuzz_targets/entry_encoding_random.rs"
 test = false
 doc = false
 bench = false

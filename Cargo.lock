@@ -207,6 +207,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "earthstar"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "either",
+ "ufotofu",
+ "willow-data-model",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -524,6 +534,8 @@ dependencies = [
 name = "willow-data-model-fuzz"
 version = "0.0.0"
 dependencies = [
+ "arbitrary",
+ "earthstar",
  "libfuzzer-sys",
  "smol",
  "ufotofu",

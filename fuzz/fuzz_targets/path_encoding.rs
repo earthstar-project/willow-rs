@@ -39,7 +39,3 @@ fuzz_target!(|data: (PathRc<MCL, MCC, MPL>, TestConsumer<u8, u8, u8>)| {
         assert_eq!(decoded_path, path);
     });
 });
-
-// ALSO: fuzzer generates random bytes and you see how they are handled
-// If they decode, you encode again, and check for equality again (remember to check against what you actually decoded)
-// create fromsliceproducer from random bytes - fromsliceproduces exposes offset so you know how much was decoded.

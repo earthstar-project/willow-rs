@@ -1,4 +1,4 @@
-use crate::{encoding::error::EncodingConsumerError, entry::Entry, path::Path};
+use crate::{entry::Entry, path::Path};
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
@@ -21,6 +21,7 @@ pub trait SubspaceId: Ord + Default + Clone {
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
 pub trait PayloadDigest: Ord + Default + Clone {}
 
+// FIXME: This type is not implementable! Argh!
 /// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
 ///
