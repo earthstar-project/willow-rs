@@ -62,6 +62,7 @@ pub enum InvalidPathError {
 /// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of.
 ///
 /// Enforces that each component has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each path has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and that the total size in bytes of all components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
+// TODO trait impls
 pub struct Path<const MCL: usize, const MCC: usize, const MPL: usize> {
     /// The data of the underlying path.
     data: HeapEncoding<MCL>,
@@ -278,6 +279,86 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
             self.get_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
         })
     }
+
+    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    ///
+    /// Returns `None` if `length` is greater than `self.get_component_count()`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn create_prefix(&self, length: usize) -> Option<Self> {
+        if length > self.get_component_count() {
+            return None;
+        } else {
+            return Some(Self {
+                data: self.data.clone(),
+                number_of_components: length,
+            });
+        }
+    }
+
+    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    ///
+    /// Undefined behaviour if `length` is greater than `self.get_component_count()`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub unsafe fn create_prefix_unchecked(&self, length: usize) -> Self {
+        Self {
+            data: self.data.clone(),
+            number_of_components: length,
+        }
+    }
+
+    /// Create an iterator over all prefixes of this path (including th empty path and the path itself).
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn all_prefixes(&self) -> impl DoubleEndedIterator<Item = Self> + '_ {
+        (0..=self.get_component_count()).map(|i| {
+            unsafe {
+                self.create_prefix_unchecked(i) // safe to call for i <= self.get_component_count()
+            }
+        })
+    }
+
+    /// Test whether this path is a prefix of the given path.
+    /// Paths are always a prefix of themselves, and the empty path is a prefix of every path.
+    pub fn is_prefix_of(&self, other: &Self) -> bool {
+        for (comp_a, comp_b) in self.components().zip(other.components()) {
+            if comp_a != comp_b {
+                return false;
+            }
+        }
+
+        self.get_component_count() <= other.get_component_count()
+    }
+
+    /// Test whether this path is prefixed by the given path.
+    /// Paths are always a prefix of themselves.
+    pub fn is_prefixed_by(&self, other: &Self) -> bool {
+        other.is_prefix_of(self)
+    }
+
+    /// Return the longest common prefix of this path and the given path.
+    pub fn longest_common_prefix(&self, other: &Self) -> Self {
+        let mut lcp_len = 0;
+
+        for (comp_a, comp_b) in self.components().zip(other.components()) {
+            if comp_a != comp_b {
+                break;
+            }
+
+            lcp_len += 1
+        }
+
+        self.create_prefix(lcp_len).unwrap() // zip ensures that lcp_len  self.get_component_count()
+    }
 }
 
 /// Efficient, heap-allocated storage of a path encoding:
@@ -288,6 +369,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 ///
 /// Note that these are not guaranteed to fulfil alignment requirements of usize, so we need to be careful in how we access these.
 /// Always use the methods on this struct for that reason.
+#[derive(Clone)]
 struct HeapEncoding<const MAX_COMPONENT_LENGTH: usize>(Bytes);
 
 // All offsets are in bytes, unless otherwise specified.
