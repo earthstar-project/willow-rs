@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-arbitrary = { version = "1.0.2", features = ["derive"]}
+arbitrary = { version = "1.0.2", features = [
+    "derive",
+] } # TODO feature-gate this
+bytes = "1.6.0"
