@@ -1,5 +1,12 @@
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
 use std::rc::Rc;
+use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+use crate::encoding::{
+    error::{DecodeError, EncodingConsumerError},
+    max_power::max_power,
+    parameters::{Decoder, Encoder},
+};
 
 #[derive(Debug)]
 /// An error indicating a [`PathComponent`'s bytestring is too long.
@@ -396,6 +403,83 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for PathRc<MCL, M
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for PathRc<MCL, MCC, MPL> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, C> Encoder<C> for PathRc<MCL, MCC, MPL>
+where
+    C: BulkConsumer<Item = u8>,
+{
+    async fn encode(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>> {
+        let path_length_power = max_power(MCL);
+        let path_count_power = max_power(MCC);
+
+        let path_count_raw: [u8; 8] = self.component_count().to_be_bytes();
+
+        consumer
+            .bulk_consume_full_slice(&path_count_raw[8 - (path_count_power as usize)..])
+            .await?;
+
+        for component in self.components() {
+            let component_length_raw = component.len().to_be_bytes();
+
+            consumer
+                .bulk_consume_full_slice(&component_length_raw[8 - (path_length_power as usize)..])
+                .await?;
+
+            if component.len() > 0 {
+                consumer.bulk_consume_full_slice(component.as_ref()).await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, P> Decoder<P> for PathRc<MCL, MCC, MPL>
+where
+    P: BulkProducer<Item = u8>,
+{
+    async fn decode(producer: &mut P) -> Result<Self, DecodeError<P::Error>> {
+        let mut component_count_slice = [0u8; 8];
+        let path_count_power = max_power(MCC);
+        let path_length_power = max_power(MCL);
+
+        producer
+            .bulk_overwrite_full_slice(
+                &mut component_count_slice[8 - (path_count_power as usize)..],
+            )
+            .await?;
+
+        let component_count = u64::from_be_bytes(component_count_slice);
+
+        let mut path = Self::empty();
+
+        for _ in 0..component_count {
+            let mut component_len_slice = [0u8; 8];
+
+            producer
+                .bulk_overwrite_full_slice(
+                    &mut component_len_slice[8 - (path_length_power as usize)..],
+                )
+                .await?;
+
+            let component_len = u64::from_be_bytes(component_len_slice);
+
+            let mut component_box = Box::new_uninit_slice(usize::try_from(component_len)?);
+
+            let slice = producer
+                .bulk_overwrite_full_slice_uninit(component_box.as_mut())
+                .await?;
+
+            let path_component =
+                <Self as Path>::Component::new(slice).map_err(|_| DecodeError::InvalidInput)?;
+            path = path
+                .append(path_component)
+                .map_err(|_| DecodeError::InvalidInput)?;
+        }
+
+        Ok(path)
     }
 }
 

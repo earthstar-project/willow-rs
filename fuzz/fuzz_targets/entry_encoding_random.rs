@@ -54,7 +54,7 @@ fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
         let mut producer = SliceProducer::new(data);
 
-        match decode_entry::<3, 3, EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest, _>(
+        match decode_entry::<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest, _>(
             &mut producer,
         )
         .await
@@ -64,7 +64,7 @@ fuzz_target!(|data: &[u8]| {
                 // Can we turn it back into the same encoding?
                 let mut consumer = IntoVec::<u8>::new();
 
-                encode_entry::<3, 3, _, _,_,_, _>(&path, &mut consumer).await.unwrap();
+                encode_entry(&path, &mut consumer).await.unwrap();
 
                 let encoded = consumer.as_ref().as_slice();
 

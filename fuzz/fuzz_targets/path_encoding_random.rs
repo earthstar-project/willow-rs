@@ -6,7 +6,7 @@ use libfuzzer_sys::fuzz_target;
 use willow_data_model::{
     encoding::{
         error::DecodeError,
-        path::{decode_path, encode_path},
+        parameters::{Decoder, Encoder},
     },
     path::PathRc,
 };
@@ -19,15 +19,13 @@ fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
         let mut producer = SliceProducer::new(data);
 
-        match decode_path::<MCL, MCC, _, PathRc<MCL, MCC, MPL>>(&mut producer).await {
+        match PathRc::<MCL, MCC, MPL>::decode(&mut producer).await {
             Ok(path) => {
                 // It decoded to a valid path! Gasp!
                 // Can we turn it back into the same encoding?
                 let mut consumer = IntoVec::<u8>::new();
 
-                encode_path::<MCL, MCC, _, _>(&path, &mut consumer)
-                    .await
-                    .unwrap();
+                path.encode(&mut consumer).await.unwrap();
 
                 let encoded = consumer.as_ref().as_slice();
 

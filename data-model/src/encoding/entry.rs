@@ -4,27 +4,26 @@ use crate::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
         parameters::{Decoder, Encoder},
-        path::{decode_path, encode_path},
     },
     entry::Entry,
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
 
-pub async fn encode_entry<const MCL: usize, const MCC: usize, N, S, P, PD, Consumer>(
+pub async fn encode_entry<N, S, P, PD, Consumer>(
     entry: &Entry<N, S, P, PD>,
     consumer: &mut Consumer,
 ) -> Result<(), EncodingConsumerError<Consumer::Error>>
 where
     N: NamespaceId + Encoder<Consumer>,
     S: SubspaceId + Encoder<Consumer>,
-    P: Path,
+    P: Path + Encoder<Consumer>,
     PD: PayloadDigest + Encoder<Consumer>,
     Consumer: BulkConsumer<Item = u8>,
 {
     entry.namespace_id.encode(consumer).await?;
     entry.subspace_id.encode(consumer).await?;
-    encode_path::<MCL, MCC, _, _>(&entry.path, consumer).await?;
+    entry.path.encode(consumer).await?;
 
     consumer
         .bulk_consume_full_slice(&entry.timestamp.to_be_bytes())
@@ -39,19 +38,19 @@ where
     Ok(())
 }
 
-pub async fn decode_entry<const MCL: usize, const MCC: usize, N, S, P, PD, Producer>(
+pub async fn decode_entry<N, S, P, PD, Producer>(
     producer: &mut Producer,
 ) -> Result<Entry<N, S, P, PD>, DecodeError<Producer::Error>>
 where
     N: NamespaceId + Decoder<Producer>,
     S: SubspaceId + Decoder<Producer>,
-    P: Path,
+    P: Path + Decoder<Producer>,
     PD: PayloadDigest + Decoder<Producer>,
     Producer: BulkProducer<Item = u8>,
 {
     let namespace_id = N::decode(producer).await?;
     let subspace_id = S::decode(producer).await?;
-    let path = decode_path::<MCL, MCC, Producer, P>(producer).await?;
+    let path = P::decode(producer).await?;
 
     let mut timestamp_bytes = [0u8; 8];
     producer

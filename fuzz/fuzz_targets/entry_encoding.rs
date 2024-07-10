@@ -52,7 +52,7 @@ fuzz_target!(|data: (
     smol::block_on(async {
         let consumer_should_error = consumer.should_error();
 
-        if let Err(_err) = encode_entry::<3, 3, _, _, _, _, _>(&entry, &mut consumer).await {
+        if let Err(_err) = encode_entry(&entry, &mut consumer).await {
             assert!(consumer_should_error);
             return;
         }
@@ -70,9 +70,7 @@ fuzz_target!(|data: (
         let mut producer = FromVec::new(new_vec);
 
         // Check for correct errors
-        let decoded_entry = decode_entry::<3, 3, _, _, _, _, _>(&mut producer)
-            .await
-            .unwrap();
+        let decoded_entry = decode_entry(&mut producer).await.unwrap();
 
         assert_eq!(decoded_entry, entry);
     });

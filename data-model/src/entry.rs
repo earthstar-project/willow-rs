@@ -61,6 +61,38 @@ where
     }
 }
 
+/*
+impl<const MCL: usize, const MCC: usize, N, S, P, PD, C> Encoder<C> for Entry<N, S, P, PD>
+where
+    N: NamespaceId + Encoder<C>,
+    S: SubspaceId + Encoder<C>,
+    P: Path,
+    PD: PayloadDigest + Encoder<C>,
+    C: BulkConsumer<Item = u8>,
+{
+    async fn encode(
+        &self,
+        consumer: &mut C,
+    ) -> Result<(), crate::encoding::error::EncodingConsumerError<<C>::Error>> {
+        self.namespace_id.encode(consumer).await?;
+        self.subspace_id.encode(consumer).await?;
+        encode_path::<MCL, MCC, _, _>(&self.path, consumer).await?;
+
+        consumer
+            .bulk_consume_full_slice(&self.timestamp.to_be_bytes())
+            .await?;
+
+        consumer
+            .bulk_consume_full_slice(&self.payload_length.to_be_bytes())
+            .await?;
+
+        self.payload_digest.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+*/
+
 impl<'a, N, S, P, PD> Arbitrary<'a> for Entry<N, S, P, PD>
 where
     N: NamespaceId + Arbitrary<'a>,

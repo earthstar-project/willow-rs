@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::{consumer::TestConsumer, producer::FromVec, BufferedConsumer};
 use willow_data_model::{
-    encoding::path::{decode_path, encode_path},
+    encoding::parameters::{Decoder, Encoder},
     path::PathRc,
 };
 
@@ -17,12 +17,15 @@ fuzz_target!(|data: (PathRc<MCL, MCC, MPL>, TestConsumer<u8, u8, u8>)| {
     smol::block_on(async {
         let consumer_should_error = consumer.should_error();
 
-        if let Err(_err) = encode_path::<MCL, MCC, _, _>(&path, &mut consumer).await {
+        if let Err(_err) = path.encode(&mut consumer).await {
             assert!(consumer_should_error);
             return;
         }
 
-        consumer.flush().await.unwrap();
+        if let Err(_err) = consumer.flush().await {
+            assert!(consumer_should_error);
+            return;
+        }
 
         let mut new_vec = Vec::new();
 
@@ -32,9 +35,7 @@ fuzz_target!(|data: (PathRc<MCL, MCC, MPL>, TestConsumer<u8, u8, u8>)| {
         let mut producer = FromVec::new(new_vec);
 
         // Check for correct errors
-        let decoded_path = decode_path::<MCL, MCC, _, PathRc<MCL, MCC, MPL>>(&mut producer)
-            .await
-            .unwrap();
+        let decoded_path = PathRc::decode(&mut producer).await.unwrap();
 
         assert_eq!(decoded_path, path);
     });
