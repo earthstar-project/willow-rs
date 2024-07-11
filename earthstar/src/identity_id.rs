@@ -22,21 +22,21 @@ impl Default for IdentityIdentifier {
     }
 }
 
-impl<C> Encoder<C> for IdentityIdentifier
-where
-    C: BulkConsumer<Item = u8>,
-{
-    async fn encode(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>> {
+impl Encoder for IdentityIdentifier {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
         self.0.encode(consumer).await?;
         Ok(())
     }
 }
 
-impl<C> Decoder<C> for IdentityIdentifier
-where
-    C: BulkProducer<Item = u8>,
-{
-    async fn decode(producer: &mut C) -> Result<Self, DecodeError<<C>::Error>> {
+impl Decoder for IdentityIdentifier {
+    async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    where
+        P: BulkProducer<Item = u8>,
+    {
         match Cinn25519PublicKey::decode(producer).await {
             Ok(pk) => Ok(Self(pk)),
             Err(err) => Err(err),

@@ -68,15 +68,16 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Cinn25519PublicKey<MIN_LE
     // TODO: fn verify
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize, Consumer> Encoder<Consumer>
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encoder
     for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
-where
-    Consumer: BulkConsumer<Item = u8>,
 {
-    async fn encode(
+    async fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>> {
+    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    where
+        Consumer: BulkConsumer<Item = u8>,
+    {
         let mut vec = Vec::new();
 
         vec.extend_from_slice(&self.shortname.0);
@@ -98,12 +99,15 @@ where
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize, Producer> Decoder<Producer>
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decoder
     for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
-where
-    Producer: BulkProducer<Item = u8>,
 {
-    async fn decode(producer: &mut Producer) -> Result<Self, DecodeError<<Producer>::Error>> {
+    async fn decode<Producer>(
+        producer: &mut Producer,
+    ) -> Result<Self, DecodeError<<Producer>::Error>>
+    where
+        Producer: BulkProducer<Item = u8>,
+    {
         if MIN_LENGTH == MAX_LENGTH {
             let mut shortname_box = Box::new_uninit_slice(MIN_LENGTH);
 

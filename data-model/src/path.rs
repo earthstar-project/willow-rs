@@ -406,11 +406,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for PathRc
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, C> Encoder<C> for PathRc<MCL, MCC, MPL>
-where
-    C: BulkConsumer<Item = u8>,
-{
-    async fn encode(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MCL, MCC, MPL> {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
         let path_length_power = max_power(MCL);
         let path_count_power = max_power(MCC);
 
@@ -436,11 +436,11 @@ where
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, P> Decoder<P> for PathRc<MCL, MCC, MPL>
-where
-    P: BulkProducer<Item = u8>,
-{
-    async fn decode(producer: &mut P) -> Result<Self, DecodeError<P::Error>> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MCL, MCC, MPL> {
+    async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    where
+        P: BulkProducer<Item = u8>,
+    {
         let mut component_count_slice = [0u8; 8];
         let path_count_power = max_power(MCC);
         let path_length_power = max_power(MCL);

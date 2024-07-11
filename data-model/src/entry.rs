@@ -66,15 +66,17 @@ where
     }
 }
 
-impl<N, S, P, PD, C> Encoder<C> for Entry<N, S, P, PD>
+impl<N, S, P, PD> Encoder for Entry<N, S, P, PD>
 where
-    N: NamespaceId + Encoder<C>,
-    S: SubspaceId + Encoder<C>,
-    P: Path + Encoder<C>,
-    PD: PayloadDigest + Encoder<C>,
-    C: BulkConsumer<Item = u8>,
+    N: NamespaceId + Encoder,
+    S: SubspaceId + Encoder,
+    P: Path + Encoder,
+    PD: PayloadDigest + Encoder,
 {
-    async fn encode(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>> {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
         self.namespace_id.encode(consumer).await?;
         self.subspace_id.encode(consumer).await?;
         self.path.encode(consumer).await?;
@@ -93,15 +95,17 @@ where
     }
 }
 
-impl<N, S, P, PD, Prod> Decoder<Prod> for Entry<N, S, P, PD>
+impl<N, S, P, PD> Decoder for Entry<N, S, P, PD>
 where
-    N: NamespaceId + Decoder<Prod>,
-    S: SubspaceId + Decoder<Prod>,
-    P: Path + Decoder<Prod>,
-    PD: PayloadDigest + Decoder<Prod>,
-    Prod: BulkProducer<Item = u8>,
+    N: NamespaceId + Decoder,
+    S: SubspaceId + Decoder,
+    P: Path + Decoder,
+    PD: PayloadDigest + Decoder,
 {
-    async fn decode(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>> {
+    async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
+    where
+        Prod: BulkProducer<Item = u8>,
+    {
         let namespace_id = N::decode(producer).await?;
         let subspace_id = S::decode(producer).await?;
         let path = P::decode(producer).await?;
