@@ -1,5 +1,6 @@
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
-use crate::encoding::parameters::Encoder;
+use crate::encoding::parameters::Decoder;
+use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 /// A minimum width of bytes needed to represent a unsigned integer.
@@ -109,48 +110,16 @@ pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     Ok(())
 }
 
-pub async fn decode_u8_be<Producer: BulkProducer<Item = u8>>(
-    producer: &mut Producer,
-) -> Result<u8, DecodeError<Producer::Error>> {
-    let mut byte = [0; 1];
-    producer.bulk_overwrite_full_slice(&mut byte).await?;
-    Ok(u8::from_be_bytes(byte))
-}
-
-pub async fn decode_u16_be<Producer: BulkProducer<Item = u8>>(
-    producer: &mut Producer,
-) -> Result<u16, DecodeError<Producer::Error>> {
-    let mut bytes = [0u8; 2];
-    producer.bulk_overwrite_full_slice(&mut bytes).await?;
-    Ok(u16::from_be_bytes(bytes))
-}
-
-pub async fn decode_u32_be<Producer: BulkProducer<Item = u8>>(
-    producer: &mut Producer,
-) -> Result<u32, DecodeError<Producer::Error>> {
-    let mut bytes = [0u8; 4];
-    producer.bulk_overwrite_full_slice(&mut bytes).await?;
-    Ok(u32::from_be_bytes(bytes))
-}
-
-pub async fn decode_u64_be<Producer: BulkProducer<Item = u8>>(
-    producer: &mut Producer,
-) -> Result<u64, DecodeError<Producer::Error>> {
-    let mut bytes = [0u8; 8];
-    producer.bulk_overwrite_full_slice(&mut bytes).await?;
-    Ok(u64::from_be_bytes(bytes))
-}
-
 /// Decode the bytes representing a [`compact-width`]-bytes integer into a `usize`.
 pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
     compact_width: CompactWidth,
     producer: &mut Producer,
 ) -> Result<u64, DecodeError<Producer::Error>> {
     match compact_width {
-        CompactWidth::One => decode_u8_be(producer).await.map(|v| v as u64),
-        CompactWidth::Two => decode_u16_be(producer).await.map(|v| v as u64),
-        CompactWidth::Four => decode_u32_be(producer).await.map(|v| v as u64),
-        CompactWidth::Eight => decode_u64_be(producer).await,
+        CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
+        CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
+        CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
+        CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
     }
 }
 

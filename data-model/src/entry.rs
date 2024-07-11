@@ -6,6 +6,7 @@ use crate::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
         parameters::{Decoder, Encoder},
+        unsigned_int::U64BE,
     },
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
@@ -81,13 +82,8 @@ where
         self.subspace_id.encode(consumer).await?;
         self.path.encode(consumer).await?;
 
-        consumer
-            .bulk_consume_full_slice(&self.timestamp.to_be_bytes())
-            .await?;
-
-        consumer
-            .bulk_consume_full_slice(&self.payload_length.to_be_bytes())
-            .await?;
+        U64BE::from(self.timestamp).encode(consumer).await?;
+        U64BE::from(self.payload_length).encode(consumer).await?;
 
         self.payload_digest.encode(consumer).await?;
 
@@ -109,19 +105,8 @@ where
         let namespace_id = N::decode(producer).await?;
         let subspace_id = S::decode(producer).await?;
         let path = P::decode(producer).await?;
-
-        let mut timestamp_bytes = [0u8; 8];
-        producer
-            .bulk_overwrite_full_slice(&mut timestamp_bytes)
-            .await?;
-        let timestamp = u64::from_be_bytes(timestamp_bytes);
-
-        let mut payload_length_bytes = [0u8; 8];
-        producer
-            .bulk_overwrite_full_slice(&mut payload_length_bytes)
-            .await?;
-        let payload_length = u64::from_be_bytes(payload_length_bytes);
-
+        let timestamp = U64BE::decode(producer).await?.into();
+        let payload_length = U64BE::decode(producer).await?.into();
         let payload_digest = PD::decode(producer).await?;
 
         Ok(Entry {
