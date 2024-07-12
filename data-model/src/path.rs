@@ -1,11 +1,10 @@
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
-use core::mem::size_of;
 use std::rc::Rc;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::{
     error::{DecodeError, EncodingConsumerError},
-    max_power::max_power,
+    max_power::{decode_max_power, encode_max_power},
     parameters::{Decoder, Encoder},
 };
 
@@ -412,21 +411,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MC
     where
         C: BulkConsumer<Item = u8>,
     {
-        let path_length_power = max_power(MCL);
-        let path_count_power = max_power(MCC);
-
-        let path_count_raw: [u8; size_of::<u64>()] = self.component_count().to_be_bytes();
-
-        consumer
-            .bulk_consume_full_slice(&path_count_raw[8 - (path_count_power as usize)..])
-            .await?;
+        encode_max_power(self.component_count(), MCC, consumer).await?;
 
         for component in self.components() {
-            let component_length_raw = component.len().to_be_bytes();
-
-            consumer
-                .bulk_consume_full_slice(&component_length_raw[8 - (path_length_power as usize)..])
-                .await?;
+            encode_max_power(component.len(), MCL, consumer).await?;
 
             if component.len() > 0 {
                 consumer.bulk_consume_full_slice(component.as_ref()).await?;
@@ -442,30 +430,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
     where
         P: BulkProducer<Item = u8>,
     {
-        let mut component_count_slice = [0u8; size_of::<u64>()];
-        let path_count_power = max_power(MCC);
-        let path_length_power = max_power(MCL);
-
-        producer
-            .bulk_overwrite_full_slice(
-                &mut component_count_slice[8 - (path_count_power as usize)..],
-            )
-            .await?;
-
-        let component_count = u64::from_be_bytes(component_count_slice);
+        let component_count = decode_max_power(MCC, producer).await?;
 
         let mut path = Self::empty();
 
         for _ in 0..component_count {
-            let mut component_len_slice = [0u8; size_of::<u64>()];
-
-            producer
-                .bulk_overwrite_full_slice(
-                    &mut component_len_slice[8 - (path_length_power as usize)..],
-                )
-                .await?;
-
-            let component_len = u64::from_be_bytes(component_len_slice);
+            let component_len = decode_max_power(MCL, producer).await?;
 
             let mut component_box = Box::new_uninit_slice(usize::try_from(component_len)?);
 
