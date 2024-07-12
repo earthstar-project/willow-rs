@@ -5,6 +5,7 @@ use crate::encoding::error::{DecodeError, EncodingConsumerError};
 use crate::encoding::parameters::{Decoder, Encoder};
 
 /// A `u8` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U8BE(u8);
 
 impl Encoder for U8BE {
@@ -46,6 +47,7 @@ impl From<U8BE> for u64 {
 }
 
 /// A `u16` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U16BE(u16);
 
 impl Encoder for U16BE {
@@ -87,6 +89,7 @@ impl From<U16BE> for u64 {
 }
 
 /// A `u32` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U32BE(u32);
 
 impl Encoder for U32BE {
@@ -128,6 +131,7 @@ impl From<U32BE> for u64 {
 }
 
 /// A `u64` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U64BE(u64);
 
 impl Encoder for U64BE {
