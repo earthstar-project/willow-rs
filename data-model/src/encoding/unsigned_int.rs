@@ -4,7 +4,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
 use crate::encoding::parameters::{Decoder, Encoder};
 
-/// A big-endian encoded 8-bit unsigned integer.
+/// A `u8` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
 pub struct U8BE(u8);
 
 impl Encoder for U8BE {
@@ -45,7 +45,7 @@ impl From<U8BE> for u64 {
     }
 }
 
-/// A big-endian encoded 16-bit unsigned integer.
+/// A `u16` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
 pub struct U16BE(u16);
 
 impl Encoder for U16BE {
@@ -86,7 +86,7 @@ impl From<U16BE> for u64 {
     }
 }
 
-/// A big-endian encoded 32-bit unsigned integer.
+/// A `u32` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
 pub struct U32BE(u32);
 
 impl Encoder for U32BE {
@@ -127,7 +127,7 @@ impl From<U32BE> for u64 {
     }
 }
 
-/// A big-endian encoded 64-bit unsigned integer.
+/// A `u64` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
 pub struct U64BE(u64);
 
 impl Encoder for U64BE {
