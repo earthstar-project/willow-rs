@@ -1,10 +1,7 @@
 #![no_main]
 
 use arbitrary::Arbitrary;
-use ufotofu::{
-    common::consumer::IntoVec,
-    local_nb::{producer::SliceProducer, BulkConsumer, BulkProducer},
-};
+use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
@@ -49,37 +46,13 @@ impl Decoder for FakePayloadDigest {
 impl PayloadDigest for FakePayloadDigest {}
 
 use libfuzzer_sys::fuzz_target;
+use willow_data_model_fuzz::encoding_random;
 
 fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
-        let mut producer = SliceProducer::new(data);
-
-        match Entry::<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest>::decode(
-            &mut producer,
+        encoding_random::<Entry<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest>>(
+            data,
         )
-        .await
-        {
-            Ok(entry) => {
-                // It decoded to a valid path! Gasp!
-                // Can we turn it back into the same encoding?
-                let mut consumer = IntoVec::<u8>::new();
-
-                entry.encode(&mut consumer).await.unwrap();
-
-                let encoded = consumer.as_ref().as_slice();
-
-                assert_eq!(encoded, &data[0..producer.get_offset()]);
-            }
-            Err(err) => match err {
-                // There was an error.
-                DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-                DecodeError::InvalidInput => {
-                    // GOOD.
-                }
-                DecodeError::U64DoesNotFitUsize => {
-                    panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
-                }
-            },
-        };
+        .await;
     });
 });
