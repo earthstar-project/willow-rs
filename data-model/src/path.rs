@@ -416,9 +416,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MC
         for component in self.components() {
             encode_max_power(component.len(), MCL, consumer).await?;
 
-            if component.len() > 0 {
-                consumer.bulk_consume_full_slice(component.as_ref()).await?;
-            }
+            consumer.bulk_consume_full_slice(component.as_ref()).await?;
         }
 
         Ok(())
