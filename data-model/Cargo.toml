@@ -3,10 +3,20 @@ name = "willow-data-model"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+dev = ["dep:arbitrary"]
+
 [dependencies]
 either = "1.10.0"
-arbitrary = { version = "1.0.2", features = ["derive"]}
+arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 ufotofu = { path = "../../ufotofu" }
 
 [dev-dependencies]
 smol = "2.0.0"
+
+# docs.rs-specific configuration
+[package.metadata.docs.rs]
+# document all features
+all-features = true
+

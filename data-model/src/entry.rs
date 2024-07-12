@@ -1,4 +1,6 @@
+#[cfg(feature = "dev")]
 use arbitrary::size_hint::and_all;
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
@@ -120,6 +122,7 @@ where
     }
 }
 
+#[cfg(feature = "dev")]
 impl<'a, N, S, P, PD> Arbitrary<'a> for Entry<N, S, P, PD>
 where
     N: NamespaceId + Arbitrary<'a>,

@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
 use std::rc::Rc;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
@@ -284,6 +285,7 @@ impl<const MCL: usize> AsRef<[u8]> for PathComponentBox<MCL> {
     }
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize> Arbitrary<'a> for PathComponentBox<MCL> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
         let boxx: Box<[u8]> = Arbitrary::arbitrary(u)?;
@@ -452,6 +454,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
     }
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
     for PathRc<MCL, MCC, MPL>
 {

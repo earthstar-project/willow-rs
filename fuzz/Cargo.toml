@@ -15,6 +15,7 @@ arbitrary = { version = "1.0.2", features = ["derive"]}
 
 [dependencies.willow-data-model]
 path = "../data-model"
+features = ["dev"]
 
 [dependencies.earthstar]
 path = "../earthstar"
