@@ -6,7 +6,7 @@ use ufotofu::{
 };
 
 /// Returned when a encoding fails to be consumed by a [`ufotofu::local_nb::Consumer`].
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodingConsumerError<E> {
     /// The number of bytes which were consumed before the error.
     pub bytes_consumed: usize,
@@ -24,7 +24,7 @@ impl<E> From<ConsumeFullSliceError<E>> for EncodingConsumerError<E> {
 }
 
 /// Everything that can go wrong when decoding a value.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<ProducerError> {
     /// The producer of the bytes to be decoded errored somehow.
     Producer(ProducerError),
