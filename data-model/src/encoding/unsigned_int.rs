@@ -1,3 +1,4 @@
+use core::mem::size_of;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
@@ -26,7 +27,7 @@ impl Decoder for U8BE {
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let mut bytes = [0u8; 1];
+        let mut bytes = [0u8; size_of::<u8>()];
         producer.bulk_overwrite_full_slice(&mut bytes).await?;
         Ok(U8BE(u8::from_be_bytes(bytes)))
     }
@@ -67,7 +68,7 @@ impl Decoder for U16BE {
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let mut bytes = [0u8; 2];
+        let mut bytes = [0u8; size_of::<u16>()];
         producer.bulk_overwrite_full_slice(&mut bytes).await?;
         Ok(U16BE(u16::from_be_bytes(bytes)))
     }
@@ -108,7 +109,7 @@ impl Decoder for U32BE {
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let mut bytes = [0u8; 4];
+        let mut bytes = [0u8; size_of::<u32>()];
         producer.bulk_overwrite_full_slice(&mut bytes).await?;
         Ok(U32BE(u32::from_be_bytes(bytes)))
     }
@@ -149,7 +150,7 @@ impl Decoder for U64BE {
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let mut bytes = [0u8; 8];
+        let mut bytes = [0u8; size_of::<u64>()];
         producer.bulk_overwrite_full_slice(&mut bytes).await?;
         Ok(U64BE(u64::from_be_bytes(bytes)))
     }

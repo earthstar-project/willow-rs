@@ -1,4 +1,5 @@
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
+use core::mem::size_of;
 use std::rc::Rc;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
@@ -414,7 +415,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MC
         let path_length_power = max_power(MCL);
         let path_count_power = max_power(MCC);
 
-        let path_count_raw: [u8; 8] = self.component_count().to_be_bytes();
+        let path_count_raw: [u8; size_of::<u64>()] = self.component_count().to_be_bytes();
 
         consumer
             .bulk_consume_full_slice(&path_count_raw[8 - (path_count_power as usize)..])
@@ -441,7 +442,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
     where
         P: BulkProducer<Item = u8>,
     {
-        let mut component_count_slice = [0u8; 8];
+        let mut component_count_slice = [0u8; size_of::<u64>()];
         let path_count_power = max_power(MCC);
         let path_length_power = max_power(MCL);
 
@@ -456,7 +457,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
         let mut path = Self::empty();
 
         for _ in 0..component_count {
-            let mut component_len_slice = [0u8; 8];
+            let mut component_len_slice = [0u8; size_of::<u64>()];
 
             producer
                 .bulk_overwrite_full_slice(
