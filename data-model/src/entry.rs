@@ -179,12 +179,11 @@ where
     PD: PayloadDigest,
 {
     /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return an [`UnauthorisedWriteError`]
-    pub fn new<IAW: IsAuthorisedWrite<N, S, P, PD, AT>>(
-        entry: Entry<N, S, P, PD>,
-        token: AT,
-        is_authorised_write: IAW,
-    ) -> Result<Self, UnauthorisedWriteError> {
-        if is_authorised_write(&entry, &token) {
+    pub fn new(entry: Entry<N, S, P, PD>, token: AT) -> Result<Self, UnauthorisedWriteError>
+    where
+        AT: IsAuthorisedWrite<N, S, P, PD>,
+    {
+        if token.is_authorised_write(&entry) {
             return Ok(Self(entry, token));
         }
 

@@ -21,18 +21,14 @@ pub trait SubspaceId: Ord + Default + Clone {
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
 pub trait PayloadDigest: Ord + Default + Clone {}
 
-// FIXME: This type is not implementable! Argh!
-/// A function that maps an [`Entry`] and an [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) to a result indicating whether the `AuthorisationToken` does prove write permission for the [`Entry`].
-/// [Definition](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write).
+/// Determines whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
 ///
 /// ## Type parameters
 ///
-/// - `N` - The type used for [`NamespaceId`].
-/// - `S` - The type used for [`SubspaceId`].
-/// - `P` - The type used for [`Path`]s.
-/// - `PD` - The type used for [`PayloadDigest`].
-/// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
-pub trait IsAuthorisedWrite<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest, AT>:
-    Fn(&Entry<N, S, P, PD>, &AT) -> bool
-{
+/// - `N` - The type used for the [`Entry`]'s [`NamespaceId`].
+/// - `S` - The type used for the [`Entry`]'s [`SubspaceId`].
+/// - `P` - The type used for the [`Entry`]'s [`Path`]s.
+/// - `PD` - The type used for the [`Entry`]'s [`PayloadDigest`].
+pub trait IsAuthorisedWrite<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest> {
+    fn is_authorised_write(&self, entry: &Entry<N, S, P, PD>) -> bool;
 }
