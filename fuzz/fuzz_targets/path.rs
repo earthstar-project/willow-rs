@@ -7,11 +7,11 @@ use willow_data_model_fuzz::path::*;
 fuzz_target!(|data: (CreatePath, CreatePath)| {
     let (cp1, cp2) = data;
 
-    let ctrl1 = create_path_rc::<100, 100, 100>(&cp1);
-    let ctrl2 = create_path_rc::<100, 100, 100>(&cp2);
+    let ctrl1 = create_path_rc::<300, 300, 300>(&cp1);
+    let ctrl2 = create_path_rc::<300, 300, 300>(&cp2);
 
-    let p1 = create_path::<100, 100, 100>(&cp1);
-    let p2 = create_path::<100, 100, 100>(&cp2);
+    let p1 = create_path::<300, 300, 300>(&cp1);
+    let p2 = create_path::<300, 300, 300>(&cp2);
 
     match (ctrl1, p1) {
         (Err(_), Err(_)) => { /* no-op */}

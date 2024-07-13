@@ -786,6 +786,11 @@ Instructions for how to create paths; for fuzz testing.
 pub enum CreatePath {
     Empty,
     Singleton(Vec<u8>),
+    FromIter(Vec<Vec<u8>>),
+    FromSlice(Vec<Vec<u8>>),
+    Append(Box<CreatePath>, Vec<u8>),
+    AppendSlice(Box<CreatePath>, Vec<Vec<u8>>),
+    CreatePrefix(Box<CreatePath>, usize),
 }
 
 pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
@@ -799,6 +804,59 @@ pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
                 return PathRc::new(&[comp]).map_err(|err| Some(err));
             }
         },
+        CreatePath::FromIter(raw_material) | CreatePath::FromSlice(raw_material) => {
+            let mut p = PathRc::empty();
+
+            for comp in raw_material {
+                match PathComponentBox::new(&comp) {
+                    Ok(comp) => match p.append(comp) {
+                        Err(err) => {
+                            return Err(Some(err));
+                        }
+                        Ok(yay) => p = yay,
+                    },
+                    Err(_) => return Err(None),
+                }
+            }
+
+            return Ok(p);
+        }
+        CreatePath::Append(rec, comp) => {
+            let base = create_path_rc(rec)?;
+
+            match PathComponentBox::new(&comp) {
+                Err(_) => return Err(None),
+                Ok(comp) => {
+                    return base.append(comp).map_err(|err| Some(err));
+                }
+            }
+        }
+        CreatePath::AppendSlice(rec, comps) => {
+            let mut base = create_path_rc(rec)?;
+
+            for comp in comps {
+                match PathComponentBox::new(&comp) {
+                    Ok(comp) => match base.append(comp) {
+                        Err(err) => {
+                            return Err(Some(err));
+                        }
+                        Ok(yay) => base = yay,
+                    },
+                    Err(_) => return Err(None),
+                }
+            }
+
+            return Ok(base);
+        }
+        CreatePath::CreatePrefix(rec, len) => {
+            let base = create_path_rc(rec)?;
+
+            if *len > base.component_count() {
+                return Err(None);
+            } else {
+                return Ok(base.create_prefix(*len));
+            }
+        }
     }
 }
 
@@ -813,6 +871,68 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
                 return Path::new_singleton(comp).map_err(|err| Some(err));
             }
         },
+        CreatePath::FromIter(raw_material) => {
+            let mut comps = vec![];
+            let mut total_length = 0;
+            for comp in raw_material.iter() {
+                match Component::new(comp) {
+                    Some(yay) => {
+                        total_length += yay.len();
+                        comps.push(yay);
+                    }
+                    None => return Err(None),
+                }
+            }
+
+            return Path::new_from_iter(total_length, &mut comps.into_iter())
+                .map_err(|err| Some(err));
+        }
+        CreatePath::FromSlice(raw_material) => {
+            let mut comps = vec![];
+            for comp in raw_material.iter() {
+                match Component::new(comp) {
+                    Some(yay) => {
+                        comps.push(yay);
+                    }
+                    None => return Err(None),
+                }
+            }
+
+            return Path::new_from_slice(&comps).map_err(|err| Some(err));
+        }
+        CreatePath::Append(rec, comp) => {
+            let base = create_path(rec)?;
+
+            match Component::new(&comp) {
+                None => return Err(None),
+                Some(comp) => {
+                    return base.append(comp).map_err(|err| Some(err));
+                }
+            }
+        }
+        CreatePath::AppendSlice(rec, raw_material) => {
+            let base = create_path(rec)?;
+
+            let mut comps = vec![];
+            for comp in raw_material.iter() {
+                match Component::new(comp) {
+                    Some(yay) => {
+                        comps.push(yay);
+                    }
+                    None => return Err(None),
+                }
+            }
+
+            return base.append_slice(&comps).map_err(|err| Some(err));
+        }
+        CreatePath::CreatePrefix(rec, len) => {
+            let base = create_path(rec)?;
+
+            match base.create_prefix(*len) {
+                Some(yay) => return Ok(yay),
+                None => return Err(None),
+            }
+        }
     }
 }
 

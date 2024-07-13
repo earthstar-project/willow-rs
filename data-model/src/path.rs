@@ -144,7 +144,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         buf.extend_from_slice(&(component_count.to_ne_bytes())[..]);
 
         // Fill up the accumulated component lengths with dummy values.
-        buf.put_bytes(0, component_count * size_of::<u8>());
+        buf.put_bytes(0, component_count * size_of::<usize>());
 
         let mut accumulated_component_length = 0;
         for (i, comp) in iter.enumerate() {
@@ -302,10 +302,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         if length > self.get_component_count() {
             return None;
         } else {
-            return Some(Self {
-                data: self.data.clone(),
-                number_of_components: length,
-            });
+            return Some(unsafe { self.create_prefix_unchecked(length) });
         }
     }
 
