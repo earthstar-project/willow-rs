@@ -1,3 +1,4 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstructured};
@@ -848,13 +849,40 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
     assert_eq!(ctrl1.all_prefixes().count(), p1.all_prefixes().count());
 
     for (ctrl_prefix, p_prefix) in ctrl1.all_prefixes().zip(p1.all_prefixes()) {
-        assert!(ctrl_prefix
-            .components()
-            .map(|comp| comp.as_ref())
-            .eq(p_prefix.components().map(|comp| comp.into_inner())));
+        assert_paths_are_equal(&ctrl_prefix, &p_prefix);
     }
 
+    assert_eq!(ctrl1.is_prefix_of(ctrl2), p1.is_prefix_of(p2));
+    assert_eq!(ctrl1.is_prefixed_by(ctrl2), p1.is_prefixed_by(p2));
+
+    let ctrl_lcp = ctrl1.longest_common_prefix(&ctrl2);
+    let p_lcp = p1.longest_common_prefix(&p2);
+    assert_paths_are_equal(&ctrl_lcp, &p_lcp);
+
     assert_eq!(ctrl1 == ctrl2, p1 == p2);
+
+    if ctrl1 == ctrl2 {
+        let mut h1 = DefaultHasher::new();
+        p1.hash(&mut h1);
+        let digest1 = h1.finish();
+
+        let mut h2 = DefaultHasher::new();
+        p1.hash(&mut h2);
+        let digest2 = h2.finish();
+
+        assert_eq!(digest1, digest2);
+    }
+
+    assert_eq!(ctrl1.partial_cmp(ctrl2), p1.partial_cmp(p2));
     assert_eq!(ctrl1.cmp(ctrl2), p1.cmp(p2));
-    // TODO complete this
+}
+
+fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
+    ctrl: &PathRc<MCL, MCC, MPL>,
+    p: &Path<MCL, MCC, MPL>,
+) {
+    assert!(ctrl
+        .components()
+        .map(|comp| comp.as_ref())
+        .eq(p.components().map(|comp| comp.into_inner())));
 }
