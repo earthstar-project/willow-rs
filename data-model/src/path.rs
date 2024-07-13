@@ -1,3 +1,5 @@
+// This struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`.
+
 use core::borrow::Borrow;
 use core::convert::AsRef;
 use core::fmt::Debug;
@@ -6,7 +8,6 @@ use core::iter;
 use core::mem::size_of;
 use core::ops::Deref;
 
-// use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
 use bytes::{BufMut, Bytes, BytesMut};
 
 /// A [component](https://willowprotocol.org/specs/data-model/index.html#Component) of a Willow Path.
