@@ -1,4 +1,5 @@
 // This struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`.
+// Further, successors and prefix_successors are tested in `fuzz/path_successor.rs` and friends, and `fuzz/path_successor_of_prefix.rs` and friends.
 
 use core::borrow::Borrow;
 use core::convert::AsRef;
@@ -29,6 +30,11 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
     /// Create a `Component` from a byte slice, without verifying its length.
     pub unsafe fn new_unchecked(slice: &'a [u8]) -> Self {
         Self(slice)
+    }
+
+    /// Create an empty component.
+    pub fn new_empty() -> Self {
+        return Self(&[]);
     }
 
     pub fn into_inner(self) -> &'a [u8] {
@@ -73,7 +79,7 @@ pub struct Path<const MCL: usize, const MCC: usize, const MPL: usize> {
     /// The data of the underlying path.
     data: HeapEncoding<MCL>,
     /// Number of components of the `data` to consider for this particular path. Must be less than or equal to the total number of components.
-    number_of_components: usize,
+    component_count: usize,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
@@ -88,7 +94,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
             data: HeapEncoding(Bytes::from_static(&[
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ])),
-            number_of_components: 0,
+            component_count: 0,
         };
     }
 
@@ -112,7 +118,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
             return Ok(Path {
                 data: HeapEncoding(buf.freeze()),
-                number_of_components: 1,
+                component_count: 1,
             });
         }
     }
@@ -166,7 +172,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         return Ok(Path {
             data: HeapEncoding(buf.freeze()),
-            number_of_components: component_count,
+            component_count,
         });
     }
 
@@ -237,7 +243,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn get_component_count(&self) -> usize {
-        return self.number_of_components;
+        return self.component_count;
     }
 
     /// Return whether this path has zero components.
@@ -257,13 +263,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn get_path_length(&self) -> usize {
-        if self.number_of_components == 0 {
+        if self.component_count == 0 {
             return 0;
         } else {
-            return self
-                .data
-                .get_sum_of_lengths_for_component(self.number_of_components - 1)
-                .unwrap();
+            return HeapEncoding::<MCL>::get_sum_of_lengths_for_component(
+                self.data.as_ref(),
+                self.component_count - 1,
+            )
+            .unwrap();
         }
     }
 
@@ -273,7 +280,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn get_component<'s>(&'s self, i: usize) -> Option<Component<'s, MCL>> {
-        return self.data.get_component(i);
+        return HeapEncoding::<MCL>::get_component(self.data.as_ref(), i);
     }
 
     /// Create an iterator over the components of this path.
@@ -317,7 +324,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     pub unsafe fn create_prefix_unchecked(&self, length: usize) -> Self {
         Self {
             data: self.data.clone(),
-            number_of_components: length,
+            component_count: length,
         }
     }
 
@@ -338,6 +345,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
     /// Test whether this path is a prefix of the given path.
     /// Paths are always a prefix of themselves, and the empty path is a prefix of every path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
     pub fn is_prefix_of(&self, other: &Self) -> bool {
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
@@ -350,11 +361,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
     /// Test whether this path is prefixed by the given path.
     /// Paths are always a prefix of themselves.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
     pub fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
     }
 
     /// Return the longest common prefix of this path and the given path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
     pub fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
 
@@ -368,11 +387,142 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         self.create_prefix(lcp_len).unwrap() // zip ensures that lcp_len <= self.get_component_count()
     }
+
+    /// Return the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    pub fn successor(&self) -> Option<Self> {
+        // If it is possible to append an empty component, then doing so yields the successor.
+        if let Ok(path) = self.append(Component::new_empty()) {
+            return Some(path);
+        }
+
+        // Otherwise, we try incrementing the final component. If that fails,
+        // we try to increment the second-to-final component, and so on.
+        // All components that come after the incremented component are discarded.
+        // If *no* component can be incremented, `self` is the maximal path and we return `None`.
+
+        for (i, component) in self.components().enumerate().rev() {
+            // It would be nice to call a `try_increment_component` function, but in order to avoid
+            // memory allocations, we write some lower-level but more efficient code.
+
+            // If it is possible to append a zero byte to a component, then doing so yields its successor.
+            if component.len() < MCL
+                && HeapEncoding::<MCL>::get_sum_of_lengths_for_component(self.data.as_ref(), i)
+                    .unwrap() // i < self.component_count
+                    < MPL
+            {
+                // We now know how to construct the path successor of `self`:
+                // Take the first `i` components (this *excludes* the current `component`),
+                // then append `component` with an additinoal zero byte at the end.
+
+                // To minimise allocations, we implement this construction explicitly rather than using
+                // our general-purpose functions. In particular, there is no need to explicitly
+                // construct `component + zero_byte` on the heap.
+
+                // First, we compute the total length of the allocation we need, then allocate it.
+                let successor_path_length =
+                    HeapEncoding::<MCL>::get_sum_of_lengths_for_component(self.data.as_ref(), i)
+                        .unwrap()
+                        + 1; // Can unwrap because `i < self.component_count`.
+                let buf_capacity = size_of::<usize>() * (i + 2) + successor_path_length;
+                let mut buf = BytesMut::with_capacity(buf_capacity);
+
+                // Write the length of the successor path as the first usize.
+                buf.extend_from_slice(&((i + 1) as usize).to_ne_bytes());
+
+                // Next, copy the total path lengths for the first i prefixes.
+                buf.extend_from_slice(
+                    &self.data.0[size_of::<usize>()..size_of::<usize>() * (i + 2)],
+                );
+
+                // Now, write the length of the final component, which is one greater than before.
+                buf_set_final_component_length(buf.as_mut(), i, successor_path_length);
+
+                // Finally, copy the raw bytes of the first i+1 components...
+                buf.extend_from_slice(
+                    &self.data.0[HeapEncoding::<MCL>::start_offset_of_component(
+                        &self.data.as_ref(),
+                        0,
+                    )
+                    .unwrap()
+                        ..HeapEncoding::<MCL>::start_offset_of_component(
+                            &self.data.as_ref(),
+                            i + 1,
+                        )
+                        .unwrap()],
+                );
+
+                // ... and append a zero byte.
+                buf.put_u8(0);
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
+            }
+
+            // We **cannot** append a zero byte, so instead we check whether we can treat the component as a fixed-width integer and increment it. The only failure case is if that component consists of 255-bytes only.
+            let can_increment = !component.iter().all(|byte| *byte == 255);
+
+            // If we cannot increment, we go to the next iteration of the loop. But if we can, we can create a copy of the
+            // prefix on the first `i + 1` components, and mutate its backing memory in-place.
+            if can_increment {
+                // First, we compute the total length of the allocation we need, then allocate it.
+                let successor_path_length =
+                    HeapEncoding::<MCL>::get_sum_of_lengths_for_component(self.data.as_ref(), i)
+                        .unwrap(); // Can unwrap because `i < self.component_count`.
+                let buf_capacity = size_of::<usize>() * (i + 2) + successor_path_length;
+                let mut buf = BytesMut::with_capacity(buf_capacity);
+
+                // Write the length of the successor path as the first usize.
+                buf.extend_from_slice(&((i + 1) as usize).to_ne_bytes());
+
+                // Next, copy the total path lengths for the first i+1 prefixes.
+                buf.extend_from_slice(
+                    &self.data.0[size_of::<usize>()..size_of::<usize>() * (i + 2)],
+                );
+
+                // Finally, copy the raw bytes of the first i+1 components.
+                buf.extend_from_slice(
+                    &self.data.0[HeapEncoding::<MCL>::start_offset_of_component(
+                        &self.data.as_ref(),
+                        0,
+                    )
+                    .unwrap()
+                        ..HeapEncoding::<MCL>::start_offset_of_component(
+                            &self.data.as_ref(),
+                            i + 1,
+                        )
+                        .unwrap()],
+                );
+
+                let start_component_offset =
+                    HeapEncoding::<MCL>::start_offset_of_component(buf.as_ref(), i).unwrap(); // i < self.component_count
+                let end_component_offset =
+                    HeapEncoding::<MCL>::end_offset_of_component(buf.as_ref(), i).unwrap(); // i < self.component_count
+                fixed_width_increment(
+                    &mut buf.as_mut()[start_component_offset..end_component_offset],
+                );
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
+            }
+        }
+
+        // Failed to increment any component, so `self` is the maximal path.
+        None
+    }
+
+    fn from_buffer_and_component_count(buf: Bytes, component_count: usize) -> Self {
+        Path {
+            data: HeapEncoding(buf),
+            component_count,
+        }
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
     fn eq(&self, other: &Self) -> bool {
-        if self.number_of_components != other.number_of_components {
+        if self.component_count != other.component_count {
             return false;
         } else {
             return self.components().eq(other.components());
@@ -384,7 +534,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Eq for Path<MCL, MCC,
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Hash for Path<MCL, MCC, MPL> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.number_of_components.hash(state);
+        self.component_count.hash(state);
 
         for comp in self.components() {
             comp.hash(state);
@@ -427,20 +577,20 @@ struct HeapEncoding<const MAX_COMPONENT_LENGTH: usize>(Bytes);
 // All offsets are in bytes, unless otherwise specified.
 // Arguments named `i` are the index of a component in the string, *not* a byte offset.
 impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
-    fn get_component_count(&self) -> usize {
-        self.get_usize_at_offset(0).unwrap() // We always store at least 8byte for the component count.
+    fn get_component_count(buf: &[u8]) -> usize {
+        Self::get_usize_at_offset(buf, 0).unwrap() // We always store at least 8byte for the component count.
     }
 
     // None if i is outside the slice.
-    fn get_sum_of_lengths_for_component(&self, i: usize) -> Option<usize> {
+    fn get_sum_of_lengths_for_component(buf: &[u8], i: usize) -> Option<usize> {
         let start_offset_in_bytes = Self::start_offset_of_sum_of_lengths_for_component(i);
-        self.get_usize_at_offset(start_offset_in_bytes)
+        Self::get_usize_at_offset(buf, start_offset_in_bytes)
     }
 
-    fn get_component<'s>(&'s self, i: usize) -> Option<Component<'s, MAX_COMPONENT_LENGTH>> {
-        let start = self.start_offset_of_component(i)?;
-        let end = self.end_offset_of_component(i)?;
-        return Some(unsafe { Component::new_unchecked(&self.0[start..end]) });
+    fn get_component<'s>(buf: &'s [u8], i: usize) -> Option<Component<'s, MAX_COMPONENT_LENGTH>> {
+        let start = Self::start_offset_of_component(buf, i)?;
+        let end = Self::end_offset_of_component(buf, i)?;
+        return Some(unsafe { Component::new_unchecked(&buf[start..end]) });
     }
 
     fn start_offset_of_sum_of_lengths_for_component(i: usize) -> usize {
@@ -448,37 +598,41 @@ impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
         size_of::<usize>() * (i + 1)
     }
 
-    fn start_offset_of_component(&self, i: usize) -> Option<usize> {
-        let metadata_length = (self.get_component_count() + 1) * size_of::<usize>();
+    fn start_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
+        let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
         if i == 0 {
             return Some(metadata_length);
         } else {
-            return self
-                .get_sum_of_lengths_for_component(i - 1) // Length of everything up until the previous component.
+            return Self::get_sum_of_lengths_for_component(buf, i - 1) // Length of everything up until the previous component.
                 .map(|length| length + metadata_length);
         }
     }
 
-    fn end_offset_of_component(&self, i: usize) -> Option<usize> {
-        let metadata_length = (self.get_component_count() + 1) * size_of::<usize>();
-        return self
-            .get_sum_of_lengths_for_component(i)
+    fn end_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
+        let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
+        return Self::get_sum_of_lengths_for_component(buf, i)
             .map(|length| length + metadata_length);
     }
 
-    fn get_usize_at_offset(&self, offset_in_bytes: usize) -> Option<usize> {
+    fn get_usize_at_offset(buf: &[u8], offset_in_bytes: usize) -> Option<usize> {
         let end = offset_in_bytes + size_of::<usize>();
 
         // We cannot interpret the memory in the slice as a usize directly, because the alignment might not match.
         // So we first copy the bytes onto the heap, then construct a usize from it.
         let mut usize_bytes = [0u8; size_of::<usize>()];
 
-        if self.0.len() < end {
+        if buf.len() < end {
             return None;
         } else {
-            usize_bytes.copy_from_slice(&self.0[offset_in_bytes..end]);
+            usize_bytes.copy_from_slice(&buf[offset_in_bytes..end]);
             return Some(usize::from_ne_bytes(usize_bytes));
         }
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONENT_LENGTH> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
@@ -552,4 +706,23 @@ fn and_then_or_clear<T, U>(opt: &mut Option<T>, f: impl FnOnce(&mut T) -> Option
         *opt = None;
     }
     x
+}
+
+// In a buffer that stores a path on the heap, set the sum of all component lengths for the i-th component, which must be the final component.
+fn buf_set_final_component_length(buf: &mut [u8], i: usize, new_sum_of_lengths: usize) {
+    let comp_len_start = (1 + i) * size_of::<usize>();
+    let comp_len_end = comp_len_start + size_of::<usize>();
+    buf[comp_len_start..comp_len_end].copy_from_slice(&new_sum_of_lengths.to_ne_bytes()[..]);
+}
+
+// Overflows to all zeroes if all bytes are 255.
+fn fixed_width_increment(buf: &mut [u8]) {
+    for byte_ref in buf.iter_mut().rev() {
+        if *byte_ref == 255 {
+            *byte_ref = 0;
+        } else {
+            *byte_ref += 1;
+            return;
+        }
+    }
 }

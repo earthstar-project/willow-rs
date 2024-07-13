@@ -284,11 +284,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
 
     /// Return the least path which is greater than `self`, or return `None` if `self` is the greatest possible path.
     pub fn successor(&self) -> Option<Self> {
-        if self.component_count() == 0 {
-            let new_component = PathComponentBox::<MCL>::new(&[]).ok()?;
-            return Self::new(&[new_component]).ok();
-        }
-
         // Try and add an empty component.
         if let Ok(path) = self.append(PathComponentBox::<MCL>::empty()) {
             return Some(path);
@@ -979,6 +974,17 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
     let p_lcp = p1.longest_common_prefix(&p2);
     assert_paths_are_equal(&ctrl_lcp, &p_lcp);
 
+    match (ctrl1.successor(), p1.successor()) {
+        (None, None) => {}
+        (Some(succ_ctrl1), Some(succ_p1)) => {
+            assert_paths_are_equal(&succ_ctrl1, &succ_p1);
+        }
+        _ => {
+            panic!("Not good (successor)");
+        }
+    }
+
+
     assert_eq!(ctrl1 == ctrl2, p1 == p2);
 
     if ctrl1 == ctrl2 {
@@ -1004,5 +1010,5 @@ fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
     assert!(ctrl
         .components()
         .map(|comp| comp.as_ref())
-        .eq(p.components().map(|comp| comp.into_inner())));
+        .eq(p.components().map(|comp| comp.into_inner())), "Unequal paths.\nctrl: {:?}\np: {:?}", ctrl, p);
 }
