@@ -1,3 +1,5 @@
+use core::error::Error;
+
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
 use crate::encoding::parameters::Decoder;
 use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
@@ -92,7 +94,10 @@ impl CompactWidth {
 pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     value: u64,
     consumer: &mut Consumer,
-) -> Result<(), EncodingConsumerError<Consumer::Error>> {
+) -> Result<(), EncodingConsumerError<Consumer::Error>>
+where
+    Consumer::Error: Error,
+{
     let width = CompactWidth::from_u64(value).width();
 
     consumer
