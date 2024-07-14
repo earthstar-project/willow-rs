@@ -10,6 +10,7 @@ use willow_data_model::{
     encoding::{
         error::DecodeError,
         parameters::{Decoder, Encoder},
+        relativity::{RelativeDecoder, RelativeEncoding},
     },
     path::*,
 };
@@ -39,9 +40,9 @@ where
     let mut producer = FromVec::new(new_vec);
 
     // Check for correct errors
-    let decoded_path = T::decode(&mut producer).await.unwrap();
+    let decoded_item = T::decode(&mut producer).await.unwrap();
 
-    assert_eq!(decoded_path, item);
+    assert_eq!(decoded_item, item);
 }
 
 pub async fn encoding_random<T>(data: &[u8])
@@ -57,6 +58,82 @@ where
             let mut consumer = IntoVec::<u8>::new();
 
             item.encode(&mut consumer).await.unwrap();
+
+            let encoded = consumer.as_ref().as_slice();
+
+            assert_eq!(encoded, &data[0..producer.get_offset()]);
+        }
+        Err(err) => match err {
+            // There was an error.
+            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+            DecodeError::InvalidInput => {
+                // GOOD.
+            }
+            DecodeError::U64DoesNotFitUsize => {
+                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+            }
+        },
+    };
+}
+
+pub async fn relative_encoding_roundtrip<T, R, C>(
+    relativity: RelativeEncoding<T, R>,
+    consumer: &mut TestConsumer<u8, u16, ()>,
+) where
+    T: std::fmt::Debug + PartialEq + Eq,
+    R: RelativeDecoder<T>,
+    C: BulkConsumer<Item = u8>,
+    RelativeEncoding<T, R>: Encoder,
+{
+    let consumer_should_error = consumer.should_error();
+
+    if let Err(_err) = relativity.encode(consumer).await {
+        assert!(consumer_should_error);
+        return;
+    }
+
+    if let Err(_err) = consumer.flush().await {
+        assert!(consumer_should_error);
+        return;
+    }
+
+    let mut new_vec = Vec::new();
+
+    new_vec.extend_from_slice(consumer.as_ref());
+
+    // THis should eventually be a testproducer, when we are able to initialise one with some known data.
+    let mut producer = FromVec::new(new_vec);
+
+    // Check for correct errors
+    let decoded_item = relativity
+        .reference
+        .relative_decode(&mut producer)
+        .await
+        .unwrap();
+
+    assert_eq!(decoded_item, relativity.subject);
+}
+
+pub async fn relative_encoding_random<R, T>(reference: R, data: &[u8])
+where
+    T: std::fmt::Debug,
+    R: RelativeDecoder<T>,
+    RelativeEncoding<T, R>: Encoder,
+{
+    let mut producer = SliceProducer::new(data);
+
+    match reference.relative_decode(&mut producer).await {
+        Ok(item) => {
+            // It decoded to a valid item! Gasp!
+            // Can we turn it back into the same encoding?
+            let mut consumer = IntoVec::<u8>::new();
+
+            let relativity = RelativeEncoding {
+                subject: item,
+                reference,
+            };
+
+            relativity.encode(&mut consumer).await.unwrap();
 
             let encoded = consumer.as_ref().as_slice();
 

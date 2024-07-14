@@ -145,3 +145,17 @@ path = "fuzz_targets/u64be_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "path_rel_path_encoding"
+path = "fuzz_targets/path_rel_path_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding_random"
+path = "fuzz_targets/path_rel_path_encoding_random.rs"
+test = false
+doc = false
+bench = false

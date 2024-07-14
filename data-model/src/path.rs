@@ -151,8 +151,11 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
         self.component_count() == 0
     }
 
-    /// Create a new [`Path`] by taking the first `length` components of this path.
+    /// Create a new [`Path`] by taking the *first* `length` components of this path.
     fn create_prefix(&self, length: usize) -> Self;
+
+    /// Create a new [`Path`] by taking the *last* `length` components of this path.
+    fn create_suffix(&self, length: usize) -> Self;
 
     /// Return all possible prefixes of a path, including the empty path and the path itself.
     fn all_prefixes(&self) -> impl Iterator<Item = Self> {
@@ -343,6 +346,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathRc<MCL, 
 
         let until = core::cmp::min(length, self.0.len());
         let slice = &self.0[0..until];
+
+        Path::new(slice).unwrap()
+    }
+
+    fn create_suffix(&self, length: usize) -> Self {
+        if length == 0 {
+            return Self::empty();
+        }
+
+        let from = core::cmp::max(0, self.0.len() - length);
+        let slice = &self.0[from..];
 
         Path::new(slice).unwrap()
     }
