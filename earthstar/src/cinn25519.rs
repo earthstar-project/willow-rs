@@ -48,9 +48,12 @@ impl<'a, const MIN_LENGTH: usize, const MAX_LENGTH: usize> Arbitrary<'a>
     for Shortname<MIN_LENGTH, MAX_LENGTH>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let shortname_string: String = Arbitrary::arbitrary(u)?;
+        let shortname_bytes: [u8; MIN_LENGTH] = Arbitrary::arbitrary(u)?;
 
-        Self::new(&shortname_string).map_err(|_| ArbitraryError::IncorrectFormat)
+        let shortname =
+            std::str::from_utf8(&shortname_bytes).map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+        Self::new(shortname).map_err(|_| ArbitraryError::IncorrectFormat)
     }
 
     fn size_hint(_depth: usize) -> (usize, Option<usize>) {

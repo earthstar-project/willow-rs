@@ -159,3 +159,10 @@ path = "fuzz_targets/path_rel_path_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "entry_rel_entry_encoding"
+path = "fuzz_targets/entry_rel_entry_encoding.rs"
+test = false
+doc = false
+bench = false

@@ -88,16 +88,33 @@ impl CompactWidth {
             CompactWidth::Eight => 8,
         }
     }
+
+    /// Encode a [`CompactWidth`] as a 2-bit integer `n` such that 2^n gives the bytewidth of the [`CompactWidth`], and then place that 2-bit number into a `u8` at the bit-index of `position`.
+    pub fn bitmask(&self, position: u8) -> u8 {
+        let og = match self {
+            CompactWidth::One => 0b0000_0000,
+            CompactWidth::Two => 0b0100_0000,
+            CompactWidth::Four => 0b1000_0000,
+            CompactWidth::Eight => 0b1100_0000,
+        };
+
+        og >> position
+    }
+
+    pub fn from_2bit_int(n: u8, position: u8) -> Self {
+        let mask = 0b0000_0011;
+        let two_bit_int = n >> (6 - position) & mask;
+
+        // Because we sanitise the input down to a 2-bit integer, we can safely unwrap this.
+        CompactWidth::new(2u8.pow(two_bit_int as u32)).unwrap()
+    }
 }
 
 /// Encode a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
 pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     value: u64,
     consumer: &mut Consumer,
-) -> Result<(), EncodingConsumerError<Consumer::Error>>
-where
-    Consumer::Error: Error,
-{
+) -> Result<(), EncodingConsumerError<Consumer::Error>> {
     let width = CompactWidth::from_u64(value).width();
 
     consumer

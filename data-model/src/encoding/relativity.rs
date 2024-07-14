@@ -1,12 +1,16 @@
-use std::future::Future;
+use core::error::Error;
+use core::future::Future;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
     encoding::{
+        compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
         error::{DecodeError, EncodingConsumerError},
         max_power::{decode_max_power, encode_max_power},
         parameters::{Decoder, Encoder},
     },
+    entry::Entry,
+    parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::{Path, PathRc},
 };
 
@@ -37,7 +41,7 @@ pub trait RelativeEncoder<R> {
         Consumer: BulkConsumer<Item = u8>;
 }
 
-/// A type that can be used to decode from a bytestring *encoded relative to `Self`*.
+/// A type that can be used to decode `T` from a bytestring *encoded relative to `Self`*.
 pub trait RelativeDecoder<T> {
     /// A function from the set of bytestrings *encoded relative to `Self`* to the set of `T` in relation to `Self`.
     fn relative_decode<Producer>(
@@ -95,9 +99,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathR
             return Err(DecodeError::InvalidInput);
         }
 
-        // What is this weird situation?
-        // LCP is zero, but there IS overlap between
-
         let prefix = self.create_prefix(lcp as usize);
         let suffix = PathRc::<MCL, MCC, MPL>::decode(producer).await?;
 
@@ -117,5 +118,142 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathR
         }
 
         Ok(new)
+    }
+}
+
+// Entry <> Entry
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    RelativeEncoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
+    for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
+where
+    N: NamespaceId + Encoder,
+    S: SubspaceId + Encoder,
+    PD: PayloadDigest + Encoder,
+{
+    /// Encode an [`Entry`] relative to a reference [`Entry`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
+    async fn relative_encode<Consumer>(
+        &self,
+        reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
+        consumer: &mut Consumer,
+    ) -> Result<(), RelativeEncodeError<Consumer::Error>>
+    where
+        Consumer: BulkConsumer<Item = u8>,
+    {
+        let time_diff = self.timestamp.abs_diff(reference.timestamp);
+
+        let mut header: u8 = 0b0000_0000;
+
+        if self.namespace_id != reference.namespace_id {
+            header |= 0b1000_0000;
+        }
+
+        if self.subspace_id != reference.subspace_id {
+            header |= 0b0100_0000;
+        }
+
+        if time_diff > 0 && self.timestamp > reference.timestamp {
+            header |= 0b0010_0000;
+        }
+
+        header |= CompactWidth::from_u64(time_diff).bitmask(4);
+
+        header |= CompactWidth::from_u64(self.payload_length).bitmask(6);
+
+        if let Err(err) = consumer.consume(header).await {
+            return Err(RelativeEncodeError::Consumer(EncodingConsumerError {
+                bytes_consumed: 0,
+                reason: err,
+            }));
+        };
+
+        if self.namespace_id != reference.namespace_id {
+            self.namespace_id.encode(consumer).await?;
+        }
+
+        if self.subspace_id != reference.subspace_id {
+            self.subspace_id.encode(consumer).await?;
+        }
+
+        self.path.relative_encode(&reference.path, consumer).await?;
+
+        encode_compact_width_be(time_diff, consumer).await?;
+
+        encode_compact_width_be(self.payload_length, consumer).await?;
+
+        self.payload_digest.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    RelativeDecoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
+    for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
+where
+    N: NamespaceId + Decoder + std::fmt::Debug,
+    S: SubspaceId + Decoder + std::fmt::Debug,
+    PD: PayloadDigest + Decoder,
+{
+    /// Decode an [`Entry`] relative from this [`Entry`].
+    async fn relative_decode<Producer>(
+        &self,
+        producer: &mut Producer,
+    ) -> Result<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>, DecodeError<Producer::Error>>
+    where
+        Producer: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let mut header_slice = [0u8];
+
+        producer
+            .bulk_overwrite_full_slice(&mut header_slice)
+            .await?;
+
+        let header = header_slice[0];
+
+        let is_namespace_encoded = header & 0b1000_0000 == 0b1000_0000;
+        let is_subspace_encoded = header & 0b0100_0000 == 0b0100_0000;
+        let add_or_subtract_time_diff = header & 0b0010_0000 == 0b0010_0000;
+        let compact_width_time_diff = CompactWidth::from_2bit_int(header, 4);
+        let compact_width_payload_length = CompactWidth::from_2bit_int(header, 6);
+
+        let namespace_id = if is_namespace_encoded {
+            N::decode(producer).await?
+        } else {
+            self.namespace_id.clone()
+        };
+
+        let subspace_id = if is_subspace_encoded {
+            S::decode(producer).await?
+        } else {
+            self.subspace_id.clone()
+        };
+
+        let path = self.path.relative_decode(producer).await?;
+
+        let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
+
+        let timestamp = if add_or_subtract_time_diff {
+            self.timestamp + time_diff
+        } else {
+            self.timestamp - time_diff
+        };
+
+        let payload_length =
+            decode_compact_width_be(compact_width_payload_length, producer).await?;
+
+        let payload_digest = PD::decode(producer).await?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
     }
 }
