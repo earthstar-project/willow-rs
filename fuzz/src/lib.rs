@@ -10,7 +10,7 @@ use willow_data_model::{
     encoding::{
         error::DecodeError,
         parameters::{Decoder, Encoder},
-        relativity::{RelativeDecoder, RelativeEncoding},
+        relativity::{RelativeDecoder, RelativeEncoder},
     },
     path::*,
 };
@@ -77,17 +77,17 @@ where
 }
 
 pub async fn relative_encoding_roundtrip<T, R, C>(
-    relativity: RelativeEncoding<T, R>,
+    subject: T,
+    reference: R,
     consumer: &mut TestConsumer<u8, u16, ()>,
 ) where
-    T: std::fmt::Debug + PartialEq + Eq,
+    T: std::fmt::Debug + PartialEq + Eq + RelativeEncoder<R>,
     R: RelativeDecoder<T>,
     C: BulkConsumer<Item = u8>,
-    RelativeEncoding<T, R>: Encoder,
 {
     let consumer_should_error = consumer.should_error();
 
-    if let Err(_err) = relativity.encode(consumer).await {
+    if let Err(_err) = subject.relative_encode(&reference, consumer).await {
         assert!(consumer_should_error);
         return;
     }
@@ -105,20 +105,15 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     let mut producer = FromVec::new(new_vec);
 
     // Check for correct errors
-    let decoded_item = relativity
-        .reference
-        .relative_decode(&mut producer)
-        .await
-        .unwrap();
+    let decoded_item = reference.relative_decode(&mut producer).await.unwrap();
 
-    assert_eq!(decoded_item, relativity.subject);
+    assert_eq!(decoded_item, subject);
 }
 
 pub async fn relative_encoding_random<R, T>(reference: R, data: &[u8])
 where
-    T: std::fmt::Debug,
+    T: std::fmt::Debug + RelativeEncoder<R>,
     R: RelativeDecoder<T>,
-    RelativeEncoding<T, R>: Encoder,
 {
     let mut producer = SliceProducer::new(data);
 
@@ -128,12 +123,9 @@ where
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
-            let relativity = RelativeEncoding {
-                subject: item,
-                reference,
-            };
-
-            relativity.encode(&mut consumer).await.unwrap();
+            item.relative_encode(&reference, &mut consumer)
+                .await
+                .unwrap();
 
             let encoded = consumer.as_ref().as_slice();
 
