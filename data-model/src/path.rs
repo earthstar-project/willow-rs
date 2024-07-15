@@ -386,7 +386,22 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         &'s self,
     ) -> impl DoubleEndedIterator<Item = Component<'s, MCL>> + ExactSizeIterator<Item = Component<'s, MCL>>
     {
-        (0..self.get_component_count()).map(|i| {
+        self.suffix_components(0)
+    }
+
+    /// Create an iterator over the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn suffix_components<'s>(
+        &'s self,
+        i: usize,
+    ) -> impl DoubleEndedIterator<Item = Component<'s, MCL>> + ExactSizeIterator<Item = Component<'s, MCL>>
+    {
+        (i..self.get_component_count()).map(|i| {
             self.get_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
         })
     }
@@ -403,7 +418,23 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ) -> impl DoubleEndedIterator<Item = OwnedComponent<MCL>>
            + ExactSizeIterator<Item = OwnedComponent<MCL>>
            + '_ {
-        (0..self.get_component_count()).map(|i| {
+        self.suffix_owned_components(0)
+    }
+
+    /// Create an iterator over owned handles to the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn suffix_owned_components(
+        &self,
+        i: usize,
+    ) -> impl DoubleEndedIterator<Item = OwnedComponent<MCL>>
+           + ExactSizeIterator<Item = OwnedComponent<MCL>>
+           + '_ {
+        (i..self.get_component_count()).map(|i| {
             self.get_owned_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
         })
     }
