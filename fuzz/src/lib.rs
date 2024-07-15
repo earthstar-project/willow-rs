@@ -112,8 +112,8 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
 
 pub async fn relative_encoding_random<R, T>(reference: R, data: &[u8])
 where
-    T: std::fmt::Debug + RelativeEncoder<R>,
-    R: RelativeDecoder<T>,
+    T: RelativeEncoder<R> + std::fmt::Debug,
+    R: RelativeDecoder<T> + std::fmt::Debug,
 {
     let mut producer = SliceProducer::new(data);
 

@@ -1,4 +1,3 @@
-use core::error::Error;
 use core::future::Future;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
@@ -154,7 +153,7 @@ where
             header |= 0b0100_0000;
         }
 
-        if time_diff > 0 && self.timestamp > reference.timestamp {
+        if self.timestamp > reference.timestamp {
             header |= 0b0010_0000;
         }
 
@@ -214,6 +213,11 @@ where
 
         let header = header_slice[0];
 
+        // Verify that bit 3 is 0 as specified - good indicator of invalid data.
+        if header | 0b1110_1111 == 0b1111_1111 {
+            return Err(DecodeError::InvalidInput);
+        }
+
         let is_namespace_encoded = header & 0b1000_0000 == 0b1000_0000;
         let is_subspace_encoded = header & 0b0100_0000 == 0b0100_0000;
         let add_or_subtract_time_diff = header & 0b0010_0000 == 0b0010_0000;
@@ -226,24 +230,57 @@ where
             self.namespace_id.clone()
         };
 
+        // Verify that the encoded namespace wasn't the same as ours
+        // Which would indicate invalid input
+        if is_namespace_encoded && namespace_id == self.namespace_id {
+            return Err(DecodeError::InvalidInput);
+        }
+
         let subspace_id = if is_subspace_encoded {
             S::decode(producer).await?
         } else {
             self.subspace_id.clone()
         };
 
+        // Verify that the encoded subspace wasn't the same as ours
+        // Which would indicate invalid input
+        if is_subspace_encoded && subspace_id == self.subspace_id {
+            return Err(DecodeError::InvalidInput);
+        }
+
         let path = self.path.relative_decode(producer).await?;
 
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
+        // Verify that the compact width of the time diff matches the time diff we just decoded.
+        if CompactWidth::from_2bit_int(header, 4) != CompactWidth::from_u64(time_diff) {
+            return Err(DecodeError::InvalidInput);
+        }
+
+        // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
         let timestamp = if add_or_subtract_time_diff {
-            self.timestamp + time_diff
+            self.timestamp
+                .checked_add(time_diff)
+                .ok_or(DecodeError::InvalidInput)?
         } else {
-            self.timestamp - time_diff
+            self.timestamp
+                .checked_sub(time_diff)
+                .ok_or(DecodeError::InvalidInput)?
         };
+
+        // Verify that the correct add_or_subtract_time_diff flag was set.
+        let should_have_subtracted = timestamp <= self.timestamp;
+        if add_or_subtract_time_diff && should_have_subtracted {
+            return Err(DecodeError::InvalidInput);
+        }
 
         let payload_length =
             decode_compact_width_be(compact_width_payload_length, producer).await?;
+
+        // Verify that the compact width of the payload length matches the payload length we just decoded.
+        if CompactWidth::from_2bit_int(header, 6) != CompactWidth::from_u64(payload_length) {
+            return Err(DecodeError::InvalidInput);
+        }
 
         let payload_digest = PD::decode(producer).await?;
 

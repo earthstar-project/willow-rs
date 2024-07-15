@@ -1,5 +1,3 @@
-use core::error::Error;
-
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
 use crate::encoding::parameters::Decoder;
 use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
