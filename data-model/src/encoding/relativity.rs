@@ -13,21 +13,6 @@ use crate::{
     path::{Path, PathRc},
 };
 
-/// Returned when a relative encoding fails
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RelativeEncodeError<E> {
-    /// The subject could not be encoded relative to the reference (e.g. because it was not logically included by the reference).
-    IllegalRelativity(),
-    /// The encoding failed to be consumed by a [`ufotofu::local_nb::Consumer`].
-    Consumer(EncodingConsumerError<E>),
-}
-
-impl<E> From<EncodingConsumerError<E>> for RelativeEncodeError<E> {
-    fn from(err: EncodingConsumerError<E>) -> Self {
-        RelativeEncodeError::Consumer(err)
-    }
-}
-
 /// A type that can be used to encoded to a bytestring *encoded relative to `R`*.
 pub trait RelativeEncoder<R> {
     /// A function from the set `Self` to the set of bytestrings *encoded relative to `reference`*.
@@ -35,7 +20,7 @@ pub trait RelativeEncoder<R> {
         &self,
         reference: &R,
         consumer: &mut Consumer,
-    ) -> impl Future<Output = Result<(), RelativeEncodeError<Consumer::Error>>>
+    ) -> impl Future<Output = Result<(), EncodingConsumerError<Consumer::Error>>>
     where
         Consumer: BulkConsumer<Item = u8>;
 }
@@ -64,7 +49,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncoder<PathR
         &self,
         reference: &PathRc<MCL, MCC, MPL>,
         consumer: &mut Consumer,
-    ) -> Result<(), RelativeEncodeError<Consumer::Error>>
+    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -137,7 +122,7 @@ where
         &self,
         reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
         consumer: &mut Consumer,
-    ) -> Result<(), RelativeEncodeError<Consumer::Error>>
+    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -162,10 +147,10 @@ where
         header |= CompactWidth::from_u64(self.payload_length).bitmask(6);
 
         if let Err(err) = consumer.consume(header).await {
-            return Err(RelativeEncodeError::Consumer(EncodingConsumerError {
+            return Err(EncodingConsumerError {
                 bytes_consumed: 0,
                 reason: err,
-            }));
+            });
         };
 
         if self.namespace_id != reference.namespace_id {
