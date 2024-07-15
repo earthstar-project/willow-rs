@@ -90,7 +90,7 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
     }
 
     /// Return the least component which is greater than `self` but which is not prefixed by `self`.
-    fn prefix_successor(&self) -> Option<Self> {
+    fn greater_but_not_prefixed(&self) -> Option<Self> {
         for i in (0..self.len()).rev() {
             if self.as_ref()[i] != 255 {
                 // Since we are not adjusting the length of the component this will always succeed.
@@ -308,7 +308,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
     }
 
     /// Return the least path that is greater than `self` and which is not prefixed by `self`, or `None` if `self` is the empty path *or* if `self` is the greatest path.
-    pub fn successor_of_prefix(&self) -> Option<Self> {
+    pub fn greater_but_not_prefixed(&self) -> Option<Self> {
         for (i, component) in self.components().enumerate().rev() {
             if let Some(successor_comp) = component.try_append_zero_byte() {
                 if let Ok(path) = self.create_prefix(i).append(successor_comp) {
@@ -316,7 +316,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
                 }
             }
 
-            if let Some(successor_comp) = component.prefix_successor() {
+            if let Some(successor_comp) = component.greater_but_not_prefixed() {
                 return self.create_prefix(i).append(successor_comp).ok();
             }
         }
@@ -721,47 +721,47 @@ pub fn test_successor<const MCL: usize, const MCC: usize, const MPL: usize>(
     }
 }
 
-pub fn test_successor_of_prefix<const MCL: usize, const MCC: usize, const MPL: usize>(
+pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const MPL: usize>(
     baseline: PathRc<MCL, MCC, MPL>,
     candidate: PathRc<MCL, MCC, MPL>,
     unsucceedable: &[PathRc<MCL, MCC, MPL>],
 ) {
-    let prefix_successor = baseline.successor_of_prefix();
+    let greater_but_not_prefixed = baseline.greater_but_not_prefixed();
 
-    match prefix_successor {
+    match greater_but_not_prefixed {
         None => {
             if !unsucceedable.iter().any(|unsuc| unsuc == &baseline) {
                 println!("\n\n\n");
                 println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", prefix_successor);
+                println!("successor: {:?}", greater_but_not_prefixed);
                 println!("candidate: {:?}", candidate);
                 panic!("returned None when the path was NOT the greatest path! BoooOOOoo\n\n\n\n");
             }
         }
-        Some(prefix_successor) => {
-            if prefix_successor <= baseline {
+        Some(greater_but_not_prefixed) => {
+            if greater_but_not_prefixed <= baseline {
                 println!("\n\n\n");
                 println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", prefix_successor);
+                println!("successor: {:?}", greater_but_not_prefixed);
                 println!("candidate: {:?}", candidate);
                 panic!("the successor is meant to be greater than the baseline, but wasn't!! BOOOOOOOOO\n\n\n\n");
             }
 
-            if prefix_successor.is_prefixed_by(&baseline) {
+            if greater_but_not_prefixed.is_prefixed_by(&baseline) {
                 println!("\n\n\n");
                 println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", prefix_successor);
+                println!("successor: {:?}", greater_but_not_prefixed);
                 println!("candidate: {:?}", candidate);
                 panic!("successor was prefixed by the path it was derived from! BoooOOooOOooOo\n\n\n\n");
             }
 
             if !baseline.is_prefix_of(&candidate)
-                && candidate < prefix_successor
+                && candidate < greater_but_not_prefixed
                 && candidate > baseline
             {
                 println!("\n\n\n");
                 println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", prefix_successor);
+                println!("successor: {:?}", greater_but_not_prefixed);
                 println!("candidate: {:?}", candidate);
 
                 panic!(
@@ -981,6 +981,16 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
         }
         _ => {
             panic!("Not good (successor)");
+        }
+    }
+
+    match (ctrl1.greater_but_not_prefixed(), p1.greater_but_not_prefixed()) {
+        (None, None) => {}
+        (Some(succ_ctrl1), Some(succ_p1)) => {
+            assert_paths_are_equal(&succ_ctrl1, &succ_p1);
+        }
+        _ => {
+            panic!("Not good (greater_but_not_prefixed)");
         }
     }
 

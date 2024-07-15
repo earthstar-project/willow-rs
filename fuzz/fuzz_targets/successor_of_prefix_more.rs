@@ -23,5 +23,5 @@ fuzz_target!(|data: (PathRc<3, 3, 3>, PathRc<3, 3, 3>)| {
         .unwrap(),
     ];
 
-    test_successor_of_prefix(baseline, candidate, &unsucceedables);
+    test_greater_but_not_prefixed(baseline, candidate, &unsucceedables);
 });
