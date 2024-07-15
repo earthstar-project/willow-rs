@@ -62,6 +62,65 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'a, MAX_C
     }
 }
 
+/// An owned [component](https://willowprotocol.org/specs/data-model/index.html#Component) of a Willow Path that uses reference counting for cheap cloning.
+///
+/// This type enforces a const-generic [maximum component length](https://willowprotocol.org/specs/data-model/index.html#max_component_length). Use the `AsRef`, `DeRef`, or `Borrow` implementation to access the immutable byte slice.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OwnedComponent<const MAX_COMPONENT_LENGTH: usize>(Bytes);
+
+impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
+    /// Create an `OwnedComponent` by copying data from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the length of the slice. Performs a single allocation of `O(n)` bytes.
+    pub fn new(data: &[u8]) -> Option<Self> {
+        if data.len() <= MAX_COMPONENT_LENGTH {
+            return Some(unsafe { Self::new_unchecked(data) }); // Safe because we just checked the length.
+        } else {
+            return None;
+        }
+    }
+
+    /// Create an `OwnedComponent` by copying data from a byte slice, without verifying its length.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the length of the slice. Performs a single allocation of `O(n)` bytes.
+    pub unsafe fn new_unchecked(data: &[u8]) -> Self {
+        Self(Bytes::copy_from_slice(data))
+    }
+
+    /// Create an empty component.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn new_empty() -> Self {
+        return Self(Bytes::new());
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> Deref for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    fn borrow(&self) -> &[u8] {
+        self.0.borrow()
+    }
+}
+
 #[derive(Debug)]
 /// An error arising from trying to construct a invalid [`Path`] from valid components.
 pub enum InvalidPathError {
@@ -79,7 +138,7 @@ pub struct Path<const MCL: usize, const MCC: usize, const MPL: usize> {
     /// The data of the underlying path.
     data: HeapEncoding<MCL>,
     /// Number of components of the `data` to consider for this particular path. Must be less than or equal to the total number of components.
-    /// This field enables cheap prefix creation by cloning the heap data and adjusting the `component_count`. 
+    /// This field enables cheap prefix creation by cloning the heap data and adjusting the `component_count`.
     component_count: usize,
 }
 
@@ -284,6 +343,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         return HeapEncoding::<MCL>::get_component(self.data.as_ref(), i);
     }
 
+    /// Get an owned handle to the `i`-th [`Component`] of this path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn get_owned_component(&self, i: usize) -> Option<OwnedComponent<MCL>> {
+        let start = HeapEncoding::<MCL>::start_offset_of_component(self.data.0.as_ref(), i)?;
+        let end = HeapEncoding::<MCL>::end_offset_of_component(self.data.0.as_ref(), i)?;
+        return Some(OwnedComponent(self.data.0.slice(start..end)));
+    }
+
     /// Create an iterator over the components of this path.
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
@@ -297,6 +367,23 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     {
         (0..self.get_component_count()).map(|i| {
             self.get_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
+        })
+    }
+
+    /// Create an iterator over owned handles to the components of this path.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn owned_components(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = OwnedComponent<MCL>>
+           + ExactSizeIterator<Item = OwnedComponent<MCL>>
+           + '_ {
+        (0..self.get_component_count()).map(|i| {
+            self.get_owned_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
         })
     }
 
@@ -480,9 +567,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
             if let Some(next_component_length) = next_component_length {
                 // Yay, we can replace the i-th comopnent and then we are done.
-                
+
                 let mut buf = clone_prefix_and_lengthen_final_component(self, i, 0);
-                let length_of_prefix = HeapEncoding::<MCL>::get_sum_of_lengths_for_component(&buf, i).unwrap();
+                let length_of_prefix =
+                    HeapEncoding::<MCL>::get_sum_of_lengths_for_component(&buf, i).unwrap();
 
                 // Update the length of the final component.
                 buf_set_final_component_length(
@@ -494,7 +582,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
                 // Increment the byte at position `next_component_length` of the final component.
                 let offset = HeapEncoding::<MCL>::start_offset_of_component(buf.as_ref(), i)
                     .unwrap()
-                    + next_component_length - 1;
+                    + next_component_length
+                    - 1;
                 let byte = buf.as_ref()[offset]; // guaranteed < 255...
                 buf.as_mut()[offset] = byte + 1; // ... hence no overflow here.
 

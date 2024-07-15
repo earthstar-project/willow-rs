@@ -954,6 +954,11 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
             ctrl1.get_component(i).map(|comp| comp.as_ref()),
             p1.get_component(i).map(|comp| comp.into_inner())
         );
+
+        match p1.get_owned_component(i) {
+            None => assert_eq!(ctrl1.get_component(i), None),
+            Some(comp) => assert_eq!(ctrl1.get_component(i).unwrap().as_ref(), comp.as_ref()),
+        }
     }
 
     assert!(ctrl1
@@ -984,7 +989,10 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
         }
     }
 
-    match (ctrl1.greater_but_not_prefixed(), p1.greater_but_not_prefixed()) {
+    match (
+        ctrl1.greater_but_not_prefixed(),
+        p1.greater_but_not_prefixed(),
+    ) {
         (None, None) => {}
         (Some(succ_ctrl1), Some(succ_p1)) => {
             assert_paths_are_equal(&succ_ctrl1, &succ_p1);
@@ -993,7 +1001,6 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
             panic!("Not good (greater_but_not_prefixed)");
         }
     }
-
 
     assert_eq!(ctrl1 == ctrl2, p1 == p2);
 
@@ -1017,8 +1024,12 @@ fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
     ctrl: &PathRc<MCL, MCC, MPL>,
     p: &Path<MCL, MCC, MPL>,
 ) {
-    assert!(ctrl
-        .components()
-        .map(|comp| comp.as_ref())
-        .eq(p.components().map(|comp| comp.into_inner())), "Unequal paths.\nctrl: {:?}\np: {:?}", ctrl, p);
+    assert!(
+        ctrl.components()
+            .map(|comp| comp.as_ref())
+            .eq(p.components().map(|comp| comp.into_inner())),
+        "Unequal paths.\nctrl: {:?}\np: {:?}",
+        ctrl,
+        p
+    );
 }
