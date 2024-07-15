@@ -130,6 +130,27 @@ pub enum InvalidPathError {
     TooManyComponents,
 }
 
+impl core::fmt::Display for InvalidPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvalidPathError::PathTooLong => {
+                write!(
+                    f,
+                    "Total length of a path in bytes exceeded the maximum path length"
+                )
+            }
+            InvalidPathError::TooManyComponents => {
+                write!(
+                    f,
+                    "Number of components of a path exceeded the maximum component count"
+                )
+            }
+        }
+    }
+}
+
+impl core::error::Error for InvalidPathError {}
+
 /// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of, expensive to append to.
 ///
 /// Enforces that each component has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each path has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and that the total size in bytes of all components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
