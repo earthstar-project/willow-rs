@@ -1,5 +1,5 @@
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
-use crate::encoding::parameters::Decoder;
+use crate::encoding::parameters::Decodable;
 use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 

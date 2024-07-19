@@ -2,13 +2,13 @@ use core::mem::size_of;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::error::{DecodeError, EncodingConsumerError};
-use crate::encoding::parameters::{Decoder, Encoder};
+use crate::encoding::parameters::{Decodable, Encodable};
 
 /// A `u8` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U8BE(u8);
 
-impl Encoder for U8BE {
+impl Encodable for U8BE {
     async fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
@@ -22,7 +22,7 @@ impl Encoder for U8BE {
     }
 }
 
-impl Decoder for U8BE {
+impl Decodable for U8BE {
     async fn decode<Producer>(producer: &mut Producer) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
@@ -50,7 +50,7 @@ impl From<U8BE> for u64 {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U16BE(u16);
 
-impl Encoder for U16BE {
+impl Encodable for U16BE {
     async fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
@@ -64,7 +64,7 @@ impl Encoder for U16BE {
     }
 }
 
-impl Decoder for U16BE {
+impl Decodable for U16BE {
     async fn decode<Producer>(producer: &mut Producer) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
@@ -92,7 +92,7 @@ impl From<U16BE> for u64 {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U32BE(u32);
 
-impl Encoder for U32BE {
+impl Encodable for U32BE {
     async fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
@@ -106,7 +106,7 @@ impl Encoder for U32BE {
     }
 }
 
-impl Decoder for U32BE {
+impl Decodable for U32BE {
     async fn decode<Producer>(producer: &mut Producer) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
@@ -134,7 +134,7 @@ impl From<U32BE> for u64 {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U64BE(u64);
 
-impl Encoder for U64BE {
+impl Encodable for U64BE {
     async fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
@@ -148,7 +148,7 @@ impl Encoder for U64BE {
     }
 }
 
-impl Decoder for U64BE {
+impl Decodable for U64BE {
     async fn decode<Producer>(producer: &mut Producer) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,

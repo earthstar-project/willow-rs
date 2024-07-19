@@ -3,7 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
     },
     parameters::NamespaceId,
 };
@@ -22,7 +22,7 @@ impl Default for NamespaceIdentifier {
     }
 }
 
-impl Encoder for NamespaceIdentifier {
+impl Encodable for NamespaceIdentifier {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
@@ -32,7 +32,7 @@ impl Encoder for NamespaceIdentifier {
     }
 }
 
-impl Decoder for NamespaceIdentifier {
+impl Decodable for NamespaceIdentifier {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<<P>::Error>>
     where
         P: BulkProducer<Item = u8>,

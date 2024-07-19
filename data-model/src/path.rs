@@ -6,7 +6,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use crate::encoding::{
     error::{DecodeError, EncodingConsumerError},
     max_power::{decode_max_power, encode_max_power},
-    parameters::{Decoder, Encoder},
+    parameters::{Decodable, Encodable},
 };
 
 #[derive(Debug)]
@@ -422,7 +422,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for PathRc
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for PathRc<MCL, MCC, MPL> {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
@@ -439,7 +439,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MC
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for PathRc<MCL, MCC, MPL> {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,

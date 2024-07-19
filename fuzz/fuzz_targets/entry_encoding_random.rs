@@ -9,7 +9,7 @@ use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use willow_data_model::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
     },
     entry::Entry,
     parameters::PayloadDigest,
@@ -19,7 +19,7 @@ use willow_data_model::{
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);
 
-impl Encoder for FakePayloadDigest {
+impl Encodable for FakePayloadDigest {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
@@ -30,7 +30,7 @@ impl Encoder for FakePayloadDigest {
     }
 }
 
-impl Decoder for FakePayloadDigest {
+impl Decodable for FakePayloadDigest {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,

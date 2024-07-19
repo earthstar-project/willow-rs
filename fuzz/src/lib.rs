@@ -9,7 +9,7 @@ use ufotofu::{
 use willow_data_model::{
     encoding::{
         error::DecodeError,
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
         relativity::{RelativeDecoder, RelativeEncoder},
     },
     path::*,
@@ -17,7 +17,7 @@ use willow_data_model::{
 
 pub async fn encoding_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
 where
-    T: Encoder + Decoder + std::fmt::Debug + PartialEq + Eq,
+    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
     C: BulkConsumer<Item = u8>,
 {
     let consumer_should_error = consumer.should_error();
@@ -47,7 +47,7 @@ where
 
 pub async fn encoding_random<T>(data: &[u8])
 where
-    T: Encoder + Decoder,
+    T: Encodable + Decodable,
 {
     let mut producer = SliceProducer::new(data);
 

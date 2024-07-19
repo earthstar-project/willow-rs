@@ -3,7 +3,7 @@ use either::Either;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::{
     error::{DecodeError, EncodingConsumerError},
-    parameters::{Decoder, Encoder},
+    parameters::{Decodable, Encodable},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -71,7 +71,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Cinn25519PublicKey<MIN_LE
     // TODO: fn verify
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encoder
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable
     for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
 {
     async fn encode<Consumer>(
@@ -102,7 +102,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encoder
     }
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decoder
+impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
     for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
 {
     async fn decode<Producer>(

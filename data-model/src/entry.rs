@@ -7,7 +7,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use crate::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
         unsigned_int::U64BE,
     },
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
@@ -69,12 +69,12 @@ where
     }
 }
 
-impl<N, S, P, PD> Encoder for Entry<N, S, P, PD>
+impl<N, S, P, PD> Encodable for Entry<N, S, P, PD>
 where
-    N: NamespaceId + Encoder,
-    S: SubspaceId + Encoder,
-    P: Path + Encoder,
-    PD: PayloadDigest + Encoder,
+    N: NamespaceId + Encodable,
+    S: SubspaceId + Encodable,
+    P: Path + Encodable,
+    PD: PayloadDigest + Encodable,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>>
     where
@@ -93,12 +93,12 @@ where
     }
 }
 
-impl<N, S, P, PD> Decoder for Entry<N, S, P, PD>
+impl<N, S, P, PD> Decodable for Entry<N, S, P, PD>
 where
-    N: NamespaceId + Decoder,
-    S: SubspaceId + Decoder,
-    P: Path + Decoder,
-    PD: PayloadDigest + Decoder,
+    N: NamespaceId + Decodable,
+    S: SubspaceId + Decodable,
+    P: Path + Decodable,
+    PD: PayloadDigest + Decodable,
 {
     async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
     where

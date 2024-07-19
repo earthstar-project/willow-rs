@@ -7,7 +7,7 @@ use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
-use willow_data_model::encoding::parameters::{Decoder, Encoder};
+use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::parameters::PayloadDigest;
 use willow_data_model::path::PathRc;
@@ -16,7 +16,7 @@ use willow_data_model_fuzz::relative_encoding_roundtrip;
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);
 
-impl Encoder for FakePayloadDigest {
+impl Encodable for FakePayloadDigest {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
@@ -27,7 +27,7 @@ impl Encoder for FakePayloadDigest {
     }
 }
 
-impl Decoder for FakePayloadDigest {
+impl Decodable for FakePayloadDigest {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,

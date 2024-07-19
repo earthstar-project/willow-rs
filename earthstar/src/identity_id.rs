@@ -3,7 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::{
     encoding::{
         error::{DecodeError, EncodingConsumerError},
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
     },
     parameters::SubspaceId,
 };
@@ -22,7 +22,7 @@ impl Default for IdentityIdentifier {
     }
 }
 
-impl Encoder for IdentityIdentifier {
+impl Encodable for IdentityIdentifier {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
@@ -32,7 +32,7 @@ impl Encoder for IdentityIdentifier {
     }
 }
 
-impl Decoder for IdentityIdentifier {
+impl Decodable for IdentityIdentifier {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,

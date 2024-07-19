@@ -6,7 +6,7 @@ use crate::{
         compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
         error::{DecodeError, EncodingConsumerError},
         max_power::{decode_max_power, encode_max_power},
-        parameters::{Decoder, Encoder},
+        parameters::{Decodable, Encodable},
     },
     entry::Entry,
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
@@ -111,9 +111,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeEncoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
     for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
 where
-    N: NamespaceId + Encoder,
-    S: SubspaceId + Encoder,
-    PD: PayloadDigest + Encoder,
+    N: NamespaceId + Encodable,
+    S: SubspaceId + Encodable,
+    PD: PayloadDigest + Encodable,
 {
     /// Encode an [`Entry`] relative to a reference [`Entry`].
     ///
@@ -177,9 +177,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
     for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
 where
-    N: NamespaceId + Decoder + std::fmt::Debug,
-    S: SubspaceId + Decoder + std::fmt::Debug,
-    PD: PayloadDigest + Decoder,
+    N: NamespaceId + Decodable + std::fmt::Debug,
+    S: SubspaceId + Decodable + std::fmt::Debug,
+    PD: PayloadDigest + Decodable,
 {
     /// Decode an [`Entry`] relative from this [`Entry`].
     async fn relative_decode<Producer>(
