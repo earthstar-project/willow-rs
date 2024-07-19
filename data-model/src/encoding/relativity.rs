@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// A type that can be used to encoded to a bytestring *encoded relative to `R`*.
-pub trait RelativeEncoder<R> {
+pub trait RelativeEncodable<R> {
     /// A function from the set `Self` to the set of bytestrings *encoded relative to `reference`*.
     fn relative_encode<Consumer>(
         &self,
@@ -26,12 +26,12 @@ pub trait RelativeEncoder<R> {
 }
 
 /// A type that can be used to decode `T` from a bytestring *encoded relative to `Self`*.
-pub trait RelativeDecoder<T> {
+pub trait RelativeDecodable<R> {
     /// A function from the set of bytestrings *encoded relative to `Self`* to the set of `T` in relation to `Self`.
     fn relative_decode<Producer>(
-        &self,
+        reference: &R,
         producer: &mut Producer,
-    ) -> impl Future<Output = Result<T, DecodeError<Producer::Error>>>
+    ) -> impl Future<Output = Result<Self, DecodeError<Producer::Error>>>
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized;
@@ -39,7 +39,7 @@ pub trait RelativeDecoder<T> {
 
 // Path <> Path
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncoder<PathRc<MCL, MCC, MPL>>
+impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<PathRc<MCL, MCC, MPL>>
     for PathRc<MCL, MCC, MPL>
 {
     /// Encode a path relative to another path.
@@ -63,14 +63,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncoder<PathR
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathRc<MCL, MCC, MPL>>
+impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<PathRc<MCL, MCC, MPL>>
     for PathRc<MCL, MCC, MPL>
 {
     /// Decode a path relative to this path.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
     async fn relative_decode<Producer>(
-        &self,
+        reference: &PathRc<MCL, MCC, MPL>,
         producer: &mut Producer,
     ) -> Result<Self, DecodeError<Producer::Error>>
     where
@@ -79,11 +79,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathR
     {
         let lcp = decode_max_power(MCC, producer).await?;
 
-        if lcp > self.component_count() as u64 {
+        if lcp > reference.component_count() as u64 {
             return Err(DecodeError::InvalidInput);
         }
 
-        let prefix = self.create_prefix(lcp as usize);
+        let prefix = reference.create_prefix(lcp as usize);
         let suffix = PathRc::<MCL, MCC, MPL>::decode(producer).await?;
 
         let mut new = prefix;
@@ -95,7 +95,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathR
             }
         }
 
-        let actual_lcp = self.longest_common_prefix(&new);
+        let actual_lcp = reference.longest_common_prefix(&new);
 
         if actual_lcp.component_count() != lcp as usize {
             return Err(DecodeError::InvalidInput);
@@ -108,7 +108,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecoder<PathR
 // Entry <> Entry
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeEncoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
+    RelativeEncodable<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
     for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
 where
     N: NamespaceId + Encodable,
@@ -174,7 +174,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecoder<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
+    RelativeDecodable<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
     for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
 where
     N: NamespaceId + Decodable + std::fmt::Debug,
@@ -183,7 +183,7 @@ where
 {
     /// Decode an [`Entry`] relative from this [`Entry`].
     async fn relative_decode<Producer>(
-        &self,
+        reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
         producer: &mut Producer,
     ) -> Result<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>, DecodeError<Producer::Error>>
     where
@@ -212,28 +212,28 @@ where
         let namespace_id = if is_namespace_encoded {
             N::decode(producer).await?
         } else {
-            self.namespace_id.clone()
+            reference.namespace_id.clone()
         };
 
         // Verify that the encoded namespace wasn't the same as ours
         // Which would indicate invalid input
-        if is_namespace_encoded && namespace_id == self.namespace_id {
+        if is_namespace_encoded && namespace_id == reference.namespace_id {
             return Err(DecodeError::InvalidInput);
         }
 
         let subspace_id = if is_subspace_encoded {
             S::decode(producer).await?
         } else {
-            self.subspace_id.clone()
+            reference.subspace_id.clone()
         };
 
         // Verify that the encoded subspace wasn't the same as ours
         // Which would indicate invalid input
-        if is_subspace_encoded && subspace_id == self.subspace_id {
+        if is_subspace_encoded && subspace_id == reference.subspace_id {
             return Err(DecodeError::InvalidInput);
         }
 
-        let path = self.path.relative_decode(producer).await?;
+        let path = PathRc::<MCL, MCC, MPL>::relative_decode(&reference.path, producer).await?;
 
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
@@ -245,17 +245,19 @@ where
 
         // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
         let timestamp = if add_or_subtract_time_diff {
-            self.timestamp
+            reference
+                .timestamp
                 .checked_add(time_diff)
                 .ok_or(DecodeError::InvalidInput)?
         } else {
-            self.timestamp
+            reference
+                .timestamp
                 .checked_sub(time_diff)
                 .ok_or(DecodeError::InvalidInput)?
         };
 
         // Verify that the correct add_or_subtract_time_diff flag was set.
-        let should_have_subtracted = timestamp <= self.timestamp;
+        let should_have_subtracted = timestamp <= reference.timestamp;
         if add_or_subtract_time_diff && should_have_subtracted {
             return Err(DecodeError::InvalidInput);
         }

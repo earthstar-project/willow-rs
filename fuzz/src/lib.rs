@@ -10,7 +10,7 @@ use willow_data_model::{
     encoding::{
         error::DecodeError,
         parameters::{Decodable, Encodable},
-        relativity::{RelativeDecoder, RelativeEncoder},
+        relativity::{RelativeDecodable, RelativeEncodable},
     },
     path::*,
 };
@@ -81,8 +81,8 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     reference: R,
     consumer: &mut TestConsumer<u8, u16, ()>,
 ) where
-    T: std::fmt::Debug + PartialEq + Eq + RelativeEncoder<R>,
-    R: RelativeDecoder<T>,
+    T: std::fmt::Debug + PartialEq + Eq + RelativeEncodable<R> + RelativeDecodable<R>,
+    R: std::fmt::Debug,
     C: BulkConsumer<Item = u8>,
 {
     let consumer_should_error = consumer.should_error();
@@ -105,19 +105,19 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     let mut producer = FromVec::new(new_vec);
 
     // Check for correct errors
-    let decoded_item = reference.relative_decode(&mut producer).await.unwrap();
+    let decoded_item = T::relative_decode(&reference, &mut producer).await.unwrap();
 
     assert_eq!(decoded_item, subject);
 }
 
 pub async fn relative_encoding_random<R, T>(reference: R, data: &[u8])
 where
-    T: RelativeEncoder<R> + std::fmt::Debug,
-    R: RelativeDecoder<T> + std::fmt::Debug,
+    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
+    R: std::fmt::Debug,
 {
     let mut producer = SliceProducer::new(data);
 
-    match reference.relative_decode(&mut producer).await {
+    match T::relative_decode(&reference, &mut producer).await {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
