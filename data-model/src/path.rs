@@ -23,7 +23,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
         if slice.len() <= MAX_COMPONENT_LENGTH {
             return Some(unsafe { Self::new_unchecked(slice) }); // Safe because we just checked the length.
         } else {
-            return None;
+            None
         }
     }
 
@@ -34,11 +34,11 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
 
     /// Create an empty component.
     pub fn new_empty() -> Self {
-        return Self(&[]);
+        Self(&[])
     }
 
     pub fn into_inner(self) -> &'a [u8] {
-        return self.0;
+        self.0
     }
 }
 
@@ -46,19 +46,19 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Deref for Component<'a, MAX_COMPONEN
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
 impl<'a, const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 
 impl<'a, const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
     fn borrow(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 
@@ -76,9 +76,9 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
     /// Runs in `O(n)`, where `n` is the length of the slice. Performs a single allocation of `O(n)` bytes.
     pub fn new(data: &[u8]) -> Option<Self> {
         if data.len() <= MAX_COMPONENT_LENGTH {
-            return Some(unsafe { Self::new_unchecked(data) }); // Safe because we just checked the length.
+            Some(unsafe { Self::new_unchecked(data) }) // Safe because we just checked the length.
         } else {
-            return None;
+            None
         }
     }
 
@@ -97,7 +97,7 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn new_empty() -> Self {
-        return Self(Bytes::new());
+        Self(Bytes::new())
     }
 }
 
@@ -170,13 +170,13 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn new_empty() -> Self {
-        return Path {
+        Path {
             // 16 zero bytes, to work even on platforms on which `usize` has a size of 16.
             data: HeapEncoding(Bytes::from_static(&[
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ])),
             component_count: 0,
-        };
+        }
     }
 
     /// Construct a singleton path, i.e., a path of exactly one component.
@@ -186,9 +186,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(n)`, where `n` is the length of the component. Performs a single allocation of `O(n)` bytes.
-    pub fn new_singleton<'a>(comp: Component<'a, MCL>) -> Result<Self, InvalidPathError> {
+    pub fn new_singleton(comp: Component<MCL>) -> Result<Self, InvalidPathError> {
         if 1 > MCC {
-            return Err(InvalidPathError::TooManyComponents);
+            Err(InvalidPathError::TooManyComponents)
         } else if comp.len() > MPL {
             return Err(InvalidPathError::PathTooLong);
         } else {
@@ -251,10 +251,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
             panic!("Tried to construct a path of total length {}, but got components whose accumulated length was {}.", total_length, accumulated_component_length);
         }
 
-        return Ok(Path {
+        Ok(Path {
             data: HeapEncoding(buf.freeze()),
             component_count,
-        });
+        })
     }
 
     /// Construct a path from a slice of components.
@@ -264,16 +264,13 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
-    pub fn new_from_slice<'a>(components: &[Component<'a, MCL>]) -> Result<Self, InvalidPathError> {
+    pub fn new_from_slice(components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = 0;
         for comp in components {
             total_length += comp.len();
         }
 
-        return Self::new_from_iter(
-            total_length,
-            &mut components.iter().map(|comp_ref| *comp_ref),
-        );
+        return Self::new_from_iter(total_length, &mut components.iter().copied());
     }
 
     /// Construct a new path by appending a component to this one.
@@ -283,7 +280,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
-    pub fn append<'a>(&self, comp: Component<'a, MCL>) -> Result<Self, InvalidPathError> {
+    pub fn append(&self, comp: Component<MCL>) -> Result<Self, InvalidPathError> {
         let total_length = self.get_path_length() + comp.len();
         return Self::new_from_iter(
             total_length,
@@ -298,10 +295,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
-    pub fn append_slice<'a>(
-        &self,
-        components: &[Component<'a, MCL>],
-    ) -> Result<Self, InvalidPathError> {
+    pub fn append_slice(&self, components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = self.get_path_length();
         for comp in components {
             total_length += comp.len();
@@ -309,10 +303,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         return Self::new_from_iter(
             total_length,
-            &mut ExactLengthChain::new(
-                self.components(),
-                components.iter().map(|comp_ref| *comp_ref),
-            ),
+            &mut ExactLengthChain::new(self.components(), components.iter().copied()),
         );
     }
 
@@ -324,7 +315,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn get_component_count(&self) -> usize {
-        return self.component_count;
+        self.component_count
     }
 
     /// Return whether this path has zero components.
@@ -345,7 +336,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// Runs in `O(1)`, performs no allocations.
     pub fn get_path_length(&self) -> usize {
         if self.component_count == 0 {
-            return 0;
+            0
         } else {
             return HeapEncoding::<MCL>::get_sum_of_lengths_for_component(
                 self.data.as_ref(),
@@ -360,7 +351,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn get_component<'s>(&'s self, i: usize) -> Option<Component<'s, MCL>> {
+    pub fn get_component(&self, i: usize) -> Option<Component<MCL>> {
         return HeapEncoding::<MCL>::get_component(self.data.as_ref(), i);
     }
 
@@ -372,7 +363,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     pub fn get_owned_component(&self, i: usize) -> Option<OwnedComponent<MCL>> {
         let start = HeapEncoding::<MCL>::start_offset_of_component(self.data.0.as_ref(), i)?;
         let end = HeapEncoding::<MCL>::end_offset_of_component(self.data.0.as_ref(), i)?;
-        return Some(OwnedComponent(self.data.0.slice(start..end)));
+        Some(OwnedComponent(self.data.0.slice(start..end)))
     }
 
     /// Create an iterator over the components of this path.
@@ -382,9 +373,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn components<'s>(
-        &'s self,
-    ) -> impl DoubleEndedIterator<Item = Component<'s, MCL>> + ExactSizeIterator<Item = Component<'s, MCL>>
+    pub fn components(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
     {
         self.suffix_components(0)
     }
@@ -396,10 +387,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn suffix_components<'s>(
-        &'s self,
+    pub fn suffix_components(
+        &self,
         i: usize,
-    ) -> impl DoubleEndedIterator<Item = Component<'s, MCL>> + ExactSizeIterator<Item = Component<'s, MCL>>
+    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
     {
         (i..self.get_component_count()).map(|i| {
             self.get_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
@@ -448,9 +439,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// Runs in `O(1)`, performs no allocations.
     pub fn create_prefix(&self, length: usize) -> Option<Self> {
         if length > self.get_component_count() {
-            return None;
+            None
         } else {
-            return Some(unsafe { self.create_prefix_unchecked(length) });
+            Some(unsafe { self.create_prefix_unchecked(length) })
         }
     }
 
@@ -657,7 +648,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
     fn eq(&self, other: &Self) -> bool {
         if self.component_count != other.component_count {
-            return false;
+            false
         } else {
             return self.components().eq(other.components());
         }
@@ -721,7 +712,7 @@ impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
         Self::get_usize_at_offset(buf, start_offset_in_bytes)
     }
 
-    fn get_component<'s>(buf: &'s [u8], i: usize) -> Option<Component<'s, MAX_COMPONENT_LENGTH>> {
+    fn get_component(buf: &[u8], i: usize) -> Option<Component<MAX_COMPONENT_LENGTH>> {
         let start = Self::start_offset_of_component(buf, i)?;
         let end = Self::end_offset_of_component(buf, i)?;
         return Some(unsafe { Component::new_unchecked(&buf[start..end]) });
@@ -735,17 +726,16 @@ impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
     fn start_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
         let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
         if i == 0 {
-            return Some(metadata_length);
+            Some(metadata_length)
         } else {
-            return Self::get_sum_of_lengths_for_component(buf, i - 1) // Length of everything up until the previous component.
-                .map(|length| length + metadata_length);
+            Self::get_sum_of_lengths_for_component(buf, i - 1) // Length of everything up until the previous component.
+                .map(|length| length + metadata_length)
         }
     }
 
     fn end_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
         let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
-        return Self::get_sum_of_lengths_for_component(buf, i)
-            .map(|length| length + metadata_length);
+        Self::get_sum_of_lengths_for_component(buf, i).map(|length| length + metadata_length)
     }
 
     fn get_usize_at_offset(buf: &[u8], offset_in_bytes: usize) -> Option<usize> {
@@ -756,10 +746,10 @@ impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
         let mut usize_bytes = [0u8; size_of::<usize>()];
 
         if buf.len() < end {
-            return None;
+            None
         } else {
             usize_bytes.copy_from_slice(&buf[offset_in_bytes..end]);
-            return Some(usize::from_ne_bytes(usize_bytes));
+            Some(usize::from_ne_bytes(usize_bytes))
         }
     }
 }
@@ -811,7 +801,7 @@ where
             _ => None,
         };
 
-        return (lower_a + lower_b, higher);
+        (lower_a + lower_b, higher)
     }
 }
 
@@ -879,7 +869,7 @@ fn clone_prefix_and_lengthen_final_component<
     let mut buf = BytesMut::with_capacity(buf_capacity);
 
     // Write the length of the successor path as the first usize.
-    buf.extend_from_slice(&((i + 1) as usize).to_ne_bytes());
+    buf.extend_from_slice(&(i + 1).to_ne_bytes());
 
     // Next, copy the total path lengths for the first i prefixes.
     buf.extend_from_slice(&original_slice[size_of::<usize>()..size_of::<usize>() * (i + 2)]);
@@ -893,5 +883,5 @@ fn clone_prefix_and_lengthen_final_component<
             ..HeapEncoding::<MCL>::start_offset_of_component(original_slice, i + 1).unwrap()],
     );
 
-    return buf;
+    buf
 }

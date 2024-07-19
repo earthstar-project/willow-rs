@@ -238,7 +238,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
         self.0.len()
     }
 
-    pub fn get_component<'s>(&'s self, i: usize) -> Option<&PathComponentBox<MCL>> {
+    pub fn get_component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
         return self.0.get(i);
     }
 
@@ -642,7 +642,7 @@ mod tests {
     }
 
     fn make_test_path<const MCL: usize, const MCC: usize, const MPL: usize>(
-        vector: &Vec<Vec<u8>>,
+        vector: &[Vec<u8>],
     ) -> PathRc<MCL, MCC, MPL> {
         let components: Vec<_> = vector
             .iter()
@@ -793,17 +793,15 @@ pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
 ) -> Result<PathRc<MCL, MCC, MPL>, Option<InvalidPathError>> {
     match cp {
         CreatePath::Empty => Ok(PathRc::empty()),
-        CreatePath::Singleton(comp) => match PathComponentBox::new(&comp) {
-            Err(_) => return Err(None),
-            Ok(comp) => {
-                return PathRc::new(&[comp]).map_err(|err| Some(err));
-            }
+        CreatePath::Singleton(comp) => match PathComponentBox::new(comp) {
+            Err(_) => Err(None),
+            Ok(comp) => PathRc::new(&[comp]).map_err(Some),
         },
         CreatePath::FromIter(raw_material) | CreatePath::FromSlice(raw_material) => {
             let mut p = PathRc::empty();
 
             for comp in raw_material {
-                match PathComponentBox::new(&comp) {
+                match PathComponentBox::new(comp) {
                     Ok(comp) => match p.append(comp) {
                         Err(err) => {
                             return Err(Some(err));
@@ -814,23 +812,21 @@ pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
                 }
             }
 
-            return Ok(p);
+            Ok(p)
         }
         CreatePath::Append(rec, comp) => {
             let base = create_path_rc(rec)?;
 
-            match PathComponentBox::new(&comp) {
-                Err(_) => return Err(None),
-                Ok(comp) => {
-                    return base.append(comp).map_err(|err| Some(err));
-                }
+            match PathComponentBox::new(comp) {
+                Err(_) => Err(None),
+                Ok(comp) => base.append(comp).map_err(Some),
             }
         }
         CreatePath::AppendSlice(rec, comps) => {
             let mut base = create_path_rc(rec)?;
 
             for comp in comps {
-                match PathComponentBox::new(&comp) {
+                match PathComponentBox::new(comp) {
                     Ok(comp) => match base.append(comp) {
                         Err(err) => {
                             return Err(Some(err));
@@ -841,15 +837,15 @@ pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
                 }
             }
 
-            return Ok(base);
+            Ok(base)
         }
         CreatePath::CreatePrefix(rec, len) => {
             let base = create_path_rc(rec)?;
 
             if *len > base.component_count() {
-                return Err(None);
+                Err(None)
             } else {
-                return Ok(base.create_prefix(*len));
+                Ok(base.create_prefix(*len))
             }
         }
     }
@@ -861,10 +857,8 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
     match cp {
         CreatePath::Empty => Ok(Path::new_empty()),
         CreatePath::Singleton(comp) => match Component::new(comp) {
-            None => return Err(None),
-            Some(comp) => {
-                return Path::new_singleton(comp).map_err(|err| Some(err));
-            }
+            None => Err(None),
+            Some(comp) => Path::new_singleton(comp).map_err(Some),
         },
         CreatePath::FromIter(raw_material) => {
             let mut comps = vec![];
@@ -879,8 +873,7 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
                 }
             }
 
-            return Path::new_from_iter(total_length, &mut comps.into_iter())
-                .map_err(|err| Some(err));
+            Path::new_from_iter(total_length, &mut comps.into_iter()).map_err(Some)
         }
         CreatePath::FromSlice(raw_material) => {
             let mut comps = vec![];
@@ -893,16 +886,14 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
                 }
             }
 
-            return Path::new_from_slice(&comps).map_err(|err| Some(err));
+            Path::new_from_slice(&comps).map_err(Some)
         }
         CreatePath::Append(rec, comp) => {
             let base = create_path(rec)?;
 
-            match Component::new(&comp) {
-                None => return Err(None),
-                Some(comp) => {
-                    return base.append(comp).map_err(|err| Some(err));
-                }
+            match Component::new(comp) {
+                None => Err(None),
+                Some(comp) => base.append(comp).map_err(Some),
             }
         }
         CreatePath::AppendSlice(rec, raw_material) => {
@@ -918,14 +909,14 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
                 }
             }
 
-            return base.append_slice(&comps).map_err(|err| Some(err));
+            base.append_slice(&comps).map_err(Some)
         }
         CreatePath::CreatePrefix(rec, len) => {
             let base = create_path(rec)?;
 
             match base.create_prefix(*len) {
-                Some(yay) => return Ok(yay),
-                None => return Err(None),
+                Some(yay) => Ok(yay),
+                None => Err(None),
             }
         }
     }
@@ -975,8 +966,8 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
     assert_eq!(ctrl1.is_prefix_of(ctrl2), p1.is_prefix_of(p2));
     assert_eq!(ctrl1.is_prefixed_by(ctrl2), p1.is_prefixed_by(p2));
 
-    let ctrl_lcp = ctrl1.longest_common_prefix(&ctrl2);
-    let p_lcp = p1.longest_common_prefix(&p2);
+    let ctrl_lcp = ctrl1.longest_common_prefix(ctrl2);
+    let p_lcp = p1.longest_common_prefix(p2);
     assert_paths_are_equal(&ctrl_lcp, &p_lcp);
 
     match (ctrl1.successor(), p1.successor()) {

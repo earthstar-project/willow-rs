@@ -1,4 +1,4 @@
-use super::{
+use crate::{
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -18,11 +18,10 @@ pub type Timestamp = u64;
 /// - `P` - The type used for [`Path`]s.
 /// - `PD` - The type used for [`PayloadDigest`].
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Entry<N, S, P, PD>
+pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest,
 {
     /// The identifier of the namespace to which the [`Entry`] belongs.
@@ -30,7 +29,7 @@ where
     /// The identifier of the subspace to which the [`Entry`] belongs.
     pub subspace_id: S,
     /// The [`Path`] to which the [`Entry`] was written.
-    pub path: P,
+    pub path: Path<MCL, MCC, MPL>,
     /// The claimed creation time of the [`Entry`].
     pub timestamp: Timestamp,
     /// The length of the Payload in bytes.
@@ -39,11 +38,10 @@ where
     pub payload_digest: PD,
 }
 
-impl<N, S, P, PD> Entry<N, S, P, PD>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest,
 {
     /// Return if this [`Entry`] is newer than another using their timestamps.
@@ -72,23 +70,25 @@ pub struct UnauthorisedWriteError;
 /// - `P` - The type used for [`Path`]s.
 /// - `PD` - The type used for [`PayloadDigest`].
 /// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
-pub struct AuthorisedEntry<N, S, P, PD, AT>(pub Entry<N, S, P, PD>, pub AT)
+pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
+    pub Entry<MCL, MCC, MPL, N, S, PD>,
+    pub AT,
+)
 where
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest;
 
-impl<N, S, P, PD, AT> AuthorisedEntry<N, S, P, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest,
 {
     /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return an [`UnauthorisedWriteError`]
-    pub fn new<IAW: IsAuthorisedWrite<N, S, P, PD, AT>>(
-        entry: Entry<N, S, P, PD>,
+    pub fn new<IAW: IsAuthorisedWrite<MCL, MCC, MPL, N, S, PD, AT>>(
+        entry: Entry<MCL, MCC, MPL, N, S, PD>,
         token: AT,
         is_authorised_write: IAW,
     ) -> Result<Self, UnauthorisedWriteError> {
@@ -102,7 +102,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::path::{PathComponent, PathComponentBox, PathRc};
+    use crate::path::Component;
 
     use super::*;
 
@@ -131,7 +131,8 @@ mod tests {
         let e_a1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 20,
@@ -140,7 +141,8 @@ mod tests {
         let e_a2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 10,
@@ -151,7 +153,8 @@ mod tests {
         let e_b1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest(2),
             payload_length: 0,
             timestamp: 10,
@@ -160,7 +163,8 @@ mod tests {
         let e_b2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest(1),
             payload_length: 0,
             timestamp: 10,
@@ -171,7 +175,8 @@ mod tests {
         let e_c1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 2,
             timestamp: 20,
@@ -180,7 +185,8 @@ mod tests {
         let e_c2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
+                .unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 1,
             timestamp: 20,
