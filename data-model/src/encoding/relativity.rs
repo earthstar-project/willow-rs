@@ -178,6 +178,8 @@ where
     PD: PayloadDigest + Decodable,
 {
     /// Decode an [`Entry`] relative from this [`Entry`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
     async fn relative_decode<Producer>(
         reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
         producer: &mut Producer,
