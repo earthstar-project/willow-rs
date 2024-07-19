@@ -3,7 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
     encoding::{
-        bytes::{consume_byte, produce_byte},
+        bytes::{consume_byte, is_bitflagged, produce_byte},
         compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
         error::{DecodeError, EncodingConsumerError},
         max_power::{decode_max_power, encode_max_power},
@@ -188,14 +188,14 @@ where
     {
         let header = produce_byte(producer).await?;
 
-        // Verify that bit 3 is 0 as specified - good indicator of invalid data.
-        if header | 0b1110_1111 == 0b1111_1111 {
+        // Verify that bit 3 is 0 as specified.
+        if is_bitflagged(header, 3) {
             return Err(DecodeError::InvalidInput);
         }
 
-        let is_namespace_encoded = header & 0b1000_0000 == 0b1000_0000;
-        let is_subspace_encoded = header & 0b0100_0000 == 0b0100_0000;
-        let add_or_subtract_time_diff = header & 0b0010_0000 == 0b0010_0000;
+        let is_namespace_encoded = is_bitflagged(header, 0);
+        let is_subspace_encoded = is_bitflagged(header, 1);
+        let add_or_subtract_time_diff = is_bitflagged(header, 2);
         let compact_width_time_diff = CompactWidth::decode_fixed_width_bitmask(header, 4);
         let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
 

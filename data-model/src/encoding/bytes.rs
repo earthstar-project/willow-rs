@@ -35,3 +35,19 @@ where
         Err(err) => Err(DecodeError::Producer(err)),
     }
 }
+
+pub fn is_bitflagged(byte: u8, position: u8) -> bool {
+    let mask = match position {
+        0 => 0b1000_0000,
+        1 => 0b0100_0000,
+        2 => 0b0010_0000,
+        3 => 0b0001_0000,
+        4 => 0b0000_1000,
+        5 => 0b0000_0100,
+        6 => 0b0000_0010,
+        7 => 0b0000_0001,
+        _ => panic!("Can't check for a bitflag at a position greater than 7"),
+    };
+
+    byte & mask == mask
+}
