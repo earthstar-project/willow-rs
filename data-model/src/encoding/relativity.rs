@@ -3,6 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
     encoding::{
+        bytes::{consume_byte, produce_byte},
         compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
         error::{DecodeError, EncodingConsumerError},
         max_power::{decode_max_power, encode_max_power},
@@ -146,12 +147,7 @@ where
 
         header |= CompactWidth::from_u64(self.payload_length).bitmask(6);
 
-        if let Err(err) = consumer.consume(header).await {
-            return Err(EncodingConsumerError {
-                bytes_consumed: 0,
-                reason: err,
-            });
-        };
+        consume_byte(header, 0, consumer).await?;
 
         if self.namespace_id != reference.namespace_id {
             self.namespace_id.encode(consumer).await?;
@@ -190,13 +186,7 @@ where
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let mut header_slice = [0u8];
-
-        producer
-            .bulk_overwrite_full_slice(&mut header_slice)
-            .await?;
-
-        let header = header_slice[0];
+        let header = produce_byte(producer).await?;
 
         // Verify that bit 3 is 0 as specified - good indicator of invalid data.
         if header | 0b1110_1111 == 0b1111_1111 {
