@@ -13,7 +13,6 @@ use willow_data_model::{
     },
     entry::Entry,
     parameters::PayloadDigest,
-    path::PathRc,
 };
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -50,9 +49,6 @@ use willow_data_model_fuzz::encoding_random;
 
 fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
-        encoding_random::<Entry<EsNamespaceId, IdentityId, PathRc<3, 3, 3>, FakePayloadDigest>>(
-            data,
-        )
-        .await;
+        encoding_random::<Entry<3, 3, 3, EsNamespaceId, IdentityId, FakePayloadDigest>>(data).await;
     });
 });

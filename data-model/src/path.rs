@@ -1,6 +1,5 @@
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
-use std::rc::Rc;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::{
@@ -9,104 +8,131 @@ use crate::encoding::{
     parameters::{Decoder, Encoder},
 };
 
-#[derive(Debug)]
-/// An error indicating a [`PathComponent`'s bytestring is too long.
-pub struct ComponentTooLongError;
+// This struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`, `fuzz/path3.rs` by comparing against a non-optimised reference implementation.
+// Further, the `successor` and `greater_but_not_prefixed` methods of that reference implementation are tested in `fuzz/path_successor.rs` and friends, and `fuzz/path_successor_of_prefix.rs` and friends.
 
-/// A bytestring representing an individual component of a [`Path`]. Provides access to the raw bytes via the [`AsRef<u8>`] trait.
+use core::borrow::Borrow;
+use core::convert::AsRef;
+use core::fmt::Debug;
+use core::hash::Hash;
+use core::iter;
+use core::mem::size_of;
+use core::ops::Deref;
+
+use bytes::{BufMut, Bytes, BytesMut};
+
+/// A [component](https://willowprotocol.org/specs/data-model/index.html#Component) of a Willow Path.
 ///
-/// ## Implementation notes
+/// This type is a thin wrapper around `&'a [u8]` that enforces a const-generic [maximum component length](https://willowprotocol.org/specs/data-model/index.html#max_component_length). Use the `AsRef`, `DeRef`, or `Borrow` implementation to access the immutable byte slice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Component<'a, const MAX_COMPONENT_LENGTH: usize>(&'a [u8]);
+
+impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> {
+    /// Create a `Component` from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
+    pub fn new(slice: &'a [u8]) -> Option<Self> {
+        if slice.len() <= MAX_COMPONENT_LENGTH {
+            return Some(unsafe { Self::new_unchecked(slice) }); // Safe because we just checked the length.
+        } else {
+            None
+        }
+    }
+
+    /// Create a `Component` from a byte slice, without verifying its length.
+    pub unsafe fn new_unchecked(slice: &'a [u8]) -> Self {
+        Self(slice)
+    }
+
+    /// Create an empty component.
+    pub fn new_empty() -> Self {
+        Self(&[])
+    }
+
+    pub fn into_inner(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+impl<'a, const MAX_COMPONENT_LENGTH: usize> Deref for Component<'a, MAX_COMPONENT_LENGTH> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
+    fn as_ref(&self) -> &[u8] {
+        self.0
+    }
+}
+
+impl<'a, const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
+    fn borrow(&self) -> &[u8] {
+        self.0
+    }
+}
+
+/// An owned [component](https://willowprotocol.org/specs/data-model/index.html#Component) of a Willow Path that uses reference counting for cheap cloning.
 ///
-/// - This trait provides an immutable interface, so cloning of a [`PathComponent`] implementation is expected to be cheap.
-/// - Implementations of the [`Ord`] trait must correspond to lexicographically comparing the AsRef bytes.
-pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
-    /// The maximum bytelength of a path component, corresponding to Willow's [`max_component_length`](https://willowprotocol.org/specs/data-model/index.html#max_component_length) parameter.
-    const MAX_COMPONENT_LENGTH: usize;
+/// This type enforces a const-generic [maximum component length](https://willowprotocol.org/specs/data-model/index.html#max_component_length). Use the `AsRef`, `DeRef`, or `Borrow` implementation to access the immutable byte slice.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OwnedComponent<const MAX_COMPONENT_LENGTH: usize>(Bytes);
 
-    /// Construct a new [`PathComponent`] from the provided slice, or return a [`ComponentTooLongError`] if the resulting component would be longer than [`PathComponent::MAX_COMPONENT_LENGTH`].
-    fn new(components: &[u8]) -> Result<Self, ComponentTooLongError>;
-
-    /// Construct a new [`PathComponent`] from the concatenation of `head` and the `tail`, or return a [`ComponentTooLongError`] if the resulting component would be longer than [`PathComponent::MAX_COMPONENT_LENGTH`].
+impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
+    /// Create an `OwnedComponent` by copying data from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
     ///
-    /// This operation occurs when computing prefix successors, and the default implementation needs to perform an allocation. Implementers of this trait can override this with something more efficient if possible.
-    fn new_with_tail(head: &[u8], tail: u8) -> Result<Self, ComponentTooLongError> {
-        let mut vec = Vec::with_capacity(head.len() + 1);
-        vec.extend_from_slice(head);
-        vec.push(tail);
-
-        Self::new(&vec)
-    }
-
-    /// Return a new [`PathComponent`] which corresponds to the empty string.
-    fn empty() -> Self {
-        Self::new(&[]).unwrap()
-    }
-
-    /// The length of the component's `as_ref` bytes.
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
-    /// Whether the component is an empty bytestring or not.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Try to append a zero byte to the end of the component.
-    /// Return `None` if the resulting component would be too long.
-    fn try_append_zero_byte(&self) -> Option<Self> {
-        if self.len() == Self::MAX_COMPONENT_LENGTH {
-            return None;
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the length of the slice. Performs a single allocation of `O(n)` bytes.
+    pub fn new(data: &[u8]) -> Option<Self> {
+        if data.len() <= MAX_COMPONENT_LENGTH {
+            Some(unsafe { Self::new_unchecked(data) }) // Safe because we just checked the length.
+        } else {
+            None
         }
-
-        let mut new_component_vec = Vec::with_capacity(self.len() + 1);
-
-        new_component_vec.extend_from_slice(self.as_ref());
-        new_component_vec.push(0);
-
-        Some(Self::new(&new_component_vec).unwrap())
     }
 
-    /// Create a new copy which differs at index `i`.
-    /// Implementers may panic if `i` is out of bound.
-    fn set_byte(&self, i: usize, value: u8) -> Self;
-
-    /// Interpret the component as a binary number, and increment that number by 1.
-    /// If doing so would increase the bytelength of the component, return `None`.
-    fn try_increment_fixed_width(&self) -> Option<Self> {
-        // Wish we could avoid this allocation somehow.
-        let mut new_component = self.clone();
-
-        for i in (0..self.len()).rev() {
-            let byte = self.as_ref()[i];
-
-            if byte == 255 {
-                new_component = new_component.set_byte(i, 0);
-            } else {
-                return Some(new_component.set_byte(i, byte + 1));
-            }
-        }
-
-        None
+    /// Create an `OwnedComponent` by copying data from a byte slice, without verifying its length.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the length of the slice. Performs a single allocation of `O(n)` bytes.
+    pub unsafe fn new_unchecked(data: &[u8]) -> Self {
+        Self(Bytes::copy_from_slice(data))
     }
 
-    /// Return the least component which is greater than `self` but which is not prefixed by `self`.
-    fn prefix_successor(&self) -> Option<Self> {
-        for i in (0..self.len()).rev() {
-            if self.as_ref()[i] != 255 {
-                // Since we are not adjusting the length of the component this will always succeed.
-                return Some(
-                    Self::new_with_tail(&self.as_ref()[0..i], self.as_ref()[i] + 1).unwrap(),
-                );
-            }
-        }
+    /// Create an empty component.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn new_empty() -> Self {
+        Self(Bytes::new())
+    }
+}
 
-        None
+impl<const MAX_COMPONENT_LENGTH: usize> Deref for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for OwnedComponent<MAX_COMPONENT_LENGTH> {
+    fn borrow(&self) -> &[u8] {
+        self.0.borrow()
     }
 }
 
 #[derive(Debug)]
-/// An error arising from trying to construct a invalid [`Path`] from valid [`PathComponent`].
+/// An error arising from trying to construct a invalid [`Path`] from valid components.
 pub enum InvalidPathError {
     /// The path's total length in bytes is too large.
     PathTooLong,
@@ -114,73 +140,382 @@ pub enum InvalidPathError {
     TooManyComponents,
 }
 
-/// A sequence of [`PathComponent`], used to name and query entries in [Willow's data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
+impl core::fmt::Display for InvalidPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvalidPathError::PathTooLong => {
+                write!(
+                    f,
+                    "Total length of a path in bytes exceeded the maximum path length"
+                )
+            }
+            InvalidPathError::TooManyComponents => {
+                write!(
+                    f,
+                    "Number of components of a path exceeded the maximum component count"
+                )
+            }
+        }
+    }
+}
+
+impl core::error::Error for InvalidPathError {}
+
+/// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of, expensive to append to.
 ///
-pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
-    type Component: PathComponent;
+/// Enforces that each component has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each path has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and that the total size in bytes of all components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
+#[derive(Clone)]
+pub struct Path<const MCL: usize, const MCC: usize, const MPL: usize> {
+    /// The data of the underlying path.
+    data: HeapEncoding<MCL>,
+    /// Number of components of the `data` to consider for this particular path. Must be less than or equal to the total number of components.
+    /// This field enables cheap prefix creation by cloning the heap data and adjusting the `component_count`.
+    component_count: usize,
+}
 
-    /// The maximum number of [`PathComponent`] a [`Path`] may have, corresponding to Willow's [`max_component_count`](https://willowprotocol.org/specs/data-model/index.html#max_component_count) parameter
-    const MAX_COMPONENT_COUNT: usize;
-    /// The maximum total number of bytes a [`Path`] may have, corresponding to Willow's [`max_path_length`](https://willowprotocol.org/specs/data-model/index.html#max_path_length) parameter
-    const MAX_PATH_LENGTH: usize;
-
-    /// Contruct a new [`Path`] from a slice of [`PathComponent`], or return a [`InvalidPathError`] if the resulting path would be too long or have too many components.
-    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError>;
-
-    /// Construct a new [`Path`] with no components.
-    fn empty() -> Self;
-
-    /// Return a new [`Path`] with the components of this path suffixed with the given [`PathComponent`](PathComponent), or return [`InvalidPathError`] if the resulting path would be invalid in some way.
-    fn append(&self, component: Self::Component) -> Result<Self, InvalidPathError>;
-
-    /// Return an iterator of all this path's components.
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
+    /// Construct an empty path, i.e., a path of zero components.
     ///
-    /// The `.len` method of the returned [`ExactSizeIterator`] must coincide with [`Self::component_count`].
-    fn components(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = &Self::Component> + ExactSizeIterator<Item = &Self::Component>;
-
-    /// Return the number of [`PathComponent`] in the path.
-    fn component_count(&self) -> usize;
-
-    /// Return the total number of bytes in the path.
-    fn len(&self) -> usize;
-
-    /// Return whether the path has any [`PathComponent`] or not.
-    fn is_empty(&self) -> bool {
-        self.component_count() == 0
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn new_empty() -> Self {
+        Path {
+            // 16 zero bytes, to work even on platforms on which `usize` has a size of 16.
+            data: HeapEncoding(Bytes::from_static(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ])),
+            component_count: 0,
+        }
     }
 
-    /// Create a new [`Path`] by taking the first `length` components of this path.
-    fn create_prefix(&self, length: usize) -> Self;
+    /// Construct a singleton path, i.e., a path of exactly one component.
+    ///
+    /// Copies the bytes of the component into an owned allocation on the heap.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the length of the component. Performs a single allocation of `O(n)` bytes.
+    pub fn new_singleton(comp: Component<MCL>) -> Result<Self, InvalidPathError> {
+        if 1 > MCC {
+            Err(InvalidPathError::TooManyComponents)
+        } else if comp.len() > MPL {
+            return Err(InvalidPathError::PathTooLong);
+        } else {
+            let mut buf = BytesMut::with_capacity((2 * size_of::<usize>()) + comp.len());
+            buf.extend_from_slice(&(1usize.to_ne_bytes())[..]);
+            buf.extend_from_slice(&(comp.len().to_ne_bytes())[..]);
+            buf.extend_from_slice(comp.as_ref());
 
-    /// Return all possible prefixes of a path, including the empty path and the path itself.
-    fn all_prefixes(&self) -> impl Iterator<Item = Self> {
-        let self_len = self.components().count();
+            return Ok(Path {
+                data: HeapEncoding(buf.freeze()),
+                component_count: 1,
+            });
+        }
+    }
 
-        (0..=self_len).map(|i| self.create_prefix(i))
+    /// Construct a path of known total length from an [`ExactSizeIterator`][core::iter::ExactSizeIterator] of components.
+    ///
+    /// Copies the bytes of the components into an owned allocation on the heap.
+    ///
+    /// Panics if the claimed `total_length` does not match the sum of the lengths of all the components.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    pub fn new_from_iter<'a, I>(total_length: usize, iter: &mut I) -> Result<Self, InvalidPathError>
+    where
+        I: ExactSizeIterator<Item = Component<'a, MCL>>,
+    {
+        if total_length > MPL {
+            return Err(InvalidPathError::PathTooLong);
+        }
+
+        let component_count = iter.len();
+
+        if component_count > MCC {
+            return Err(InvalidPathError::TooManyComponents);
+        }
+
+        let mut buf =
+            BytesMut::with_capacity(((component_count + 1) * size_of::<usize>()) + total_length);
+        buf.extend_from_slice(&(component_count.to_ne_bytes())[..]);
+
+        // Fill up the accumulated component lengths with dummy values.
+        buf.put_bytes(0, component_count * size_of::<usize>());
+
+        let mut accumulated_component_length = 0;
+        for (i, comp) in iter.enumerate() {
+            // Overwrite the dummy accumulated component length for this component with the actual value.
+            accumulated_component_length += comp.len();
+            let start = (1 + i) * size_of::<usize>();
+            let end = start + size_of::<usize>();
+            buf.as_mut()[start..end]
+                .copy_from_slice(&accumulated_component_length.to_ne_bytes()[..]);
+
+            // Append the component to the path.
+            buf.extend_from_slice(comp.as_ref());
+        }
+
+        if accumulated_component_length != total_length {
+            panic!("Tried to construct a path of total length {}, but got components whose accumulated length was {}.", total_length, accumulated_component_length);
+        }
+
+        Ok(Path {
+            data: HeapEncoding(buf.freeze()),
+            component_count,
+        })
+    }
+
+    /// Construct a path from a slice of components.
+    ///
+    /// Copies the bytes of the components into an owned allocation on the heap.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    pub fn new_from_slice(components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
+        let mut total_length = 0;
+        for comp in components {
+            total_length += comp.len();
+        }
+
+        return Self::new_from_iter(total_length, &mut components.iter().copied());
+    }
+
+    /// Construct a new path by appending a component to this one.
+    ///
+    /// Creates a fully separate copy of the new data on the heap; this function is not more efficient than constructing the new path from scratch.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    pub fn append(&self, comp: Component<MCL>) -> Result<Self, InvalidPathError> {
+        let total_length = self.get_path_length() + comp.len();
+        return Self::new_from_iter(
+            total_length,
+            &mut ExactLengthChain::new(self.components(), iter::once(comp)),
+        );
+    }
+
+    /// Construct a new path by appending a slice of components to this one.
+    ///
+    /// Creates a fully separate copy of the new data on the heap; this function is not more efficient than constructing the new path from scratch.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    pub fn append_slice(&self, components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
+        let mut total_length = self.get_path_length();
+        for comp in components {
+            total_length += comp.len();
+        }
+
+        return Self::new_from_iter(
+            total_length,
+            &mut ExactLengthChain::new(self.components(), components.iter().copied()),
+        );
+    }
+
+    /// Get the number of components in this path.
+    ///
+    /// Guaranteed to be at most `MCC`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn get_component_count(&self) -> usize {
+        self.component_count
+    }
+
+    /// Return whether this path has zero components.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn is_empty(&self) -> bool {
+        self.get_component_count() == 0
+    }
+
+    /// Get the sum of the lengths of all components in this path.
+    ///
+    /// Guaranteed to be at most `MCC`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn get_path_length(&self) -> usize {
+        if self.component_count == 0 {
+            0
+        } else {
+            return HeapEncoding::<MCL>::get_sum_of_lengths_for_component(
+                self.data.as_ref(),
+                self.component_count - 1,
+            )
+            .unwrap();
+        }
+    }
+
+    /// Get the `i`-th [`Component`] of this path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn get_component(&self, i: usize) -> Option<Component<MCL>> {
+        return HeapEncoding::<MCL>::get_component(self.data.as_ref(), i);
+    }
+
+    /// Get an owned handle to the `i`-th [`Component`] of this path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn get_owned_component(&self, i: usize) -> Option<OwnedComponent<MCL>> {
+        let start = HeapEncoding::<MCL>::start_offset_of_component(self.data.0.as_ref(), i)?;
+        let end = HeapEncoding::<MCL>::end_offset_of_component(self.data.0.as_ref(), i)?;
+        Some(OwnedComponent(self.data.0.slice(start..end)))
+    }
+
+    /// Create an iterator over the components of this path.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn components(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
+    {
+        self.suffix_components(0)
+    }
+
+    /// Create an iterator over the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn suffix_components(
+        &self,
+        i: usize,
+    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
+    {
+        (i..self.get_component_count()).map(|i| {
+            self.get_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
+        })
+    }
+
+    /// Create an iterator over owned handles to the components of this path.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn owned_components(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = OwnedComponent<MCL>>
+           + ExactSizeIterator<Item = OwnedComponent<MCL>>
+           + '_ {
+        self.suffix_owned_components(0)
+    }
+
+    /// Create an iterator over owned handles to the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn suffix_owned_components(
+        &self,
+        i: usize,
+    ) -> impl DoubleEndedIterator<Item = OwnedComponent<MCL>>
+           + ExactSizeIterator<Item = OwnedComponent<MCL>>
+           + '_ {
+        (i..self.get_component_count()).map(|i| {
+            self.get_owned_component(i).unwrap() // Only `None` if `i >= self.get_component_count()`
+        })
+    }
+
+    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    ///
+    /// Returns `None` if `length` is greater than `self.get_component_count()`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn create_prefix(&self, length: usize) -> Option<Self> {
+        if length > self.get_component_count() {
+            None
+        } else {
+            Some(unsafe { self.create_prefix_unchecked(length) })
+        }
+    }
+
+    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    ///
+    /// Undefined behaviour if `length` is greater than `self.get_component_count()`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub unsafe fn create_prefix_unchecked(&self, length: usize) -> Self {
+        Self {
+            data: self.data.clone(),
+            component_count: length,
+        }
+    }
+
+    /// Create an iterator over all prefixes of this path (including th empty path and the path itself).
+    ///
+    /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn all_prefixes(&self) -> impl DoubleEndedIterator<Item = Self> + '_ {
+        (0..=self.get_component_count()).map(|i| {
+            unsafe {
+                self.create_prefix_unchecked(i) // safe to call for i <= self.get_component_count()
+            }
+        })
     }
 
     /// Test whether this path is a prefix of the given path.
-    /// Paths are always a prefix of themselves.
-    fn is_prefix_of(&self, other: &Self) -> bool {
+    /// Paths are always a prefix of themselves, and the empty path is a prefix of every path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    pub fn is_prefix_of(&self, other: &Self) -> bool {
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
                 return false;
             }
         }
 
-        self.component_count() <= other.component_count()
+        self.get_component_count() <= other.get_component_count()
     }
 
     /// Test whether this path is prefixed by the given path.
     /// Paths are always a prefix of themselves.
-    fn is_prefixed_by(&self, other: &Self) -> bool {
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    pub fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
     }
 
     /// Return the longest common prefix of this path and the given path.
-    fn longest_common_prefix(&self, other: &Self) -> Self {
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    pub fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
 
         for (comp_a, comp_b) in self.components().zip(other.components()) {
@@ -191,229 +526,256 @@ pub trait Path: PartialEq + Eq + PartialOrd + Ord + Clone {
             lcp_len += 1
         }
 
-        self.create_prefix(lcp_len)
+        self.create_prefix(lcp_len).unwrap() // zip ensures that lcp_len <= self.get_component_count()
     }
 
-    /// Return the least path which is greater than `self`, or return `None` if `self` is the greatest possible path.
-    fn successor(&self) -> Option<Self> {
-        if self.component_count() == 0 {
-            let new_component = Self::Component::new(&[]).ok()?;
-            return Self::new(&[new_component]).ok();
-        }
-
-        // Try and add an empty component.
-        if let Ok(path) = self.append(Self::Component::empty()) {
+    /// Return the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    pub fn successor(&self) -> Option<Self> {
+        // If it is possible to append an empty component, then doing so yields the successor.
+        if let Ok(path) = self.append(Component::new_empty()) {
             return Some(path);
         }
 
+        // Otherwise, we try incrementing the final component. If that fails,
+        // we try to increment the second-to-final component, and so on.
+        // All components that come after the incremented component are discarded.
+        // If *no* component can be incremented, `self` is the maximal path and we return `None`.
+
         for (i, component) in self.components().enumerate().rev() {
-            // Try and do the *next* simplest thing (add a 0 byte to the component).
-            if let Some(component) = component.try_append_zero_byte() {
-                if let Ok(path) = self.create_prefix(i).append(component) {
-                    return Some(path);
+            // It would be nice to call a `try_increment_component` function, but in order to avoid
+            // memory allocations, we write some lower-level but more efficient code.
+
+            // If it is possible to append a zero byte to a component, then doing so yields its successor.
+            if component.len() < MCL
+                && HeapEncoding::<MCL>::get_sum_of_lengths_for_component(self.data.as_ref(), i)
+                    .unwrap() // i < self.component_count
+                    < MPL
+            {
+                // We now know how to construct the path successor of `self`:
+                // Take the first `i` components (this *excludes* the current `component`),
+                // then append `component` with an additinoal zero byte at the end.
+                let mut buf = clone_prefix_and_lengthen_final_component(self, i, 1);
+                buf.put_u8(0);
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
+            }
+
+            // We **cannot** append a zero byte, so instead we check whether we can treat the component as a fixed-width integer and increment it. The only failure case is if that component consists of 255-bytes only.
+            let can_increment = !component.iter().all(|byte| *byte == 255);
+
+            // If we cannot increment, we go to the next iteration of the loop. But if we can, we can create a copy of the
+            // prefix on the first `i + 1` components, and mutate its backing memory in-place.
+            if can_increment {
+                let mut buf = clone_prefix_and_lengthen_final_component(self, i, 0);
+
+                let start_component_offset =
+                    HeapEncoding::<MCL>::start_offset_of_component(buf.as_ref(), i).unwrap(); // i < self.component_count
+                let end_component_offset =
+                    HeapEncoding::<MCL>::end_offset_of_component(buf.as_ref(), i).unwrap(); // i < self.component_count
+                fixed_width_increment(
+                    &mut buf.as_mut()[start_component_offset..end_component_offset],
+                );
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
+            }
+        }
+
+        // Failed to increment any component, so `self` is the maximal path.
+        None
+    }
+
+    /// Return the least path that is strictly greater than `self` and which is not prefixed by `self`, or `None` if no such path exists.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    pub fn greater_but_not_prefixed(&self) -> Option<Self> {
+        // We iterate through all components in reverse order. For each component, we check whether we can replace it by another cmponent that is strictly greater but not prefixed by the original component. If that is possible, we do replace it with the least such component and drop all later components. If that is impossible, we try again with the previous component. If this impossible for all components, then this functino returns `None`.
+
+        for (i, component) in self.components().enumerate().rev() {
+            // If it is possible to append a zero byte to a component, then doing so yields its successor.
+            if component.len() < MCL
+                && HeapEncoding::<MCL>::get_sum_of_lengths_for_component(self.data.as_ref(), i)
+                    .unwrap() // i < self.component_count
+                    < MPL
+            {
+                let mut buf = clone_prefix_and_lengthen_final_component(self, i, 1);
+                buf.put_u8(0);
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
+            }
+
+            // Next, we check whether the i-th component can be changed into the least component that is greater but not prefixed by the original. If so, do that and cut off all later components.
+            let mut next_component_length = None;
+            for (j, comp_byte) in component.iter().enumerate().rev() {
+                if *comp_byte < 255 {
+                    next_component_length = Some(j + 1);
+                    break;
                 }
             }
 
-            // Otherwise we need to increment the component fixed-width style!
-            if let Some(incremented_component) = component.try_increment_fixed_width() {
-                // We can unwrap here because neither the max path length, component count, or component length has changed.
-                return Some(self.create_prefix(i).append(incremented_component).unwrap());
+            if let Some(next_component_length) = next_component_length {
+                // Yay, we can replace the i-th comopnent and then we are done.
+
+                let mut buf = clone_prefix_and_lengthen_final_component(self, i, 0);
+                let length_of_prefix =
+                    HeapEncoding::<MCL>::get_sum_of_lengths_for_component(&buf, i).unwrap();
+
+                // Update the length of the final component.
+                buf_set_final_component_length(
+                    buf.as_mut(),
+                    i,
+                    length_of_prefix - (component.len() - next_component_length),
+                );
+
+                // Increment the byte at position `next_component_length` of the final component.
+                let offset = HeapEncoding::<MCL>::start_offset_of_component(buf.as_ref(), i)
+                    .unwrap()
+                    + next_component_length
+                    - 1;
+                let byte = buf.as_ref()[offset]; // guaranteed < 255...
+                buf.as_mut()[offset] = byte + 1; // ... hence no overflow here.
+
+                return Some(Self::from_buffer_and_component_count(buf.freeze(), i + 1));
             }
         }
 
         None
     }
 
-    /// Return the least path that is greater than `self` and which is not prefixed by `self`, or `None` if `self` is the empty path *or* if `self` is the greatest path.
-    fn successor_of_prefix(&self) -> Option<Self> {
-        for (i, component) in self.components().enumerate().rev() {
-            if let Some(successor_comp) = component.try_append_zero_byte() {
-                if let Ok(path) = self.create_prefix(i).append(successor_comp) {
-                    return Some(path);
-                }
-            }
-
-            if let Some(successor_comp) = component.prefix_successor() {
-                return self.create_prefix(i).append(successor_comp).ok();
-            }
+    fn from_buffer_and_component_count(buf: Bytes, component_count: usize) -> Self {
+        Path {
+            data: HeapEncoding(buf),
+            component_count,
         }
-
-        None
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PathComponentBox<const MCL: usize>(Box<[u8]>);
-
-/// An implementation of [`PathComponent`] for [`PathComponentBox`].
-///
-/// ## Type parameters
-///
-/// - `MCL`: A [`usize`] used as [`PathComponent::MAX_COMPONENT_LENGTH`].
-impl<const MCL: usize> PathComponent for PathComponentBox<MCL> {
-    const MAX_COMPONENT_LENGTH: usize = MCL;
-
-    /// Create a new component by cloning and appending all bytes from the slice into a [`Vec<u8>`], or return a [`ComponentTooLongError`] if the bytelength of the slice exceeds [`PathComponent::MAX_COMPONENT_LENGTH`].
-    fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError> {
-        if bytes.len() > Self::MAX_COMPONENT_LENGTH {
-            return Err(ComponentTooLongError);
+impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.component_count != other.component_count {
+            false
+        } else {
+            return self.components().eq(other.components());
         }
-
-        Ok(Self(bytes.into()))
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn set_byte(&self, i: usize, value: u8) -> Self {
-        let mut new_component = self.clone();
-
-        new_component.0[i] = value;
-
-        new_component
     }
 }
 
-impl<const MCL: usize> AsRef<[u8]> for PathComponentBox<MCL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Eq for Path<MCL, MCC, MPL> {}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Hash for Path<MCL, MCC, MPL> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.component_count.hash(state);
+
+        for comp in self.components() {
+            comp.hash(state);
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for Path<MCL, MCC, MPL> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Compare paths lexicogrphically, since that is the path ordering that the Willow spec always uses.
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for Path<MCL, MCC, MPL> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        return self.components().cmp(other.components());
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Debug for Path<MCL, MCC, MPL> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data_vec: Vec<_> = self.components().collect();
+
+        f.debug_tuple("Path").field(&data_vec).finish()
+    }
+}
+
+/// Efficient, heap-allocated storage of a path encoding:
+///
+/// - First, a usize that gives the total number of path components.
+/// - Second, that many usizes, where the i-th one gives the sum of the lengths of the first i components.
+/// - Third, the concatenation of all components.
+///
+/// Note that these are not guaranteed to fulfil alignment requirements of usize, so we need to be careful in how we access these.
+/// Always use the methods on this struct for that reason.
+#[derive(Clone)]
+struct HeapEncoding<const MAX_COMPONENT_LENGTH: usize>(Bytes);
+
+// All offsets are in bytes, unless otherwise specified.
+// Arguments named `i` are the index of a component in the string, *not* a byte offset.
+impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
+    fn get_component_count(buf: &[u8]) -> usize {
+        Self::get_usize_at_offset(buf, 0).unwrap() // We always store at least 8byte for the component count.
+    }
+
+    // None if i is outside the slice.
+    fn get_sum_of_lengths_for_component(buf: &[u8], i: usize) -> Option<usize> {
+        let start_offset_in_bytes = Self::start_offset_of_sum_of_lengths_for_component(i);
+        Self::get_usize_at_offset(buf, start_offset_in_bytes)
+    }
+
+    fn get_component(buf: &[u8], i: usize) -> Option<Component<MAX_COMPONENT_LENGTH>> {
+        let start = Self::start_offset_of_component(buf, i)?;
+        let end = Self::end_offset_of_component(buf, i)?;
+        return Some(unsafe { Component::new_unchecked(&buf[start..end]) });
+    }
+
+    fn start_offset_of_sum_of_lengths_for_component(i: usize) -> usize {
+        // First usize is the number of components, then the i usizes storing the lengths; hence at i + 1.
+        size_of::<usize>() * (i + 1)
+    }
+
+    fn start_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
+        let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
+        if i == 0 {
+            Some(metadata_length)
+        } else {
+            Self::get_sum_of_lengths_for_component(buf, i - 1) // Length of everything up until the previous component.
+                .map(|length| length + metadata_length)
+        }
+    }
+
+    fn end_offset_of_component(buf: &[u8], i: usize) -> Option<usize> {
+        let metadata_length = (Self::get_component_count(buf) + 1) * size_of::<usize>();
+        Self::get_sum_of_lengths_for_component(buf, i).map(|length| length + metadata_length)
+    }
+
+    fn get_usize_at_offset(buf: &[u8], offset_in_bytes: usize) -> Option<usize> {
+        let end = offset_in_bytes + size_of::<usize>();
+
+        // We cannot interpret the memory in the slice as a usize directly, because the alignment might not match.
+        // So we first copy the bytes onto the heap, then construct a usize from it.
+        let mut usize_bytes = [0u8; size_of::<usize>()];
+
+        if buf.len() < end {
+            None
+        } else {
+            usize_bytes.copy_from_slice(&buf[offset_in_bytes..end]);
+            Some(usize::from_ne_bytes(usize_bytes))
+        }
+    }
+}
+
+impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONENT_LENGTH> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-#[cfg(feature = "dev")]
-impl<'a, const MCL: usize> Arbitrary<'a> for PathComponentBox<MCL> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
-        let boxx: Box<[u8]> = Arbitrary::arbitrary(u)?;
-        Self::new(&boxx).map_err(|_| ArbitraryError::IncorrectFormat)
-    }
-
-    #[inline]
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        <Box<[u8]> as Arbitrary<'a>>::size_hint(depth)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-/// A cheaply cloneable [`Path`] using a `Rc<[PathComponentBox]>`.
-/// While cloning is cheap, operations which return modified forms of the path (e.g. [`Path::append`]) are not, as they have to clone and adjust the contents of the underlying [`Rc`].
-pub struct PathRc<const MCL: usize, const MCC: usize, const MPL: usize>(
-    Rc<[PathComponentBox<MCL>]>,
-);
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Path for PathRc<MCL, MCC, MPL> {
-    type Component = PathComponentBox<MCL>;
-
-    const MAX_COMPONENT_COUNT: usize = MCC;
-    const MAX_PATH_LENGTH: usize = MPL;
-
-    fn new(components: &[Self::Component]) -> Result<Self, InvalidPathError> {
-        if components.len() > Self::MAX_COMPONENT_COUNT {
-            return Err(InvalidPathError::TooManyComponents);
-        };
-
-        let mut path_vec = Vec::new();
-        let mut total_length = 0;
-
-        for component in components {
-            total_length += component.len();
-
-            if total_length > Self::MAX_PATH_LENGTH {
-                return Err(InvalidPathError::PathTooLong);
-            } else {
-                path_vec.push(component.clone());
-            }
-        }
-
-        Ok(PathRc(path_vec.into()))
-    }
-
-    fn empty() -> Self {
-        PathRc(Vec::new().into())
-    }
-
-    fn create_prefix(&self, length: usize) -> Self {
-        if length == 0 {
-            return Self::empty();
-        }
-
-        let until = core::cmp::min(length, self.0.len());
-        let slice = &self.0[0..until];
-
-        Path::new(slice).unwrap()
-    }
-
-    fn append(&self, component: Self::Component) -> Result<Self, InvalidPathError> {
-        let total_component_count = self.0.len();
-
-        if total_component_count + 1 > MCC {
-            return Err(InvalidPathError::TooManyComponents);
-        }
-
-        let total_path_length = self.0.iter().fold(0, |acc, item| acc + item.0.len());
-
-        if total_path_length + component.as_ref().len() > MPL {
-            return Err(InvalidPathError::PathTooLong);
-        }
-
-        let mut new_path_vec = Vec::new();
-
-        for component in self.components() {
-            new_path_vec.push(component.clone())
-        }
-
-        new_path_vec.push(component);
-
-        Ok(PathRc(new_path_vec.into()))
-    }
-
-    fn components(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = &Self::Component> + ExactSizeIterator<Item = &Self::Component>
-    {
-        return self.0.iter();
-    }
-
-    fn component_count(&self) -> usize {
-        self.0.len()
-    }
-
-    fn len(&self) -> usize {
-        self.0.as_ref().iter().fold(0, |acc, comp| acc + comp.len())
-    }
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for PathRc<MCL, MCC, MPL> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        for (my_comp, your_comp) in self.components().zip(other.components()) {
-            let comparison = my_comp.cmp(your_comp);
-
-            match comparison {
-                std::cmp::Ordering::Equal => { /* Continue */ }
-                _ => return comparison,
-            }
-        }
-
-        self.component_count().cmp(&other.component_count())
-    }
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for PathRc<MCL, MCC, MPL> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for Path<MCL, MCC, MPL> {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
     where
         C: BulkConsumer<Item = u8>,
     {
-        encode_max_power(self.component_count(), MCC, consumer).await?;
+        encode_max_power(self.get_component_count(), MCC, consumer).await?;
 
         for component in self.components() {
             encode_max_power(component.len(), MCL, consumer).await?;
@@ -425,14 +787,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for PathRc<MC
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for Path<MCL, MCC, MPL> {
     async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,
     {
         let component_count = decode_max_power(MCC, producer).await?;
 
-        let mut path = Self::empty();
+        let mut path = Self::new_empty();
 
         for _ in 0..component_count {
             let component_len = decode_max_power(MCL, producer).await?;
@@ -443,8 +805,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
                 .bulk_overwrite_full_slice_uninit(component_box.as_mut())
                 .await?;
 
-            let path_component =
-                <Self as Path>::Component::new(slice).map_err(|_| DecodeError::InvalidInput)?;
+            let path_component = Component::new(slice).ok_or(DecodeError::InvalidInput)?;
             path = path
                 .append(path_component)
                 .map_err(|_| DecodeError::InvalidInput)?;
@@ -456,11 +817,16 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for PathRc<MC
 
 #[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
-    for PathRc<MCL, MCC, MPL>
+    for Path<MCL, MCC, MPL>
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
-        let boxx: Box<[PathComponentBox<MCL>]> = Arbitrary::arbitrary(u)?;
-        Self::new(&boxx).map_err(|_| ArbitraryError::IncorrectFormat)
+        let bytestrings: Vec<Vec<u8>> = Arbitrary::arbitrary(u)?;
+        let components: Vec<Component<MCL>> = bytestrings
+            .iter()
+            .filter_map(|bytes| Component::new(bytes))
+            .collect();
+
+        Self::new_from_slice(&components).map_err(|_| ArbitraryError::IncorrectFormat)
     }
 
     #[inline]
@@ -469,314 +835,128 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::cmp::Ordering::Less;
+/// Like core::iter::Chain, but implements ExactSizeIter if both components implement it. Panics if the resulting length overflows.
+///
+/// Code liberally copy-pasted from the standard library.
+pub struct ExactLengthChain<A, B> {
+    a: Option<A>,
+    b: Option<B>,
+}
 
-    use super::*;
-
-    const MCL: usize = 8;
-    const MCC: usize = 4;
-    const MPL: usize = 16;
-
-    #[test]
-    fn empty() {
-        let empty_path = PathRc::<MCL, MCC, MPL>::empty();
-
-        assert_eq!(empty_path.components().count(), 0);
-    }
-
-    #[test]
-    fn new() {
-        let component_too_long =
-            PathComponentBox::<MCL>::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z']);
-
-        assert!(matches!(component_too_long, Err(ComponentTooLongError)));
-
-        let too_many_components = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
-        ]);
-
-        assert!(matches!(
-            too_many_components,
-            Err(InvalidPathError::TooManyComponents)
-        ));
-
-        let path_too_long = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
-        ]);
-
-        assert!(matches!(path_too_long, Err(InvalidPathError::PathTooLong)));
-    }
-
-    #[test]
-    fn append() {
-        let path = PathRc::<MCL, MCC, MPL>::empty();
-
-        let r1 = path.append(PathComponentBox::new(&[b'a']).unwrap());
-        assert!(r1.is_ok());
-        let p1 = r1.unwrap();
-        assert_eq!(p1.components().count(), 1);
-
-        let r2 = p1.append(PathComponentBox::new(&[b'b']).unwrap());
-        assert!(r2.is_ok());
-        let p2 = r2.unwrap();
-        assert_eq!(p2.components().count(), 2);
-
-        let r3 = p2.append(PathComponentBox::new(&[b'c']).unwrap());
-        assert!(r3.is_ok());
-        let p3 = r3.unwrap();
-        assert_eq!(p3.components().count(), 3);
-
-        let r4 = p3.append(PathComponentBox::new(&[b'd']).unwrap());
-        assert!(r4.is_ok());
-        let p4 = r4.unwrap();
-        assert_eq!(p4.components().count(), 4);
-
-        let r5 = p4.append(PathComponentBox::new(&[b'z']).unwrap());
-        assert!(r5.is_err());
-
-        let collected = p4
-            .components()
-            .map(|comp| comp.as_ref())
-            .collect::<Vec<&[u8]>>();
-
-        assert_eq!(collected, vec![[b'a'], [b'b'], [b'c'], [b'd'],])
-    }
-
-    #[test]
-    fn prefix() {
-        let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let prefix0 = path.create_prefix(0);
-
-        assert_eq!(prefix0, PathRc::empty());
-
-        let prefix1 = path.create_prefix(1);
-
-        assert_eq!(
-            prefix1,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
-        );
-
-        let prefix2 = path.create_prefix(2);
-
-        assert_eq!(
-            prefix2,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap()
-            ])
-            .unwrap()
-        );
-
-        let prefix3 = path.create_prefix(3);
-
-        assert_eq!(
-            prefix3,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap(),
-                PathComponentBox::new(&[b'c']).unwrap()
-            ])
-            .unwrap()
-        );
-
-        let prefix4 = path.create_prefix(4);
-
-        assert_eq!(
-            prefix4,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap(),
-                PathComponentBox::new(&[b'c']).unwrap()
-            ])
-            .unwrap()
-        )
-    }
-
-    #[test]
-    fn prefixes() {
-        let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let prefixes: Vec<PathRc<MCL, MCC, MPL>> = path.all_prefixes().collect();
-
-        assert_eq!(
-            prefixes,
-            vec![
-                PathRc::<MCL, MCC, MPL>::new(&[]).unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(&[b'a']).unwrap(),
-                    PathComponentBox::new(&[b'b']).unwrap()
-                ])
-                .unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(&[b'a']).unwrap(),
-                    PathComponentBox::new(&[b'b']).unwrap(),
-                    PathComponentBox::new(&[b'c']).unwrap()
-                ])
-                .unwrap(),
-            ]
-        )
-    }
-
-    #[test]
-    fn is_prefix_of() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
-        ])
-        .unwrap();
-
-        assert!(path_a.is_prefix_of(&path_b));
-        assert!(!path_a.is_prefix_of(&path_c));
-
-        let path_d = PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[]).unwrap()]).unwrap();
-        let path_e = PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[0]).unwrap()]).unwrap();
-
-        assert!(!path_d.is_prefix_of(&path_e));
-
-        let empty_path = PathRc::empty();
-
-        assert!(empty_path.is_prefix_of(&path_d));
-    }
-
-    #[test]
-    fn is_prefixed_by() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
-        ])
-        .unwrap();
-
-        assert!(path_b.is_prefixed_by(&path_a));
-        assert!(!path_c.is_prefixed_by(&path_a));
-    }
-
-    #[test]
-    fn longest_common_prefix() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'x']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
-        ])
-        .unwrap();
-
-        let lcp_a_b = path_a.longest_common_prefix(&path_b);
-
-        assert_eq!(
-            lcp_a_b,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
-        );
-
-        let lcp_b_a = path_b.longest_common_prefix(&path_a);
-
-        assert_eq!(lcp_b_a, lcp_a_b);
-
-        let lcp_a_x = path_a.longest_common_prefix(&path_c);
-
-        assert_eq!(lcp_a_x, PathRc::empty());
-
-        let path_d = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
-        ])
-        .unwrap();
-
-        let lcp_b_d = path_b.longest_common_prefix(&path_d);
-
-        assert_eq!(
-            lcp_b_d,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
-        )
-    }
-
-    fn make_test_path<const MCL: usize, const MCC: usize, const MPL: usize>(
-        vector: &Vec<Vec<u8>>,
-    ) -> PathRc<MCL, MCC, MPL> {
-        let components: Vec<_> = vector
-            .iter()
-            .map(|bytes_vec| PathComponentBox::new(bytes_vec).expect("the component was too long"))
-            .collect();
-
-        PathRc::new(&components).expect("the path was invalid")
-    }
-
-    #[test]
-    fn ordering() {
-        let test_vector = vec![(vec![vec![0, 0], vec![]], vec![vec![0, 0, 0]], Less)];
-
-        for (a, b, expected) in test_vector {
-            let path_a: PathRc<3, 3, 3> = make_test_path(&a);
-            let path_b: PathRc<3, 3, 3> = make_test_path(&b);
-
-            let ordering = path_a.cmp(&path_b);
-
-            if ordering != expected {
-                println!("a: {:?}", a);
-                println!("b: {:?}", b);
-
-                assert_eq!(ordering, expected);
-            }
+impl<A, B> ExactLengthChain<A, B> {
+    fn new(a: A, b: B) -> ExactLengthChain<A, B> {
+        ExactLengthChain {
+            a: Some(a),
+            b: Some(b),
         }
     }
+}
+
+impl<A, B> Iterator for ExactLengthChain<A, B>
+where
+    A: Iterator,
+    B: Iterator<Item = A::Item>,
+{
+    type Item = A::Item;
+
+    #[inline]
+    fn next(&mut self) -> Option<A::Item> {
+        and_then_or_clear(&mut self.a, Iterator::next).or_else(|| self.b.as_mut()?.next())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower_a, higher_a) = self.a.as_ref().map_or((0, None), |a| a.size_hint());
+        let (lower_b, higher_b) = self.b.as_ref().map_or((0, None), |b| b.size_hint());
+
+        let higher = match (higher_a, higher_b) {
+            (Some(a), Some(b)) => Some(
+                a.checked_add(b)
+                    .expect("Some of lengths of two iterators must not overflow."),
+            ),
+            _ => None,
+        };
+
+        (lower_a + lower_b, higher)
+    }
+}
+
+impl<A, B> DoubleEndedIterator for ExactLengthChain<A, B>
+where
+    A: DoubleEndedIterator,
+    B: DoubleEndedIterator<Item = A::Item>,
+{
+    #[inline]
+    fn next_back(&mut self) -> Option<A::Item> {
+        and_then_or_clear(&mut self.b, |b| b.next_back()).or_else(|| self.a.as_mut()?.next_back())
+    }
+}
+
+impl<A, B> ExactSizeIterator for ExactLengthChain<A, B>
+where
+    A: ExactSizeIterator,
+    B: ExactSizeIterator<Item = A::Item>,
+{
+}
+
+#[inline]
+fn and_then_or_clear<T, U>(opt: &mut Option<T>, f: impl FnOnce(&mut T) -> Option<U>) -> Option<U> {
+    let x = f(opt.as_mut()?);
+    if x.is_none() {
+        *opt = None;
+    }
+    x
+}
+
+// In a buffer that stores a path on the heap, set the sum of all component lengths for the i-th component, which must be the final component.
+fn buf_set_final_component_length(buf: &mut [u8], i: usize, new_sum_of_lengths: usize) {
+    let comp_len_start = (1 + i) * size_of::<usize>();
+    let comp_len_end = comp_len_start + size_of::<usize>();
+    buf[comp_len_start..comp_len_end].copy_from_slice(&new_sum_of_lengths.to_ne_bytes()[..]);
+}
+
+// Overflows to all zeroes if all bytes are 255.
+fn fixed_width_increment(buf: &mut [u8]) {
+    for byte_ref in buf.iter_mut().rev() {
+        if *byte_ref == 255 {
+            *byte_ref = 0;
+        } else {
+            *byte_ref += 1;
+            return;
+        }
+    }
+}
+
+/// Create a new BufMut that stores the heap encoding of the first i components of `original`, but increasing the length of the final component by `extra_capacity`. No data to fill that extra capacity is written into the buffer.
+fn clone_prefix_and_lengthen_final_component<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+>(
+    original: &Path<MCL, MCC, MPL>,
+    i: usize,
+    extra_capacity: usize,
+) -> BytesMut {
+    let original_slice = original.data.as_ref();
+    let successor_path_length =
+        HeapEncoding::<MCL>::get_sum_of_lengths_for_component(original_slice, i).unwrap()
+            + extra_capacity;
+    let buf_capacity = size_of::<usize>() * (i + 2) + successor_path_length;
+    let mut buf = BytesMut::with_capacity(buf_capacity);
+
+    // Write the length of the successor path as the first usize.
+    buf.extend_from_slice(&(i + 1).to_ne_bytes());
+
+    // Next, copy the total path lengths for the first i prefixes.
+    buf.extend_from_slice(&original_slice[size_of::<usize>()..size_of::<usize>() * (i + 2)]);
+
+    // Now, write the length of the final component, which is one greater than before.
+    buf_set_final_component_length(buf.as_mut(), i, successor_path_length);
+
+    // Finally, copy the raw bytes of the first i+1 components.
+    buf.extend_from_slice(
+        &original_slice[HeapEncoding::<MCL>::start_offset_of_component(original_slice, 0).unwrap()
+            ..HeapEncoding::<MCL>::start_offset_of_component(original_slice, i + 1).unwrap()],
+    );
+
+    buf
 }
