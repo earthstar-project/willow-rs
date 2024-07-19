@@ -99,9 +99,9 @@ impl CompactWidth {
         og >> position
     }
 
-    pub fn from_2bit_int(n: u8, position: u8) -> Self {
-        let mask = 0b0000_0011;
-        let two_bit_int = n >> (6 - position) & mask;
+    pub fn decode_fixed_width_bitmask(mask: u8, offset: u8) -> Self {
+        let twobit_mask = 0b0000_0011;
+        let two_bit_int = mask >> (6 - offset) & twobit_mask;
 
         // Because we sanitise the input down to a 2-bit integer, we can safely unwrap this.
         CompactWidth::new(2u8.pow(two_bit_int as u32)).unwrap()

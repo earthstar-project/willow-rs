@@ -206,8 +206,8 @@ where
         let is_namespace_encoded = header & 0b1000_0000 == 0b1000_0000;
         let is_subspace_encoded = header & 0b0100_0000 == 0b0100_0000;
         let add_or_subtract_time_diff = header & 0b0010_0000 == 0b0010_0000;
-        let compact_width_time_diff = CompactWidth::from_2bit_int(header, 4);
-        let compact_width_payload_length = CompactWidth::from_2bit_int(header, 6);
+        let compact_width_time_diff = CompactWidth::decode_fixed_width_bitmask(header, 4);
+        let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
         let namespace_id = if is_namespace_encoded {
             N::decode(producer).await?
@@ -238,7 +238,8 @@ where
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
         // Verify that the compact width of the time diff matches the time diff we just decoded.
-        if CompactWidth::from_2bit_int(header, 4) != CompactWidth::from_u64(time_diff) {
+        if CompactWidth::decode_fixed_width_bitmask(header, 4) != CompactWidth::from_u64(time_diff)
+        {
             return Err(DecodeError::InvalidInput);
         }
 
@@ -263,7 +264,9 @@ where
             decode_compact_width_be(compact_width_payload_length, producer).await?;
 
         // Verify that the compact width of the payload length matches the payload length we just decoded.
-        if CompactWidth::from_2bit_int(header, 6) != CompactWidth::from_u64(payload_length) {
+        if CompactWidth::decode_fixed_width_bitmask(header, 6)
+            != CompactWidth::from_u64(payload_length)
+        {
             return Err(DecodeError::InvalidInput);
         }
 
