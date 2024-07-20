@@ -28,6 +28,11 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
     }
 
     /// Create a `Component` from a byte slice, without verifying its length.
+    /// 
+    /// #### Safety
+    /// 
+    /// Supplying a slice of length strictly greater than `MAX_COMPONENT_LENGTH` may trigger undefined behavior,
+    /// either immediately, or on any subsequent function invocation that operates on the resulting [`Component`].
     pub unsafe fn new_unchecked(slice: &'a [u8]) -> Self {
         Self(slice)
     }
@@ -83,6 +88,11 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
     }
 
     /// Create an `OwnedComponent` by copying data from a byte slice, without verifying its length.
+    /// 
+    /// #### Safety
+    /// 
+    /// Supplying a slice of length strictly greater than `MAX_COMPONENT_LENGTH` may trigger undefined behavior,
+    /// either immediately, or on any subsequent function invocation that operates on the resulting [`OwnedComponent`].
     ///
     /// #### Complexity
     ///
@@ -447,7 +457,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
     /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
     ///
-    /// Undefined behaviour if `length` is greater than `self.get_component_count()`.
+    /// #### Safety
+    /// 
+    /// Undefined behaviour if `length` is greater than `self.get_component_count()`. May manifest directly, or at any later
+    /// function invocation that operates on the resulting [`Path`].
     ///
     /// #### Complexity
     ///
