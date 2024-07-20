@@ -288,6 +288,9 @@ where
     S: SubspaceId + Encodable,
     PD: PayloadDigest + Encodable,
 {
+    /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
     async fn relative_encode<Consumer>(
         &self,
         reference: &(N, Area<MCL, MCC, MPL, S>),
@@ -346,6 +349,9 @@ where
     S: SubspaceId + Decodable + std::fmt::Debug,
     PD: PayloadDigest + Decodable,
 {
+    /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
     async fn relative_decode<Producer>(
         reference: &(N, Area<MCL, MCC, MPL, S>),
         producer: &mut Producer,
