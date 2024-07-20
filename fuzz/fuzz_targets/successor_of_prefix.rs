@@ -1,8 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use willow_data_model::path::*;
-use willow_data_model_fuzz::test_successor_of_prefix;
+// use willow_data_model::path::*;
+use willow_data_model_fuzz::path::*;
 
 // MCL, MCC, MPL
 fuzz_target!(|data: (PathRc<2, 3, 3>, PathRc<2, 3, 3>)| {
@@ -23,5 +23,5 @@ fuzz_target!(|data: (PathRc<2, 3, 3>, PathRc<2, 3, 3>)| {
         .unwrap(),
     ];
 
-    test_successor_of_prefix(baseline, candidate, &unsucceedables);
+    test_greater_but_not_prefixed(baseline, candidate, &unsucceedables);
 });

@@ -8,10 +8,39 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4"
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 [dependencies.willow-data-model]
 path = "../data-model"
+
+[[bin]]
+name = "path"
+path = "fuzz_targets/path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path2"
+path = "fuzz_targets/path2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path3"
+path = "fuzz_targets/path3.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "path4"
+path = "fuzz_targets/path4.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "path_successor"
