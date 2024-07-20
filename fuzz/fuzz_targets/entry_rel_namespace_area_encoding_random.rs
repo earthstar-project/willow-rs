@@ -4,13 +4,13 @@ use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use ufotofu::local_nb::consumer::TestConsumer;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
 use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
+use willow_data_model::grouping::area::Area;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model_fuzz::relative_encoding_roundtrip;
+use willow_data_model_fuzz::relative_encoding_random;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);
@@ -41,19 +41,17 @@ impl Decodable for FakePayloadDigest {
 
 impl PayloadDigest for FakePayloadDigest {}
 
-fuzz_target!(|data: (
-    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-    TestConsumer<u8, u16, ()>
-)| {
-    let (entry_sub, entry_ref, mut consumer) = data;
+fuzz_target!(
+    |data: (&[u8], (EsNamespaceId, Area<16, 16, 16, IdentityId>))| {
+        // fuzzed code goes here
+        let (random_bytes, namespaced_area) = data;
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            TestConsumer<u8, u16, ()>,
-        >(entry_sub, entry_ref, &mut consumer)
-        .await;
-    });
-});
+        smol::block_on(async {
+            relative_encoding_random::<
+                (EsNamespaceId, Area<16, 16, 16, IdentityId>),
+                Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+            >(namespaced_area, random_bytes)
+            .await;
+        });
+    }
+);
