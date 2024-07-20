@@ -1,5 +1,5 @@
 #[cfg(feature = "dev")]
-use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
+use arbitrary::{size_hint::and_all, Arbitrary, Error as ArbitraryError, Unstructured};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::{
@@ -38,9 +38,9 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
     }
 
     /// Create a `Component` from a byte slice, without verifying its length.
-    /// 
+    ///
     /// #### Safety
-    /// 
+    ///
     /// Supplying a slice of length strictly greater than `MAX_COMPONENT_LENGTH` may trigger undefined behavior,
     /// either immediately, or on any subsequent function invocation that operates on the resulting [`Component`].
     pub unsafe fn new_unchecked(slice: &'a [u8]) -> Self {
@@ -98,9 +98,9 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
     }
 
     /// Create an `OwnedComponent` by copying data from a byte slice, without verifying its length.
-    /// 
+    ///
     /// #### Safety
-    /// 
+    ///
     /// Supplying a slice of length strictly greater than `MAX_COMPONENT_LENGTH` may trigger undefined behavior,
     /// either immediately, or on any subsequent function invocation that operates on the resulting [`OwnedComponent`].
     ///
@@ -468,7 +468,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
     ///
     /// #### Safety
-    /// 
+    ///
     /// Undefined behaviour if `length` is greater than `self.get_component_count()`. May manifest directly, or at any later
     /// function invocation that operates on the resulting [`Path`].
     ///
@@ -607,7 +607,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
     pub fn greater_but_not_prefixed(&self) -> Option<Self> {
-        // We iterate through all components in reverse order. For each component, we check whether we can replace it by another cmponent that is strictly greater but not prefixed by the original component. If that is possible, we do replace it with the least such component and drop all later components. If that is impossible, we try again with the previous component. If this impossible for all components, then this functino returns `None`.
+        // We iterate through all components in reverse order. For each component, we check whether we can replace it by another cmponent that is strictly greater but not prefixed by the original component. If that is possible, we do replace it with the least such component and drop all later components. If that is impossible, we try again with the previous component. If this impossible for all components, then this function returns `None`.
 
         for (i, component) in self.components().enumerate().rev() {
             // If it is possible to append a zero byte to a component, then doing so yields its successor.
@@ -833,18 +833,72 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
     for Path<MCL, MCC, MPL>
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
-        let bytestrings: Vec<Vec<u8>> = Arbitrary::arbitrary(u)?;
-        let components: Vec<Component<MCL>> = bytestrings
-            .iter()
-            .filter_map(|bytes| Component::new(bytes))
-            .collect();
+        let mut total_length_in_bytes: usize = Arbitrary::arbitrary(u)?;
+        total_length_in_bytes = total_length_in_bytes % (MPL + 1);
 
-        Self::new_from_slice(&components).map_err(|_| ArbitraryError::IncorrectFormat)
+        let data: Vec<u8> = Arbitrary::arbitrary(u)?;
+        total_length_in_bytes = core::cmp::min(total_length_in_bytes, data.len());
+
+        let mut num_components: usize = Arbitrary::arbitrary(u)?;
+        num_components = num_components % (MCC + 1);
+
+        if num_components == 0 {
+            total_length_in_bytes = 0;
+        }
+
+        let buf_capacity = size_of::<usize>() * (1 + num_components) + total_length_in_bytes;
+        let mut buf = BytesMut::with_capacity(buf_capacity);
+
+        // Write the component count of the path as the first usize.
+        buf.extend_from_slice(&num_components.to_ne_bytes());
+
+        let mut length_total_so_far = 0;
+        for i in 0..num_components {
+            // The final component must be long enough to result in the total_length_in_bytes.
+            if i + 1 == num_components {
+                let final_component_length = total_length_in_bytes - length_total_so_far;
+
+                if final_component_length > MCL {
+                    return Err(ArbitraryError::IncorrectFormat);
+                } else {
+                    buf.extend_from_slice(&total_length_in_bytes.to_ne_bytes());
+                }
+            } else {
+                // Any non-final component can take on a random length, ...
+                let mut component_length: usize = Arbitrary::arbitrary(u)?;
+                // ... except it must be at most the MCL, and...
+                component_length = component_length % (MCL + 1);
+                // ... the total length of all components must not exceed the total path length.
+                component_length = core::cmp::min(
+                    component_length,
+                    total_length_in_bytes - length_total_so_far,
+                );
+
+                length_total_so_far += component_length;
+                buf.extend_from_slice(&length_total_so_far.to_ne_bytes());
+            }
+        }
+
+        // Finally, add the random path data.
+        buf.extend_from_slice(&data);
+
+        Ok(Path {
+            data: HeapEncoding(buf.freeze()),
+            component_count: num_components,
+        })
     }
 
     #[inline]
     fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        <Box<[u8]> as Arbitrary<'a>>::size_hint(depth)
+        (
+            and_all(&[
+                usize::size_hint(depth),
+                usize::size_hint(depth),
+                Vec::<u8>::size_hint(depth),
+            ])
+            .0,
+            None,
+        )
     }
 }
 

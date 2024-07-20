@@ -1,4 +1,4 @@
-use arbitrary::{size_hint::and_all, Arbitrary, Error as ArbitraryError};
+use arbitrary::{size_hint::{self, and_all}, Arbitrary, Error as ArbitraryError};
 use either::Either;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::{
@@ -48,13 +48,42 @@ impl<'a, const MIN_LENGTH: usize, const MAX_LENGTH: usize> Arbitrary<'a>
     for Shortname<MIN_LENGTH, MAX_LENGTH>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let shortname_string: String = Arbitrary::arbitrary(u)?;
+        let mut len: usize = Arbitrary::arbitrary(u)?;
+        len = MIN_LENGTH + (len % (1 + MAX_LENGTH - MIN_LENGTH));
 
-        Self::new(&shortname_string).map_err(|_| ArbitraryError::IncorrectFormat)
+        let mut s = String::new();
+
+        if len == 0 {
+            return Self::new("").map_err(|_| ArbitraryError::IncorrectFormat);
+        } else {
+            let mut alpha: u8 = Arbitrary::arbitrary(u)?;
+            alpha = alpha % 26; // There are 26 lowercase ascii alphabetic chars.
+            alpha = alpha + 0x61; // 0x61 is ASCII 'a'.
+            s.push(alpha as char);
+
+            for _ in 1..len {
+                let mut alphanum: u8 = Arbitrary::arbitrary(u)?;
+                alphanum = alphanum % 36; // There are 36 lowercase ascii alphabetic chars or ascii digits.
+
+                if alphanum < 26 {
+                    alphanum = alphanum + 0x61;
+                } else {
+                    alphanum = alphanum + 0x30 - 26; // It works, alright? Add the ascii code of '0', but subtract 26, because we transform numbers frmo 26 to 36, not from 0 to 10. (all those ranges with an inclusive start, exclusive end)
+                }
+
+                s.push(alphanum as char);
+            }
+        }
+
+        Self::new(&s).map_err(|_| ArbitraryError::IncorrectFormat)
     }
 
-    fn size_hint(_depth: usize) -> (usize, Option<usize>) {
-        (MIN_LENGTH, Some(MAX_LENGTH))
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        let (u8_min, u8_max) = u8::size_hint(depth);
+        size_hint::and(
+            usize::size_hint(depth),
+            (MIN_LENGTH * u8_min, u8_max.map(|max| max * MAX_LENGTH)),
+        )
     }
 }
 
