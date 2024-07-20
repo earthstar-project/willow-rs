@@ -2,14 +2,14 @@
 
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::path::PathRc;
+use willow_data_model::path::Path;
 use willow_data_model_fuzz::encoding_roundtrip;
 
 const MCL: usize = 111111;
 const MCC: usize = 111111;
 const MPL: usize = 111111;
 
-fuzz_target!(|data: (PathRc<MCL, MCC, MPL>, TestConsumer<u8, u16, ()>)| {
+fuzz_target!(|data: (Path<MCL, MCC, MPL>, TestConsumer<u8, u16, ()>)| {
     let (path, mut consumer) = data;
 
     smol::block_on(async {

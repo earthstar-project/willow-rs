@@ -1,4 +1,4 @@
-use crate::{entry::Entry, path::Path};
+use crate::entry::Entry;
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
@@ -27,8 +27,15 @@ pub trait PayloadDigest: Ord + Default + Clone {}
 ///
 /// - `N` - The type used for the [`Entry`]'s [`NamespaceId`].
 /// - `S` - The type used for the [`Entry`]'s [`SubspaceId`].
-/// - `P` - The type used for the [`Entry`]'s [`Path`]s.
 /// - `PD` - The type used for the [`Entry`]'s [`PayloadDigest`].
-pub trait IsAuthorisedWrite<N: NamespaceId, S: SubspaceId, P: Path, PD: PayloadDigest> {
-    fn is_authorised_write(&self, entry: &Entry<N, S, P, PD>) -> bool;
+pub trait IsAuthorisedWrite<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+>
+{
+    fn is_authorised_write(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool;
 }

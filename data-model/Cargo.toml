@@ -11,6 +11,7 @@ dev = ["dep:arbitrary"]
 either = "1.10.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 ufotofu = { path = "../../ufotofu" }
+bytes = "1.6.0"
 
 [dev-dependencies]
 smol = "2.0.0"
@@ -19,4 +20,7 @@ smol = "2.0.0"
 [package.metadata.docs.rs]
 # document all features
 all-features = true
+
+
+
 

@@ -11,7 +11,7 @@ use crate::{
     },
     entry::Entry,
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
-    path::{Path, PathRc},
+    path::Path,
 };
 
 /// A type that can be used to encoded to a bytestring *encoded relative to `R`*.
@@ -40,38 +40,54 @@ pub trait RelativeDecodable<R> {
 
 // Path <> Path
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<PathRc<MCL, MCC, MPL>>
-    for PathRc<MCL, MCC, MPL>
+impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Path<MCL, MCC, MPL>>
+    for Path<MCL, MCC, MPL>
 {
     /// Encode a path relative to another path.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
     async fn relative_encode<Consumer>(
         &self,
-        reference: &PathRc<MCL, MCC, MPL>,
+        reference: &Path<MCL, MCC, MPL>,
         consumer: &mut Consumer,
     ) -> Result<(), EncodingConsumerError<Consumer::Error>>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
         let lcp = self.longest_common_prefix(reference);
-        encode_max_power(lcp.component_count(), MCC, consumer).await?;
+        encode_max_power(lcp.get_component_count(), MCC, consumer).await?;
 
-        let suffix = self.create_suffix(self.component_count() - lcp.component_count());
-        suffix.encode(consumer).await?;
+        if lcp.get_component_count() > 0 {
+            let suffix_components = self.suffix_components(lcp.get_component_count());
+
+            // TODO: A more performant version of this.
+
+            let mut suffix = Path::<MCL, MCC, MPL>::new_empty();
+
+            for component in suffix_components {
+                // We can unwrap here because this suffix is a subset of a valid path.
+                suffix = suffix.append(component).unwrap();
+            }
+
+            suffix.encode(consumer).await?;
+
+            return Ok(());
+        }
+
+        self.encode(consumer).await?;
 
         Ok(())
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<PathRc<MCL, MCC, MPL>>
-    for PathRc<MCL, MCC, MPL>
+impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Path<MCL, MCC, MPL>>
+    for Path<MCL, MCC, MPL>
 {
     /// Decode a path relative to this path.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
     async fn relative_decode<Producer>(
-        reference: &PathRc<MCL, MCC, MPL>,
+        reference: &Path<MCL, MCC, MPL>,
         producer: &mut Producer,
     ) -> Result<Self, DecodeError<Producer::Error>>
     where
@@ -80,17 +96,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Pat
     {
         let lcp = decode_max_power(MCC, producer).await?;
 
-        if lcp > reference.component_count() as u64 {
+        if lcp > reference.get_component_count() as u64 {
             return Err(DecodeError::InvalidInput);
         }
 
-        let prefix = reference.create_prefix(lcp as usize);
-        let suffix = PathRc::<MCL, MCC, MPL>::decode(producer).await?;
+        let prefix = reference
+            .create_prefix(lcp as usize)
+            .ok_or(DecodeError::InvalidInput)?;
+        let suffix = Path::<MCL, MCC, MPL>::decode(producer).await?;
 
         let mut new = prefix;
 
         for component in suffix.components() {
-            match new.append(component.clone()) {
+            match new.append(component) {
                 Ok(appended) => new = appended,
                 Err(_) => return Err(DecodeError::InvalidInput),
             }
@@ -98,7 +116,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Pat
 
         let actual_lcp = reference.longest_common_prefix(&new);
 
-        if actual_lcp.component_count() != lcp as usize {
+        if actual_lcp.get_component_count() != lcp as usize {
             return Err(DecodeError::InvalidInput);
         }
 
@@ -109,8 +127,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Pat
 // Entry <> Entry
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeEncodable<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
-    for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
+    RelativeEncodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Encodable,
     S: SubspaceId + Encodable,
@@ -121,7 +138,7 @@ where
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
     async fn relative_encode<Consumer>(
         &self,
-        reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
+        reference: &Entry<MCL, MCC, MPL, N, S, PD>,
         consumer: &mut Consumer,
     ) -> Result<(), EncodingConsumerError<Consumer::Error>>
     where
@@ -170,8 +187,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodable<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>>
-    for Entry<N, S, PathRc<MCL, MCC, MPL>, PD>
+    RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Decodable + std::fmt::Debug,
     S: SubspaceId + Decodable + std::fmt::Debug,
@@ -181,9 +197,9 @@ where
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
     async fn relative_decode<Producer>(
-        reference: &Entry<N, S, PathRc<MCL, MCC, MPL>, PD>,
+        reference: &Entry<MCL, MCC, MPL, N, S, PD>,
         producer: &mut Producer,
-    ) -> Result<Entry<N, S, PathRc<MCL, MCC, MPL>, PD>, DecodeError<Producer::Error>>
+    ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
@@ -225,7 +241,7 @@ where
             return Err(DecodeError::InvalidInput);
         }
 
-        let path = PathRc::<MCL, MCC, MPL>::relative_decode(&reference.path, producer).await?;
+        let path = Path::<MCL, MCC, MPL>::relative_decode(&reference.path, producer).await?;
 
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 

@@ -9,7 +9,6 @@ use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
 use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model::path::PathRc;
 use willow_data_model_fuzz::relative_encoding_random;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -43,14 +42,14 @@ impl PayloadDigest for FakePayloadDigest {}
 
 fuzz_target!(|data: (
     &[u8],
-    Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
+    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
 )| {
     let (random_bytes, ref_entry) = data;
 
     smol::block_on(async {
         relative_encoding_random::<
-            Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
-            Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
+            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
         >(ref_entry, random_bytes)
         .await;
     });

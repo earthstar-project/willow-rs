@@ -10,7 +10,6 @@ use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
 use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model::path::PathRc;
 use willow_data_model_fuzz::relative_encoding_roundtrip;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -43,16 +42,16 @@ impl Decodable for FakePayloadDigest {
 impl PayloadDigest for FakePayloadDigest {}
 
 fuzz_target!(|data: (
-    Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
-    Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
+    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
     TestConsumer<u8, u16, ()>
 )| {
     let (entry_sub, entry_ref, mut consumer) = data;
 
     smol::block_on(async {
         relative_encoding_roundtrip::<
-            Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
-            Entry<EsNamespaceId, IdentityId, PathRc<16, 16, 16>, FakePayloadDigest>,
+            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
             TestConsumer<u8, u16, ()>,
         >(entry_sub, entry_ref, &mut consumer)
         .await;
