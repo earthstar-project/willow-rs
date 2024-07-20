@@ -135,11 +135,7 @@ where
 
         let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
 
-        //  println!("3");
-
         let payload_digest: PD = Arbitrary::arbitrary(u)?;
-
-        //  println!("4");
 
         Ok(Self {
             namespace_id,
@@ -151,7 +147,6 @@ where
         })
     }
 
-    /*
     fn size_hint(depth: usize) -> (usize, Option<usize>) {
         and_all(&[
             N::size_hint(depth),
@@ -162,7 +157,6 @@ where
             u64::size_hint(depth),
         ])
     }
-    */
 }
 
 /// An error indicating an [`AuthorisationToken`] does not authorise the writing of this entry.

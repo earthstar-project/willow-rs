@@ -127,12 +127,20 @@ pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
     compact_width: CompactWidth,
     producer: &mut Producer,
 ) -> Result<u64, DecodeError<Producer::Error>> {
-    match compact_width {
+    let decoded = match compact_width {
         CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
         CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
         CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
         CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
+    }?;
+
+    let real_width = CompactWidth::from_u64(decoded);
+
+    if real_width != compact_width {
+        return Err(DecodeError::InvalidInput);
     }
+
+    Ok(decoded)
 }
 
 #[cfg(test)]

@@ -246,12 +246,6 @@ where
 
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
-        // Verify that the compact width of the time diff matches the time diff we just decoded.
-        if CompactWidth::decode_fixed_width_bitmask(header, 4) != CompactWidth::from_u64(time_diff)
-        {
-            return Err(DecodeError::InvalidInput);
-        }
-
         // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
         let timestamp = if add_or_subtract_time_diff {
             reference
@@ -274,13 +268,6 @@ where
         let payload_length =
             decode_compact_width_be(compact_width_payload_length, producer).await?;
 
-        // Verify that the compact width of the payload length matches the payload length we just decoded.
-        if CompactWidth::decode_fixed_width_bitmask(header, 6)
-            != CompactWidth::from_u64(payload_length)
-        {
-            return Err(DecodeError::InvalidInput);
-        }
-
         let payload_digest = PD::decode(producer).await?;
 
         Ok(Entry {
@@ -301,6 +288,9 @@ where
     S: SubspaceId + Encodable,
     PD: PayloadDigest + Encodable,
 {
+    /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
     async fn relative_encode<Consumer>(
         &self,
         reference: &(N, Area<MCL, MCC, MPL, S>),
@@ -315,7 +305,7 @@ where
             panic!("Tried to encode an entry relative to a namespace it does not belong to")
         }
 
-        if out.includes_entry(self) {
+        if !out.includes_entry(self) {
             panic!("Tried to encode an entry relative to an area it is not included by")
         }
 
@@ -339,7 +329,7 @@ where
 
         consumer.consume(header).await?;
 
-        if out.subspace != AreaSubspace::Any {
+        if out.subspace == AreaSubspace::Any {
             self.subspace_id.encode(consumer).await?;
         }
 
@@ -356,9 +346,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Decodable,
-    S: SubspaceId + Decodable,
+    S: SubspaceId + Decodable + std::fmt::Debug,
     PD: PayloadDigest + Decodable,
 {
+    /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
     async fn relative_decode<Producer>(
         reference: &(N, Area<MCL, MCC, MPL, S>),
         producer: &mut Producer,
@@ -381,7 +374,10 @@ where
         }
 
         let subspace_id = if is_subspace_encoded {
-            S::decode(producer).await?
+            match &out.subspace {
+                AreaSubspace::Any => S::decode(producer).await?,
+                AreaSubspace::Id(_) => return Err(DecodeError::InvalidInput),
+            }
         } else {
             match &out.subspace {
                 AreaSubspace::Any => return Err(DecodeError::InvalidInput),
@@ -390,6 +386,10 @@ where
         };
 
         let path = Path::relative_decode(&out.path, producer).await?;
+
+        if !path.is_prefixed_by(&out.path) {
+            return Err(DecodeError::InvalidInput);
+        }
 
         let time_diff = decode_compact_width_be(time_diff_compact_width, producer).await?;
         let payload_length =
@@ -403,6 +403,18 @@ where
             u64::from(&out.times.end).checked_sub(time_diff)
         }
         .ok_or(DecodeError::InvalidInput)?;
+
+        // Verify that the correct add_or_subtract_time_diff flag was set.
+        let should_have_added = timestamp.checked_sub(out.times.start)
+            <= u64::from(&out.times.end).checked_sub(timestamp);
+
+        if add_time_diff_to_start != should_have_added {
+            return Err(DecodeError::InvalidInput);
+        }
+
+        if !out.times.includes(&timestamp) {
+            return Err(DecodeError::InvalidInput);
+        }
 
         Ok(Self {
             namespace_id: namespace.clone(),

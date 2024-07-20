@@ -113,6 +113,9 @@ where
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
+            //println!("item {:?}", item);
+            //println!("ref {:?}", reference);
+
             item.relative_encode(&reference, &mut consumer)
                 .await
                 .unwrap();

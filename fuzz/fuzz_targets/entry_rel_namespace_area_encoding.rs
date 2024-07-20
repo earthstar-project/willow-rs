@@ -56,9 +56,6 @@ fuzz_target!(|data: (
     let namespace = entry.namespace_id.clone();
 
     smol::block_on(async {
-        println!("{:?}", entry);
-        println!("{:?}", area);
-
         relative_encoding_roundtrip::<
             Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
             (EsNamespaceId, Area<16, 16, 16, IdentityId>),
