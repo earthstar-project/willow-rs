@@ -1,6 +1,8 @@
 use core::cmp;
 use core::cmp::Ordering;
 
+use arbitrary::Arbitrary;
+
 #[derive(Debug, PartialEq, Eq)]
 /// Determines whether a [`Range`] is _closed_ or _open_.
 pub enum RangeEnd<T: Ord> {
@@ -16,6 +18,15 @@ impl<T: Ord> RangeEnd<T> {
         match self {
             RangeEnd::Open => true,
             RangeEnd::Closed(end_val) => end_val > val,
+        }
+    }
+}
+
+impl From<&RangeEnd<u64>> for u64 {
+    fn from(value: &RangeEnd<u64>) -> Self {
+        match value {
+            RangeEnd::Closed(val) => *val,
+            RangeEnd::Open => u64::MAX,
         }
     }
 }
@@ -38,6 +49,21 @@ impl<T: Ord> Ord for RangeEnd<T> {
 impl<T: Ord> PartialOrd for RangeEnd<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for RangeEnd<u64> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_open: bool = Arbitrary::arbitrary(u)?;
+
+        if !is_open {
+            let value: u64 = Arbitrary::arbitrary(u)?;
+
+            return Ok(Self::Closed(value));
+        }
+
+        Ok(Self::Open)
     }
 }
 
@@ -137,6 +163,16 @@ impl<T: Ord> Ord for Range<T> {
 impl<T: Ord> PartialOrd for Range<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for Range<u64> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let start: u64 = Arbitrary::arbitrary(u)?;
+        let end: RangeEnd<u64> = Arbitrary::arbitrary(u)?;
+
+        Ok(Self { start, end })
     }
 }
 

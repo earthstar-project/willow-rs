@@ -1,3 +1,5 @@
+use arbitrary::{size_hint::and_all, Arbitrary};
+
 use crate::{
     entry::{Entry, Timestamp},
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
@@ -33,6 +35,24 @@ impl<S: SubspaceId> AreaSubspace<S> {
             (Self::Id(a), Self::Id(b)) if a == b => Some(Self::Id(a.clone())),
             (Self::Id(_a), Self::Id(_b)) => None,
         }
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, S> Arbitrary<'a> for AreaSubspace<S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_any: bool = Arbitrary::arbitrary(u)?;
+
+        if !is_any {
+            let subspace: S = Arbitrary::arbitrary(u)?;
+
+            return Ok(Self::Id(subspace));
+        }
+
+        Ok(Self::Any)
     }
 }
 
@@ -96,6 +116,33 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             times,
             path,
         })
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for Area<MCL, MCC, MPL, S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let subspace: AreaSubspace<S> = Arbitrary::arbitrary(u)?;
+        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
+        let times: Range<u64> = Arbitrary::arbitrary(u)?;
+
+        Ok(Self {
+            subspace,
+            path,
+            times,
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        and_all(&[
+            AreaSubspace::<S>::size_hint(depth),
+            Path::<MCL, MCC, MPL>::size_hint(depth),
+            Range::<u64>::size_hint(depth),
+        ])
     }
 }
 

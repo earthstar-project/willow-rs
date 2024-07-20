@@ -129,16 +129,29 @@ where
     PD: PayloadDigest + Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let namespace_id: N = Arbitrary::arbitrary(u)?;
+
+        let subspace_id: S = Arbitrary::arbitrary(u)?;
+
+        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
+
+        //  println!("3");
+
+        let payload_digest: PD = Arbitrary::arbitrary(u)?;
+
+        //  println!("4");
+
         Ok(Self {
-            namespace_id: Arbitrary::arbitrary(u)?,
-            subspace_id: Arbitrary::arbitrary(u)?,
-            path: Arbitrary::arbitrary(u)?,
-            payload_digest: Arbitrary::arbitrary(u)?,
+            namespace_id,
+            subspace_id,
+            path,
+            payload_digest,
             payload_length: Arbitrary::arbitrary(u)?,
             timestamp: Arbitrary::arbitrary(u)?,
         })
     }
 
+    /*
     fn size_hint(depth: usize) -> (usize, Option<usize>) {
         and_all(&[
             N::size_hint(depth),
@@ -149,6 +162,7 @@ where
             u64::size_hint(depth),
         ])
     }
+    */
 }
 
 /// An error indicating an [`AuthorisationToken`] does not authorise the writing of this entry.

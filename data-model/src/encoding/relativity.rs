@@ -10,6 +10,7 @@ use crate::{
         parameters::{Decodable, Encodable},
     },
     entry::Entry,
+    grouping::area::{Area, AreaSubspace},
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -284,6 +285,127 @@ where
 
         Ok(Entry {
             namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    RelativeEncodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Encodable,
+    S: SubspaceId + Encodable,
+    PD: PayloadDigest + Encodable,
+{
+    async fn relative_encode<Consumer>(
+        &self,
+        reference: &(N, Area<MCL, MCC, MPL, S>),
+        consumer: &mut Consumer,
+    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    where
+        Consumer: BulkConsumer<Item = u8>,
+    {
+        let (namespace, out) = reference;
+
+        if &self.namespace_id != namespace {
+            panic!("Tried to encode an entry relative to a namespace it does not belong to")
+        }
+
+        if out.includes_entry(self) {
+            panic!("Tried to encode an entry relative to an area it is not included by")
+        }
+
+        let time_diff = core::cmp::min(
+            self.timestamp - out.times.start,
+            u64::from(&out.times.end) - self.timestamp,
+        );
+
+        let mut header = 0b0000_0000;
+
+        if out.subspace == AreaSubspace::Any {
+            header |= 0b1000_0000;
+        }
+
+        if self.timestamp - out.times.start <= u64::from(&out.times.end) - self.timestamp {
+            header |= 0b0100_0000;
+        }
+
+        header |= CompactWidth::from_u64(time_diff).bitmask(2);
+        header |= CompactWidth::from_u64(self.payload_length).bitmask(4);
+
+        consumer.consume(header).await?;
+
+        if out.subspace != AreaSubspace::Any {
+            self.subspace_id.encode(consumer).await?;
+        }
+
+        self.path.relative_encode(&out.path, consumer).await?;
+        encode_compact_width_be(time_diff, consumer).await?;
+        encode_compact_width_be(self.payload_length, consumer).await?;
+        self.payload_digest.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    RelativeDecodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Decodable,
+    S: SubspaceId + Decodable,
+    PD: PayloadDigest + Decodable,
+{
+    async fn relative_decode<Producer>(
+        reference: &(N, Area<MCL, MCC, MPL, S>),
+        producer: &mut Producer,
+    ) -> Result<Self, DecodeError<Producer::Error>>
+    where
+        Producer: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let (namespace, out) = reference;
+
+        let header = produce_byte(producer).await?;
+
+        let is_subspace_encoded = is_bitflagged(header, 0);
+        let add_time_diff_to_start = is_bitflagged(header, 1);
+        let time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 2);
+        let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
+
+        if is_bitflagged(header, 6) || is_bitflagged(header, 7) {
+            return Err(DecodeError::InvalidInput);
+        }
+
+        let subspace_id = if is_subspace_encoded {
+            S::decode(producer).await?
+        } else {
+            match &out.subspace {
+                AreaSubspace::Any => return Err(DecodeError::InvalidInput),
+                AreaSubspace::Id(id) => id.clone(),
+            }
+        };
+
+        let path = Path::relative_decode(&out.path, producer).await?;
+
+        let time_diff = decode_compact_width_be(time_diff_compact_width, producer).await?;
+        let payload_length =
+            decode_compact_width_be(payload_length_compact_width, producer).await?;
+
+        let payload_digest = PD::decode(producer).await?;
+
+        let timestamp = if add_time_diff_to_start {
+            out.times.start.checked_add(time_diff)
+        } else {
+            u64::from(&out.times.end).checked_sub(time_diff)
+        }
+        .ok_or(DecodeError::InvalidInput)?;
+
+        Ok(Self {
+            namespace_id: namespace.clone(),
             subspace_id,
             path,
             timestamp,

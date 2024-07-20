@@ -9,6 +9,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
 use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
+use willow_data_model::grouping::area::Area;
 use willow_data_model::parameters::PayloadDigest;
 use willow_data_model_fuzz::relative_encoding_roundtrip;
 
@@ -43,19 +44,26 @@ impl PayloadDigest for FakePayloadDigest {}
 
 fuzz_target!(|data: (
     Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-    Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+    Area<16, 16, 16, IdentityId>,
     TestConsumer<u8, u16, ()>
 )| {
-    let (entry_sub, entry_ref, mut consumer) = data;
+    let (entry, area, mut consumer) = data;
 
-    println!("yay");
+    if !area.includes_entry(&entry) {
+        return;
+    }
+
+    let namespace = entry.namespace_id.clone();
 
     smol::block_on(async {
+        println!("{:?}", entry);
+        println!("{:?}", area);
+
         relative_encoding_roundtrip::<
             Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+            (EsNamespaceId, Area<16, 16, 16, IdentityId>),
             TestConsumer<u8, u16, ()>,
-        >(entry_sub, entry_ref, &mut consumer)
+        >(entry, (namespace, area), &mut consumer)
         .await;
     });
 });
