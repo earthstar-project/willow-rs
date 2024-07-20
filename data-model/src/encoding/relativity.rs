@@ -3,7 +3,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
     encoding::{
-        bytes::{consume_byte, is_bitflagged, produce_byte},
+        bytes::{is_bitflagged, produce_byte},
         compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
         error::{DecodeError, EncodingConsumerError},
         max_power::{decode_max_power, encode_max_power},
@@ -164,7 +164,7 @@ where
 
         header |= CompactWidth::from_u64(self.payload_length).bitmask(6);
 
-        consume_byte(header, 0, consumer).await?;
+        consumer.consume(header).await?;
 
         if self.namespace_id != reference.namespace_id {
             self.namespace_id.encode(consumer).await?;
