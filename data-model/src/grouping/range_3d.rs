@@ -99,8 +99,7 @@ mod tests {
         let entry = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId(10),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             timestamp: 500,
             payload_length: 10,
             payload_digest: FakePayloadDigest::default(),
@@ -110,8 +109,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'b']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(400, 600).unwrap(),
@@ -123,8 +122,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(11), FakeSubspaceId(13))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'b']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(400, 600).unwrap(),
@@ -136,8 +135,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(400, 600).unwrap(),
@@ -149,8 +148,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'b']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(100, 200).unwrap(),
@@ -165,8 +164,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(11), FakeSubspaceId(13))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -175,8 +174,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -188,8 +187,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -198,8 +197,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'4']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'6']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"4").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -211,8 +210,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -221,8 +220,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(200, 300).unwrap(),
@@ -234,8 +233,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'6']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
@@ -244,8 +243,8 @@ mod tests {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(2), FakeSubspaceId(4))
                 .unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                Path::new_from_slice(&[Component::new(&[b'3']).unwrap()]).unwrap(),
-                Path::new_from_slice(&[Component::new(&[b'9']).unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"3").unwrap()]).unwrap(),
+                Path::new_from_slice(&[Component::new(b"9").unwrap()]).unwrap(),
             )
             .unwrap(),
             times: Range::<Timestamp>::new_closed(50, 150).unwrap(),
@@ -262,8 +261,8 @@ mod tests {
                 )
                 .unwrap(),
                 paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
-                    Path::new_from_slice(&[Component::new(&[b'3']).unwrap()]).unwrap(),
-                    Path::new_from_slice(&[Component::new(&[b'6']).unwrap()]).unwrap(),
+                    Path::new_from_slice(&[Component::new(b"3").unwrap()]).unwrap(),
+                    Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),
                 )
                 .unwrap(),
                 times: Range::<Timestamp>::new_closed(50, 100).unwrap(),

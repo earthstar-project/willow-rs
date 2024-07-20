@@ -504,7 +504,9 @@ dependencies = [
 
 [[package]]
 name = "ufotofu"
-version = "0.1.0"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89736749f77fdebcbddcf32574b2f3ba4fd004d39c26abdaef2fcbf93c8e0781"
 dependencies = [
  "arbitrary",
  "either",

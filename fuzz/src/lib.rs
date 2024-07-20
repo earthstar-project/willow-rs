@@ -1,7 +1,7 @@
 use ufotofu::{
+    common::consumer::TestConsumer,
     local_nb::{
-        consumer::TestConsumer,
-        producer::{FromVec, SliceProducer},
+        producer::{FromSlice, FromVec},
         BufferedConsumer, BulkConsumer,
     },
     sync::consumer::IntoVec,
@@ -18,15 +18,11 @@ where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
     C: BulkConsumer<Item = u8>,
 {
-    let consumer_should_error = consumer.should_error();
-
     if let Err(_err) = item.encode(consumer).await {
-        assert!(consumer_should_error);
         return;
     }
 
     if let Err(_err) = consumer.flush().await {
-        assert!(consumer_should_error);
         return;
     }
 
@@ -47,7 +43,7 @@ pub async fn encoding_random<T>(data: &[u8])
 where
     T: Encodable + Decodable,
 {
-    let mut producer = SliceProducer::new(data);
+    let mut producer = FromSlice::new(data);
 
     match T::decode(&mut producer).await {
         Ok(item) => {

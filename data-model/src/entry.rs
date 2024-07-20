@@ -229,8 +229,7 @@ mod tests {
         let e_a1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 20,
@@ -239,8 +238,7 @@ mod tests {
         let e_a2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 10,
@@ -251,8 +249,7 @@ mod tests {
         let e_b1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest(2),
             payload_length: 0,
             timestamp: 10,
@@ -261,8 +258,7 @@ mod tests {
         let e_b2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest(1),
             payload_length: 0,
             timestamp: 10,
@@ -273,8 +269,7 @@ mod tests {
         let e_c1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 2,
             timestamp: 20,
@@ -283,8 +278,7 @@ mod tests {
         let e_c2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 1,
             timestamp: 20,
