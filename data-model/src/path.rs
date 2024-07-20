@@ -834,13 +834,13 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
         let mut total_length_in_bytes: usize = Arbitrary::arbitrary(u)?;
-        total_length_in_bytes = total_length_in_bytes % (MPL + 1);
+        total_length_in_bytes %= MPL + 1;
 
         let data: Vec<u8> = Arbitrary::arbitrary(u)?;
         total_length_in_bytes = core::cmp::min(total_length_in_bytes, data.len());
 
         let mut num_components: usize = Arbitrary::arbitrary(u)?;
-        num_components = num_components % (MCC + 1);
+        num_components %= MCC + 1;
 
         if num_components == 0 {
             total_length_in_bytes = 0;
@@ -867,7 +867,7 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
                 // Any non-final component can take on a random length, ...
                 let mut component_length: usize = Arbitrary::arbitrary(u)?;
                 // ... except it must be at most the MCL, and...
-                component_length = component_length % (MCL + 1);
+                component_length %= MCL + 1;
                 // ... the total length of all components must not exceed the total path length.
                 component_length = core::cmp::min(
                     component_length,
