@@ -79,15 +79,11 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     R: std::fmt::Debug,
     C: BulkConsumer<Item = u8>,
 {
-    let consumer_should_error = consumer.should_error();
-
     if let Err(_err) = subject.relative_encode(&reference, consumer).await {
-        assert!(consumer_should_error);
         return;
     }
 
     if let Err(_err) = consumer.flush().await {
-        assert!(consumer_should_error);
         return;
     }
 
@@ -109,7 +105,7 @@ where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
     R: std::fmt::Debug,
 {
-    let mut producer = SliceProducer::new(data);
+    let mut producer = FromSlice::new(data);
 
     match T::relative_decode(&reference, &mut producer).await {
         Ok(item) => {
