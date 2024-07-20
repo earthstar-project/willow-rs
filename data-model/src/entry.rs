@@ -1,4 +1,15 @@
+#[cfg(feature = "dev")]
+use arbitrary::size_hint::and_all;
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
 use crate::{
+    encoding::{
+        error::{DecodeError, EncodingConsumerError},
+        parameters::{Decoder, Encoder},
+        unsigned_int::U64BE,
+    },
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -56,6 +67,91 @@ where
     }
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encoder
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Encoder,
+    S: SubspaceId + Encoder,
+    PD: PayloadDigest + Encoder,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        self.namespace_id.encode(consumer).await?;
+        self.subspace_id.encode(consumer).await?;
+        self.path.encode(consumer).await?;
+
+        U64BE::from(self.timestamp).encode(consumer).await?;
+        U64BE::from(self.payload_length).encode(consumer).await?;
+
+        self.payload_digest.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decoder
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Decoder,
+    S: SubspaceId + Decoder,
+
+    PD: PayloadDigest + Decoder,
+{
+    async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
+    where
+        Prod: BulkProducer<Item = u8>,
+    {
+        let namespace_id = N::decode(producer).await?;
+        let subspace_id = S::decode(producer).await?;
+        let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
+        let timestamp = U64BE::decode(producer).await?.into();
+        let payload_length = U64BE::decode(producer).await?.into();
+        let payload_digest = PD::decode(producer).await?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Arbitrary<'a>
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Arbitrary<'a>,
+    S: SubspaceId + Arbitrary<'a>,
+    PD: PayloadDigest + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            namespace_id: Arbitrary::arbitrary(u)?,
+            subspace_id: Arbitrary::arbitrary(u)?,
+            path: Arbitrary::arbitrary(u)?,
+            payload_digest: Arbitrary::arbitrary(u)?,
+            payload_length: Arbitrary::arbitrary(u)?,
+            timestamp: Arbitrary::arbitrary(u)?,
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        and_all(&[
+            N::size_hint(depth),
+            S::size_hint(depth),
+            Path::<MCL, MCC, MPL>::size_hint(depth),
+            PD::size_hint(depth),
+            u64::size_hint(depth),
+            u64::size_hint(depth),
+        ])
+    }
+}
+
 /// An error indicating an [`AuthorisationToken`] does not authorise the writing of this entry.
 #[derive(Debug)]
 pub struct UnauthorisedWriteError;
@@ -87,12 +183,15 @@ where
     PD: PayloadDigest,
 {
     /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return an [`UnauthorisedWriteError`]
-    pub fn new<IAW: IsAuthorisedWrite<MCL, MCC, MPL, N, S, PD, AT>>(
+
+    pub fn new(
         entry: Entry<MCL, MCC, MPL, N, S, PD>,
         token: AT,
-        is_authorised_write: IAW,
-    ) -> Result<Self, UnauthorisedWriteError> {
-        if is_authorised_write(&entry, &token) {
+    ) -> Result<Self, UnauthorisedWriteError>
+    where
+        AT: IsAuthorisedWrite<MCL, MCC, MPL, N, S, PD>,
+    {
+        if token.is_authorised_write(&entry) {
             return Ok(Self(entry, token));
         }
 
@@ -131,8 +230,7 @@ mod tests {
         let e_a1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 20,
@@ -141,8 +239,7 @@ mod tests {
         let e_a2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 0,
             timestamp: 10,
@@ -153,8 +250,7 @@ mod tests {
         let e_b1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest(2),
             payload_length: 0,
             timestamp: 10,
@@ -163,8 +259,7 @@ mod tests {
         let e_b2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest(1),
             payload_length: 0,
             timestamp: 10,
@@ -175,8 +270,7 @@ mod tests {
         let e_c1 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 2,
             timestamp: 20,
@@ -185,8 +279,7 @@ mod tests {
         let e_c2 = Entry {
             namespace_id: FakeNamespaceId::default(),
             subspace_id: FakeSubspaceId::default(),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(&[b'a']).unwrap()])
-                .unwrap(),
+            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             payload_digest: FakePayloadDigest::default(),
             payload_length: 1,
             timestamp: 20,

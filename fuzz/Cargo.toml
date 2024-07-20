@@ -8,10 +8,18 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
+ufotofu ={ version = "0.2.0", features=["dev"]}
+smol = "2.0.0"
+arbitrary = { version = "1.0.2", features = ["derive"]}
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+
 
 [dependencies.willow-data-model]
 path = "../data-model"
+features = ["dev"]
+
+[dependencies.earthstar]
+path = "../earthstar"
 
 [[bin]]
 name = "path"
@@ -80,6 +88,90 @@ bench = false
 [[bin]]
 name = "successor_of_prefix_even_more"
 path = "fuzz_targets/successor_of_prefix_even_more.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding"
+path = "fuzz_targets/path_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding_random"
+path = "fuzz_targets/path_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_encoding"
+path = "fuzz_targets/entry_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_encoding_random"
+path = "fuzz_targets/entry_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u8be_encoding"
+path = "fuzz_targets/u8be_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u8be_encoding_random"
+path = "fuzz_targets/u8be_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u16be_encoding"
+path = "fuzz_targets/u16be_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u16be_encoding_random"
+path = "fuzz_targets/u16be_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u32be_encoding"
+path = "fuzz_targets/u32be_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u32be_encoding_random"
+path = "fuzz_targets/u32be_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u64be_encoding"
+path = "fuzz_targets/u64be_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "u64be_encoding_random"
+path = "fuzz_targets/u64be_encoding_random.rs"
 test = false
 doc = false
 bench = false

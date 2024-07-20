@@ -1,3 +1,13 @@
+#[cfg(feature = "dev")]
+use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
+use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+use crate::encoding::{
+    error::{DecodeError, EncodingConsumerError},
+    max_power::{decode_max_power, encode_max_power},
+    parameters::{Decoder, Encoder},
+};
+
 // This struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`, `fuzz/path3.rs` by comparing against a non-optimised reference implementation.
 // Further, the `successor` and `greater_but_not_prefixed` methods of that reference implementation are tested in `fuzz/path_successor.rs` and friends, and `fuzz/path_successor_of_prefix.rs` and friends.
 
@@ -770,6 +780,71 @@ impl<const MAX_COMPONENT_LENGTH: usize> HeapEncoding<MAX_COMPONENT_LENGTH> {
 impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONENT_LENGTH> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Encoder for Path<MCL, MCC, MPL> {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        encode_max_power(self.get_component_count(), MCC, consumer).await?;
+
+        for component in self.components() {
+            encode_max_power(component.len(), MCL, consumer).await?;
+
+            consumer.bulk_consume_full_slice(component.as_ref()).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> Decoder for Path<MCL, MCC, MPL> {
+    async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    where
+        P: BulkProducer<Item = u8>,
+    {
+        let component_count = decode_max_power(MCC, producer).await?;
+
+        let mut path = Self::new_empty();
+
+        for _ in 0..component_count {
+            let component_len = decode_max_power(MCL, producer).await?;
+
+            let mut component_box = Box::new_uninit_slice(usize::try_from(component_len)?);
+
+            let slice = producer
+                .bulk_overwrite_full_slice_uninit(component_box.as_mut())
+                .await?;
+
+            let path_component = Component::new(slice).ok_or(DecodeError::InvalidInput)?;
+            path = path
+                .append(path_component)
+                .map_err(|_| DecodeError::InvalidInput)?;
+        }
+
+        Ok(path)
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for Path<MCL, MCC, MPL>
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
+        let bytestrings: Vec<Vec<u8>> = Arbitrary::arbitrary(u)?;
+        let components: Vec<Component<MCL>> = bytestrings
+            .iter()
+            .filter_map(|bytes| Component::new(bytes))
+            .collect();
+
+        Self::new_from_slice(&components).map_err(|_| ArbitraryError::IncorrectFormat)
+    }
+
+    #[inline]
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        <Box<[u8]> as Arbitrary<'a>>::size_hint(depth)
     }
 }
 
