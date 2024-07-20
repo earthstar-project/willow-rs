@@ -379,17 +379,16 @@ mod tests {
 
     #[test]
     fn new() {
-        let component_too_long =
-            PathComponentBox::<MCL>::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'z']);
+        let component_too_long = PathComponentBox::<MCL>::new(b"aaaaaaaaz");
 
         assert!(matches!(component_too_long, Err(ComponentTooLongError)));
 
         let too_many_components = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"z").unwrap(),
         ]);
 
         assert!(matches!(
@@ -398,9 +397,9 @@ mod tests {
         ));
 
         let path_too_long = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentBox::new(&[b'a', b'a', b'a', b'a', b'a', b'a', b'a', b'a']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
+            PathComponentBox::new(b"aaaaaaaa").unwrap(),
+            PathComponentBox::new(b"aaaaaaaa").unwrap(),
+            PathComponentBox::new(b"z").unwrap(),
         ]);
 
         assert!(matches!(path_too_long, Err(InvalidPathError::PathTooLong)));
@@ -410,27 +409,27 @@ mod tests {
     fn append() {
         let path = PathRc::<MCL, MCC, MPL>::empty();
 
-        let r1 = path.append(PathComponentBox::new(&[b'a']).unwrap());
+        let r1 = path.append(PathComponentBox::new(b"a").unwrap());
         assert!(r1.is_ok());
         let p1 = r1.unwrap();
         assert_eq!(p1.components().count(), 1);
 
-        let r2 = p1.append(PathComponentBox::new(&[b'b']).unwrap());
+        let r2 = p1.append(PathComponentBox::new(b"b").unwrap());
         assert!(r2.is_ok());
         let p2 = r2.unwrap();
         assert_eq!(p2.components().count(), 2);
 
-        let r3 = p2.append(PathComponentBox::new(&[b'c']).unwrap());
+        let r3 = p2.append(PathComponentBox::new(b"c").unwrap());
         assert!(r3.is_ok());
         let p3 = r3.unwrap();
         assert_eq!(p3.components().count(), 3);
 
-        let r4 = p3.append(PathComponentBox::new(&[b'd']).unwrap());
+        let r4 = p3.append(PathComponentBox::new(b"d").unwrap());
         assert!(r4.is_ok());
         let p4 = r4.unwrap();
         assert_eq!(p4.components().count(), 4);
 
-        let r5 = p4.append(PathComponentBox::new(&[b'z']).unwrap());
+        let r5 = p4.append(PathComponentBox::new(b"z").unwrap());
         assert!(r5.is_err());
 
         let collected = p4
@@ -444,9 +443,9 @@ mod tests {
     #[test]
     fn prefix() {
         let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
@@ -458,7 +457,7 @@ mod tests {
 
         assert_eq!(
             prefix1,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
         );
 
         let prefix2 = path.create_prefix(2);
@@ -466,8 +465,8 @@ mod tests {
         assert_eq!(
             prefix2,
             PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap()
+                PathComponentBox::new(b"a").unwrap(),
+                PathComponentBox::new(b"b").unwrap()
             ])
             .unwrap()
         );
@@ -477,9 +476,9 @@ mod tests {
         assert_eq!(
             prefix3,
             PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap(),
-                PathComponentBox::new(&[b'c']).unwrap()
+                PathComponentBox::new(b"a").unwrap(),
+                PathComponentBox::new(b"b").unwrap(),
+                PathComponentBox::new(b"c").unwrap()
             ])
             .unwrap()
         );
@@ -489,9 +488,9 @@ mod tests {
         assert_eq!(
             prefix4,
             PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(&[b'a']).unwrap(),
-                PathComponentBox::new(&[b'b']).unwrap(),
-                PathComponentBox::new(&[b'c']).unwrap()
+                PathComponentBox::new(b"a").unwrap(),
+                PathComponentBox::new(b"b").unwrap(),
+                PathComponentBox::new(b"c").unwrap()
             ])
             .unwrap()
         )
@@ -500,9 +499,9 @@ mod tests {
     #[test]
     fn prefixes() {
         let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
@@ -512,16 +511,16 @@ mod tests {
             prefixes,
             vec![
                 PathRc::<MCL, MCC, MPL>::new(&[]).unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap(),
+                PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap(),
                 PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(&[b'a']).unwrap(),
-                    PathComponentBox::new(&[b'b']).unwrap()
+                    PathComponentBox::new(b"a").unwrap(),
+                    PathComponentBox::new(b"b").unwrap()
                 ])
                 .unwrap(),
                 PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(&[b'a']).unwrap(),
-                    PathComponentBox::new(&[b'b']).unwrap(),
-                    PathComponentBox::new(&[b'c']).unwrap()
+                    PathComponentBox::new(b"a").unwrap(),
+                    PathComponentBox::new(b"b").unwrap(),
+                    PathComponentBox::new(b"c").unwrap()
                 ])
                 .unwrap(),
             ]
@@ -531,22 +530,22 @@ mod tests {
     #[test]
     fn is_prefix_of() {
         let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
         ])
         .unwrap();
 
         let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
         let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
+            PathComponentBox::new(b"x").unwrap(),
+            PathComponentBox::new(b"y").unwrap(),
+            PathComponentBox::new(b"z").unwrap(),
         ])
         .unwrap();
 
@@ -566,22 +565,22 @@ mod tests {
     #[test]
     fn is_prefixed_by() {
         let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
         ])
         .unwrap();
 
         let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
         let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
+            PathComponentBox::new(b"x").unwrap(),
+            PathComponentBox::new(b"y").unwrap(),
+            PathComponentBox::new(b"z").unwrap(),
         ])
         .unwrap();
 
@@ -592,22 +591,22 @@ mod tests {
     #[test]
     fn longest_common_prefix() {
         let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'x']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"x").unwrap(),
         ])
         .unwrap();
 
         let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'b']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"b").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
         let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'y']).unwrap(),
-            PathComponentBox::new(&[b'z']).unwrap(),
+            PathComponentBox::new(b"x").unwrap(),
+            PathComponentBox::new(b"y").unwrap(),
+            PathComponentBox::new(b"z").unwrap(),
         ])
         .unwrap();
 
@@ -615,7 +614,7 @@ mod tests {
 
         assert_eq!(
             lcp_a_b,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
         );
 
         let lcp_b_a = path_b.longest_common_prefix(&path_a);
@@ -627,9 +626,9 @@ mod tests {
         assert_eq!(lcp_a_x, PathRc::empty());
 
         let path_d = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(&[b'a']).unwrap(),
-            PathComponentBox::new(&[b'x']).unwrap(),
-            PathComponentBox::new(&[b'c']).unwrap(),
+            PathComponentBox::new(b"a").unwrap(),
+            PathComponentBox::new(b"x").unwrap(),
+            PathComponentBox::new(b"c").unwrap(),
         ])
         .unwrap();
 
@@ -637,7 +636,7 @@ mod tests {
 
         assert_eq!(
             lcp_b_d,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[b'a']).unwrap()]).unwrap()
+            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
         )
     }
 

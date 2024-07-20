@@ -106,10 +106,6 @@ mod tests {
 
     use super::*;
 
-    #[derive(Default, PartialEq, Eq, Clone)]
-    struct FakeNamespaceId(usize);
-    impl NamespaceId for FakeNamespaceId {}
-
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
     struct FakeSubspaceId(usize);
     impl SubspaceId for FakeSubspaceId {
@@ -117,10 +113,6 @@ mod tests {
             Some(FakeSubspaceId(self.0 + 1))
         }
     }
-
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-    struct FakePayloadDigest(usize);
-    impl PayloadDigest for FakePayloadDigest {}
 
     const MCL: usize = 8;
     const MCC: usize = 4;
@@ -214,12 +206,12 @@ mod tests {
 
         let empty_intersection_path = Area::<MCL, MCC, MPL, FakeSubspaceId> {
             subspace: AreaSubspace::Id(FakeSubspaceId(1)),
-            path: Path::new_from_slice(&[Component::new(&[b'0']).unwrap()]).unwrap(),
+            path: Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
             times: Range::new_open(0),
         }
         .intersection(&Area {
             subspace: AreaSubspace::Id(FakeSubspaceId(1)),
-            path: Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+            path: Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             times: Range::new_open(0),
         });
 
@@ -240,14 +232,14 @@ mod tests {
 
         let intersection = Area::<MCL, MCC, MPL, FakeSubspaceId> {
             subspace: AreaSubspace::Any,
-            path: Path::new_from_slice(&[Component::new(&[b'1']).unwrap()]).unwrap(),
+            path: Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             times: Range::new_closed(0, 10).unwrap(),
         }
         .intersection(&Area {
             subspace: AreaSubspace::Id(FakeSubspaceId(1)),
             path: Path::new_from_slice(&[
-                Component::new(&[b'1']).unwrap(),
-                Component::new(&[b'2']).unwrap(),
+                Component::new(b"1").unwrap(),
+                Component::new(b"2").unwrap(),
             ])
             .unwrap(),
             times: Range::new_closed(5, 15).unwrap(),
@@ -260,8 +252,8 @@ mod tests {
             Area {
                 subspace: AreaSubspace::Id(FakeSubspaceId(1)),
                 path: Path::new_from_slice(&[
-                    Component::new(&[b'1']).unwrap(),
-                    Component::new(&[b'2']).unwrap(),
+                    Component::new(b"1").unwrap(),
+                    Component::new(b"2").unwrap(),
                 ])
                 .unwrap(),
                 times: Range::new_closed(5, 10).unwrap(),
