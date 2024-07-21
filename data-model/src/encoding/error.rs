@@ -1,38 +1,7 @@
 use core::error::Error;
 use core::{fmt::Display, fmt::Formatter, num::TryFromIntError};
 use either::Either;
-use ufotofu::common::errors::{ConsumeFullSliceError, OverwriteFullSliceError};
-
-/// Returned when a encoding fails to be consumed by a [`ufotofu::local_nb::Consumer`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncodingConsumerError<E>(E);
-
-impl<E> From<ConsumeFullSliceError<E>> for EncodingConsumerError<E> {
-    fn from(err: ConsumeFullSliceError<E>) -> Self {
-        EncodingConsumerError(err.reason)
-    }
-}
-
-impl<E> From<E> for EncodingConsumerError<E> {
-    fn from(value: E) -> Self {
-        Self(value)
-    }
-}
-
-impl<E> Error for EncodingConsumerError<E>
-where
-    E: 'static + Error,
-{
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.0)
-    }
-}
-
-impl<E> Display for EncodingConsumerError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "The consumer returned an error after trying to consume",)
-    }
-}
+use ufotofu::common::errors::OverwriteFullSliceError;
 
 /// Everything that can go wrong when decoding a value.
 #[derive(Debug, Clone, PartialEq, Eq)]

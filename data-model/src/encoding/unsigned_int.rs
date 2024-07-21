@@ -1,7 +1,7 @@
 use core::mem::size_of;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-use crate::encoding::error::{DecodeError, EncodingConsumerError};
+use crate::encoding::error::DecodeError;
 use crate::encoding::parameters::{Decodable, Encodable};
 
 /// A `u8` wrapper that implements [`Encoding`] and [`Decoding`] by encoding as a big-endian fixed-width integer.
@@ -9,15 +9,15 @@ use crate::encoding::parameters::{Decodable, Encodable};
 pub struct U8BE(u8);
 
 impl Encodable for U8BE {
-    async fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
         let byte = self.0.to_be_bytes();
-        consumer.bulk_consume_full_slice(&byte).await?;
+        consumer
+            .bulk_consume_full_slice(&byte)
+            .await
+            .map_err(|f| f.reason)?;
         Ok(())
     }
 }
@@ -51,15 +51,15 @@ impl From<U8BE> for u64 {
 pub struct U16BE(u16);
 
 impl Encodable for U16BE {
-    async fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
         let bytes = self.0.to_be_bytes();
-        consumer.bulk_consume_full_slice(&bytes).await?;
+        consumer
+            .bulk_consume_full_slice(&bytes)
+            .await
+            .map_err(|f| f.reason)?;
         Ok(())
     }
 }
@@ -93,15 +93,15 @@ impl From<U16BE> for u64 {
 pub struct U32BE(u32);
 
 impl Encodable for U32BE {
-    async fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
         let bytes = self.0.to_be_bytes();
-        consumer.bulk_consume_full_slice(&bytes).await?;
+        consumer
+            .bulk_consume_full_slice(&bytes)
+            .await
+            .map_err(|f| f.reason)?;
         Ok(())
     }
 }
@@ -135,15 +135,15 @@ impl From<U32BE> for u64 {
 pub struct U64BE(u64);
 
 impl Encodable for U64BE {
-    async fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
         let bytes = self.0.to_be_bytes();
-        consumer.bulk_consume_full_slice(&bytes).await?;
+        consumer
+            .bulk_consume_full_slice(&bytes)
+            .await
+            .map_err(|f| f.reason)?;
         Ok(())
     }
 }

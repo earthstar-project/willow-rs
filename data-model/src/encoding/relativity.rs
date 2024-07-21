@@ -5,7 +5,7 @@ use crate::{
     encoding::{
         bytes::{is_bitflagged, produce_byte},
         compact_width::{decode_compact_width_be, encode_compact_width_be, CompactWidth},
-        error::{DecodeError, EncodingConsumerError},
+        error::DecodeError,
         max_power::{decode_max_power, encode_max_power},
         parameters::{Decodable, Encodable},
     },
@@ -26,7 +26,7 @@ pub trait RelativeEncodable<R> {
         &self,
         reference: &R,
         consumer: &mut Consumer,
-    ) -> impl Future<Output = Result<(), EncodingConsumerError<Consumer::Error>>>
+    ) -> impl Future<Output = Result<(), Consumer::Error>>
     where
         Consumer: BulkConsumer<Item = u8>;
 }
@@ -55,7 +55,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Pat
         &self,
         reference: &Path<MCL, MCC, MPL>,
         consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    ) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -145,7 +145,7 @@ where
         &self,
         reference: &Entry<MCL, MCC, MPL, N, S, PD>,
         consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    ) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -299,7 +299,7 @@ where
         &self,
         reference: &(N, Area<MCL, MCC, MPL, S>),
         consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    ) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -445,7 +445,7 @@ where
         &self,
         reference: &(N, Range3d<MCL, MCC, MPL, S>),
         consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    ) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {

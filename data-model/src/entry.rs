@@ -6,7 +6,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
     encoding::{
-        error::{DecodeError, EncodingConsumerError},
+        error::DecodeError,
         parameters::{Decodable, Encodable},
         unsigned_int::U64BE,
     },
@@ -74,7 +74,7 @@ where
     S: SubspaceId + Encodable,
     PD: PayloadDigest + Encodable,
 {
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<<C>::Error>>
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
     where
         C: BulkConsumer<Item = u8>,
     {

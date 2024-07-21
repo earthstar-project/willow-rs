@@ -3,7 +3,7 @@ use arbitrary::{size_hint::and_all, Arbitrary, Error as ArbitraryError, Unstruct
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::encoding::{
-    error::{DecodeError, EncodingConsumerError},
+    error::DecodeError,
     max_power::{decode_max_power, encode_max_power},
     parameters::{Decodable, Encodable},
 };
@@ -784,7 +784,7 @@ impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONE
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), EncodingConsumerError<C::Error>>
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
@@ -793,7 +793,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MC
         for component in self.components() {
             encode_max_power(component.len(), MCL, consumer).await?;
 
-            consumer.bulk_consume_full_slice(component.as_ref()).await?;
+            consumer
+                .bulk_consume_full_slice(component.as_ref())
+                .await
+                .map_err(|f| f.reason)?;
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use crate::encoding::error::{DecodeError, EncodingConsumerError};
+use crate::encoding::error::DecodeError;
 use crate::encoding::parameters::Decodable;
 use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
@@ -112,12 +112,13 @@ impl CompactWidth {
 pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     value: u64,
     consumer: &mut Consumer,
-) -> Result<(), EncodingConsumerError<Consumer::Error>> {
+) -> Result<(), Consumer::Error> {
     let width = CompactWidth::from_u64(value).width();
 
     consumer
         .bulk_consume_full_slice(&value.to_be_bytes()[8 - width..])
-        .await?;
+        .await
+        .map_err(|f| f.reason)?;
 
     Ok(())
 }

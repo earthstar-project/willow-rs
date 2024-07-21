@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::encoding::error::{DecodeError, EncodingConsumerError};
+use crate::encoding::error::DecodeError;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 /// A type that can be encoded to a bytestring, ensuring that any value of `Self` maps to exactly one bytestring.
@@ -13,7 +13,7 @@ pub trait Encodable {
     fn encode<Consumer>(
         &self,
         consumer: &mut Consumer,
-    ) -> impl Future<Output = Result<(), EncodingConsumerError<Consumer::Error>>>
+    ) -> impl Future<Output = Result<(), Consumer::Error>>
     where
         Consumer: BulkConsumer<Item = u8>;
 }

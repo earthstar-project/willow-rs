@@ -1,8 +1,11 @@
-use arbitrary::{size_hint::{self, and_all}, Arbitrary, Error as ArbitraryError};
+use arbitrary::{
+    size_hint::{self, and_all},
+    Arbitrary, Error as ArbitraryError,
+};
 use either::Either;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::encoding::{
-    error::{DecodeError, EncodingConsumerError},
+    error::DecodeError,
     parameters::{Decodable, Encodable},
 };
 
@@ -100,10 +103,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Cinn25519PublicKey<MIN_LE
 impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable
     for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
 {
-    async fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> Result<(), EncodingConsumerError<Consumer::Error>>
+    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>,
     {
@@ -111,13 +111,19 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable
 
         vec.extend_from_slice(&self.shortname.0);
 
-        consumer.bulk_consume_full_slice(&self.shortname.0).await?;
+        consumer
+            .bulk_consume_full_slice(&self.shortname.0)
+            .await
+            .map_err(|f| f.reason)?;
 
         if MIN_LENGTH < MAX_LENGTH {
             consumer.consume(0x0).await?;
         }
 
-        consumer.bulk_consume_full_slice(&self.underlying).await?;
+        consumer
+            .bulk_consume_full_slice(&self.underlying)
+            .await
+            .map_err(|f| f.reason)?;
 
         Ok(())
     }
