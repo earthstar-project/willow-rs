@@ -10,7 +10,7 @@ use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::grouping::area::Area;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model_fuzz::relative_encoding_random;
+use willow_data_model_fuzz::encode::relative_encoding_random;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);

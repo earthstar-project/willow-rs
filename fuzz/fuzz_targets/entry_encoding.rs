@@ -10,7 +10,7 @@ use willow_data_model::encoding::error::{DecodeError, EncodingConsumerError};
 use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model_fuzz::encoding_roundtrip;
+use willow_data_model_fuzz::encode::encoding_roundtrip;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);

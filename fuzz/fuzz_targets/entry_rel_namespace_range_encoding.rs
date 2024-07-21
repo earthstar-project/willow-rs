@@ -11,7 +11,7 @@ use willow_data_model::encoding::parameters::{Decodable, Encodable};
 use willow_data_model::entry::Entry;
 use willow_data_model::grouping::range_3d::Range3d;
 use willow_data_model::parameters::PayloadDigest;
-use willow_data_model_fuzz::relative_encoding_roundtrip;
+use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);

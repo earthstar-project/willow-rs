@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use willow_data_model::path::Path;
-use willow_data_model_fuzz::relative_encoding_random;
+use willow_data_model_fuzz::encode::relative_encoding_random;
 
 const MCL: usize = 16;
 const MCC: usize = 16;
