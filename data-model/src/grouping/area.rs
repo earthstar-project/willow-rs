@@ -9,7 +9,7 @@ use crate::{
 use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AreaSubspace<S: SubspaceId> {
     /// A value that signals that an [`Area`] includes Entries with arbitrary subspace_ids.
     Any,
@@ -97,6 +97,24 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         self.subspace.includes(&entry.subspace_id)
             && self.path.is_prefix_of(&entry.path)
             && self.times.includes(&entry.timestamp)
+    }
+
+    /// Return whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
+    pub fn includes_area(&self, area: &Self) -> bool {
+        match (&self.subspace, &area.subspace) {
+            (AreaSubspace::Any, AreaSubspace::Any) => {
+                self.path.is_prefix_of(&area.path) && self.times.includes_range(&area.times)
+            }
+            (AreaSubspace::Any, AreaSubspace::Id(_)) => {
+                self.path.is_prefix_of(&area.path) && self.times.includes_range(&area.times)
+            }
+            (AreaSubspace::Id(_), AreaSubspace::Any) => false,
+            (AreaSubspace::Id(subspace_a), AreaSubspace::Id(subspace_b)) => {
+                subspace_a == subspace_b
+                    && self.path.is_prefix_of(&area.path)
+                    && self.times.includes_range(&area.times)
+            }
+        }
     }
 
     /// Return the intersection of this [`Area`] with another.
