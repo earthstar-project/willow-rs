@@ -79,6 +79,9 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     R: std::fmt::Debug,
     C: BulkConsumer<Item = u8>,
 {
+    // println!("item {:?}", subject);
+    // println!("ref {:?}", reference);
+
     if let Err(_err) = subject.relative_encode(&reference, consumer).await {
         return;
     }
@@ -113,8 +116,8 @@ where
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
-            //println!("item {:?}", item);
-            //println!("ref {:?}", reference);
+            //  println!("item {:?}", item);
+            //  println!("ref {:?}", reference);
 
             item.relative_encode(&reference, &mut consumer)
                 .await

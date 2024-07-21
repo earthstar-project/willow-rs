@@ -217,3 +217,17 @@ path = "fuzz_targets/entry_rel_namespace_area_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "entry_rel_namespace_range_encoding"
+path = "fuzz_targets/entry_rel_namespace_range_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_namespace_range_encoding_random"
+path = "fuzz_targets/entry_rel_namespace_range_encoding_random.rs"
+test = false
+doc = false
+bench = false

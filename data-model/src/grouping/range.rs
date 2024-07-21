@@ -1,7 +1,7 @@
 use core::cmp;
 use core::cmp::Ordering;
 
-use arbitrary::Arbitrary;
+use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 #[derive(Debug, PartialEq, Eq)]
 /// Determines whether a [`Range`] is _closed_ or _open_.
@@ -53,12 +53,15 @@ impl<T: Ord> PartialOrd for RangeEnd<T> {
 }
 
 #[cfg(feature = "dev")]
-impl<'a> Arbitrary<'a> for RangeEnd<u64> {
+impl<'a, T> Arbitrary<'a> for RangeEnd<T>
+where
+    T: Arbitrary<'a> + Ord,
+{
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let is_open: bool = Arbitrary::arbitrary(u)?;
 
         if !is_open {
-            let value: u64 = Arbitrary::arbitrary(u)?;
+            let value: T = Arbitrary::arbitrary(u)?;
 
             return Ok(Self::Closed(value));
         }
@@ -167,10 +170,17 @@ impl<T: Ord> PartialOrd for Range<T> {
 }
 
 #[cfg(feature = "dev")]
-impl<'a> Arbitrary<'a> for Range<u64> {
+impl<'a, T> Arbitrary<'a> for Range<T>
+where
+    T: Arbitrary<'a> + Ord,
+{
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let start: u64 = Arbitrary::arbitrary(u)?;
-        let end: RangeEnd<u64> = Arbitrary::arbitrary(u)?;
+        let start: T = Arbitrary::arbitrary(u)?;
+        let end: RangeEnd<T> = Arbitrary::arbitrary(u)?;
+
+        if !end.gt_val(&start) {
+            return Err(ArbitraryError::IncorrectFormat);
+        }
 
         Ok(Self { start, end })
     }

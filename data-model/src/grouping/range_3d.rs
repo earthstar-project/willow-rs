@@ -1,3 +1,5 @@
+use arbitrary::Arbitrary;
+
 use crate::{
     entry::{Entry, Timestamp},
     grouping::{area::Area, range::Range},
@@ -64,6 +66,21 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
 {
     fn from(_value: Area<MCL, MCC, MPL, S>) -> Self {
         todo!("Need to add successor fns to SubspaceId and Paths first.")
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for Range3d<MCL, MCC, MPL, S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            subspaces: Arbitrary::arbitrary(u)?,
+            paths: Arbitrary::arbitrary(u)?,
+            times: Arbitrary::arbitrary(u)?,
+        })
     }
 }
 
