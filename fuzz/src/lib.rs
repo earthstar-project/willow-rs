@@ -1,7 +1,7 @@
 use ufotofu::{
     common::consumer::TestConsumer,
     local_nb::{
-        producer::{FromSlice, FromVec},
+        producer::{FromSlice, FromBoxedSlice},
         BufferedConsumer, BulkConsumer,
     },
     sync::consumer::IntoVec,
@@ -31,7 +31,7 @@ where
     new_vec.extend_from_slice(consumer.as_ref());
 
     // THis should eventually be a testproducer, when we are able to initialise one with some known data.
-    let mut producer = FromVec::new(new_vec);
+    let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
     let decoded_item = T::decode(&mut producer).await.unwrap();
@@ -95,7 +95,7 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     new_vec.extend_from_slice(consumer.as_ref());
 
     // THis should eventually be a testproducer, when we are able to initialise one with some known data.
-    let mut producer = FromVec::new(new_vec);
+    let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
     let decoded_item = T::relative_decode(&reference, &mut producer).await.unwrap();
