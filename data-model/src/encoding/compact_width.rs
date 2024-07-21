@@ -146,7 +146,7 @@ pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
 #[cfg(test)]
 mod tests {
     use ufotofu::local_nb::consumer::IntoVec;
-    use ufotofu::local_nb::producer::FromVec;
+    use ufotofu::local_nb::producer::FromBoxedSlice;
 
     use super::*;
 
@@ -230,7 +230,7 @@ mod tests {
 
                 assert_eq!(decoded_compact_width, compact_width);
 
-                let mut producer = FromVec::new(encode_result);
+                let mut producer = FromBoxedSlice::from_vec(encode_result);
 
                 let decode_result = decode_compact_width_be(decoded_compact_width, &mut producer)
                     .await

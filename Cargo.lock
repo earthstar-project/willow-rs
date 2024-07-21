@@ -218,7 +218,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "either",
- "ufotofu",
+ "ufotofu 0.3.0",
  "willow-data-model",
 ]
 
@@ -504,9 +504,20 @@ dependencies = [
 
 [[package]]
 name = "ufotofu"
-version = "0.2.0"
+version = "0.3.0"
+dependencies = [
+ "either",
+ "thiserror-core",
+ "trait-variant",
+ "ufotofu_queues",
+ "wrapper",
+]
+
+[[package]]
+name = "ufotofu"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89736749f77fdebcbddcf32574b2f3ba4fd004d39c26abdaef2fcbf93c8e0781"
+checksum = "90d1fbdc439b2d48e0725dfe321025033d587530e74a1d7924c32e5e9f2d957a"
 dependencies = [
  "arbitrary",
  "either",
@@ -536,7 +547,7 @@ dependencies = [
  "bytes",
  "either",
  "smol",
- "ufotofu",
+ "ufotofu 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -547,7 +558,7 @@ dependencies = [
  "earthstar",
  "libfuzzer-sys",
  "smol",
- "ufotofu",
+ "ufotofu 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "willow-data-model",
 ]
 

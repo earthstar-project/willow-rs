@@ -8,9 +8,9 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-ufotofu ={ version = "0.2.0", features=["dev"]}
+ufotofu = { version = "0.3.0", features=["dev"]}
 smol = "2.0.0"
-arbitrary = { version = "1.0.2", features = ["derive"]}
+arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 
