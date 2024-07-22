@@ -3,6 +3,8 @@ use core::cmp::Ordering;
 
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
+use crate::path::Path;
+
 #[derive(Debug, PartialEq, Eq)]
 /// Determines whether a [`Range`] is _closed_ or _open_.
 pub enum RangeEnd<T: Ord> {
@@ -49,6 +51,70 @@ impl<T: Ord> Ord for RangeEnd<T> {
 impl<T: Ord> PartialOrd for RangeEnd<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<T> PartialEq<T> for RangeEnd<T>
+where
+    T: Eq + Ord,
+{
+    fn eq(&self, other: &T) -> bool {
+        match self {
+            RangeEnd::Closed(val) => val.eq(other),
+            RangeEnd::Open => false,
+        }
+    }
+}
+
+impl<T> PartialOrd<T> for RangeEnd<T>
+where
+    T: Ord,
+{
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+        match self {
+            RangeEnd::Closed(val) => val.partial_cmp(other),
+            RangeEnd::Open => Some(Ordering::Greater),
+        }
+    }
+}
+
+impl PartialEq<RangeEnd<u64>> for u64 {
+    fn eq(&self, other: &RangeEnd<u64>) -> bool {
+        match other {
+            RangeEnd::Closed(other_val) => self.eq(other_val),
+            RangeEnd::Open => false,
+        }
+    }
+}
+
+impl PartialOrd<RangeEnd<u64>> for u64 {
+    fn partial_cmp(&self, other: &RangeEnd<u64>) -> Option<Ordering> {
+        match other {
+            RangeEnd::Closed(other_val) => self.partial_cmp(other_val),
+            RangeEnd::Open => Some(Ordering::Less),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq<RangeEnd<Path<MCL, MCC, MPL>>>
+    for Path<MCL, MCC, MPL>
+{
+    fn eq(&self, other: &RangeEnd<Path<MCL, MCC, MPL>>) -> bool {
+        match other {
+            RangeEnd::Closed(other_path) => self.eq(other_path),
+            RangeEnd::Open => false,
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd<RangeEnd<Path<MCL, MCC, MPL>>>
+    for Path<MCL, MCC, MPL>
+{
+    fn partial_cmp(&self, other: &RangeEnd<Path<MCL, MCC, MPL>>) -> Option<Ordering> {
+        match other {
+            RangeEnd::Closed(other_path) => self.partial_cmp(other_path),
+            RangeEnd::Open => Some(Ordering::Less),
+        }
     }
 }
 
