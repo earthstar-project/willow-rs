@@ -60,26 +60,21 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Pat
         Consumer: BulkConsumer<Item = u8>,
     {
         let lcp = self.longest_common_prefix(reference);
-        encode_max_power(lcp.get_component_count(), MCC, consumer).await?;
+        let lcp_component_count = lcp.get_component_count();
+        encode_max_power(lcp_component_count, MCC, consumer).await?;
+        
+        let suffix_component_count = self.get_component_count() - lcp_component_count;        
+        encode_max_power(suffix_component_count, MCC, consumer).await?;
 
-        if lcp.get_component_count() > 0 {
-            let suffix_components = self.suffix_components(lcp.get_component_count());
 
-            // TODO: A more performant version of this.
+        for component in self.suffix_components(lcp_component_count) {
+            encode_max_power(component.len(), MCL, consumer).await?;
 
-            let mut suffix = Path::<MCL, MCC, MPL>::new_empty();
-
-            for component in suffix_components {
-                // We can unwrap here because this suffix is a subset of a valid path.
-                suffix = suffix.append(component).unwrap();
-            }
-
-            suffix.encode(consumer).await?;
-
-            return Ok(());
+            consumer
+                .bulk_consume_full_slice(component.as_ref())
+                .await
+                .map_err(|f| f.reason)?;
         }
-
-        self.encode(consumer).await?;
 
         Ok(())
     }
