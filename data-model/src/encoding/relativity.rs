@@ -228,11 +228,13 @@ where
             reference.namespace_id.clone()
         };
 
+        /*
         // Verify that the encoded namespace wasn't the same as ours
         // Which would indicate invalid input
         if is_namespace_encoded && namespace_id == reference.namespace_id {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let subspace_id = if is_subspace_encoded {
             S::decode(producer).await?
@@ -240,11 +242,13 @@ where
             reference.subspace_id.clone()
         };
 
+        /*
         // Verify that the encoded subspace wasn't the same as ours
         // Which would indicate invalid input
         if is_subspace_encoded && subspace_id == reference.subspace_id {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let path = Path::<MCL, MCC, MPL>::relative_decode(&reference.path, producer).await?;
 
@@ -263,11 +267,13 @@ where
                 .ok_or(DecodeError::InvalidInput)?
         };
 
+        /*
         // Verify that the correct add_or_subtract_time_diff flag was set.
         let should_have_subtracted = timestamp <= reference.timestamp;
         if add_or_subtract_time_diff && should_have_subtracted {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let payload_length =
             decode_compact_width_be(compact_width_payload_length, producer).await?;
@@ -408,6 +414,7 @@ where
         }
         .ok_or(DecodeError::InvalidInput)?;
 
+        /*
         // Verify that the correct add_or_subtract_time_diff flag was set.
         let should_have_added = timestamp.checked_sub(out.times.start)
             <= u64::from(&out.times.end).checked_sub(timestamp);
@@ -415,6 +422,7 @@ where
         if add_time_diff_to_start != should_have_added {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         if !out.times.includes(&timestamp) {
             return Err(DecodeError::InvalidInput);
@@ -575,10 +583,12 @@ where
             out.subspaces.start.clone()
         };
 
+        /*
         // Verify that encoding the subspace was necessary.
         if subspace_id == out.subspaces.start && is_subspace_encoded {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         // Verify that subspace is included by range
         if !out.subspaces.includes(&subspace_id) {
@@ -599,6 +609,7 @@ where
             return Err(DecodeError::InvalidInput);
         }
 
+        /*
         // Verify that the path was encoded relative to the correct bound of the referenc path range.
         let should_have_encoded_path_relative_to_start = match &out.paths.end {
             RangeEnd::Closed(end_path) => {
@@ -610,9 +621,11 @@ where
             RangeEnd::Open => true,
         };
 
+
         if decode_path_relative_to_start != should_have_encoded_path_relative_to_start {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let time_diff = decode_compact_width_be(time_diff_compact_width, producer).await?;
 
@@ -636,6 +649,7 @@ where
             return Err(DecodeError::InvalidInput);
         }
 
+        /*
         // Verify that time_diff is what it should have been
         let correct_time_diff = core::cmp::min(
             timestamp.abs_diff(out.times.start),
@@ -646,12 +660,14 @@ where
             return Err(DecodeError::InvalidInput);
         }
 
+
         // Verify that the combine with start bitflag in the header was correct
         let should_have_added_to_start = time_diff == timestamp.abs_diff(out.times.start);
 
         if should_have_added_to_start != add_time_diff_with_start {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         Ok(Self {
             namespace_id: namespace.clone(),
@@ -774,30 +790,34 @@ where
         // Add end_diff to out.times.start, or subtract from out.times.end?
         let add_end_diff = is_bitflagged(header, 3);
 
+        /*
         // Verify that we don't add_end_diff when open...
-
         if add_end_diff && is_times_end_open {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let start_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
         let end_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
+        /*
         // Verify the last two bits are zero if is_times_end_open
         if is_times_end_open && (end_diff_compact_width != CompactWidth::One) {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let subspace = if is_subspace_encoded {
             let id = S::decode(producer).await?;
-            let sub = AreaSubspace::Id(id);
+            AreaSubspace::Id(id)
 
+            /*
             // Verify that subspace wasn't needlessly encoded
             if sub == out.subspace {
                 return Err(DecodeError::InvalidInput);
             }
 
-            sub
+            */
         } else {
             out.subspace.clone()
         };
@@ -843,6 +863,7 @@ where
             return Err(DecodeError::InvalidInput);
         }
 
+        /*
         // Verify that bit 2 of the header was set correctly
         let should_add_start_diff = start_diff
             == start
@@ -852,6 +873,7 @@ where
         if add_start_diff != should_add_start_diff {
             return Err(DecodeError::InvalidInput);
         }
+        */
 
         let end = if is_times_end_open {
             if add_end_diff {
@@ -880,6 +902,7 @@ where
                 return Err(DecodeError::InvalidInput);
             }
 
+            /*
             let should_add_end_diff = end_diff
                 == end
                     .checked_sub(out.times.start)
@@ -888,6 +911,7 @@ where
             if add_end_diff != should_add_end_diff {
                 return Err(DecodeError::InvalidInput);
             }
+            */
 
             RangeEnd::Closed(end)
         };
