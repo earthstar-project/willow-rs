@@ -4,9 +4,9 @@ use libfuzzer_sys::fuzz_target;
 use willow_data_model::path::Path;
 use willow_data_model_fuzz::encode::encoding_random;
 
-const MCL: usize = 300;
-const MCC: usize = 300;
-const MPL: usize = 300;
+const MCL: usize = 4;
+const MCC: usize = 4;
+const MPL: usize = 16;
 
 fuzz_target!(|data: &[u8]| {
     smol::block_on(async {
