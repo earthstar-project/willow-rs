@@ -180,7 +180,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Pat
         }
         // ===============================================
 
-        return Ok(decoded);
+        Ok(decoded)
     }
 }
 

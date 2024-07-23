@@ -843,7 +843,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for Path<MC
                 .await?;
         }
 
-        return Ok(unsafe { buf.to_path(component_count) });
+        Ok(unsafe { buf.to_path(component_count) })
     }
 }
 

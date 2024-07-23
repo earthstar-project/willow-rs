@@ -55,7 +55,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     ///
     /// Memory must have been initialised with a prior call to set_component_accumulated_length for the same `i`.
     unsafe fn get_component_accumulated_length(&self, i: usize) -> usize {
-        return MaybeUninit::assume_init(self.component_accumulated_lengths[i]);
+        MaybeUninit::assume_init(self.component_accumulated_lengths[i])
     }
 
     /// Return a slice of the accumulated component lengths up to but excluding the `i`-th component, encoded as native-endian u8s.
@@ -83,7 +83,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
             self.get_component_accumulated_length(i - 1)
         };
         let end = self.get_component_accumulated_length(i);
-        return &mut self.path_data[start..end];
+        &mut self.path_data[start..end]
     }
 
     /// Return a mutable slice of the path_data up to but excluding the i-th component.
@@ -93,7 +93,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     /// Accumulated component lengths for `i - 1` must have been set (unless `i == 0`).
     pub unsafe fn path_data_until_as_mut(&mut self, i: usize) -> &mut [MaybeUninit<u8>] {
         let end = self.get_component_accumulated_length(i - 1);
-        return &mut self.path_data[0..end];
+        &mut self.path_data[0..end]
     }
 
     /// Get the path data of the first `i` components.
@@ -118,7 +118,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     /// The first `i` accumulated component lengths must have been set, and all corresponding path data must be initialised. MCL, MCC, and MCP are trusted blindly and must be adhered to by the data in the scratch buffer.
     pub unsafe fn to_path<const MCL: usize>(&self, i: usize) -> Path<MCL, MCC, MPL> {
         if i == 0 {
-            return Path::new_empty();
+            Path::new_empty()
         } else {
             let total_length = if i == 0 {
                 0
@@ -131,7 +131,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
             buf.extend_from_slice(self.get_accumumulated_component_lengths(i));
             buf.extend_from_slice(self.get_path_data(i));
 
-            return Path::from_buffer_and_component_count(buf.freeze(), i);
+            Path::from_buffer_and_component_count(buf.freeze(), i)
         }
     }
 }
