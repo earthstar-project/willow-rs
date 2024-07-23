@@ -4,4 +4,5 @@ pub mod error;
 pub mod max_power;
 pub mod parameters;
 pub mod relativity;
+pub(crate) mod shared_buffers;
 pub mod unsigned_int;
