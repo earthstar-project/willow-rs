@@ -14,15 +14,17 @@ fuzz_target!(|data: (CreatePath, CreatePath)| {
     let p2 = create_path::<2, 3, 3>(&cp2);
 
     match (ctrl1, p1) {
-        (Err(_), Err(_)) => { /* no-op */}
+        (Err(_), Err(_)) => { /* no-op */ }
         (Ok(ctrl1), Ok(p1)) => {
             match (ctrl2, p2) {
-                (Err(_), Err(_)) => { /* no-op */}
+                (Err(_), Err(_)) => { /* no-op */ }
                 (Ok(ctrl2), Ok(p2)) => {
                     assert_isomorphic_paths(&ctrl1, &ctrl2, &p1, &p2);
                 }
                 _ => {
-                    panic!("Create_path_rc and create_path must either both succeeed or both fail.");
+                    panic!(
+                        "Create_path_rc and create_path must either both succeeed or both fail."
+                    );
                 }
             }
         }

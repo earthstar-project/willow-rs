@@ -35,20 +35,15 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     }
 
     /// # Saftey
-    /// 
+    ///
     /// UB if length of slice is greater than `size_of::<usize>() * MCC`.
-    pub unsafe fn set_many_component_accumulated_lengths_from_ne(
-        &mut self,
-        lengths: &[u8],
-    ) {
+    pub unsafe fn set_many_component_accumulated_lengths_from_ne(&mut self, lengths: &[u8]) {
         let slice: &mut [MaybeUninit<u8>] = core::slice::from_raw_parts_mut(
-            self.component_accumulated_lengths[..lengths.len() / size_of::<usize>()].as_mut_ptr() as *mut MaybeUninit<u8>,
+            self.component_accumulated_lengths[..lengths.len() / size_of::<usize>()].as_mut_ptr()
+                as *mut MaybeUninit<u8>,
             lengths.len(),
         );
-        MaybeUninit::copy_from_slice(
-            slice,
-            lengths
-        );
+        MaybeUninit::copy_from_slice(slice, lengths);
     }
 
     /// # Safety
