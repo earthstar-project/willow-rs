@@ -1,4 +1,5 @@
 use core::future::Future;
+use core::mem::{size_of, MaybeUninit};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
@@ -18,6 +19,9 @@ use crate::{
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
+
+
+use super::shared_buffers::ScratchSpacePathDecoding;
 
 /// A type that can be used to encode `T` to a bytestring *encoded relative to `R`*.
 /// This can be used to create more compact encodings from which `T` can be derived by anyone with `R`.
@@ -62,26 +66,20 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Pat
         Consumer: BulkConsumer<Item = u8>,
     {
         let lcp = self.longest_common_prefix(reference);
-        encode_max_power(lcp.get_component_count(), MCC, consumer).await?;
+        let lcp_component_count = lcp.get_component_count();
+        encode_max_power(lcp_component_count, MCC, consumer).await?;
 
-        if lcp.get_component_count() > 0 {
-            let suffix_components = self.suffix_components(lcp.get_component_count());
+        let suffix_component_count = self.get_component_count() - lcp_component_count;
+        encode_max_power(suffix_component_count, MCC, consumer).await?;
 
-            // TODO: A more performant version of this.
+        for component in self.suffix_components(lcp_component_count) {
+            encode_max_power(component.len(), MCL, consumer).await?;
 
-            let mut suffix = Path::<MCL, MCC, MPL>::new_empty();
-
-            for component in suffix_components {
-                // We can unwrap here because this suffix is a subset of a valid path.
-                suffix = suffix.append(component).unwrap();
-            }
-
-            suffix.encode(consumer).await?;
-
-            return Ok(());
+            consumer
+                .bulk_consume_full_slice(component.as_ref())
+                .await
+                .map_err(|f| f.reason)?;
         }
-
-        self.encode(consumer).await?;
 
         Ok(())
     }
@@ -101,33 +99,91 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeDecodable<Pat
         Producer: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let lcp = decode_max_power(MCC, producer).await?;
+        let lcp_component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
 
-        if lcp > reference.get_component_count() as u64 {
-            return Err(DecodeError::InvalidInput);
+        if lcp_component_count == 0 {
+            let decoded = Path::<MCL, MCC, MPL>::decode(producer).await?;
+
+            // === Necessary to produce canonic encodings. ===
+            if lcp_component_count
+                != decoded
+                    .longest_common_prefix(reference)
+                    .get_component_count()
+            {
+                return Err(DecodeError::InvalidInput);
+            }
+            // ===============================================
+
+            return Ok(decoded);
         }
 
         let prefix = reference
-            .create_prefix(lcp as usize)
+            .create_prefix(lcp_component_count as usize)
             .ok_or(DecodeError::InvalidInput)?;
-        let suffix = Path::<MCL, MCC, MPL>::decode(producer).await?;
 
-        let mut new = prefix;
+        let mut buf = ScratchSpacePathDecoding::<MCC, MPL>::new();
 
-        for component in suffix.components() {
-            match new.append(component) {
-                Ok(appended) => new = appended,
-                Err(_) => return Err(DecodeError::InvalidInput),
-            }
+        // Copy the accumulated component lengths of the prefix into the scratch buffer.
+        let raw_prefix_acc_component_lengths =
+            &prefix.raw_buf()[size_of::<usize>()..size_of::<usize>() * (lcp_component_count + 1)];
+        unsafe {
+            // Safe because len is less than size_of::<usize>() times the MCC, because `prefix` respects the MCC.
+            buf.set_many_component_accumulated_lengths_from_ne(raw_prefix_acc_component_lengths);
         }
 
-        let actual_lcp = reference.longest_common_prefix(&new);
+        // Copy the raw path data of the prefix into the scratch buffer.
+        unsafe {
+            // safe because we just copied the accumulated component lengths for the first `lcp_component_count` components.
+            MaybeUninit::copy_from_slice(
+                buf.path_data_until_as_mut(lcp_component_count),
+                &reference.raw_buf()[size_of::<usize>() * (reference.get_component_count() + 1)
+                    ..size_of::<usize>() * (reference.get_component_count() + 1)
+                        + prefix.get_path_length()],
+            );
+        }
 
-        if actual_lcp.get_component_count() != lcp as usize {
+        let remaining_component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
+        let total_component_count = lcp_component_count + remaining_component_count;
+        if total_component_count > MCC {
             return Err(DecodeError::InvalidInput);
         }
 
-        Ok(new)
+        let mut accumulated_component_length: usize = prefix.get_path_length(); // Always holds the acc length of all components we copied so far.
+        for i in lcp_component_count..total_component_count {
+            let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
+            if component_len > MCL {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            accumulated_component_length += component_len;
+            if accumulated_component_length > MPL {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            buf.set_component_accumulated_length(accumulated_component_length, i);
+
+            // Decode the component itself into the scratch buffer.
+            producer
+                .bulk_overwrite_full_slice_uninit(unsafe {
+                    // Safe because we called set_component_Accumulated_length for all j <= i
+                    buf.path_data_as_mut(i)
+                })
+                .await?;
+        }
+
+        let decoded = unsafe { buf.to_path(total_component_count) };
+
+        // === Necessary to produce canonic encodings. ===
+        if lcp_component_count
+            != decoded
+                .longest_common_prefix(reference)
+                .get_component_count()
+        {
+            return Err(DecodeError::InvalidInput);
+        }
+        // ===============================================
+
+        Ok(decoded)
     }
 }
 
