@@ -7,6 +7,9 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+[lints]
+workspace = true
+
 [dependencies]
 ufotofu = { version = "0.3.0", features=["dev"]}
 smol = "2.0.0"

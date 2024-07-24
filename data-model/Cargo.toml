@@ -21,6 +21,7 @@ smol = "2.0.0"
 # document all features
 all-features = true
 
-
+[lints]
+workspace = true
 
 
