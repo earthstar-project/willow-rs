@@ -18,7 +18,7 @@ pub enum AreaSubspace<S: SubspaceId> {
 }
 
 impl<S: SubspaceId> AreaSubspace<S> {
-    /// Whether this [`AreaSubspace`] includes a given [`SubspaceId`].
+    /// Return whether this [`AreaSubspace`] includes a given [`SubspaceId`].
     pub fn includes(&self, sub: &S) -> bool {
         match self {
             AreaSubspace::Any => true,
@@ -34,6 +34,14 @@ impl<S: SubspaceId> AreaSubspace<S> {
             (Self::Any, Self::Id(b)) => Some(Self::Id(b.clone())),
             (Self::Id(a), Self::Id(b)) if a == b => Some(Self::Id(a.clone())),
             (Self::Id(_a), Self::Id(_b)) => None,
+        }
+    }
+
+    /// Return whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
+    pub fn is_any(&self) -> bool {
+        match self {
+            AreaSubspace::Any => true,
+            _ => false,
         }
     }
 }
@@ -61,14 +69,48 @@ where
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
-    pub subspace: AreaSubspace<S>,
+    subspace: AreaSubspace<S>,
     /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
-    pub path: Path<MCL, MCC, MPL>,
+    path: Path<MCL, MCC, MPL>,
     /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
-    pub times: Range<Timestamp>,
+    times: Range<Timestamp>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<MCL, MCC, MPL, S> {
+    /// Create a new [`Area`].
+    pub fn new(
+        subspace: AreaSubspace<S>,
+        path: Path<MCL, MCC, MPL>,
+        times: Range<Timestamp>,
+    ) -> Self {
+        Area {
+            subspace,
+            path,
+            times,
+        }
+    }
+
+    /// Return a reference to the [`AreaSubspace`].
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
+    pub fn get_subspace(&self) -> &AreaSubspace<S> {
+        &self.subspace
+    }
+
+    /// Return a reference to the [`Path`].
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
+    pub fn get_path(&self) -> &Path<MCL, MCC, MPL> {
+        &self.path
+    }
+
+    /// Return a reference to the range of [`Timestamp`]s.
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
+    pub fn get_times(&self) -> &Range<Timestamp> {
+        &self.times
+    }
+
     /// Return an [`Area`] which includes all entries.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#full_area).
     pub fn full() -> Self {
@@ -94,9 +136,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspace.includes(&entry.subspace_id)
-            && self.path.is_prefix_of(&entry.path)
-            && self.times.includes(&entry.timestamp)
+        self.subspace.includes(entry.get_subspace_id())
+            && self.path.is_prefix_of(entry.get_path())
+            && self.times.includes(&entry.get_timestamp())
     }
 
     /// Return whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
