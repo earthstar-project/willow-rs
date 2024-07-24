@@ -5,7 +5,7 @@ use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::fuzz_target;
 use willow_data_model::entry::Entry;
 use willow_data_model::grouping::area::Area;
-use willow_data_model_fuzz::encode::relative_encoding_random;
+use willow_data_model_fuzz::encode::relative_encoding_random_less_strict;
 use willow_data_model_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(
@@ -14,7 +14,7 @@ fuzz_target!(
         let (random_bytes, namespaced_area) = data;
 
         smol::block_on(async {
-            relative_encoding_random::<
+            relative_encoding_random_less_strict::<
                 (EsNamespaceId, Area<16, 16, 16, IdentityId>),
                 Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
             >(namespaced_area, random_bytes)

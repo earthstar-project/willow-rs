@@ -301,3 +301,17 @@ path = "fuzz_targets/area_rel_area_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "range3d_rel_range3d_encoding"
+path = "fuzz_targets/range3d_rel_range3d_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "range3d_rel_rang3d_encoding_random"
+path = "fuzz_targets/range3d_rel_rang3d_encoding_random.rs"
+test = false
+doc = false
+bench = false

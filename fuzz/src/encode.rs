@@ -79,7 +79,7 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     R: std::fmt::Debug,
     C: BulkConsumer<Item = u8>,
 {
-    // println!("item {:?}", subject);
+    //println!("item {:?}", subject);
     // println!("ref {:?}", reference);
 
     if let Err(_err) = subject.relative_encode(&reference, consumer).await {
@@ -126,6 +126,51 @@ where
             let encoded = consumer.as_ref().as_slice();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
+        }
+        Err(err) => match err {
+            // There was an error.
+            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+            DecodeError::InvalidInput => {
+                // GOOD.
+            }
+            DecodeError::U64DoesNotFitUsize => {
+                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+            }
+        },
+    };
+}
+
+pub async fn relative_encoding_random_less_strict<R, T>(reference: R, data: &[u8])
+where
+    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
+    R: std::fmt::Debug,
+{
+    let mut producer = FromSlice::new(data);
+
+    match T::relative_decode(&reference, &mut producer).await {
+        Ok(item) => {
+            // It decoded to a valid item! Gasp!
+            // Can we turn it back into the same encoding?
+            let mut consumer = IntoVec::<u8>::new();
+
+            //  println!("item {:?}", item);
+            //  println!("ref {:?}", reference);
+
+            item.relative_encode(&reference, &mut consumer)
+                .await
+                .unwrap();
+
+            let mut producer_2 = FromSlice::new(consumer.as_ref());
+
+            match T::relative_decode(&reference, &mut producer_2).await {
+                Ok(decoded_again) => {
+                    assert_eq!(item, decoded_again);
+                }
+                Err(err) => {
+                    println!("{:?}", err);
+                    panic!("Could not decode again, argh!")
+                }
+            }
         }
         Err(err) => match err {
             // There was an error.
