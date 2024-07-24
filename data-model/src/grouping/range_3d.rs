@@ -40,19 +40,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
 
     /// Return a reference to the range of [`SubspaceId`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
-    pub fn get_subspaces(&self) -> &Range<S> {
+    pub fn subspaces(&self) -> &Range<S> {
         &self.subspaces
     }
 
     /// Return a reference to the range of [`Path`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#PathRange).
-    pub fn get_paths(&self) -> &Range<Path<MCL, MCC, MPL>> {
+    pub fn paths(&self) -> &Range<Path<MCL, MCC, MPL>> {
         &self.paths
     }
 
     /// Return a reference to the range of [`Timestamp`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#TimeRange).
-    pub fn get_times(&self) -> &Range<Timestamp> {
+    pub fn times(&self) -> &Range<Timestamp> {
         &self.times
     }
 
@@ -61,9 +61,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspaces.includes(entry.get_subspace_id())
-            && self.paths.includes(entry.get_path())
-            && self.times.includes(&entry.get_timestamp())
+        self.subspaces.includes(entry.subspace_id())
+            && self.paths.includes(entry.path())
+            && self.times.includes(&entry.timestamp())
     }
 
     /// Return the intersection between this [`Range3d`] and another.

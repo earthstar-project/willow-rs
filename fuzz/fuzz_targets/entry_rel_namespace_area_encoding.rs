@@ -20,7 +20,7 @@ fuzz_target!(|data: (
         return;
     }
 
-    let namespace = entry.get_namespace_id().clone();
+    let namespace = entry.namespace_id().clone();
 
     smol::block_on(async {
         relative_encoding_roundtrip::<

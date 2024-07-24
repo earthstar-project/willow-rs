@@ -75,32 +75,32 @@ where
     }
 
     /// Return a reference to the identifier of the namespace to which the [`Entry`] belongs.
-    pub fn get_namespace_id(&self) -> &N {
+    pub fn namespace_id(&self) -> &N {
         &self.namespace_id
     }
 
     /// Return a reference to the identifier of the subspace_id to which the [`Entry`] belongs.
-    pub fn get_subspace_id(&self) -> &S {
+    pub fn subspace_id(&self) -> &S {
         &self.subspace_id
     }
 
     /// Return a reference to the [`Path`] to which the [`Entry`] was written.
-    pub fn get_path(&self) -> &Path<MCL, MCC, MPL> {
+    pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
 
     /// Return the claimed creation time of the [`Entry`].
-    pub fn get_timestamp(&self) -> Timestamp {
+    pub fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
 
     /// Return the length of the Payload in bytes.
-    pub fn get_payload_length(&self) -> u64 {
+    pub fn payload_length(&self) -> u64 {
         self.payload_length
     }
 
     /// Return a reference to the result of applying hash_payload to the Payload.
-    pub fn get_payload_digest(&self) -> &PD {
+    pub fn payload_digest(&self) -> &PD {
         &self.payload_digest
     }
 

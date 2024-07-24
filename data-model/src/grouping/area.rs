@@ -90,27 +90,27 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
     /// Return a reference to the [`AreaSubspace`].
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
-    pub fn get_subspace(&self) -> &AreaSubspace<S> {
+    pub fn subspace(&self) -> &AreaSubspace<S> {
         &self.subspace
     }
 
     /// Return a reference to the [`Path`].
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
-    pub fn get_path(&self) -> &Path<MCL, MCC, MPL> {
+    pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
 
     /// Return a reference to the range of [`Timestamp`]s.
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
-    pub fn get_times(&self) -> &Range<Timestamp> {
+    pub fn times(&self) -> &Range<Timestamp> {
         &self.times
     }
 
     /// Return an [`Area`] which includes all entries.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#full_area).
-    pub fn full() -> Self {
+    pub fn new_full() -> Self {
         Self {
             subspace: AreaSubspace::Any,
             path: Path::new_empty(),
@@ -120,7 +120,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
 
     /// Return an [`Area`] which includes all entries within a [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#subspace_area).
-    pub fn subspace(sub: S) -> Self {
+    pub fn new_subspace(sub: S) -> Self {
         Self {
             subspace: AreaSubspace::Id(sub),
             path: Path::new_empty(),
@@ -133,9 +133,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspace.includes(entry.get_subspace_id())
-            && self.path.is_prefix_of(entry.get_path())
-            && self.times.includes(&entry.get_timestamp())
+        self.subspace.includes(entry.subspace_id())
+            && self.path.is_prefix_of(entry.path())
+            && self.times.includes(&entry.timestamp())
     }
 
     /// Return whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn area_full() {
-        let full_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::full();
+        let full_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_full();
 
         assert_eq!(
             full_area,
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn area_subspace() {
-        let subspace_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::subspace(FakeSubspaceId(7));
+        let subspace_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_subspace(FakeSubspaceId(7));
 
         assert_eq!(
             subspace_area,
