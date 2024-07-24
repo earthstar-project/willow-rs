@@ -389,9 +389,7 @@ where
             header |= 0b1000_0000;
         }
 
-        if self.timestamp() - out.times().start
-            <= u64::from(&out.times().end) - self.timestamp()
-        {
+        if self.timestamp() - out.times().start <= u64::from(&out.times().end) - self.timestamp() {
             header |= 0b0100_0000;
         }
 
@@ -404,9 +402,7 @@ where
             self.subspace_id().encode(consumer).await?;
         }
 
-        self.path()
-            .relative_encode(out.path(), consumer)
-            .await?;
+        self.path().relative_encode(out.path(), consumer).await?;
         encode_compact_width_be(time_diff, consumer).await?;
         encode_compact_width_be(self.payload_length(), consumer).await?;
         self.payload_digest().encode(consumer).await?;
@@ -532,8 +528,7 @@ where
 
         let time_diff = core::cmp::min(
             self.timestamp().abs_diff(out.times().start),
-            self.timestamp()
-                .abs_diff(u64::from(&out.times().end)),
+            self.timestamp().abs_diff(u64::from(&out.times().end)),
         );
 
         let mut header = 0b0000_0000;
@@ -546,9 +541,7 @@ where
         // Encode e.get_path() relative to out.get_paths().start or to out.get_paths().end?
         let encode_path_relative_to_start = match &out.paths().end {
             RangeEnd::Closed(end_path) => {
-                let start_lcp = self
-                    .path()
-                    .longest_common_prefix(&out.paths().start);
+                let start_lcp = self.path().longest_common_prefix(&out.paths().start);
                 let end_lcp = self.path().longest_common_prefix(end_path);
 
                 start_lcp.get_component_count() >= end_lcp.get_component_count()
@@ -561,8 +554,7 @@ where
         }
 
         // Add time_diff to out.get_times().start, or subtract from out.get_times().end?
-        let add_time_diff_with_start =
-            time_diff == self.timestamp().abs_diff(out.times().start);
+        let add_time_diff_with_start = time_diff == self.timestamp().abs_diff(out.times().start);
 
         if add_time_diff_with_start {
             header |= 0b0010_0000;
@@ -813,9 +805,7 @@ where
             }
         }
 
-        self.path()
-            .relative_encode(out.path(), consumer)
-            .await?;
+        self.path().relative_encode(out.path(), consumer).await?;
 
         encode_compact_width_be(start_diff, consumer).await?;
 
@@ -1076,8 +1066,7 @@ where
         // Bit 6 - Encode r.get_paths().end relative to ref.get_paths().start or to ref.get_paths().end (if at all)?
         match (&self.paths().end, &reference.paths().end) {
             (RangeEnd::Closed(self_path_end), RangeEnd::Closed(ref_path_end)) => {
-                let lcp_end_start =
-                    self_path_end.longest_common_prefix(&reference.paths().start);
+                let lcp_end_start = self_path_end.longest_common_prefix(&reference.paths().start);
                 let lcp_end_end = self_path_end.longest_common_prefix(ref_path_end);
 
                 if lcp_end_start.get_component_count() > lcp_end_end.get_component_count() {
@@ -1123,8 +1112,7 @@ where
         // Bit 13 - Add or subtract end_time_diff (if encoding it at all)?
         if self.times().end == RangeEnd::Open {
             // do nothing
-        } else if (is_bitflagged(header_2, 4)
-            && self.times().end >= reference.times().start)
+        } else if (is_bitflagged(header_2, 4) && self.times().end >= reference.times().start)
             || (!is_bitflagged(header_2, 4) && self.times().end >= reference.times().end)
         {
             header_2 |= 0b0000_0100;
