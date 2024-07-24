@@ -237,7 +237,7 @@ where
         }
 
         self.get_path()
-            .relative_encode(&reference.get_path(), consumer)
+            .relative_encode(reference.get_path(), consumer)
             .await?;
 
         encode_compact_width_be(time_diff, consumer).await?;
@@ -309,7 +309,7 @@ where
         }
         */
 
-        let path = Path::<MCL, MCC, MPL>::relative_decode(&reference.get_path(), producer).await?;
+        let path = Path::<MCL, MCC, MPL>::relative_decode(reference.get_path(), producer).await?;
 
         let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
@@ -405,7 +405,7 @@ where
         }
 
         self.get_path()
-            .relative_encode(&out.get_path(), consumer)
+            .relative_encode(out.get_path(), consumer)
             .await?;
         encode_compact_width_be(time_diff, consumer).await?;
         encode_compact_width_be(self.get_payload_length(), consumer).await?;
@@ -458,9 +458,9 @@ where
             }
         };
 
-        let path = Path::relative_decode(&out.get_path(), producer).await?;
+        let path = Path::relative_decode(out.get_path(), producer).await?;
 
-        if !path.is_prefixed_by(&out.get_path()) {
+        if !path.is_prefixed_by(out.get_path()) {
             return Err(DecodeError::InvalidInput);
         }
 
@@ -814,7 +814,7 @@ where
         }
 
         self.get_path()
-            .relative_encode(&out.get_path(), consumer)
+            .relative_encode(out.get_path(), consumer)
             .await?;
 
         encode_compact_width_be(start_diff, consumer).await?;
@@ -904,10 +904,10 @@ where
             }
         }
 
-        let path = Path::relative_decode(&out.get_path(), producer).await?;
+        let path = Path::relative_decode(out.get_path(), producer).await?;
 
         // Verify the decoded path is prefixed by the reference path
-        if !path.is_prefixed_by(&out.get_path()) {
+        if !path.is_prefixed_by(out.get_path()) {
             return Err(DecodeError::InvalidInput);
         }
 

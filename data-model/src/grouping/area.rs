@@ -39,10 +39,7 @@ impl<S: SubspaceId> AreaSubspace<S> {
 
     /// Return whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
     pub fn is_any(&self) -> bool {
-        match self {
-            AreaSubspace::Any => true,
-            _ => false,
-        }
+        matches!(self, AreaSubspace::Any)
     }
 }
 
