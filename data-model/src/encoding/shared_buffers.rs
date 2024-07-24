@@ -34,7 +34,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         );
     }
 
-    /// # Saftey
+    /// # Safety
     ///
     /// UB if length of slice is greater than `size_of::<usize>() * MCC`.
     pub unsafe fn set_many_component_accumulated_lengths_from_ne(&mut self, lengths: &[u8]) {
