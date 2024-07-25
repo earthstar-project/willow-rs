@@ -1,3 +1,5 @@
+use arbitrary::Arbitrary;
+
 use crate::{
     entry::{Entry, Timestamp},
     grouping::{area::Area, range::Range},
@@ -11,26 +13,57 @@ use crate::{
 pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// A range of [`SubspaceId`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
-    pub subspaces: Range<S>,
+    subspaces: Range<S>,
     /// A range of [`Path`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#PathRange).
-    pub paths: Range<Path<MCL, MCC, MPL>>,
+    paths: Range<Path<MCL, MCC, MPL>>,
     /// A range of [`Timestamp`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#TimeRange).
-    pub times: Range<Timestamp>,
+    times: Range<Timestamp>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     Range3d<MCL, MCC, MPL, S>
 {
+    /// Create a new [`Range3d`].
+    pub fn new(
+        subspaces: Range<S>,
+        paths: Range<Path<MCL, MCC, MPL>>,
+        times: Range<Timestamp>,
+    ) -> Self {
+        Range3d {
+            subspaces,
+            paths,
+            times,
+        }
+    }
+
+    /// Return a reference to the range of [`SubspaceId`]s.
+    /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
+    pub fn subspaces(&self) -> &Range<S> {
+        &self.subspaces
+    }
+
+    /// Return a reference to the range of [`Path`]s.
+    /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#PathRange).
+    pub fn paths(&self) -> &Range<Path<MCL, MCC, MPL>> {
+        &self.paths
+    }
+
+    /// Return a reference to the range of [`Timestamp`]s.
+    /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#TimeRange).
+    pub fn times(&self) -> &Range<Timestamp> {
+        &self.times
+    }
+
     /// Return whether an [`Entry`] is [included](https://willowprotocol.org/specs/grouping-entries/index.html#d3_range_include) by this 3d range.
     pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspaces.includes(&entry.subspace_id)
-            && self.paths.includes(&entry.path)
-            && self.times.includes(&entry.timestamp)
+        self.subspaces.includes(entry.subspace_id())
+            && self.paths.includes(entry.path())
+            && self.times.includes(&entry.timestamp())
     }
 
     /// Return the intersection between this [`Range3d`] and another.
@@ -67,6 +100,21 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     }
 }
 
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for Range3d<MCL, MCC, MPL, S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            subspaces: Arbitrary::arbitrary(u)?,
+            paths: Arbitrary::arbitrary(u)?,
+            times: Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -96,14 +144,14 @@ mod tests {
 
     #[test]
     fn includes_entry() {
-        let entry = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId(10),
-            path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            timestamp: 500,
-            payload_length: 10,
-            payload_digest: FakePayloadDigest::default(),
-        };
+        let entry = Entry::new(
+            FakeNamespaceId::default(),
+            FakeSubspaceId(10),
+            Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
+            500,
+            10,
+            FakePayloadDigest::default(),
+        );
 
         let range_including = Range3d {
             subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))

@@ -1,7 +1,7 @@
 use core::mem::size_of;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-use crate::encoding::error::{DecodeError, EncodingConsumerError};
+use crate::encoding::error::DecodeError;
 
 /// Return the least natural number such that 256^`n` is greater than or equal to `n`.
 ///
@@ -31,7 +31,7 @@ pub async fn encode_max_power<C>(
     value: usize,
     max_size: usize,
     consumer: &mut C,
-) -> Result<(), EncodingConsumerError<C::Error>>
+) -> Result<(), C::Error>
 where
     C: BulkConsumer<Item = u8>,
 {
@@ -44,7 +44,8 @@ where
 
     consumer
         .bulk_consume_full_slice(&value_encoded_raw[size_of::<u64>() - (power as usize)..])
-        .await?;
+        .await
+        .map_err(|f| f.reason)?;
 
     Ok(())
 }

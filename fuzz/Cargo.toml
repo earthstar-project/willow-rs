@@ -7,10 +7,13 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+[lints]
+workspace = true
+
 [dependencies]
-ufotofu ={ version = "0.2.0", features=["dev"]}
+ufotofu = { version = "0.3.0", features=["dev"]}
 smol = "2.0.0"
-arbitrary = { version = "1.0.2", features = ["derive"]}
+arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 
 
@@ -100,8 +103,36 @@ doc = false
 bench = false
 
 [[bin]]
+name = "path_encoding2"
+path = "fuzz_targets/path_encoding2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding3"
+path = "fuzz_targets/path_encoding3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "path_encoding_random"
 path = "fuzz_targets/path_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding_random2"
+path = "fuzz_targets/path_encoding_random2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_encoding_random3"
+path = "fuzz_targets/path_encoding_random3.rs"
 test = false
 doc = false
 bench = false
@@ -172,6 +203,118 @@ bench = false
 [[bin]]
 name = "u64be_encoding_random"
 path = "fuzz_targets/u64be_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding"
+path = "fuzz_targets/path_rel_path_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding2"
+path = "fuzz_targets/path_rel_path_encoding2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding3"
+path = "fuzz_targets/path_rel_path_encoding3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding_random"
+path = "fuzz_targets/path_rel_path_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding_random2"
+path = "fuzz_targets/path_rel_path_encoding_random2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "path_rel_path_encoding_random3"
+path = "fuzz_targets/path_rel_path_encoding_random3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_entry_encoding"
+path = "fuzz_targets/entry_rel_entry_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_entry_encoding_random"
+path = "fuzz_targets/entry_rel_entry_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_namespace_area_encoding"
+path = "fuzz_targets/entry_rel_namespace_area_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_namespace_area_encoding_random"
+path = "fuzz_targets/entry_rel_namespace_area_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_namespace_range_encoding"
+path = "fuzz_targets/entry_rel_namespace_range_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entry_rel_namespace_range_encoding_random"
+path = "fuzz_targets/entry_rel_namespace_range_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "area_rel_area_encoding"
+path = "fuzz_targets/area_rel_area_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "area_rel_area_encoding_random"
+path = "fuzz_targets/area_rel_area_encoding_random.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "range3d_rel_range3d_encoding"
+path = "fuzz_targets/range3d_rel_range3d_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "range3d_rel_rang3d_encoding_random"
+path = "fuzz_targets/range3d_rel_rang3d_encoding_random.rs"
 test = false
 doc = false
 bench = false

@@ -1,7 +1,5 @@
-use core::error::Error;
-
-use crate::encoding::error::{DecodeError, EncodingConsumerError};
-use crate::encoding::parameters::Decoder;
+use crate::encoding::error::DecodeError;
+use crate::encoding::parameters::Decodable;
 use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
@@ -88,21 +86,39 @@ impl CompactWidth {
             CompactWidth::Eight => 8,
         }
     }
+
+    /// Encode a [`CompactWidth`] as a 2-bit integer `n` such that 2^n gives the bytewidth of the [`CompactWidth`], and then place that 2-bit number into a `u8` at the bit-index of `position`.
+    pub fn bitmask(&self, position: u8) -> u8 {
+        let og = match self {
+            CompactWidth::One => 0b0000_0000,
+            CompactWidth::Two => 0b0100_0000,
+            CompactWidth::Four => 0b1000_0000,
+            CompactWidth::Eight => 0b1100_0000,
+        };
+
+        og >> position
+    }
+
+    pub fn decode_fixed_width_bitmask(mask: u8, offset: u8) -> Self {
+        let twobit_mask = 0b0000_0011;
+        let two_bit_int = mask >> (6 - offset) & twobit_mask;
+
+        // Because we sanitise the input down to a 2-bit integer, we can safely unwrap this.
+        CompactWidth::new(2u8.pow(two_bit_int as u32)).unwrap()
+    }
 }
 
 /// Encode a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
 pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
     value: u64,
     consumer: &mut Consumer,
-) -> Result<(), EncodingConsumerError<Consumer::Error>>
-where
-    Consumer::Error: Error,
-{
+) -> Result<(), Consumer::Error> {
     let width = CompactWidth::from_u64(value).width();
 
     consumer
         .bulk_consume_full_slice(&value.to_be_bytes()[8 - width..])
-        .await?;
+        .await
+        .map_err(|f| f.reason)?;
 
     Ok(())
 }
@@ -112,18 +128,26 @@ pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
     compact_width: CompactWidth,
     producer: &mut Producer,
 ) -> Result<u64, DecodeError<Producer::Error>> {
-    match compact_width {
+    let decoded = match compact_width {
         CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
         CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
         CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
         CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
+    }?;
+
+    let real_width = CompactWidth::from_u64(decoded);
+
+    if real_width != compact_width {
+        return Err(DecodeError::InvalidInput);
     }
+
+    Ok(decoded)
 }
 
 #[cfg(test)]
 mod tests {
     use ufotofu::local_nb::consumer::IntoVec;
-    use ufotofu::local_nb::producer::FromVec;
+    use ufotofu::local_nb::producer::FromBoxedSlice;
 
     use super::*;
 
@@ -207,7 +231,7 @@ mod tests {
 
                 assert_eq!(decoded_compact_width, compact_width);
 
-                let mut producer = FromVec::new(encode_result);
+                let mut producer = FromBoxedSlice::from_vec(encode_result);
 
                 let decode_result = decode_compact_width_be(decoded_compact_width, &mut producer)
                     .await

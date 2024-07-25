@@ -3,3 +3,5 @@
 members = ["data-model", "earthstar", "fuzz"]
 resolver = "2"
 
+[workspace.lints.clippy]
+type_complexity = "allow"

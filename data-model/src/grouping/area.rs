@@ -1,3 +1,5 @@
+use arbitrary::{size_hint::and_all, Arbitrary};
+
 use crate::{
     entry::{Entry, Timestamp},
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
@@ -7,7 +9,7 @@ use crate::{
 use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AreaSubspace<S: SubspaceId> {
     /// A value that signals that an [`Area`] includes Entries with arbitrary subspace_ids.
     Any,
@@ -16,7 +18,7 @@ pub enum AreaSubspace<S: SubspaceId> {
 }
 
 impl<S: SubspaceId> AreaSubspace<S> {
-    /// Whether this [`AreaSubspace`] includes a given [`SubspaceId`].
+    /// Return whether this [`AreaSubspace`] includes a given [`SubspaceId`].
     pub fn includes(&self, sub: &S) -> bool {
         match self {
             AreaSubspace::Any => true,
@@ -34,6 +36,29 @@ impl<S: SubspaceId> AreaSubspace<S> {
             (Self::Id(_a), Self::Id(_b)) => None,
         }
     }
+
+    /// Return whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
+    pub fn is_any(&self) -> bool {
+        matches!(self, AreaSubspace::Any)
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, S> Arbitrary<'a> for AreaSubspace<S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_any: bool = Arbitrary::arbitrary(u)?;
+
+        if !is_any {
+            let subspace: S = Arbitrary::arbitrary(u)?;
+
+            return Ok(Self::Id(subspace));
+        }
+
+        Ok(Self::Any)
+    }
 }
 
 /// A grouping of entries.
@@ -41,17 +66,51 @@ impl<S: SubspaceId> AreaSubspace<S> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
-    pub subspace: AreaSubspace<S>,
+    subspace: AreaSubspace<S>,
     /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
-    pub path: Path<MCL, MCC, MPL>,
+    path: Path<MCL, MCC, MPL>,
     /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
-    pub times: Range<Timestamp>,
+    times: Range<Timestamp>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<MCL, MCC, MPL, S> {
+    /// Create a new [`Area`].
+    pub fn new(
+        subspace: AreaSubspace<S>,
+        path: Path<MCL, MCC, MPL>,
+        times: Range<Timestamp>,
+    ) -> Self {
+        Area {
+            subspace,
+            path,
+            times,
+        }
+    }
+
+    /// Return a reference to the [`AreaSubspace`].
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
+    pub fn subspace(&self) -> &AreaSubspace<S> {
+        &self.subspace
+    }
+
+    /// Return a reference to the [`Path`].
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
+    pub fn path(&self) -> &Path<MCL, MCC, MPL> {
+        &self.path
+    }
+
+    /// Return a reference to the range of [`Timestamp`]s.
+    ///
+    /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
+    pub fn times(&self) -> &Range<Timestamp> {
+        &self.times
+    }
+
     /// Return an [`Area`] which includes all entries.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#full_area).
-    pub fn full() -> Self {
+    pub fn new_full() -> Self {
         Self {
             subspace: AreaSubspace::Any,
             path: Path::new_empty(),
@@ -61,7 +120,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
 
     /// Return an [`Area`] which includes all entries within a [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#subspace_area).
-    pub fn subspace(sub: S) -> Self {
+    pub fn new_subspace(sub: S) -> Self {
         Self {
             subspace: AreaSubspace::Id(sub),
             path: Path::new_empty(),
@@ -74,9 +133,27 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspace.includes(&entry.subspace_id)
-            && self.path.is_prefix_of(&entry.path)
-            && self.times.includes(&entry.timestamp)
+        self.subspace.includes(entry.subspace_id())
+            && self.path.is_prefix_of(entry.path())
+            && self.times.includes(&entry.timestamp())
+    }
+
+    /// Return whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
+    pub fn includes_area(&self, area: &Self) -> bool {
+        match (&self.subspace, &area.subspace) {
+            (AreaSubspace::Any, AreaSubspace::Any) => {
+                self.path.is_prefix_of(&area.path) && self.times.includes_range(&area.times)
+            }
+            (AreaSubspace::Any, AreaSubspace::Id(_)) => {
+                self.path.is_prefix_of(&area.path) && self.times.includes_range(&area.times)
+            }
+            (AreaSubspace::Id(_), AreaSubspace::Any) => false,
+            (AreaSubspace::Id(subspace_a), AreaSubspace::Id(subspace_b)) => {
+                subspace_a == subspace_b
+                    && self.path.is_prefix_of(&area.path)
+                    && self.times.includes_range(&area.times)
+            }
+        }
     }
 
     /// Return the intersection of this [`Area`] with another.
@@ -96,6 +173,33 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             times,
             path,
         })
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for Area<MCL, MCC, MPL, S>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let subspace: AreaSubspace<S> = Arbitrary::arbitrary(u)?;
+        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
+        let times: Range<u64> = Arbitrary::arbitrary(u)?;
+
+        Ok(Self {
+            subspace,
+            path,
+            times,
+        })
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        and_all(&[
+            AreaSubspace::<S>::size_hint(depth),
+            Path::<MCL, MCC, MPL>::size_hint(depth),
+            Range::<u64>::size_hint(depth),
+        ])
     }
 }
 
@@ -163,7 +267,7 @@ mod tests {
 
     #[test]
     fn area_full() {
-        let full_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::full();
+        let full_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_full();
 
         assert_eq!(
             full_area,
@@ -177,7 +281,7 @@ mod tests {
 
     #[test]
     fn area_subspace() {
-        let subspace_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::subspace(FakeSubspaceId(7));
+        let subspace_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_subspace(FakeSubspaceId(7));
 
         assert_eq!(
             subspace_area,
