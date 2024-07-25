@@ -36,17 +36,17 @@ where
     PD: PayloadDigest,
 {
     /// The identifier of the namespace to which the [`Entry`] belongs.
-    pub namespace_id: N,
+    namespace_id: N,
     /// The identifier of the subspace to which the [`Entry`] belongs.
-    pub subspace_id: S,
+    subspace_id: S,
     /// The [`Path`] to which the [`Entry`] was written.
-    pub path: Path<MCL, MCC, MPL>,
+    path: Path<MCL, MCC, MPL>,
     /// The claimed creation time of the [`Entry`].
-    pub timestamp: Timestamp,
+    timestamp: Timestamp,
     /// The length of the Payload in bytes.
-    pub payload_length: u64,
+    payload_length: u64,
     /// The result of applying hash_payload to the Payload.
-    pub payload_digest: PD,
+    payload_digest: PD,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
@@ -55,6 +55,55 @@ where
     S: SubspaceId,
     PD: PayloadDigest,
 {
+    /// Create a new [`Entry`].
+    pub fn new(
+        namespace_id: N,
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+        payload_length: u64,
+        payload_digest: PD,
+    ) -> Self {
+        Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        }
+    }
+
+    /// Return a reference to the identifier of the namespace to which the [`Entry`] belongs.
+    pub fn namespace_id(&self) -> &N {
+        &self.namespace_id
+    }
+
+    /// Return a reference to the identifier of the subspace_id to which the [`Entry`] belongs.
+    pub fn subspace_id(&self) -> &S {
+        &self.subspace_id
+    }
+
+    /// Return a reference to the [`Path`] to which the [`Entry`] was written.
+    pub fn path(&self) -> &Path<MCL, MCC, MPL> {
+        &self.path
+    }
+
+    /// Return the claimed creation time of the [`Entry`].
+    pub fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+
+    /// Return the length of the Payload in bytes.
+    pub fn payload_length(&self) -> u64 {
+        self.payload_length
+    }
+
+    /// Return a reference to the result of applying hash_payload to the Payload.
+    pub fn payload_digest(&self) -> &PD {
+        &self.payload_digest
+    }
+
     /// Return if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
     /// [Definition](https://willowprotocol.org/specs/data-model/index.html#entry_newer).
