@@ -335,6 +335,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4958ec1997b05011d5c786bf4093cd48578bd9be2737350ab38659694083ddde"
 
 [[package]]
+name = "meadowcap"
+version = "0.1.0"
+dependencies = [
+ "ufotofu",
+ "willow-data-model",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

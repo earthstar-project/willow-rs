@@ -118,6 +118,18 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd<RangeEnd<P
     }
 }
 
+impl<T> Clone for RangeEnd<T>
+where
+    T: Ord + Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            RangeEnd::Closed(val) => RangeEnd::Closed(val.clone()),
+            RangeEnd::Open => RangeEnd::Open,
+        }
+    }
+}
+
 #[cfg(feature = "dev")]
 impl<'a, T> Arbitrary<'a> for RangeEnd<T>
 where
@@ -232,6 +244,18 @@ impl<T: Ord> Ord for Range<T> {
 impl<T: Ord> PartialOrd for Range<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<T> Clone for Range<T>
+where
+    T: Ord + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            start: self.start.clone(),
+            end: self.end.clone(),
+        }
     }
 }
 

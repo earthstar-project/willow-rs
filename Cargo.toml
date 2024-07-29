@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["data-model", "earthstar", "fuzz"]
+members = ["data-model", "earthstar", "fuzz", "meadowcap"]
 resolver = "2"
 
 [workspace.lints.clippy]

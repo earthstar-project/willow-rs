@@ -63,7 +63,7 @@ where
 
 /// A grouping of entries.
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#areas).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
     subspace: AreaSubspace<S>,
