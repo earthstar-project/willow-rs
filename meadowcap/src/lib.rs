@@ -296,11 +296,14 @@ where
             let prev_area =
                 Area::<MCL, MCC, MPL, UserPublicKey>::new_subspace(self.user_key.clone());
 
-            // TODO: Decide whether to propagate these errors or not.
-            consumer.consume(first_byte).await;
-            self.namespace_key.encode(&mut consumer).await;
-            new_area.relative_encode(&prev_area, &mut consumer).await;
-            new_user.encode(&mut consumer).await;
+            // We can safely unwrap all these encodings as IntoVec's error is the never type.
+            consumer.consume(first_byte).await.unwrap();
+            self.namespace_key.encode(&mut consumer).await.unwrap();
+            new_area
+                .relative_encode(&prev_area, &mut consumer)
+                .await
+                .unwrap();
+            new_user.encode(&mut consumer).await.unwrap();
 
             return consumer.into_vec();
         }
@@ -310,9 +313,13 @@ where
         let prev_area = last_delegation.area();
         let prev_signature = last_delegation.signature();
 
-        new_area.relative_encode(prev_area, &mut consumer).await;
-        prev_signature.encode(&mut consumer).await;
-        new_user.encode(&mut consumer).await;
+        // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        new_area
+            .relative_encode(prev_area, &mut consumer)
+            .await
+            .unwrap();
+        prev_signature.encode(&mut consumer).await.unwrap();
+        new_user.encode(&mut consumer).await.unwrap();
 
         consumer.into_vec()
     }
