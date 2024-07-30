@@ -17,17 +17,53 @@ pub trait Verifiable<PublicKey> {
 }
 
 /// A delegation of access rights to a user for a given area.
-pub type Delegation<
+#[derive(Clone)]
+pub struct Delegation<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
     UserPublicKey,
     UserSignature,
-> = (
-    Area<MCL, MCC, MPL, UserPublicKey>,
-    UserPublicKey,
-    UserSignature,
-);
+> where
+    UserPublicKey: SubspaceId,
+{
+    area: Area<MCL, MCC, MPL, UserPublicKey>,
+    user: UserPublicKey,
+    signature: UserSignature,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey, UserSignature>
+    Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>
+where
+    UserPublicKey: SubspaceId,
+{
+    pub fn new(
+        area: Area<MCL, MCC, MPL, UserPublicKey>,
+        user: UserPublicKey,
+        signature: UserSignature,
+    ) -> Self {
+        Self {
+            area,
+            user,
+            signature,
+        }
+    }
+
+    /// The granted area of this delegation.
+    pub fn area(&self) -> &Area<MCL, MCC, MPL, UserPublicKey> {
+        &self.area
+    }
+
+    /// The user delegated to.
+    pub fn user(&self) -> &UserPublicKey {
+        &self.user
+    }
+
+    /// The signature of the user who created this delegation.
+    pub fn signature(&self) -> &UserSignature {
+        &self.signature
+    }
+}
 
 /// A mode granting read or write access to some [`Area`].
 #[derive(Clone)]
@@ -139,7 +175,7 @@ where
 
         let mut new_delegations = self.delegations.clone();
 
-        new_delegations.push((new_area, new_user, signature));
+        new_delegations.push(Delegation::new(new_area, new_user, signature));
 
         Ok(Self {
             access_mode: self.access_mode.clone(),
@@ -154,11 +190,14 @@ where
         &mut self,
         delegation: Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>,
     ) -> Result<(), InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
-        let (new_area, new_user, new_sig) = delegation;
+        let new_area = delegation.area();
+        let new_user = delegation.user();
+        let new_sig = delegation.signature();
 
         if !self.granted_area().includes_area(&new_area) {
             return Err(InvalidDelegationError::AreaNotIncluded((
-                new_area, new_user,
+                new_area.clone(),
+                new_user.clone(),
             )));
         }
 
@@ -170,11 +209,12 @@ where
 
         if !is_authentic {
             return Err(InvalidDelegationError::InvalidSignature((
-                new_user, new_sig,
+                new_user.clone(),
+                new_sig.clone(),
             )));
         }
 
-        self.delegations.push((new_area, new_user, new_sig));
+        self.delegations.push(delegation);
 
         Ok(())
     }
@@ -195,7 +235,8 @@ where
         }
 
         // We can unwrap here because we know delegations isn't empty.
-        let (_, receiver, _) = self.delegations.last().unwrap();
+        let last_delegation = self.delegations.last().unwrap();
+        let receiver = last_delegation.user();
 
         receiver
     }
@@ -216,9 +257,9 @@ where
         }
 
         // We can unwrap here because we know delegations isn't empty.
-        let (area, _, _) = self.delegations.last().unwrap();
+        let last_delegation = self.delegations.last().unwrap();
 
-        area.clone()
+        last_delegation.area().clone()
     }
 
     /// A bytestring to be signed for a new [`Delegation`].
@@ -251,7 +292,9 @@ where
         }
 
         // We can unwrap here because we know that self.delegations is not empty.
-        let (prev_area, _, prev_signature) = self.delegations.last().unwrap();
+        let last_delegation = self.delegations.last().unwrap();
+        let prev_area = last_delegation.area();
+        let prev_signature = last_delegation.signature();
 
         new_area.relative_encode(prev_area, &mut consumer).await;
         prev_signature.encode(&mut consumer).await;
