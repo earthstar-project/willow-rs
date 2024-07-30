@@ -180,6 +180,8 @@ where
     }
 
     /// The kind of access this capability grants.
+    ///
+    /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_mode)
     pub fn access_mode(&self) -> &AccessMode {
         &self.access_mode
     }
