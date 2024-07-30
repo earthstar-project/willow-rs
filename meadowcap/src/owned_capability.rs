@@ -6,7 +6,15 @@ use willow_data_model::{
     parameters::{NamespaceId, SubspaceId},
 };
 
-use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError};
+use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
+
+/// Returned when an attempt to create a new owned capability failed.
+pub enum OwnedCapabilityCreationError<NamespacePublicKey> {
+    /// [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given namespace to `true`.
+    NamespaceIsCommunal(NamespacePublicKey),
+    /// The resulting signature was faulty, probably due to the wrong secret being given.
+    InvalidSignature(SignatureError),
+}
 
 /// A capability that implements [owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 ///
@@ -20,7 +28,7 @@ pub struct OwnedCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature>,
+    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     NamespaceSignature: Encodable,
     UserSignature: Encodable,
@@ -51,7 +59,7 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature>,
+    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     NamespaceSignature: Encodable + Clone,
     UserSignature: Encodable + Clone,
@@ -62,10 +70,16 @@ where
         namespace_secret: NamespaceSecret,
         user_key: UserPublicKey,
         access_mode: AccessMode,
-    ) -> Result<Self, SignatureError>
+    ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>>
     where
         NamespaceSecret: Signer<NamespaceSignature>,
     {
+        if namespace_key.is_communal() {
+            return Err(OwnedCapabilityCreationError::NamespaceIsCommunal(
+                namespace_key.clone(),
+            ));
+        }
+
         let mut consumer = IntoVec::<u8>::new();
 
         let access_byte = match access_mode {
@@ -80,7 +94,9 @@ where
 
         let initial_authorisation = namespace_secret.sign(&message);
 
-        namespace_key.verify(&message, &initial_authorisation)?;
+        namespace_key
+            .verify(&message, &initial_authorisation)
+            .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
 
         Ok(Self {
             access_mode,

@@ -6,7 +6,10 @@ use willow_data_model::{
     parameters::{NamespaceId, SubspaceId},
 };
 
-use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError};
+use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
+
+/// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given namespace to `false`.
+pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
 
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
@@ -19,7 +22,7 @@ pub struct CommunalCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable,
+    NamespacePublicKey: NamespaceId + Encodable + IsCommunal,
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable,
 {
@@ -38,7 +41,7 @@ impl<
         UserSignature,
     > CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId + Encodable,
+    NamespacePublicKey: NamespaceId + Encodable + IsCommunal,
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
@@ -47,13 +50,17 @@ where
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
         access_mode: AccessMode,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, NamespaceIsNotCommunalError<NamespacePublicKey>> {
+        if !namespace_key.is_communal() {
+            return Err(NamespaceIsNotCommunalError(namespace_key.clone()));
+        }
+
+        Ok(Self {
             access_mode,
             namespace_key,
             user_key,
             delegations: Vec::new(),
-        }
+        })
     }
 
     /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
