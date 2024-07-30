@@ -1,20 +1,10 @@
+use signature::{Signer, Verifier};
 use ufotofu::{local_nb::Consumer, sync::consumer::IntoVec};
 use willow_data_model::{
     encoding::{parameters::Encodable, relativity::RelativeEncodable},
     grouping::area::Area,
     parameters::{NamespaceId, SubspaceId},
 };
-
-/// Can be used to sign a bytestring.
-pub trait Signing<PublicKey, Signature> {
-    fn corresponding_public_key(&self) -> PublicKey;
-    fn sign(&self, bytestring: &[u8]) -> Signature;
-}
-
-/// Indicates that this is a verifiable signature.
-pub trait Verifiable<PublicKey> {
-    fn verify(&self, public_key: &PublicKey, bytestring: &[u8]) -> bool;
-}
 
 /// A delegation of access rights to a user for a given area.
 #[derive(Clone)]
@@ -121,8 +111,8 @@ pub struct CommunalCapability<
     UserSignature,
 > where
     NamespacePublicKey: NamespaceId + Encodable,
-    UserPublicKey: SubspaceId + Encodable,
-    UserSignature: Encodable + Verifiable<UserPublicKey>,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
+    UserSignature: Encodable,
 {
     access_mode: AccessMode,
     namespace_key: NamespacePublicKey,
@@ -140,8 +130,8 @@ impl<
     > CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: NamespaceId + Encodable,
-    UserPublicKey: SubspaceId + Encodable,
-    UserSignature: Encodable + Verifiable<UserPublicKey> + Clone,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Clone,
 {
     /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given [`UserPublicKey`].
     pub fn new(
@@ -166,7 +156,7 @@ where
         new_area: Area<MCL, MCC, MPL, UserPublicKey>,
     ) -> Result<Self, FailedDelegationError<MCL, MCC, MPL, UserPublicKey>>
     where
-        UserSecretKey: Signing<UserPublicKey, UserSignature>,
+        UserSecretKey: Signer<UserSignature>,
     {
         let prev_area = self.granted_area();
 
@@ -179,12 +169,12 @@ where
 
         let prev_user = self.receiver();
 
-        if &secret_key.corresponding_public_key() != prev_user {
-            return Err(FailedDelegationError::WrongSecretForUser(new_user));
-        }
-
         let handover = self.handover(&new_area, &new_user).await;
         let signature = secret_key.sign(&handover);
+
+        prev_user
+            .verify(&handover, &signature)
+            .map_err(|_| FailedDelegationError::WrongSecretForUser(new_user.clone()))?;
 
         let mut new_delegations = self.delegations.clone();
 
@@ -218,15 +208,13 @@ where
 
         let prev_receiver = self.receiver();
 
-        let is_authentic = new_sig.verify(prev_receiver, &handover);
-
-        if !is_authentic {
-            return Err(InvalidDelegationError::InvalidSignature {
+        prev_receiver.verify(&handover, new_sig).map_err(|_| {
+            InvalidDelegationError::InvalidSignature {
                 claimed_receiver: new_user.clone(),
                 expected_signatory: prev_receiver.clone(),
                 signature: new_sig.clone(),
-            });
-        }
+            }
+        })?;
 
         self.delegations.push(delegation);
 
