@@ -125,7 +125,7 @@ where
         let prev_area = self.granted_area();
 
         if !prev_area.includes_area(&new_area) {
-            return Err(FailedDelegationError::AreaNotIncluded((new_area, new_user)));
+            return Err(FailedDelegationError::AreaNotIncluded(new_area, new_user));
         }
 
         let prev_user = self.receiver();
