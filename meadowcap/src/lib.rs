@@ -272,7 +272,7 @@ where
         &self,
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
         new_user: &UserPublicKey,
-    ) -> Vec<u8> {
+    ) -> Box<[u8]> {
         let mut consumer = IntoVec::<u8>::new();
 
         if self.delegations.is_empty() {
@@ -293,7 +293,7 @@ where
                 .unwrap();
             new_user.encode(&mut consumer).await.unwrap();
 
-            return consumer.into_vec();
+            return consumer.into_vec().into();
         }
 
         // We can unwrap here because we know that self.delegations is not empty.
@@ -309,6 +309,6 @@ where
         prev_signature.encode(&mut consumer).await.unwrap();
         new_user.encode(&mut consumer).await.unwrap();
 
-        consumer.into_vec()
+        consumer.into_vec().into()
     }
 }
