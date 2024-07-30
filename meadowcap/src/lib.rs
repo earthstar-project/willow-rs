@@ -80,7 +80,10 @@ pub enum FailedDelegationError<
     UserPublicKey: SubspaceId,
 > {
     /// The granted area of the capability we tried to delegate from did not include the given area.
-    AreaNotIncluded(Area<MCL, MCC, MPL, UserPublicKey>, UserPublicKey),
+    AreaNotIncluded {
+        excluded_area: Area<MCL, MCC, MPL, UserPublicKey>,
+        claimed_receiver: UserPublicKey,
+    },
     /// The given secret did not correspond to the receiver of the capability we tried to delegate from.
     WrongSecretForUser(UserPublicKey),
 }
@@ -94,9 +97,16 @@ pub enum InvalidDelegationError<
     UserSignature,
 > {
     /// The delegation's area was not included by the granted area of the capability we tried to add it to.
-    AreaNotIncluded((Area<MCL, MCC, MPL, UserPublicKey>, UserPublicKey)),
-    /// The signature of the delegation was not valid for the recevier of the capability we tried to add the delegation to.
-    InvalidSignature((UserPublicKey, UserSignature)),
+    AreaNotIncluded {
+        excluded_area: Area<MCL, MCC, MPL, UserPublicKey>,
+        claimed_receiver: UserPublicKey,
+    },
+    /// The signature of the delegation was not valid for the receiver of the capability we tried to add the delegation to.
+    InvalidSignature {
+        expected_signatory: UserPublicKey,
+        claimed_receiver: UserPublicKey,
+        signature: UserSignature,
+    },
 }
 
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
@@ -161,7 +171,10 @@ where
         let prev_area = self.granted_area();
 
         if !prev_area.includes_area(&new_area) {
-            return Err(FailedDelegationError::AreaNotIncluded(new_area, new_user));
+            return Err(FailedDelegationError::AreaNotIncluded {
+                excluded_area: new_area,
+                claimed_receiver: new_user,
+            });
         }
 
         let prev_user = self.receiver();
@@ -194,24 +207,25 @@ where
         let new_user = delegation.user();
         let new_sig = delegation.signature();
 
-        if !self.granted_area().includes_area(&new_area) {
-            return Err(InvalidDelegationError::AreaNotIncluded((
-                new_area.clone(),
-                new_user.clone(),
-            )));
+        if !self.granted_area().includes_area(new_area) {
+            return Err(InvalidDelegationError::AreaNotIncluded {
+                excluded_area: new_area.clone(),
+                claimed_receiver: new_user.clone(),
+            });
         }
 
-        let handover = self.handover(&new_area, &new_user).await;
+        let handover = self.handover(new_area, new_user).await;
 
         let prev_receiver = self.receiver();
 
         let is_authentic = new_sig.verify(prev_receiver, &handover);
 
         if !is_authentic {
-            return Err(InvalidDelegationError::InvalidSignature((
-                new_user.clone(),
-                new_sig.clone(),
-            )));
+            return Err(InvalidDelegationError::InvalidSignature {
+                claimed_receiver: new_user.clone(),
+                expected_signatory: prev_receiver.clone(),
+                signature: new_sig.clone(),
+            });
         }
 
         self.delegations.push(delegation);
