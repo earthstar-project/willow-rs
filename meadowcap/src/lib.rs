@@ -44,7 +44,7 @@ pub enum FailedDelegationError<
     UserPublicKey: SubspaceId,
 > {
     /// The granted area of the capability we tried to delegate from did not include the given area.
-    AreaNotIncluded((Area<MCL, MCC, MPL, UserPublicKey>, UserPublicKey)),
+    AreaNotIncluded(Area<MCL, MCC, MPL, UserPublicKey>, UserPublicKey),
     /// The given secret did not correspond to the receiver of the capability we tried to delegate from.
     WrongSecretForUser(UserPublicKey),
 }
