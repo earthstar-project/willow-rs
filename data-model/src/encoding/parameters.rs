@@ -32,3 +32,29 @@ pub trait Decodable {
         Producer: BulkProducer<Item = u8>,
         Self: Sized;
 }
+
+/// A type that can be used to encode `T` to a bytestring *encoded relative to `R`*.
+/// This can be used to create more compact encodings from which `T` can be derived by anyone with `R`.
+pub trait RelativeEncodable<R> {
+    /// A function from the set `Self` to the set of bytestrings *encoded relative to `reference`*.
+    fn relative_encode<Consumer>(
+        &self,
+        reference: &R,
+        consumer: &mut Consumer,
+    ) -> impl Future<Output = Result<(), Consumer::Error>>
+    where
+        Consumer: BulkConsumer<Item = u8>;
+}
+
+/// A type that can be used to decode `T` from a bytestring *encoded relative to `Self`*.
+/// This can be used to decode a compact encoding frow which `T` can be derived by anyone with `R`.
+pub trait RelativeDecodable<R> {
+    /// A function from the set of bytestrings *encoded relative to `Self`* to the set of `T` in relation to `Self`.
+    fn relative_decode<Producer>(
+        reference: &R,
+        producer: &mut Producer,
+    ) -> impl Future<Output = Result<Self, DecodeError<Producer::Error>>>
+    where
+        Producer: BulkProducer<Item = u8>,
+        Self: Sized;
+}

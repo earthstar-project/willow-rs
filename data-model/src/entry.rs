@@ -2,14 +2,9 @@
 use arbitrary::size_hint::and_all;
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 use crate::{
-    encoding::{
-        error::DecodeError,
-        parameters::{Decodable, Encodable},
-        unsigned_int::U64BE,
-    },
+    encoding::{error::DecodeError, unsigned_int::U64BE},
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -116,56 +111,70 @@ where
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
-    for Entry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId + Encodable,
-    S: SubspaceId + Encodable,
-    PD: PayloadDigest + Encodable,
-{
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
+use syncify::syncify;
+use syncify::syncify_replace;
+
+#[syncify(encoding_sync)]
+mod encoding {
+    use super::*;
+
+    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
+    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+    #[syncify_replace(use crate::encoding::parameters_sync::{Decodable, Encodable};)]
+    use crate::encoding::parameters::{Decodable, Encodable};
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
+        for Entry<MCL, MCC, MPL, N, S, PD>
     where
-        C: BulkConsumer<Item = u8>,
+        N: NamespaceId + Encodable,
+        S: SubspaceId + Encodable,
+        PD: PayloadDigest + Encodable,
     {
-        self.namespace_id.encode(consumer).await?;
-        self.subspace_id.encode(consumer).await?;
-        self.path.encode(consumer).await?;
+        async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
+        where
+            C: BulkConsumer<Item = u8>,
+        {
+            self.namespace_id.encode(consumer).await?;
+            self.subspace_id.encode(consumer).await?;
+            self.path.encode(consumer).await?;
 
-        U64BE::from(self.timestamp).encode(consumer).await?;
-        U64BE::from(self.payload_length).encode(consumer).await?;
+            U64BE::from(self.timestamp).encode(consumer).await?;
+            U64BE::from(self.payload_length).encode(consumer).await?;
 
-        self.payload_digest.encode(consumer).await?;
+            self.payload_digest.encode(consumer).await?;
 
-        Ok(())
+            Ok(())
+        }
     }
-}
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
-    for Entry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId + Decodable,
-    S: SubspaceId + Decodable,
-    PD: PayloadDigest + Decodable,
-{
-    async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
+        for Entry<MCL, MCC, MPL, N, S, PD>
     where
-        Prod: BulkProducer<Item = u8>,
+        N: NamespaceId + Decodable,
+        S: SubspaceId + Decodable,
+        PD: PayloadDigest + Decodable,
     {
-        let namespace_id = N::decode(producer).await?;
-        let subspace_id = S::decode(producer).await?;
-        let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
-        let timestamp = U64BE::decode(producer).await?.into();
-        let payload_length = U64BE::decode(producer).await?.into();
-        let payload_digest = PD::decode(producer).await?;
+        async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
+        where
+            Prod: BulkProducer<Item = u8>,
+        {
+            let namespace_id = N::decode(producer).await?;
+            let subspace_id = S::decode(producer).await?;
+            let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
+            let timestamp = U64BE::decode(producer).await?.into();
+            let payload_length = U64BE::decode(producer).await?.into();
+            let payload_digest = PD::decode(producer).await?;
 
-        Ok(Entry {
-            namespace_id,
-            subspace_id,
-            path,
-            timestamp,
-            payload_length,
-            payload_digest,
-        })
+            Ok(Entry {
+                namespace_id,
+                subspace_id,
+                path,
+                timestamp,
+                payload_length,
+                payload_digest,
+            })
+        }
     }
 }
 
