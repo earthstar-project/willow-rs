@@ -1,19 +1,28 @@
-use either::Either;
-use ufotofu::local_nb::BulkProducer;
+use syncify::syncify;
 
-use crate::encoding::error::DecodeError;
+#[syncify(encoding_sync)]
+pub(super) mod encoding {
 
-/// Have `Producer` produce a single byte, or return an error if the final value was produced or the producer experienced an error.
-pub async fn produce_byte<Producer>(
-    producer: &mut Producer,
-) -> Result<u8, DecodeError<Producer::Error>>
-where
-    Producer: BulkProducer<Item = u8>,
-{
-    match producer.produce().await {
-        Ok(Either::Left(item)) => Ok(item),
-        Ok(Either::Right(_)) => Err(DecodeError::InvalidInput),
-        Err(err) => Err(DecodeError::Producer(err)),
+    use crate::encoding::error::DecodeError;
+
+    use either::Either;
+    use syncify::syncify_replace;
+
+    #[syncify_replace(use ufotofu::sync::{ BulkProducer};)]
+    use ufotofu::local_nb::BulkProducer;
+
+    /// Have `Producer` produce a single byte, or return an error if the final value was produced or the producer experienced an error.
+    pub async fn produce_byte<Producer>(
+        producer: &mut Producer,
+    ) -> Result<u8, DecodeError<Producer::Error>>
+    where
+        Producer: BulkProducer<Item = u8>,
+    {
+        match producer.produce().await {
+            Ok(Either::Left(item)) => Ok(item),
+            Ok(Either::Right(_)) => Err(DecodeError::InvalidInput),
+            Err(err) => Err(DecodeError::Producer(err)),
+        }
     }
 }
 

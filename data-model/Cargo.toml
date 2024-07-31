@@ -12,6 +12,7 @@ either = "1.10.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 ufotofu = "0.3.0"
 bytes = "1.6.0"
+syncify = "0.1.0"
 
 [dev-dependencies]
 smol = "2.0.0"
