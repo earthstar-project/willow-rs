@@ -19,6 +19,7 @@ pub enum OwnedCapabilityCreationError<NamespacePublicKey> {
 /// A capability that implements [owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities).
+#[derive(Clone)]
 pub struct OwnedCapability<
     const MCL: usize,
     const MCC: usize,

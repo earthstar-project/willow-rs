@@ -1,12 +1,15 @@
-use signature::{Signer, Verifier};
+use signature::{Error as SignatureError, Signer, Verifier};
+use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
     encoding::parameters_sync::Encodable,
+    entry::Entry,
     grouping::area::Area,
-    parameters::{NamespaceId, SubspaceId},
+    parameters::{NamespaceId, PayloadDigest, SubspaceId},
 };
 
 use crate::{
     communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
+    mc_authorisation_token::McAuthorisationToken,
     owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
     AccessMode, FailedDelegationError, IsCommunal,
 };
@@ -14,6 +17,7 @@ use crate::{
 /// A Meadowcap capability.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
+#[derive(Clone)]
 pub enum McCapability<
     const MCL: usize,
     const MCC: usize,
@@ -147,5 +151,70 @@ where
         };
 
         Ok(delegated)
+    }
+
+    /// Return a new AuthorisationToken without checking if the resulting signature is correct (e.g. because you are going to immediately do that by constructing an [`willow_data_model::AuthorisedEntry`]).
+    pub fn authorisation_token<UserSecret, PD>(
+        &self,
+        entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        secret: UserSecret,
+    ) -> McAuthorisationToken<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+    where
+        UserSecret: Signer<UserSignature>,
+        PD: PayloadDigest + Encodable,
+    {
+        let mut consumer = IntoVec::<u8>::new();
+        entry.encode(&mut consumer).unwrap();
+
+        let signature = secret.sign(&consumer.into_vec());
+
+        McAuthorisationToken {
+            capability: self.clone(),
+            signature,
+        }
+    }
+
+    /// Return a new [`AuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
+    pub fn authorisation_token_checked<UserSecret, PD>(
+        &self,
+        entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        secret: UserSecret,
+    ) -> Result<
+        McAuthorisationToken<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+        SignatureError,
+    >
+    where
+        UserSecret: Signer<UserSignature>,
+        PD: PayloadDigest + Encodable,
+    {
+        let mut consumer = IntoVec::<u8>::new();
+        entry.encode(&mut consumer).unwrap();
+
+        let message = consumer.into_vec();
+
+        let signature = secret.sign(&message);
+
+        self.receiver().verify(&message, &signature)?;
+
+        Ok(McAuthorisationToken {
+            capability: self.clone(),
+            signature,
+        })
     }
 }

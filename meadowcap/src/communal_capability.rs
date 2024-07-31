@@ -14,6 +14,7 @@ pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities).
+#[derive(Clone)]
 pub struct CommunalCapability<
     const MCL: usize,
     const MCC: usize,

@@ -99,5 +99,6 @@ pub enum InvalidDelegationError<
 }
 
 pub mod communal_capability;
-pub mod mccapability;
+pub mod mc_authorisation_token;
+pub mod mc_capability;
 pub mod owned_capability;
