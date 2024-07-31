@@ -1,7 +1,7 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::{local_nb::Consumer, sync::consumer::IntoVec};
+use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{
-    encoding::{parameters::Encodable, relativity::RelativeEncodable},
+    encoding::parameters_sync::{Encodable, RelativeEncodable},
     grouping::area::Area,
     parameters::{NamespaceId, SubspaceId},
 };
@@ -87,8 +87,8 @@ where
             AccessMode::Write => 0x03,
         };
 
-        consumer.consume(access_byte).await.unwrap();
-        user_key.encode(&mut consumer).await.unwrap();
+        consumer.consume(access_byte).unwrap();
+        user_key.encode(&mut consumer).unwrap();
 
         let message = consumer.into_vec();
 
@@ -109,7 +109,7 @@ where
 
     /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
-    pub async fn delegate<UserSecretKey>(
+    pub fn delegate<UserSecretKey>(
         &self,
         secret_key: UserSecretKey,
         new_user: UserPublicKey,
@@ -129,7 +129,7 @@ where
 
         let prev_user = self.receiver();
 
-        let handover = self.handover(&new_area, &new_user).await;
+        let handover = self.handover(&new_area, &new_user);
         let signature = secret_key.sign(&handover);
 
         prev_user
@@ -150,7 +150,7 @@ where
     }
 
     /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
-    pub async fn append_existing_delegation(
+    pub fn append_existing_delegation(
         &mut self,
         delegation: Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>,
     ) -> Result<(), InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
@@ -165,7 +165,7 @@ where
             });
         }
 
-        let handover = self.handover(new_area, new_user).await;
+        let handover = self.handover(new_area, new_user);
 
         let prev_receiver = self.receiver();
 
@@ -229,7 +229,7 @@ where
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_handover)
     // TODO: Make this sync.
-    async fn handover(
+    fn handover(
         &self,
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
         new_user: &UserPublicKey,
@@ -241,15 +241,9 @@ where
                 Area::<MCL, MCC, MPL, UserPublicKey>::new_subspace(self.user_key.clone());
 
             // We can safely unwrap all these encodings as IntoVec's error is the never type.
-            new_area
-                .relative_encode(&prev_area, &mut consumer)
-                .await
-                .unwrap();
-            self.initial_authorisation
-                .encode(&mut consumer)
-                .await
-                .unwrap();
-            new_user.encode(&mut consumer).await.unwrap();
+            new_area.relative_encode(&prev_area, &mut consumer).unwrap();
+            self.initial_authorisation.encode(&mut consumer).unwrap();
+            new_user.encode(&mut consumer).unwrap();
 
             return consumer.into_vec().into();
         }
@@ -260,12 +254,9 @@ where
         let prev_signature = last_delegation.signature();
 
         // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        new_area
-            .relative_encode(prev_area, &mut consumer)
-            .await
-            .unwrap();
-        prev_signature.encode(&mut consumer).await.unwrap();
-        new_user.encode(&mut consumer).await.unwrap();
+        new_area.relative_encode(prev_area, &mut consumer).unwrap();
+        prev_signature.encode(&mut consumer).unwrap();
+        new_user.encode(&mut consumer).unwrap();
 
         consumer.into_vec().into()
     }

@@ -1,6 +1,6 @@
 use signature::{Signer, Verifier};
 use willow_data_model::{
-    encoding::parameters::Encodable,
+    encoding::parameters_sync::Encodable,
     grouping::area::Area,
     parameters::{NamespaceId, SubspaceId},
 };
@@ -126,7 +126,7 @@ where
 
     /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
     /// Will fail if the area is not included by this capability's granted area, or if the given secret key does not correspond to the capability's receiver.
-    pub async fn delegate<UserSecretKey>(
+    pub fn delegate<UserSecretKey>(
         &self,
         secret_key: UserSecretKey,
         new_user: UserPublicKey,
@@ -137,11 +137,11 @@ where
     {
         let delegated = match self {
             McCapability::Communal(cap) => {
-                let delegated = cap.delegate(secret_key, new_user, new_area).await?;
+                let delegated = cap.delegate(secret_key, new_user, new_area)?;
                 Self::Communal(delegated)
             }
             McCapability::Owned(cap) => {
-                let delegated = cap.delegate(secret_key, new_user, new_area).await?;
+                let delegated = cap.delegate(secret_key, new_user, new_area)?;
                 Self::Owned(delegated)
             }
         };
