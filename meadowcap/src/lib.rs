@@ -6,7 +6,7 @@ pub trait IsCommunal {
 }
 
 /// A delegation of access rights to a user for a given area.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Delegation<
     const MCL: usize,
     const MCC: usize,
@@ -55,10 +55,26 @@ where
 }
 
 /// A mode granting read or write access to some [`Area`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AccessMode {
     Read,
     Write,
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for AccessMode {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let read: bool = Arbitrary::arbitrary(u)?;
+
+        if read {
+            Ok(Self::Read)
+        } else {
+            Ok(Self::Write)
+        }
+    }
 }
 
 /// Returned when an attempt to delegate a capability failed.

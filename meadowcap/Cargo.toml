@@ -3,9 +3,14 @@ name = "meadowcap"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+dev = ["dep:arbitrary"]
+
 [dependencies]
 signature = "2.2.0"
 ufotofu = "0.3.0"
+arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 
 [dependencies.willow-data-model]
 path = "../data-model"

@@ -14,7 +14,7 @@ pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CommunalCapability<
     const MCL: usize,
     const MCC: usize,
@@ -68,34 +68,38 @@ where
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
-        secret_key: UserSecretKey,
-        new_user: UserPublicKey,
-        new_area: Area<MCL, MCC, MPL, UserPublicKey>,
+        secret_key: &UserSecretKey,
+        new_user: &UserPublicKey,
+        new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
     ) -> Result<Self, FailedDelegationError<MCL, MCC, MPL, UserPublicKey>>
     where
         UserSecretKey: Signer<UserSignature>,
     {
         let prev_area = self.granted_area();
 
-        if !prev_area.includes_area(&new_area) {
+        if !prev_area.includes_area(new_area) {
             return Err(FailedDelegationError::AreaNotIncluded {
-                excluded_area: new_area,
-                claimed_receiver: new_user,
+                excluded_area: new_area.clone(),
+                claimed_receiver: new_user.clone(),
             });
         }
 
         let prev_user = self.receiver();
 
-        let handover = self.handover(&new_area, &new_user);
+        let handover = self.handover(new_area, new_user);
         let signature = secret_key.sign(&handover);
 
         prev_user
             .verify(&handover, &signature)
-            .map_err(|_| FailedDelegationError::WrongSecretForUser(new_user.clone()))?;
+            .map_err(|_| FailedDelegationError::WrongSecretForUser(self.receiver().clone()))?;
 
         let mut new_delegations = self.delegations.clone();
 
-        new_delegations.push(Delegation::new(new_area, new_user, signature));
+        new_delegations.push(Delegation::new(
+            new_area.clone(),
+            new_user.clone(),
+            signature,
+        ));
 
         Ok(Self {
             access_mode: self.access_mode.clone(),
@@ -221,5 +225,36 @@ where
         new_user.encode(&mut consumer).unwrap();
 
         consumer.into_vec().into()
+    }
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::{Arbitrary, Error as ArbitraryError};
+
+#[cfg(feature = "dev")]
+impl<
+        'a,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        UserPublicKey,
+        UserSignature,
+    > Arbitrary<'a>
+    for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey: NamespaceId + Encodable + IsCommunal + Arbitrary<'a>,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
+    UserSignature: Encodable + Clone,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
+
+        match Self::new(namespace_key, user_key, access_mode) {
+            Ok(cap) => Ok(cap),
+            Err(_) => Err(ArbitraryError::IncorrectFormat),
+        }
     }
 }

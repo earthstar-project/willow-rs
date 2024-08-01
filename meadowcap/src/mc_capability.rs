@@ -17,7 +17,7 @@ use crate::{
 /// A Meadowcap capability.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum McCapability<
     const MCL: usize,
     const MCC: usize,
@@ -90,8 +90,7 @@ where
     where
         NamespaceSecret: Signer<NamespaceSignature>,
     {
-        let cap =
-            OwnedCapability::new(namespace_key, namespace_secret, user_key, access_mode).await?;
+        let cap = OwnedCapability::new(namespace_key, namespace_secret, user_key, access_mode)?;
 
         Ok(Self::Owned(cap))
     }
@@ -132,9 +131,9 @@ where
     /// Will fail if the area is not included by this capability's granted area, or if the given secret key does not correspond to the capability's receiver.
     pub fn delegate<UserSecretKey>(
         &self,
-        secret_key: UserSecretKey,
-        new_user: UserPublicKey,
-        new_area: Area<MCL, MCC, MPL, UserPublicKey>,
+        secret_key: &UserSecretKey,
+        new_user: &UserPublicKey,
+        new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
     ) -> Result<Self, FailedDelegationError<MCL, MCC, MPL, UserPublicKey>>
     where
         UserSecretKey: Signer<UserSignature>,
@@ -142,10 +141,12 @@ where
         let delegated = match self {
             McCapability::Communal(cap) => {
                 let delegated = cap.delegate(secret_key, new_user, new_area)?;
+
                 Self::Communal(delegated)
             }
             McCapability::Owned(cap) => {
                 let delegated = cap.delegate(secret_key, new_user, new_area)?;
+
                 Self::Owned(delegated)
             }
         };
@@ -216,5 +217,65 @@ where
             capability: self.clone(),
             signature,
         })
+    }
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
+#[cfg(feature = "dev")]
+impl<
+        'a,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Arbitrary<'a>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
+    UserSignature: Encodable + Clone,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_communal: bool = Arbitrary::arbitrary(u)?;
+
+        if is_communal {
+            let cap: CommunalCapability<
+                MCL,
+                MCC,
+                MPL,
+                NamespacePublicKey,
+                UserPublicKey,
+                UserSignature,
+            > = Arbitrary::arbitrary(u)?;
+
+            return Ok(Self::Communal(cap));
+        }
+
+        let cap: OwnedCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        > = Arbitrary::arbitrary(u)?;
+
+        Ok(Self::Owned(cap))
     }
 }

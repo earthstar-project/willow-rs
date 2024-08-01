@@ -19,7 +19,7 @@ pub enum OwnedCapabilityCreationError<NamespacePublicKey> {
 /// A capability that implements [owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OwnedCapability<
     const MCL: usize,
     const MCC: usize,
@@ -30,8 +30,8 @@ pub struct OwnedCapability<
     UserSignature,
 > where
     NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     NamespaceSignature: Encodable,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable,
 {
     access_mode: AccessMode,
@@ -61,12 +61,12 @@ impl<
     >
 where
     NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     NamespaceSignature: Encodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
     /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given [`UserPublicKey`].
-    pub async fn new<NamespaceSecret>(
+    pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: NamespaceSecret,
         user_key: UserPublicKey,
@@ -112,34 +112,38 @@ where
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
-        secret_key: UserSecretKey,
-        new_user: UserPublicKey,
-        new_area: Area<MCL, MCC, MPL, UserPublicKey>,
+        secret_key: &UserSecretKey,
+        new_user: &UserPublicKey,
+        new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
     ) -> Result<Self, FailedDelegationError<MCL, MCC, MPL, UserPublicKey>>
     where
         UserSecretKey: Signer<UserSignature>,
     {
         let prev_area = self.granted_area();
 
-        if !prev_area.includes_area(&new_area) {
+        if !prev_area.includes_area(new_area) {
             return Err(FailedDelegationError::AreaNotIncluded {
-                excluded_area: new_area,
-                claimed_receiver: new_user,
+                excluded_area: new_area.clone(),
+                claimed_receiver: new_user.clone(),
             });
         }
 
         let prev_user = self.receiver();
 
-        let handover = self.handover(&new_area, &new_user);
+        let handover = self.handover(new_area, new_user);
         let signature = secret_key.sign(&handover);
 
         prev_user
             .verify(&handover, &signature)
-            .map_err(|_| FailedDelegationError::WrongSecretForUser(new_user.clone()))?;
+            .map_err(|_| FailedDelegationError::WrongSecretForUser(self.receiver().clone()))?;
 
         let mut new_delegations = self.delegations.clone();
 
-        new_delegations.push(Delegation::new(new_area, new_user, signature));
+        new_delegations.push(Delegation::new(
+            new_area.clone(),
+            new_user.clone(),
+            signature,
+        ));
 
         Ok(Self {
             access_mode: self.access_mode.clone(),
@@ -229,7 +233,6 @@ where
     /// A bytestring to be signed for a new [`Delegation`].
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_handover)
-    // TODO: Make this sync.
     fn handover(
         &self,
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
@@ -238,8 +241,7 @@ where
         let mut consumer = IntoVec::<u8>::new();
 
         if self.delegations.is_empty() {
-            let prev_area =
-                Area::<MCL, MCC, MPL, UserPublicKey>::new_subspace(self.user_key.clone());
+            let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
 
             // We can safely unwrap all these encodings as IntoVec's error is the never type.
             new_area.relative_encode(&prev_area, &mut consumer).unwrap();
@@ -260,5 +262,69 @@ where
         new_user.encode(&mut consumer).unwrap();
 
         consumer.into_vec().into()
+    }
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::{Arbitrary, Error as ArbitraryError};
+
+#[cfg(feature = "dev")]
+impl<
+        'a,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Arbitrary<'a>
+    for OwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
+    UserSignature: Encodable + Clone,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
+
+        let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
+
+        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
+
+        let mut consumer = IntoVec::<u8>::new();
+
+        let access_byte = match access_mode {
+            AccessMode::Read => 0x02,
+            AccessMode::Write => 0x03,
+        };
+
+        consumer.consume(access_byte).unwrap();
+        user_key.encode(&mut consumer).unwrap();
+
+        let message = consumer.into_vec();
+
+        namespace_key
+            .verify(&message, &initial_authorisation)
+            .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+        Ok(Self {
+            access_mode,
+            initial_authorisation,
+            namespace_key,
+            user_key,
+            delegations: Vec::new(),
+        })
     }
 }
