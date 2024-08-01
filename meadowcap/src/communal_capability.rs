@@ -14,7 +14,7 @@ pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommunalCapability<
     const MCL: usize,
     const MCC: usize,
@@ -183,6 +183,11 @@ where
         let last_delegation = self.delegations.last().unwrap();
 
         last_delegation.area().clone()
+    }
+
+    /// Return a slice of all [`Delegation`]s made to this capability.
+    pub fn delegations(&self) -> &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>] {
+        &self.delegations
     }
 
     /// A bytestring to be signed for a new [`Delegation`].

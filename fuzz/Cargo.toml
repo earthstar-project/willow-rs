@@ -330,3 +330,10 @@ path = "fuzz_targets/mc_capability_delegation.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mc_capability_append_delegation"
+path = "fuzz_targets/mc_capability_append_delegation.rs"
+test = false
+doc = false
+bench = false

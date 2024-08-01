@@ -6,7 +6,7 @@ pub trait IsCommunal {
 }
 
 /// A delegation of access rights to a user for a given area.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delegation<
     const MCL: usize,
     const MCC: usize,
@@ -54,15 +54,35 @@ where
     }
 }
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey, UserSignature>
+    Arbitrary<'a> for Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>
+where
+    UserSignature: Arbitrary<'a>,
+    UserPublicKey: SubspaceId + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let area: Area<MCL, MCC, MPL, UserPublicKey> = Arbitrary::arbitrary(u)?;
+        let user: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let signature: UserSignature = Arbitrary::arbitrary(u)?;
+
+        Ok(Self {
+            area,
+            signature,
+            user,
+        })
+    }
+}
+
 /// A mode granting read or write access to some [`Area`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AccessMode {
     Read,
     Write,
 }
-
-#[cfg(feature = "dev")]
-use arbitrary::Arbitrary;
 
 #[cfg(feature = "dev")]
 impl<'a> Arbitrary<'a> for AccessMode {
@@ -78,6 +98,7 @@ impl<'a> Arbitrary<'a> for AccessMode {
 }
 
 /// Returned when an attempt to delegate a capability failed.
+#[derive(Debug)]
 pub enum FailedDelegationError<
     const MCL: usize,
     const MCC: usize,

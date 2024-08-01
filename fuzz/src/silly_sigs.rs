@@ -10,6 +10,12 @@ use willow_data_model::{
 #[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord)]
 pub struct SillyPublicKey(u8);
 
+impl SillyPublicKey {
+    pub fn corresponding_secret_key(&self) -> SillySecret {
+        SillySecret(self.0)
+    }
+}
+
 /// A silly, trivial, insecure secret key for fuzz testing.
 /// The corresponding [`SillyPublicKey`] is the identity of the secret.
 #[derive(PartialEq, Eq, Debug, Arbitrary)]

@@ -11,13 +11,13 @@ use crate::{
     communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
     mc_authorisation_token::McAuthorisationToken,
     owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
-    AccessMode, FailedDelegationError, IsCommunal,
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
 };
 
 /// A Meadowcap capability.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum McCapability<
     const MCL: usize,
     const MCC: usize,
@@ -127,6 +127,14 @@ where
         }
     }
 
+    /// Return a slice of all [`Delegation`]s made to this capability.
+    pub fn delegations(&self) -> &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>] {
+        match self {
+            McCapability::Communal(cap) => cap.delegations(),
+            McCapability::Owned(cap) => cap.delegations(),
+        }
+    }
+
     /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
     /// Will fail if the area is not included by this capability's granted area, or if the given secret key does not correspond to the capability's receiver.
     pub fn delegate<UserSecretKey>(
@@ -152,6 +160,17 @@ where
         };
 
         Ok(delegated)
+    }
+
+    /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
+    pub fn append_existing_delegation(
+        &mut self,
+        delegation: Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>,
+    ) -> Result<(), InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
+        match self {
+            McCapability::Communal(cap) => cap.append_existing_delegation(delegation),
+            McCapability::Owned(cap) => cap.append_existing_delegation(delegation),
+        }
     }
 
     /// Return a new AuthorisationToken without checking if the resulting signature is correct (e.g. because you are going to immediately do that by constructing an [`willow_data_model::AuthorisedEntry`]).
