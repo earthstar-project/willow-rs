@@ -9,8 +9,7 @@ use ufotofu::{
 
 use willow_data_model::encoding::{
     error::DecodeError,
-    parameters::{Decodable, Encodable},
-    relativity::{RelativeDecodable, RelativeEncodable},
+    parameters::{Decodable, Encodable, RelativeDecodable, RelativeEncodable},
 };
 
 pub async fn encoding_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)

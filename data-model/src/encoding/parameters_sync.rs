@@ -1,7 +1,5 @@
-use std::future::Future;
-
 use crate::encoding::error::DecodeError;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+use ufotofu::sync::{BulkConsumer, BulkProducer};
 
 /// A type that can be encoded to a bytestring, ensuring that any value of `Self` maps to exactly one bytestring.
 ///
@@ -10,10 +8,7 @@ pub trait Encodable {
     /// A function from the set `Self` to the set of bytestrings.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#encode_s)
-    fn encode<Consumer>(
-        &self,
-        consumer: &mut Consumer,
-    ) -> impl Future<Output = Result<(), Consumer::Error>>
+    fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>;
 }
@@ -25,9 +20,7 @@ pub trait Decodable {
     /// A function from the set of bytestrings to the set of `T`.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#decode_s)
-    fn decode<Producer>(
-        producer: &mut Producer,
-    ) -> impl Future<Output = Result<Self, DecodeError<Producer::Error>>>
+    fn decode<Producer>(producer: &mut Producer) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized;
@@ -41,7 +34,7 @@ pub trait RelativeEncodable<R> {
         &self,
         reference: &R,
         consumer: &mut Consumer,
-    ) -> impl Future<Output = Result<(), Consumer::Error>>
+    ) -> Result<(), Consumer::Error>
     where
         Consumer: BulkConsumer<Item = u8>;
 }
@@ -53,7 +46,7 @@ pub trait RelativeDecodable<R> {
     fn relative_decode<Producer>(
         reference: &R,
         producer: &mut Producer,
-    ) -> impl Future<Output = Result<Self, DecodeError<Producer::Error>>>
+    ) -> Result<Self, DecodeError<Producer::Error>>
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized;

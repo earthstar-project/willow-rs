@@ -1,7 +1,5 @@
-use core::mem::size_of;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-
-use crate::encoding::error::DecodeError;
+use syncify::syncify;
+use syncify::syncify_replace;
 
 /// Return the least natural number such that 256^`n` is greater than or equal to `n`.
 ///
@@ -26,44 +24,58 @@ pub const fn max_power(max_size: usize) -> u8 {
     }
 }
 
-/// Encode a `usize` to a `n`-width unsigned integer, where `n` is the least number of bytes needed to represent `max_size`.
-pub async fn encode_max_power<C>(
-    value: usize,
-    max_size: usize,
-    consumer: &mut C,
-) -> Result<(), C::Error>
-where
-    C: BulkConsumer<Item = u8>,
-{
-    if value > max_size {
-        panic!("Can't encode a value larger than its maximum possible value!")
+#[syncify(encoding_sync)]
+pub(super) mod encoding {
+    use super::*;
+
+    use core::mem::size_of;
+
+    use crate::encoding::error::DecodeError;
+
+    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
+    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+    /// Encode a `usize` to a `n`-width unsigned integer, where `n` is the least number of bytes needed to represent `max_size`.
+    pub async fn encode_max_power<C>(
+        value: usize,
+        max_size: usize,
+        consumer: &mut C,
+    ) -> Result<(), C::Error>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        if value > max_size {
+            panic!("Can't encode a value larger than its maximum possible value!")
+        }
+
+        let power = max_power(max_size);
+        let value_encoded_raw: [u8; size_of::<u64>()] = value.to_be_bytes();
+
+        consumer
+            .bulk_consume_full_slice(&value_encoded_raw[size_of::<u64>() - (power as usize)..])
+            .await
+            .map_err(|f| f.reason)?;
+
+        Ok(())
     }
 
-    let power = max_power(max_size);
-    let value_encoded_raw: [u8; size_of::<u64>()] = value.to_be_bytes();
+    /// Decode a `u64` from `n`-width bytestring, where `n` is the least number of bytes needed to represent `max_size`.
+    pub async fn decode_max_power<P>(
+        max_size: usize,
+        producer: &mut P,
+    ) -> Result<u64, DecodeError<P::Error>>
+    where
+        P: BulkProducer<Item = u8>,
+    {
+        let power = max_power(max_size);
+        let mut slice = [0u8; size_of::<u64>()];
 
-    consumer
-        .bulk_consume_full_slice(&value_encoded_raw[size_of::<u64>() - (power as usize)..])
-        .await
-        .map_err(|f| f.reason)?;
+        producer
+            .bulk_overwrite_full_slice(&mut slice[size_of::<u64>() - (power as usize)..])
+            .await?;
 
-    Ok(())
+        Ok(u64::from_be_bytes(slice))
+    }
 }
 
-/// Decode a `u64` from `n`-width bytestring, where `n` is the least number of bytes needed to represent `max_size`.
-pub async fn decode_max_power<P>(
-    max_size: usize,
-    producer: &mut P,
-) -> Result<u64, DecodeError<P::Error>>
-where
-    P: BulkProducer<Item = u8>,
-{
-    let power = max_power(max_size);
-    let mut slice = [0u8; size_of::<u64>()];
-
-    producer
-        .bulk_overwrite_full_slice(&mut slice[size_of::<u64>() - (power as usize)..])
-        .await?;
-
-    Ok(u64::from_be_bytes(slice))
-}
+pub use encoding::{encode_max_power, decode_max_power};

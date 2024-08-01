@@ -1,13 +1,5 @@
 #[cfg(feature = "dev")]
 use arbitrary::{size_hint::and_all, Arbitrary, Error as ArbitraryError, Unstructured};
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-
-use crate::encoding::{
-    error::DecodeError,
-    max_power::{decode_max_power, encode_max_power},
-    parameters::{Decodable, Encodable},
-    shared_buffers::ScratchSpacePathDecoding,
-};
 
 // This struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`, `fuzz/path3.rs` by comparing against a non-optimised reference implementation.
 // Further, the `successor` and `greater_but_not_prefixed` methods of that reference implementation are tested in `fuzz/path_successor.rs` and friends, and `fuzz/path_successor_of_prefix.rs` and friends.
@@ -788,62 +780,81 @@ impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONE
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
-    where
-        C: BulkConsumer<Item = u8>,
-    {
-        encode_max_power(self.get_component_count(), MCC, consumer).await?;
+use syncify::syncify;
+use syncify::syncify_replace;
 
-        for component in self.components() {
-            encode_max_power(component.len(), MCL, consumer).await?;
+#[syncify(encoding_sync)]
+mod encoding {
+    use super::*;
 
-            consumer
-                .bulk_consume_full_slice(component.as_ref())
-                .await
-                .map_err(|f| f.reason)?;
+    use crate::encoding::{error::DecodeError, shared_buffers::ScratchSpacePathDecoding};
+
+    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
+    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+    #[syncify_replace(use crate::encoding::parameters_sync::{Decodable, Encodable};)]
+    use crate::encoding::parameters::{Decodable, Encodable};
+
+    #[syncify_replace(use crate::encoding::max_power_sync::{decode_max_power, encode_max_power};)]
+    use crate::encoding::max_power::{decode_max_power, encode_max_power};
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {
+        async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+        where
+            C: BulkConsumer<Item = u8>,
+        {
+            encode_max_power(self.get_component_count(), MCC, consumer).await?;
+
+            for component in self.components() {
+                encode_max_power(component.len(), MCL, consumer).await?;
+
+                consumer
+                    .bulk_consume_full_slice(component.as_ref())
+                    .await
+                    .map_err(|f| f.reason)?;
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
-}
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for Path<MCL, MCC, MPL> {
-    async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
-    where
-        P: BulkProducer<Item = u8>,
-    {
-        let component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
-        if component_count > MCC {
-            return Err(DecodeError::InvalidInput);
-        }
-
-        let mut buf = ScratchSpacePathDecoding::<MCC, MPL>::new();
-
-        let mut accumulated_component_length: usize = 0; // Always holds the acc length of all components we copied so far.
-        for i in 0..component_count {
-            let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
-            if component_len > MCL {
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for Path<MCL, MCC, MPL> {
+        async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+        where
+            P: BulkProducer<Item = u8>,
+        {
+            let component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
+            if component_count > MCC {
                 return Err(DecodeError::InvalidInput);
             }
 
-            accumulated_component_length += component_len;
-            if accumulated_component_length > MPL {
-                return Err(DecodeError::InvalidInput);
+            let mut buf = ScratchSpacePathDecoding::<MCC, MPL>::new();
+
+            let mut accumulated_component_length: usize = 0; // Always holds the acc length of all components we copied so far.
+            for i in 0..component_count {
+                let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
+                if component_len > MCL {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                accumulated_component_length += component_len;
+                if accumulated_component_length > MPL {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                buf.set_component_accumulated_length(accumulated_component_length, i);
+
+                // Decode the component itself into the scratch buffer.
+                producer
+                    .bulk_overwrite_full_slice_uninit(unsafe {
+                        // Safe because we called set_component_Accumulated_length for all j <= i
+                        buf.path_data_as_mut(i)
+                    })
+                    .await?;
             }
 
-            buf.set_component_accumulated_length(accumulated_component_length, i);
-
-            // Decode the component itself into the scratch buffer.
-            producer
-                .bulk_overwrite_full_slice_uninit(unsafe {
-                    // Safe because we called set_component_Accumulated_length for all j <= i
-                    buf.path_data_as_mut(i)
-                })
-                .await?;
+            Ok(unsafe { buf.to_path(component_count) })
         }
-
-        Ok(unsafe { buf.to_path(component_count) })
     }
 }
 
