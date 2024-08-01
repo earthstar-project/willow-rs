@@ -338,6 +338,7 @@ checksum = "4958ec1997b05011d5c786bf4093cd48578bd9be2737350ab38659694083ddde"
 name = "meadowcap"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "signature",
  "ufotofu",
  "willow-data-model",
@@ -573,6 +574,8 @@ dependencies = [
  "arbitrary",
  "earthstar",
  "libfuzzer-sys",
+ "meadowcap",
+ "signature",
  "smol",
  "ufotofu",
  "willow-data-model",
