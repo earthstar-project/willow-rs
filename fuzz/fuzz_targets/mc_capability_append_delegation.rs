@@ -33,16 +33,20 @@ fuzz_target!(|data: (
 
     let granted_area_includes_delegation = mut_cap.granted_area().includes_area(delegation.area());
 
-    let actual_receiver_secret = mc_cap.receiver().corresponding_secret_key();
+    let actual_receiver_secret = mut_cap.receiver().corresponding_secret_key();
+
+    let cap_before_delegation = mut_cap.clone();
 
     match mut_cap.append_existing_delegation(delegation) {
         Ok(_) => {
-            println!("yay");
             assert!(granted_area_includes_delegation);
 
             // Because there is only one user who can delegate a given capability, we know what it should look like given the same new_area and new_user.
-            let expected_cap =
-                mc_cap.delegate(&actual_receiver_secret, &delegation_user, &claimed_area);
+            let expected_cap = cap_before_delegation.delegate(
+                &actual_receiver_secret,
+                &delegation_user,
+                &claimed_area,
+            );
 
             match expected_cap {
                 Ok(cap) => {
@@ -71,19 +75,13 @@ fuzz_target!(|data: (
 
                 // Because there is only one user who can delegate a given capability, we know what it should look like given the same new_area and new_user.
                 let expected_cap =
-                    mc_cap.delegate(&actual_receiver_secret, &delegation_user, &claimed_area);
+                    mut_cap.delegate(&actual_receiver_secret, &delegation_user, &claimed_area);
 
                 match expected_cap {
-                    Ok(cap) => match cap.delegations().last() {
-                        Some(valid_delegation) => {
-                            assert!(valid_delegation.signature() != &delegation_sig)
-                        }
-                        None => {
-                            unreachable!(
-                                "We just made a delegation, this really should not happen!"
-                            )
-                        }
-                    },
+                    Ok(cap) => {
+                        let valid_delegation = cap.delegations().last().unwrap();
+                        assert!(valid_delegation.signature() != &delegation_sig);
+                    }
                     Err(_) => panic!("The expected cap should have been fine..."),
                 }
             }

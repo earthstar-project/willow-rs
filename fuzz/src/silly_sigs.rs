@@ -35,23 +35,23 @@ pub struct SillyKeypair(pub SillyPublicKey, pub SillySecret);
 /// A silly, trivial, insecure signature for fuzz testing.
 /// It's the public key followed by the message itself.
 #[derive(PartialEq, Eq, Debug, Arbitrary, Clone)]
-pub struct SillySig(SillyPublicKey, Box<[u8]>);
+pub struct SillySig(u8);
 
 impl Signer<SillySig> for SillySecret {
     fn try_sign(&self, msg: &[u8]) -> Result<SillySig, signature::Error> {
-        Ok(SillySig(SillyPublicKey(self.0), Box::from(msg)))
+        let first_msg_byte = msg.first().unwrap_or(&0x00);
+
+        Ok(SillySig(self.0 ^ first_msg_byte))
     }
 }
 
 impl Verifier<SillySig> for SillyPublicKey {
     fn verify(&self, msg: &[u8], signature: &SillySig) -> Result<(), SignatureError> {
-        if &signature.0 != self {
-            return Err(SignatureError::new());
-        }
+        let first_msg_byte = msg.first().unwrap_or(&0x00);
 
-        let sig_msg = signature.1.as_ref();
+        let expected_sig = self.0 ^ first_msg_byte;
 
-        if msg != sig_msg {
+        if signature.0 != expected_sig {
             return Err(SignatureError::new());
         }
 
@@ -93,11 +93,7 @@ impl Encodable for SillySig {
     where
         Consumer: ufotofu::sync::BulkConsumer<Item = u8>,
     {
-        self.0.encode(consumer)?;
-
-        consumer
-            .bulk_consume_full_slice(self.1.as_ref())
-            .map_err(|err| err.reason)?;
+        consumer.consume(self.0)?;
 
         Ok(())
     }
