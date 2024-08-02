@@ -5,11 +5,12 @@ use willow_data_model::{
     parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
 };
 
-use crate::{mc_capability::McCapability, IsCommunal};
+use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
 
 /// To be used as an AuthorisationToken for Willow.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken)
+#[derive(Debug, Clone)]
 pub struct McAuthorisationToken<
     const MCL: usize,
     const MCC: usize,
@@ -75,6 +76,15 @@ where
             PD,
         >,
     ) -> bool {
+        match self.capability.access_mode() {
+            AccessMode::Read => return false,
+            AccessMode::Write => {}
+        }
+
+        if !self.capability.granted_area().includes_entry(entry) {
+            return false;
+        }
+
         let mut consumer = IntoVec::<u8>::new();
         entry.encode(&mut consumer).unwrap();
 
@@ -88,5 +98,55 @@ where
         }
 
         true
+    }
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
+#[cfg(feature = "dev")]
+impl<
+        'a,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Arbitrary<'a>
+    for McAuthorisationToken<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
+    UserSignature: Encodable + Clone + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let capability: McCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        > = Arbitrary::arbitrary(u)?;
+
+        let signature: UserSignature = Arbitrary::arbitrary(u)?;
+
+        Ok(Self {
+            capability,
+            signature,
+        })
     }
 }

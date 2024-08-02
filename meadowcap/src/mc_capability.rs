@@ -1,3 +1,4 @@
+use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
@@ -13,6 +14,31 @@ use crate::{
     owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
 };
+
+pub struct NotAWriteCapabilityError<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    NamespacePublicKey,
+    NamespaceSignature,
+    UserPublicKey,
+    UserSignature,
+>(
+    McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >,
+)
+where
+    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + Clone,
+    UserSignature: Encodable + Clone;
 
 /// A Meadowcap capability.
 ///
@@ -178,27 +204,43 @@ where
         &self,
         entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
         secret: UserSecret,
-    ) -> McAuthorisationToken<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
+    ) -> Result<
+        McAuthorisationToken<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+        NotAWriteCapabilityError<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
     >
     where
         UserSecret: Signer<UserSignature>,
         PD: PayloadDigest + Encodable,
     {
-        let mut consumer = IntoVec::<u8>::new();
-        entry.encode(&mut consumer).unwrap();
+        match self.access_mode() {
+            AccessMode::Read => Err(NotAWriteCapabilityError(self.clone())),
+            AccessMode::Write => {
+                let mut consumer = IntoVec::<u8>::new();
+                entry.encode(&mut consumer).unwrap();
 
-        let signature = secret.sign(&consumer.into_vec());
+                let signature = secret.sign(&consumer.into_vec());
 
-        McAuthorisationToken {
-            capability: self.clone(),
-            signature,
+                Ok(McAuthorisationToken {
+                    capability: self.clone(),
+                    signature,
+                })
+            }
         }
     }
 
@@ -217,25 +259,43 @@ where
             UserPublicKey,
             UserSignature,
         >,
-        SignatureError,
+        Either<
+            NotAWriteCapabilityError<
+                MCL,
+                MCC,
+                MPL,
+                NamespacePublicKey,
+                NamespaceSignature,
+                UserPublicKey,
+                UserSignature,
+            >,
+            SignatureError,
+        >,
     >
     where
         UserSecret: Signer<UserSignature>,
         PD: PayloadDigest + Encodable,
     {
-        let mut consumer = IntoVec::<u8>::new();
-        entry.encode(&mut consumer).unwrap();
+        match self.access_mode() {
+            AccessMode::Read => Err(Either::Left(NotAWriteCapabilityError(self.clone()))),
+            AccessMode::Write => {
+                let mut consumer = IntoVec::<u8>::new();
+                entry.encode(&mut consumer).unwrap();
 
-        let message = consumer.into_vec();
+                let message = consumer.into_vec();
 
-        let signature = secret.sign(&message);
+                let signature = secret.sign(&message);
 
-        self.receiver().verify(&message, &signature)?;
+                self.receiver()
+                    .verify(&message, &signature)
+                    .map_err(|err| Either::Right(err))?;
 
-        Ok(McAuthorisationToken {
-            capability: self.clone(),
-            signature,
-        })
+                Ok(McAuthorisationToken {
+                    capability: self.clone(),
+                    signature,
+                })
+            }
+        }
     }
 }
 

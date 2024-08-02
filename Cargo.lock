@@ -339,6 +339,7 @@ name = "meadowcap"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "either",
  "signature",
  "ufotofu",
  "willow-data-model",

@@ -11,6 +11,7 @@ dev = ["dep:arbitrary"]
 signature = "2.2.0"
 ufotofu = "0.3.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
+either = "1.13.0"
 
 [dependencies.willow-data-model]
 path = "../data-model"

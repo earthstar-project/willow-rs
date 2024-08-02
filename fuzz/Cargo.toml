@@ -337,3 +337,10 @@ path = "fuzz_targets/mc_capability_append_delegation.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mc_is_authorised_write"
+path = "fuzz_targets/mc_is_authorised_write.rs"
+test = false
+doc = false
+bench = false
