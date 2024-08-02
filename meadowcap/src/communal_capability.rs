@@ -190,10 +190,14 @@ where
         &self.delegations
     }
 
+    /// Return the public key of the very first user this capability was issued to.
+    pub fn progenitor(&self) -> &UserPublicKey {
+        &self.user_key
+    }
+
     /// A bytestring to be signed for a new [`Delegation`].
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_handover)
-
     fn handover(
         &self,
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,

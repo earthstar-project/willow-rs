@@ -1,7 +1,7 @@
 use syncify::syncify;
 
 #[syncify(encoding_sync)]
-pub(super) mod encoding {
+pub mod encoding {
 
     use crate::encoding::error::DecodeError;
 

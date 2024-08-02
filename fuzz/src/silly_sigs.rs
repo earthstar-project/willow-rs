@@ -77,24 +77,67 @@ impl IsCommunal for SillyPublicKey {
     }
 }
 
-impl Encodable for SillyPublicKey {
-    fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-    where
-        Consumer: ufotofu::sync::BulkConsumer<Item = u8>,
-    {
-        consumer.consume(self.0)?;
+use syncify::{syncify, syncify_replace};
 
-        Ok(())
+#[syncify(encoding_sync)]
+pub mod encoding {
+    use super::*;
+
+    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
+    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+
+    use willow_data_model::encoding::error::DecodeError;
+    #[syncify_replace(use willow_data_model::encoding::parameters_sync::{Encodable, Decodable};)]
+    use willow_data_model::encoding::parameters::{Decodable, Encodable};
+
+    #[syncify_replace(use willow_data_model::encoding::bytes::encoding_sync::produce_byte;)]
+    use willow_data_model::encoding::bytes::encoding::produce_byte;
+
+    impl Encodable for SillyPublicKey {
+        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
+        where
+            Consumer: BulkConsumer<Item = u8>,
+        {
+            consumer.consume(self.0).await?;
+
+            Ok(())
+        }
     }
-}
 
-impl Encodable for SillySig {
-    fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-    where
-        Consumer: ufotofu::sync::BulkConsumer<Item = u8>,
-    {
-        consumer.consume(self.0)?;
+    impl Decodable for SillyPublicKey {
+        async fn decode<Producer>(
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+        {
+            let num = produce_byte(producer).await?;
 
-        Ok(())
+            Ok(SillyPublicKey(num))
+        }
+    }
+
+    impl Encodable for SillySig {
+        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
+        where
+            Consumer: BulkConsumer<Item = u8>,
+        {
+            consumer.consume(self.0).await?;
+
+            Ok(())
+        }
+    }
+
+    impl Decodable for SillySig {
+        async fn decode<Producer>(
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+        {
+            let num = produce_byte(producer).await?;
+
+            Ok(SillySig(num))
+        }
     }
 }

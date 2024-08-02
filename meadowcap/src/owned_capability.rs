@@ -108,6 +108,39 @@ where
         })
     }
 
+    /// Instantiate an [`OwnedCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
+    pub fn from_existing(
+        namespace_key: NamespacePublicKey,
+        user_key: UserPublicKey,
+        initial_authorisation: NamespaceSignature,
+        access_mode: AccessMode,
+    ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>> {
+        let mut consumer = IntoVec::<u8>::new();
+
+        let access_mode_byte = match access_mode {
+            AccessMode::Read => 0x02,
+            AccessMode::Write => 0x03,
+        };
+
+        // We can safely unwrap as IntoVec's error type is ! (never).
+        consumer.consume(access_mode_byte).unwrap();
+        user_key.encode(&mut consumer).unwrap();
+
+        let message = consumer.into_vec();
+
+        namespace_key
+            .verify(&message, &initial_authorisation)
+            .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
+
+        Ok(Self {
+            access_mode,
+            namespace_key,
+            user_key,
+            initial_authorisation,
+            delegations: Vec::new(),
+        })
+    }
+
     /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
@@ -233,6 +266,16 @@ where
     /// Return a slice of all [`Delegation`]s made to this capability.
     pub fn delegations(&self) -> &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>] {
         &self.delegations
+    }
+
+    /// Return the public key of the very first user this capability was issued to.
+    pub fn progenitor(&self) -> &UserPublicKey {
+        &self.user_key
+    }
+
+    /// Return the original signature authorising this namespace capability.
+    pub fn initial_authorisation(&self) -> &NamespaceSignature {
+        &self.initial_authorisation
     }
 
     /// A bytestring to be signed for a new [`Delegation`].

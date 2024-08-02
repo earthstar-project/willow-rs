@@ -10,7 +10,6 @@ pub mod unsigned_int;
 pub mod max_power;
 pub mod max_power_sync {
     use super::max_power;
-
     pub use max_power::encoding_sync::*;
     pub use max_power::max_power;
 }

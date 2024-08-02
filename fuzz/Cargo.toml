@@ -16,6 +16,7 @@ smol = "2.0.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 signature = "2.2.0"
+syncify = "0.1.0"
 
 
 [dependencies.willow-data-model]
@@ -341,6 +342,20 @@ bench = false
 [[bin]]
 name = "mc_is_authorised_write"
 path = "fuzz_targets/mc_is_authorised_write.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mc_capability_rel_area_encoding"
+path = "fuzz_targets/mc_capability_rel_area_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mc_capability_rel_area_encoding_random"
+path = "fuzz_targets/mc_capability_rel_area_encoding_random.rs"
 test = false
 doc = false
 bench = false

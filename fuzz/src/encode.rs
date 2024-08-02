@@ -79,7 +79,7 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     C: BulkConsumer<Item = u8>,
 {
     //println!("item {:?}", subject);
-    // println!("ref {:?}", reference);
+    //println!("ref {:?}", reference);
 
     if let Err(_err) = subject.relative_encode(&reference, consumer).await {
         return;

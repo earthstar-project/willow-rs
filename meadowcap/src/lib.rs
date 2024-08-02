@@ -115,6 +115,7 @@ pub enum FailedDelegationError<
 }
 
 /// Returned when an existing delegation was found to be invalid.
+#[derive(Debug)]
 pub enum InvalidDelegationError<
     const MCL: usize,
     const MCC: usize,
