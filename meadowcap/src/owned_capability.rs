@@ -2,8 +2,9 @@ use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{
     encoding::parameters_sync::{Encodable, RelativeEncodable},
-    grouping::area::Area,
+    grouping::area::{Area, AreaSubspace},
     parameters::{NamespaceId, SubspaceId},
+    path::Path,
 };
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
@@ -185,6 +186,25 @@ where
             user_key: self.user_key.clone(),
             delegations: new_delegations,
         })
+    }
+
+    /// Return whether this capability needs a complementing [`McSubspaceCapability`] ((definition))[https://willowprotocol.org/specs/pai/index.html#subspace_capability] to in order to be fully authorised by the Willow General Sync Protocol.
+    pub fn needs_subspace_cap(&self) -> bool {
+        if self.access_mode == AccessMode::Write {
+            return false;
+        }
+
+        let granted_area = self.granted_area();
+
+        if granted_area.subspace() != &AreaSubspace::Any {
+            return false;
+        }
+
+        if granted_area.path() == &Path::new_empty() {
+            return false;
+        }
+
+        true
     }
 
     /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.

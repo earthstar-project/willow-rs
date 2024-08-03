@@ -296,7 +296,7 @@ where
 
                 self.receiver()
                     .verify(&message, &signature)
-                    .map_err(|err| Either::Right(err))?;
+                    .map_err(Either::Right)?;
 
                 Ok(McAuthorisationToken {
                     capability: self.clone(),
@@ -373,12 +373,12 @@ pub(super) mod encoding {
             let mut header: u8 = 0;
 
             match self {
-                McCapability::Communal(cap) => {
+                McCapability::Communal(_) => {
                     if self.access_mode() == &AccessMode::Write {
                         header |= 0b0100_0000;
                     }
                 }
-                McCapability::Owned(cap) => {
+                McCapability::Owned(_) => {
                     if self.access_mode() == &AccessMode::Read {
                         header |= 0b1000_0000;
                     } else {

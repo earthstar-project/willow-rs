@@ -359,3 +359,31 @@ path = "fuzz_targets/mc_capability_rel_area_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mc_subspace_capability_delegation"
+path = "fuzz_targets/mc_subspace_capability_delegation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mc_subspace_capability_append_delegation"
+path = "fuzz_targets/mc_subspace_capability_append_delegation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mc_subspace_capability_encoding"
+path = "fuzz_targets/mc_subspace_capability_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mc_subspace_capability_encoding_random"
+path = "fuzz_targets/mc_subspace_capability_encoding_random.rs"
+test = false
+doc = false
+bench = false

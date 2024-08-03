@@ -1,10 +1,7 @@
 use arbitrary::Arbitrary;
 use meadowcap::IsCommunal;
 use signature::{Error as SignatureError, Signer, Verifier};
-use willow_data_model::{
-    encoding::parameters_sync::Encodable,
-    parameters::{NamespaceId, SubspaceId},
-};
+use willow_data_model::parameters::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
 #[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord)]
