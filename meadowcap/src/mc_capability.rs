@@ -1,3 +1,5 @@
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
 use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::consumer::IntoVec;
@@ -44,6 +46,7 @@ where
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub enum McCapability<
     const MCL: usize,
     const MCC: usize,
@@ -532,65 +535,5 @@ pub(super) mod encoding {
 
             Ok(base_cap)
         }
-    }
-}
-
-#[cfg(feature = "dev")]
-use arbitrary::Arbitrary;
-
-#[cfg(feature = "dev")]
-impl<
-        'a,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    > Arbitrary<'a>
-    for McCapability<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    >
-where
-    NamespacePublicKey:
-        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
-    UserSignature: Encodable + Clone,
-{
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let is_communal: bool = Arbitrary::arbitrary(u)?;
-
-        if is_communal {
-            let cap: CommunalCapability<
-                MCL,
-                MCC,
-                MPL,
-                NamespacePublicKey,
-                UserPublicKey,
-                UserSignature,
-            > = Arbitrary::arbitrary(u)?;
-
-            return Ok(Self::Communal(cap));
-        }
-
-        let cap: OwnedCapability<
-            MCL,
-            MCC,
-            MPL,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        > = Arbitrary::arbitrary(u)?;
-
-        Ok(Self::Owned(cap))
     }
 }
