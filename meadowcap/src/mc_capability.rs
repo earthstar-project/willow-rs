@@ -517,6 +517,11 @@ pub(super) mod encoding {
                 (header & 0b0011_1111) as u64
             };
 
+            if header & 0b0011_1100 == 0b0011_1100 && delegations_to_decode < 60 {
+                // The delegation count should have been encoded directly in the header.
+                return Err(DecodeError::InvalidInput);
+            }
+
             let mut prev_area = out.clone();
 
             for _ in 0..delegations_to_decode {
