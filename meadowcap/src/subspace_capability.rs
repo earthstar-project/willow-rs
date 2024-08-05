@@ -159,8 +159,8 @@ where
     }
 
     /// Return a slice of all [`Delegation`]s made to this capability.
-    pub fn delegations(&self) -> &[(UserPublicKey, UserSignature)] {
-        &self.delegations
+    pub fn delegations(&self) -> impl Iterator<Item = &(UserPublicKey, UserSignature)> {
+        self.delegations.iter()
     }
 
     /// A bytestring to be signed for a new subspace capability delegation.
