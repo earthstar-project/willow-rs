@@ -40,13 +40,15 @@ where
 
 pub async fn encoding_random<T>(data: &[u8])
 where
-    T: Encodable + Decodable,
+    T: Encodable + Decodable + std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
     match T::decode(&mut producer).await {
         Ok(item) => {
-            // It decoded to a valid path! Gasp!
+            // println!("item {:?}", item);
+
+            // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
@@ -55,6 +57,47 @@ where
             let encoded = consumer.as_ref().as_slice();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
+        }
+        Err(err) => match err {
+            // There was an error.
+            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+            DecodeError::InvalidInput => {
+                // GOOD.
+            }
+            DecodeError::U64DoesNotFitUsize => {
+                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+            }
+        },
+    };
+}
+
+pub async fn encoding_random_less_strict<T>(data: &[u8])
+where
+    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
+{
+    let mut producer = FromSlice::new(data);
+
+    match T::decode(&mut producer).await {
+        Ok(item) => {
+            // println!("item {:?}", item);
+
+            // It decoded to a valid item! Gasp!
+            // Can we turn it back into the same encoding?
+            let mut consumer = IntoVec::<u8>::new();
+
+            item.encode(&mut consumer).await.unwrap();
+
+            let mut producer_2 = FromSlice::new(consumer.as_ref());
+
+            match T::decode(&mut producer_2).await {
+                Ok(decoded_again) => {
+                    assert_eq!(item, decoded_again);
+                }
+                Err(err) => {
+                    println!("{:?}", err);
+                    panic!("Could not decode again, argh!")
+                }
+            }
         }
         Err(err) => match err {
             // There was an error.
@@ -79,7 +122,7 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     C: BulkConsumer<Item = u8>,
 {
     //println!("item {:?}", subject);
-    // println!("ref {:?}", reference);
+    //println!("ref {:?}", reference);
 
     if let Err(_err) = subject.relative_encode(&reference, consumer).await {
         return;

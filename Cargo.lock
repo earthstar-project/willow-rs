@@ -335,6 +335,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4958ec1997b05011d5c786bf4093cd48578bd9be2737350ab38659694083ddde"
 
 [[package]]
+name = "meadowcap"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "either",
+ "signature",
+ "syncify",
+ "ufotofu",
+ "willow-data-model",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -417,6 +429,12 @@ checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 
 [[package]]
 name = "slab"
@@ -558,7 +576,10 @@ dependencies = [
  "arbitrary",
  "earthstar",
  "libfuzzer-sys",
+ "meadowcap",
+ "signature",
  "smol",
+ "syncify",
  "ufotofu",
  "willow-data-model",
 ]

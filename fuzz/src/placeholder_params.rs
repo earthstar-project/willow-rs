@@ -1,9 +1,11 @@
 use arbitrary::Arbitrary;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+use ufotofu::sync::{BulkConsumer as BulkConsumerSync, BulkProducer as BulkProducerSync};
 use willow_data_model::{
     encoding::{
         error::DecodeError,
         parameters::{Decodable, Encodable},
+        parameters_sync::{Decodable as DecodableSync, Encodable as EncodableSync},
     },
     parameters::PayloadDigest,
 };
@@ -33,6 +35,32 @@ impl Decodable for FakePayloadDigest {
         let mut slice = [0u8; 32];
 
         producer.bulk_overwrite_full_slice(&mut slice).await?;
+
+        Ok(FakePayloadDigest(slice))
+    }
+}
+
+impl EncodableSync for FakePayloadDigest {
+    fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: BulkConsumerSync<Item = u8>,
+    {
+        consumer
+            .bulk_consume_full_slice(&self.0)
+            .map_err(|f| f.reason)?;
+
+        Ok(())
+    }
+}
+
+impl DecodableSync for FakePayloadDigest {
+    fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    where
+        P: BulkProducerSync<Item = u8>,
+    {
+        let mut slice = [0u8; 32];
+
+        producer.bulk_overwrite_full_slice(&mut slice)?;
 
         Ok(FakePayloadDigest(slice))
     }

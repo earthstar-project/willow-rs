@@ -109,7 +109,7 @@ use syncify::syncify;
 use syncify::syncify_replace;
 
 #[syncify(encoding_sync)]
-pub(super) mod encoding {
+pub mod encoding {
     use super::*;
 
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
