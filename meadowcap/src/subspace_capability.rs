@@ -307,9 +307,21 @@ pub(super) mod encoding {
             } else if header == 0b1111_1101 {
                 decode_compact_width_be(CompactWidth::Two, producer).await?
             } else if header == 0b1111_1100 {
-                decode_compact_width_be(CompactWidth::One, producer).await?
+                let count = decode_compact_width_be(CompactWidth::One, producer).await?;
+
+                if count < 60 {
+                    Err(DecodeError::InvalidInput)?;
+                }
+
+                count
             } else {
-                header as u64
+                let count = header as u64;
+
+                if count > 60 {
+                    Err(DecodeError::InvalidInput)?;
+                }
+
+                count
             };
 
             for _ in 0..delegations_to_decode {
