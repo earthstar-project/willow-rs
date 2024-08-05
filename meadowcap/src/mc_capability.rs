@@ -136,10 +136,21 @@ where
     }
 
     /// Return a slice of all [`Delegation`]s made to this capability.
-    pub fn delegations(&self) -> &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>] {
+    pub fn delegations(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>
+    {
         match self {
-            McCapability::Communal(cap) => cap.delegations(),
-            McCapability::Owned(cap) => cap.delegations(),
+            McCapability::Communal(cap) => cap.delegations_(),
+            McCapability::Owned(cap) => cap.delegations_(),
+        }
+    }
+
+    /// Return the number of delegations present on this capability.
+    pub fn delegations_len(&self) -> usize {
+        match self {
+            McCapability::Communal(cap) => cap.delegations_len(),
+            McCapability::Owned(cap) => cap.delegations_len(),
         }
     }
 
@@ -354,7 +365,7 @@ pub(super) mod encoding {
                 }
             }
 
-            let delegations_count = self.delegations().len();
+            let delegations_count = self.delegations_len();
 
             if delegations_count >= 4294967296 {
                 header |= 0b0011_1111;
@@ -386,12 +397,11 @@ pub(super) mod encoding {
 
             let mut prev_area = out.clone();
 
-            for delegation in self.delegations().iter() {
+            for delegation in self.delegations() {
                 delegation
                     .area
                     .relative_encode(&prev_area, consumer)
                     .await?;
-                // TODO: Not clone the delegation every time, learn how to make this lifetime live long enough properly from Aljoscha
                 prev_area = delegation.area.clone();
                 Encodable::encode(&delegation.user, consumer).await?;
                 Encodable::encode(&delegation.signature, consumer).await?;
@@ -488,7 +498,6 @@ pub(super) mod encoding {
                 let area =
                     Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode(&prev_area, producer)
                         .await?;
-                // Yeah this doesn't feel good.
                 prev_area = area.clone();
                 let user = UserPublicKey::decode(producer).await?;
                 let signature = UserSignature::decode(producer).await?;

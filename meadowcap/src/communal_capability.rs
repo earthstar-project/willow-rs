@@ -185,9 +185,24 @@ where
         last_delegation.area().clone()
     }
 
+    /// Return a slice of all [`Delegation`]s made to this capability, with a concrete return type.
+    pub(crate) fn delegations_(
+        &self,
+    ) -> core::slice::Iter<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
+        self.delegations.iter()
+    }
+
     /// Return a slice of all [`Delegation`]s made to this capability.
-    pub fn delegations(&self) -> &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>] {
-        &self.delegations
+    pub fn delegations(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>
+    {
+        self.delegations_()
+    }
+
+    /// Return the number of delegations present on this capability.
+    pub fn delegations_len(&self) -> usize {
+        self.delegations.len()
     }
 
     /// Return the public key of the very first user this capability was issued to.
