@@ -17,30 +17,9 @@ use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
 };
 
-pub struct NotAWriteCapabilityError<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    NamespacePublicKey,
-    NamespaceSignature,
-    UserPublicKey,
-    UserSignature,
->(
-    McCapability<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    >,
-)
-where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone;
+/// Returned when an operation which should have been called on a write capability was called on a read capability.
+#[derive(Debug)]
+pub struct NotAWriteCapabilityError;
 
 /// A Meadowcap capability.
 ///
@@ -229,22 +208,14 @@ where
             UserPublicKey,
             UserSignature,
         >,
-        NotAWriteCapabilityError<
-            MCL,
-            MCC,
-            MPL,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        >,
+        NotAWriteCapabilityError,
     >
     where
         UserSecret: Signer<UserSignature>,
         PD: PayloadDigest + Encodable,
     {
         match self.access_mode() {
-            AccessMode::Read => Err(NotAWriteCapabilityError(self.clone())),
+            AccessMode::Read => Err(NotAWriteCapabilityError),
             AccessMode::Write => {
                 let mut consumer = IntoVec::<u8>::new();
                 entry.encode(&mut consumer).unwrap();
@@ -274,25 +245,14 @@ where
             UserPublicKey,
             UserSignature,
         >,
-        Either<
-            NotAWriteCapabilityError<
-                MCL,
-                MCC,
-                MPL,
-                NamespacePublicKey,
-                NamespaceSignature,
-                UserPublicKey,
-                UserSignature,
-            >,
-            SignatureError,
-        >,
+        Either<NotAWriteCapabilityError, SignatureError>,
     >
     where
         UserSecret: Signer<UserSignature>,
         PD: PayloadDigest + Encodable,
     {
         match self.access_mode() {
-            AccessMode::Read => Err(Either::Left(NotAWriteCapabilityError(self.clone()))),
+            AccessMode::Read => Err(Either::Left(NotAWriteCapabilityError)),
             AccessMode::Write => {
                 let mut consumer = IntoVec::<u8>::new();
                 entry.encode(&mut consumer).unwrap();
