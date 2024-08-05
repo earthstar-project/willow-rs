@@ -211,7 +211,11 @@ where
     }
 
     /// Return a new AuthorisationToken without checking if the resulting signature is correct (e.g. because you are going to immediately do that by constructing an [`willow_data_model::AuthorisedEntry`]).
-    pub fn authorisation_token<UserSecret, PD>(
+    ///
+    /// ## Safety
+    ///
+    /// This function must be called with this capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver)'s corresponding secret key, or a token with an incorrect signature will be produced.
+    pub unsafe fn authorisation_token_unchecked<UserSecret, PD>(
         &self,
         entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
         secret: UserSecret,
@@ -256,7 +260,7 @@ where
     }
 
     /// Return a new [`AuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
-    pub fn authorisation_token_checked<UserSecret, PD>(
+    pub fn authorisation_token<UserSecret, PD>(
         &self,
         entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
         secret: UserSecret,
