@@ -5,7 +5,7 @@ use willow_data_model::{
         error::DecodeError,
         parameters::{Decodable, Encodable},
     },
-    parameters::NamespaceId,
+    NamespaceId,
 };
 
 use crate::cinn25519::{Cinn25519PublicKey, Shortname};

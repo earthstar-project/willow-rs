@@ -1,14 +1,12 @@
 use arbitrary::Arbitrary;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use ufotofu::sync::{BulkConsumer as BulkConsumerSync, BulkProducer as BulkProducerSync};
-use willow_data_model::{
-    encoding::{
-        error::DecodeError,
-        parameters::{Decodable, Encodable},
-        parameters_sync::{Decodable as DecodableSync, Encodable as EncodableSync},
-    },
-    parameters::PayloadDigest,
+use willow_data_model::encoding::{
+    error::DecodeError,
+    parameters::{Decodable, Encodable},
+    parameters_sync::{Decodable as DecodableSync, Encodable as EncodableSync},
 };
+use willow_data_model::PayloadDigest;
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);

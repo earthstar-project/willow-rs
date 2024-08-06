@@ -3,7 +3,7 @@ use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{
     encoding::parameters_sync::{Encodable, RelativeEncodable},
     grouping::area::Area,
-    parameters::{NamespaceId, SubspaceId},
+    NamespaceId, SubspaceId,
 };
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};

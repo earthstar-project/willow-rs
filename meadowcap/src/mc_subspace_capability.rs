@@ -1,9 +1,8 @@
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::{consumer::IntoVec, Consumer};
-use willow_data_model::{
-    encoding::parameters_sync::Encodable,
-    parameters::{NamespaceId, SubspaceId},
-};
+use willow_data_model::encoding::parameters_sync::Encodable;
+use willow_data_model::NamespaceId;
+use willow_data_model::SubspaceId;
 
 use crate::IsCommunal;
 

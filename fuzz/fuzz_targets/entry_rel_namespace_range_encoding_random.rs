@@ -3,8 +3,8 @@
 use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::fuzz_target;
-use willow_data_model::entry::Entry;
 use willow_data_model::grouping::range_3d::Range3d;
+use willow_data_model::Entry;
 use willow_data_model_fuzz::encode::relative_encoding_random_less_strict;
 use willow_data_model_fuzz::placeholder_params::FakePayloadDigest;
 

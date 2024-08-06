@@ -2,7 +2,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstructured};
-use willow_data_model::path::{Component, InvalidPathError, Path};
+use willow_data_model::{Component, InvalidPathError, Path};
 
 /*
 * A known-good, simple implementation of paths. Used in testing to compare the behaviour of the optimised imlpementation against it.

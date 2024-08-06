@@ -1,4 +1,4 @@
-use willow_data_model::{grouping::area::Area, parameters::SubspaceId};
+use willow_data_model::{grouping::area::Area, SubspaceId};
 
 /// Maps namespace public keys to booleans, determining whether that namespace of a particular [`willow_data_model::NamespaceId`] is [communal](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace) or [owned](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 pub trait IsCommunal {
