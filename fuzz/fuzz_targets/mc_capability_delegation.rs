@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{mc_capability::McCapability, FailedDelegationError};
+use meadowcap::{FailedDelegationError, McCapability};
 use willow_data_model::grouping::area::Area;
 use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySecret, SillySig};
 

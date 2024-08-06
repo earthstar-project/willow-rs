@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::subspace_capability::McSubspaceCapability;
+use meadowcap::McSubspaceCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model_fuzz::encode::encoding_roundtrip;
 use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};

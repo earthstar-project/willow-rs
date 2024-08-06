@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{mc_authorisation_token::McAuthorisationToken, AccessMode};
+use meadowcap::{AccessMode, McAuthorisationToken};
 use signature::Signer;
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::encoding::parameters_sync::Encodable;

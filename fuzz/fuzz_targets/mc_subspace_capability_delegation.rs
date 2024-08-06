@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::subspace_capability::McSubspaceCapability;
+use meadowcap::McSubspaceCapability;
 use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySecret, SillySig};
 
 fuzz_target!(|data: (
