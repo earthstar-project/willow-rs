@@ -4,7 +4,7 @@ use willow_data_model::{
     encoding::parameters_sync::{Encodable, RelativeEncodable},
     grouping::area::{Area, AreaSubspace},
     parameters::{NamespaceId, SubspaceId},
-    path::Path,
+    Path,
 };
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};

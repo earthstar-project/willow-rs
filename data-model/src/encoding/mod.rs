@@ -1,9 +1,14 @@
 pub mod bytes;
 pub mod compact_width;
+/*
+mod error;
+pub use error::*;
+*/
 pub mod error;
 pub mod parameters;
 pub mod parameters_sync;
 pub mod relativity;
+// mod relativity;
 pub(crate) mod shared_buffers;
 pub mod unsigned_int;
 

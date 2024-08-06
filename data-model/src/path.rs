@@ -935,7 +935,7 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
 /// Like core::iter::Chain, but implements ExactSizeIter if both components implement it. Panics if the resulting length overflows.
 ///
 /// Code liberally copy-pasted from the standard library.
-pub struct ExactLengthChain<A, B> {
+struct ExactLengthChain<A, B> {
     a: Option<A>,
     b: Option<B>,
 }

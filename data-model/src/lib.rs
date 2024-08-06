@@ -1,3 +1,5 @@
+//! Allo!
+
 #![feature(
     new_uninit,
     async_fn_traits,
@@ -8,7 +10,10 @@
 )]
 
 pub mod encoding;
-pub mod entry;
+mod entry;
+pub use entry::*;
 pub mod grouping;
 pub mod parameters;
-pub mod path;
+
+mod path;
+pub use path::*;
