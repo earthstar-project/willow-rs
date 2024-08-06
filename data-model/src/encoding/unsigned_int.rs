@@ -76,8 +76,8 @@ mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::parameters_sync::{Decodable, Encodable};)]
-    use crate::encoding::parameters::{Decodable, Encodable};
+    #[syncify_replace(use crate::encoding::sync::{Decodable, Encodable};)]
+    use crate::encoding::{Decodable, Encodable};
 
     impl Encodable for U8BE {
         async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>

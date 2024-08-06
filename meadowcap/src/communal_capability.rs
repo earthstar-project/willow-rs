@@ -1,7 +1,7 @@
 use signature::{Signer, Verifier};
 use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{
-    encoding::parameters_sync::{Encodable, RelativeEncodable},
+    encoding::sync::{Encodable, RelativeEncodable},
     grouping::Area,
     NamespaceId, SubspaceId,
 };
