@@ -4,7 +4,7 @@ use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
-    encoding::parameters_sync::Encodable, grouping::area::Area, Entry, NamespaceId, PayloadDigest,
+    encoding::parameters_sync::Encodable, grouping::Area, Entry, NamespaceId, PayloadDigest,
     SubspaceId,
 };
 

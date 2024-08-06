@@ -30,11 +30,7 @@ pub(super) mod encoding {
             shared_buffers::ScratchSpacePathDecoding,
         },
         entry::Entry,
-        grouping::{
-            area::{Area, AreaSubspace},
-            range::{Range, RangeEnd},
-            range_3d::Range3d,
-        },
+        grouping::{Area, AreaSubspace, Range, Range3d, RangeEnd},
         parameters::{NamespaceId, PayloadDigest, SubspaceId},
         path::Path,
     };

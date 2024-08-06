@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use meadowcap::McCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::grouping::area::Area;
+use willow_data_model::grouping::Area;
 use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
 use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 

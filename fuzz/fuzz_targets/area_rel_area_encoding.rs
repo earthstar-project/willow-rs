@@ -3,7 +3,7 @@
 use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::grouping::area::Area;
+use willow_data_model::grouping::Area;
 use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
 
 fuzz_target!(|data: (

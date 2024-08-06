@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use meadowcap::{FailedDelegationError, McCapability};
-use willow_data_model::grouping::area::Area;
+use willow_data_model::grouping::Area;
 use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySecret, SillySig};
 
 fuzz_target!(|data: (
