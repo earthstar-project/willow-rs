@@ -787,16 +787,16 @@ use syncify::syncify_replace;
 mod encoding {
     use super::*;
 
-    use crate::encoding::{error::DecodeError, shared_buffers::ScratchSpacePathDecoding};
+    use crate::encoding::{shared_buffers::ScratchSpacePathDecoding, DecodeError};
 
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::parameters_sync::{Decodable, Encodable};)]
-    use crate::encoding::parameters::{Decodable, Encodable};
+    #[syncify_replace(use crate::encoding::sync::{Decodable, Encodable};)]
+    use crate::encoding::{Decodable, Encodable};
 
-    #[syncify_replace(use crate::encoding::max_power_sync::{decode_max_power, encode_max_power};)]
-    use crate::encoding::max_power::{decode_max_power, encode_max_power};
+    #[syncify_replace(use crate::encoding::sync::{decode_max_power, encode_max_power};)]
+    use crate::encoding::{decode_max_power, encode_max_power};
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {
         async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -935,7 +935,7 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
 /// Like core::iter::Chain, but implements ExactSizeIter if both components implement it. Panics if the resulting length overflows.
 ///
 /// Code liberally copy-pasted from the standard library.
-pub struct ExactLengthChain<A, B> {
+struct ExactLengthChain<A, B> {
     a: Option<A>,
     b: Option<B>,
 }

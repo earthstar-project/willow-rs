@@ -1,11 +1,11 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::subspace_capability::McSubspaceCapability;
-use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use meadowcap::{McSubspaceCapability, SubspaceDelegation};
+use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
-    (SillyPublicKey, SillySig),
+    SubspaceDelegation<SillyPublicKey, SillySig>,
     McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
     Vec<SillyPublicKey>
 )| {
@@ -22,7 +22,8 @@ fuzz_target!(|data: (
         last_receiver = delegee;
     }
 
-    let (delegation_user, delegation_sig) = delegation.clone();
+    let delegation_user = delegation.user().clone();
+    let delegation_sig = delegation.signature().clone();
 
     let actual_receiver_secret = mut_cap.receiver().corresponding_secret_key();
 
@@ -52,7 +53,7 @@ fuzz_target!(|data: (
             match expected_cap {
                 Ok(cap) => {
                     let valid_delegation = cap.delegations().last().unwrap();
-                    assert!(valid_delegation.1 != delegation_sig);
+                    assert!(valid_delegation.signature() != &delegation_sig);
                 }
                 Err(_) => panic!("The expected cap should have been fine..."),
             }

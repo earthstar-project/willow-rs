@@ -4,9 +4,9 @@ use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::entry::Entry;
-use willow_data_model_fuzz::encode::encoding_roundtrip;
-use willow_data_model_fuzz::placeholder_params::FakePayloadDigest;
+use willow_data_model::Entry;
+use willow_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(|data: (
     Entry<3, 3, 3, EsNamespaceId, IdentityId, FakePayloadDigest>,

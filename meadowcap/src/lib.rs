@@ -1,4 +1,4 @@
-use willow_data_model::{grouping::area::Area, parameters::SubspaceId};
+use willow_data_model::{grouping::Area, SubspaceId};
 
 /// Maps namespace public keys to booleans, determining whether that namespace of a particular [`willow_data_model::NamespaceId`] is [communal](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace) or [owned](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 pub trait IsCommunal {
@@ -136,8 +136,17 @@ pub enum InvalidDelegationError<
     },
 }
 
-pub mod communal_capability;
-pub mod mc_authorisation_token;
-pub mod mc_capability;
-pub mod owned_capability;
-pub mod subspace_capability;
+mod communal_capability;
+pub use communal_capability::*;
+
+mod mc_authorisation_token;
+pub use mc_authorisation_token::*;
+
+mod mc_capability;
+pub use mc_capability::*;
+
+mod owned_capability;
+pub use owned_capability::*;
+
+mod mc_subspace_capability;
+pub use mc_subspace_capability::*;

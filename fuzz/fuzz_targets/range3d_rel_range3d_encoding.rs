@@ -3,8 +3,8 @@
 use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::grouping::range_3d::Range3d;
-use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
+use willow_data_model::grouping::Range3d;
+use willow_fuzz::encode::relative_encoding_roundtrip;
 
 fuzz_target!(|data: (
     Range3d<16, 16, 16, IdentityId>,

@@ -1,13 +1,13 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{mc_authorisation_token::McAuthorisationToken, AccessMode};
+use meadowcap::{AccessMode, McAuthorisationToken};
 use signature::Signer;
 use ufotofu::sync::consumer::IntoVec;
-use willow_data_model::encoding::parameters_sync::Encodable;
-use willow_data_model::entry::Entry;
-use willow_data_model::parameters::IsAuthorisedWrite;
-use willow_data_model_fuzz::{
+use willow_data_model::encoding::sync::Encodable;
+use willow_data_model::Entry;
+use willow_data_model::IsAuthorisedWrite;
+use willow_fuzz::{
     placeholder_params::FakePayloadDigest,
     silly_sigs::{SillyPublicKey, SillySig},
 };

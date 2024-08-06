@@ -8,10 +8,10 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::parameters_sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
-    use crate::encoding::parameters::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
+    #[syncify_replace(use crate::encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
+    use crate::encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
 
-    #[syncify_replace(use crate::encoding::max_power_sync::{decode_max_power, encode_max_power};)]
+    #[syncify_replace(use crate::encoding::sync::{decode_max_power, encode_max_power};)]
     use crate::encoding::max_power::{decode_max_power, encode_max_power};
 
     #[syncify_replace(use crate::encoding::compact_width::encoding_sync::{ decode_compact_width_be, encode_compact_width_be};)]
@@ -30,11 +30,7 @@ pub(super) mod encoding {
             shared_buffers::ScratchSpacePathDecoding,
         },
         entry::Entry,
-        grouping::{
-            area::{Area, AreaSubspace},
-            range::{Range, RangeEnd},
-            range_3d::Range3d,
-        },
+        grouping::{Area, AreaSubspace, Range, Range3d, RangeEnd},
         parameters::{NamespaceId, PayloadDigest, SubspaceId},
         path::Path,
     };

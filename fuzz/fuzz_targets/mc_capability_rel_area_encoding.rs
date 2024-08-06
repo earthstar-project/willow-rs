@@ -1,11 +1,11 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::mc_capability::McCapability;
+use meadowcap::McCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::grouping::area::Area;
-use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
-use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use willow_data_model::grouping::Area;
+use willow_fuzz::encode::relative_encoding_roundtrip;
+use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
     McCapability<3, 3, 3, SillyPublicKey, SillySig, SillyPublicKey, SillySig>,

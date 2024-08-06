@@ -4,10 +4,7 @@ use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
-    encoding::parameters_sync::Encodable,
-    entry::Entry,
-    grouping::area::Area,
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    encoding::sync::Encodable, grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId,
 };
 
 use crate::{
@@ -295,25 +292,20 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use willow_data_model::encoding::parameters_sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
-    use willow_data_model::encoding::parameters::{
-        Decodable, Encodable, RelativeDecodable, RelativeEncodable,
-    };
+    #[syncify_replace(use willow_data_model::encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
+    use willow_data_model::encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
 
     use willow_data_model::encoding::{
-        bytes::is_bitflagged, compact_width::CompactWidth, error::DecodeError,
-        parameters_sync::Encodable as EncodableSync,
+        is_bitflagged, sync::Encodable as EncodableSync, CompactWidth, DecodeError,
     };
 
-    #[syncify_replace(use willow_data_model::encoding::bytes::encoding_sync::produce_byte;)]
-    use willow_data_model::encoding::bytes::encoding::produce_byte;
+    #[syncify_replace(use willow_data_model::encoding::sync::produce_byte;)]
+    use willow_data_model::encoding::produce_byte;
 
     #[syncify_replace(
-        use willow_data_model::encoding::compact_width::encoding_sync::{encode_compact_width_be, decode_compact_width_be};
+        use willow_data_model::encoding::sync::{encode_compact_width_be, decode_compact_width_be};
     )]
-    use willow_data_model::encoding::compact_width::encoding::{
-        decode_compact_width_be, encode_compact_width_be,
-    };
+    use willow_data_model::encoding::{decode_compact_width_be, encode_compact_width_be};
 
     impl<
             const MCL: usize,

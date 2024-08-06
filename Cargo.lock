@@ -570,7 +570,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "willow-data-model-fuzz"
+name = "willow-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",

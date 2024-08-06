@@ -1,11 +1,42 @@
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::{consumer::IntoVec, Consumer};
-use willow_data_model::{
-    encoding::parameters_sync::Encodable,
-    parameters::{NamespaceId, SubspaceId},
-};
+use willow_data_model::encoding::sync::Encodable;
+use willow_data_model::NamespaceId;
+use willow_data_model::SubspaceId;
 
 use crate::IsCommunal;
+
+#[cfg(feature = "dev")]
+use arbitrary::{Arbitrary, Error as ArbitraryError};
+
+/// A delegation of read access for arbitrary SubspaceIds to a user.
+#[derive(Clone, Debug, PartialEq, Eq, Arbitrary)]
+pub struct SubspaceDelegation<UserPublicKey, UserSignature>
+where
+    UserPublicKey: SubspaceId,
+{
+    user: UserPublicKey,
+    signature: UserSignature,
+}
+
+impl<UserPublicKey, UserSignature> SubspaceDelegation<UserPublicKey, UserSignature>
+where
+    UserPublicKey: SubspaceId,
+{
+    pub fn new(user: UserPublicKey, signature: UserSignature) -> Self {
+        Self { user, signature }
+    }
+
+    /// The user delegated to.
+    pub fn user(&self) -> &UserPublicKey {
+        &self.user
+    }
+
+    /// The signature of the user who created this delegation.
+    pub fn signature(&self) -> &UserSignature {
+        &self.signature
+    }
+}
 
 /// A capability that certifies read access to arbitrary [SubspaceIds](https://willowprotocol.org/specs/data-model/index.html#SubspaceId) at some unspecified non-empty [`willow_data_model::Path`].
 ///
@@ -25,7 +56,7 @@ pub struct McSubspaceCapability<
     namespace_key: NamespacePublicKey,
     user_key: UserPublicKey,
     initial_authorisation: NamespaceSignature,
-    delegations: Vec<(UserPublicKey, UserSignature)>,
+    delegations: Vec<SubspaceDelegation<UserPublicKey, UserSignature>>,
 }
 
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
@@ -100,7 +131,7 @@ where
 
         // We can unwrap here because we know delegations isn't empty.
         let last_delegation = self.delegations.last().unwrap();
-        &last_delegation.0
+        last_delegation.user()
     }
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
@@ -129,7 +160,7 @@ where
 
         let mut new_delegations = self.delegations.clone();
 
-        new_delegations.push((new_user.clone(), signature));
+        new_delegations.push(SubspaceDelegation::new(new_user.clone(), signature));
 
         Ok(Self {
             namespace_key: self.namespace_key.clone(),
@@ -142,10 +173,10 @@ where
     /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
     pub fn append_existing_delegation(
         &mut self,
-        delegation: (UserPublicKey, UserSignature),
+        delegation: SubspaceDelegation<UserPublicKey, UserSignature>,
     ) -> Result<(), SignatureError> {
-        let new_user = &delegation.0;
-        let new_sig = &delegation.1;
+        let new_user = &delegation.user();
+        let new_sig = &delegation.signature();
 
         let handover = self.handover(new_user);
 
@@ -159,7 +190,9 @@ where
     }
 
     /// Return a slice of all [`Delegation`]s made to this capability.
-    pub fn delegations(&self) -> impl Iterator<Item = &(UserPublicKey, UserSignature)> {
+    pub fn delegations(
+        &self,
+    ) -> impl Iterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 
@@ -181,7 +214,7 @@ where
         // We can unwrap here because we know that self.delegations is not empty.
         let last_delegation = self.delegations.last().unwrap();
 
-        let prev_signature = &last_delegation.1;
+        let prev_signature = &last_delegation.signature();
         // We can safely unwrap all these encodings as IntoVec's error is the never type.
         prev_signature.encode(&mut consumer).unwrap();
         new_user.encode(&mut consumer).unwrap();
@@ -200,23 +233,20 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use willow_data_model::encoding::parameters_sync::{Encodable, Decodable};)]
-    use willow_data_model::encoding::parameters::{Decodable, Encodable};
+    #[syncify_replace(use willow_data_model::encoding::sync::{Encodable, Decodable};)]
+    use willow_data_model::encoding::{Decodable, Encodable};
 
     use willow_data_model::encoding::{
-        compact_width::CompactWidth, error::DecodeError,
-        parameters_sync::Encodable as EncodableSync,
+        sync::Encodable as EncodableSync, CompactWidth, DecodeError,
     };
 
-    #[syncify_replace(use willow_data_model::encoding::bytes::encoding_sync::produce_byte;)]
-    use willow_data_model::encoding::bytes::encoding::produce_byte;
+    #[syncify_replace(use willow_data_model::encoding::sync::produce_byte;)]
+    use willow_data_model::encoding::produce_byte;
 
     #[syncify_replace(
-      use willow_data_model::encoding::compact_width::encoding_sync::{encode_compact_width_be, decode_compact_width_be};
+      use willow_data_model::encoding::sync::{encode_compact_width_be, decode_compact_width_be};
   )]
-    use willow_data_model::encoding::compact_width::encoding::{
-        decode_compact_width_be, encode_compact_width_be,
-    };
+    use willow_data_model::encoding::{decode_compact_width_be, encode_compact_width_be};
 
     impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
         for McSubspaceCapability<
@@ -263,8 +293,8 @@ pub(super) mod encoding {
             }
 
             for delegation in self.delegations.iter() {
-                Encodable::encode(&delegation.0, consumer).await?;
-                Encodable::encode(&delegation.1, consumer).await?;
+                Encodable::encode(delegation.user(), consumer).await?;
+                Encodable::encode(delegation.signature(), consumer).await?;
             }
 
             Ok(())
@@ -327,9 +357,10 @@ pub(super) mod encoding {
             for _ in 0..delegations_to_decode {
                 let user = UserPublicKey::decode(producer).await?;
                 let signature = UserSignature::decode(producer).await?;
+                let delegation = SubspaceDelegation::new(user, signature);
 
                 base_cap
-                    .append_existing_delegation((user, signature))
+                    .append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::InvalidInput)?;
             }
 
@@ -337,9 +368,6 @@ pub(super) mod encoding {
         }
     }
 }
-
-#[cfg(feature = "dev")]
-use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 #[cfg(feature = "dev")]
 impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Arbitrary<'a>

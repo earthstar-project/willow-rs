@@ -1,8 +1,7 @@
 use signature::Verifier;
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
-    encoding::parameters_sync::Encodable,
-    parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
+    encoding::sync::Encodable, Entry, IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId,
 };
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
@@ -67,14 +66,7 @@ where
 {
     fn is_authorised_write(
         &self,
-        entry: &willow_data_model::entry::Entry<
-            MCL,
-            MCC,
-            MPL,
-            NamespacePublicKey,
-            UserPublicKey,
-            PD,
-        >,
+        entry: &Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
     ) -> bool {
         match self.capability.access_mode() {
             AccessMode::Read => return false,

@@ -1,10 +1,9 @@
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{
-    encoding::parameters_sync::{Encodable, RelativeEncodable},
-    grouping::area::{Area, AreaSubspace},
-    parameters::{NamespaceId, SubspaceId},
-    path::Path,
+    encoding::sync::{Encodable, RelativeEncodable},
+    grouping::{Area, AreaSubspace},
+    NamespaceId, Path, SubspaceId,
 };
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};

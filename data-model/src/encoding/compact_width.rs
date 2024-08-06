@@ -117,8 +117,8 @@ pub mod encoding {
 
     use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 
-    #[syncify_replace(use crate::encoding::parameters_sync::{Decodable, };)]
-    use crate::encoding::parameters::Decodable;
+    #[syncify_replace(use crate::encoding::sync::{Decodable};)]
+    use crate::encoding::Decodable;
 
     /// Encode a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
     pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(

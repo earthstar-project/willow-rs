@@ -1,11 +1,8 @@
 use arbitrary::Arbitrary;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use willow_data_model::{
-    encoding::{
-        error::DecodeError,
-        parameters::{Decodable, Encodable},
-    },
-    parameters::SubspaceId,
+    encoding::{Decodable, DecodeError, Encodable},
+    SubspaceId,
 };
 
 use crate::cinn25519::{Cinn25519PublicKey, Shortname};
