@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model::encoding::U64BE;
-use willow_data_model_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::encode::encoding_roundtrip;
 
 fuzz_target!(|data: (u64, TestConsumer<u8, u16, ()>)| {
     let (n, mut consumer) = data;

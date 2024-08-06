@@ -4,8 +4,8 @@ use earthstar::identity_id::IdentityIdentifier as IdentityId;
 use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::fuzz_target;
 use willow_data_model::Entry;
-use willow_data_model_fuzz::encode::relative_encoding_random_less_strict;
-use willow_data_model_fuzz::placeholder_params::FakePayloadDigest;
+use willow_fuzz::encode::relative_encoding_random_less_strict;
+use willow_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(|data: (
     &[u8],

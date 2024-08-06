@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use willow_data_model::encoding::U64BE;
-use willow_data_model_fuzz::encode::encoding_random;
+use willow_fuzz::encode::encoding_random;
 
 fuzz_target!(|data: &[u8]| {
     smol::block_on(async {

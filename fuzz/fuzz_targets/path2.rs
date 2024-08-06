@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 // use willow_data_model::path::*;
-use willow_data_model_fuzz::path::*;
+use willow_fuzz::path::*;
 
 fuzz_target!(|data: (CreatePath, CreatePath)| {
     let (cp1, cp2) = data;

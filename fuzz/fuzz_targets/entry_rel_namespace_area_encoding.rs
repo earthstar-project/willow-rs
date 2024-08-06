@@ -6,8 +6,8 @@ use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model::grouping::Area;
 use willow_data_model::Entry;
-use willow_data_model_fuzz::encode::relative_encoding_roundtrip;
-use willow_data_model_fuzz::placeholder_params::FakePayloadDigest;
+use willow_fuzz::encode::relative_encoding_roundtrip;
+use willow_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(|data: (
     Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,

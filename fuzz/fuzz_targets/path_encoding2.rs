@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model::Path;
-use willow_data_model_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::encode::encoding_roundtrip;
 
 const MCL: usize = 2;
 const MCC: usize = 3;

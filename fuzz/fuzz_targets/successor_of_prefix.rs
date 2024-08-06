@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 // use willow_data_model::path::*;
-use willow_data_model_fuzz::path::*;
+use willow_fuzz::path::*;
 
 // MCL, MCC, MPL
 fuzz_target!(|data: (PathRc<2, 3, 3>, PathRc<2, 3, 3>)| {

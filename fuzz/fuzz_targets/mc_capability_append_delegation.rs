@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use meadowcap::{Delegation, InvalidDelegationError, McCapability};
-use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
     Delegation<16, 16, 16, SillyPublicKey, SillySig>,

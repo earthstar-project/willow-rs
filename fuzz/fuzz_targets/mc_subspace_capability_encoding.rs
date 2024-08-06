@@ -3,8 +3,8 @@
 use libfuzzer_sys::fuzz_target;
 use meadowcap::McSubspaceCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model_fuzz::encode::encoding_roundtrip;
-use willow_data_model_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use willow_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
     McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
