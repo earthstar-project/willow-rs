@@ -14,7 +14,7 @@ use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
 };
 
-/// Returned when an operation which should have been called on a write capability was called on a read capability.
+/// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
 #[derive(Debug)]
 pub struct NotAWriteCapabilityError;
 

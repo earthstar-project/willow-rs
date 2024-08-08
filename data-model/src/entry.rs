@@ -11,7 +11,7 @@ use crate::{
 
 /// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 - 1 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
-/// [Read more](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.

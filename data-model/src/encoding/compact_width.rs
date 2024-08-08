@@ -137,7 +137,7 @@ pub mod encoding {
         Ok(())
     }
 
-    /// Decode the bytes representing a [`compact-width`]-bytes integer into a `usize`.
+    /// Decode the bytes representing a [`CompactWidth`]-bytes integer into a `usize`.
     pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
         compact_width: CompactWidth,
         producer: &mut Producer,

@@ -2,16 +2,16 @@
 //!
 //! An implementation of [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap), a capability system for permissioning read and write access to the [Willow data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
 //!
-//! Includes implementations of [communal capabilities](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities), [owned capabilities](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities), and a type [unifying the two](https://willowprotocol.org/specs/meadowcap/index.html#proper_capabilities), as well as the generation of [`McAuthorisationTokens`](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken) for use with the Willow data model's [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) parameter.
+//! Includes implementations of [communal capabilities](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities), [owned capabilities](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities), a type [unifying the two](https://willowprotocol.org/specs/meadowcap/index.html#proper_capabilities), as well as the generation of [`McAuthorisationTokens`](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken) for use with the Willow data model's [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) parameter.
 
 use willow_data_model::{grouping::Area, SubspaceId};
 
-/// Maps namespace public keys to booleans, determining whether that namespace of a particular [`willow_data_model::NamespaceId`] is [communal](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace) or [owned](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
+/// Maps [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) public keys to booleans, determining whether that namespace of a particular [`willow_data_model::NamespaceId`] is [communal](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace) or [owned](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 pub trait IsCommunal {
     fn is_communal(&self) -> bool;
 }
 
-/// A delegation of access rights to a user for a given area.
+/// A delegation of access rights to a user for a given [area](https://willowprotocol.org/specs/grouping-entries/index.html#areas).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delegation<
     const MCL: usize,
@@ -103,7 +103,7 @@ impl<'a> Arbitrary<'a> for AccessMode {
     }
 }
 
-/// Returned when an attempt to delegate a capability failed.
+/// Returned when an attempt to delegate a capability to another `UserPublicKey` failed.
 #[derive(Debug)]
 pub enum FailedDelegationError<
     const MCL: usize,
@@ -120,7 +120,7 @@ pub enum FailedDelegationError<
     WrongSecretForUser(UserPublicKey),
 }
 
-/// Returned when an existing delegation was found to be invalid.
+/// Returned when an existing delegation was an invalid successor to an existing delegation chain.
 #[derive(Debug)]
 pub enum InvalidDelegationError<
     const MCL: usize,

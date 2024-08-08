@@ -8,7 +8,7 @@ use willow_data_model::{
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 
-/// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given namespace to `false`.
+/// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given [`namespace`](https://willowprotocol.org/specs/data-model/index.html#namespace) to `false`.
 pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
 
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
