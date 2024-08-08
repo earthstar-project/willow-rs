@@ -28,7 +28,7 @@ pub trait PayloadDigest: Ord + Default + Clone {}
 /// - `N` - The type used for the [`Entry`]'s [`NamespaceId`].
 /// - `S` - The type used for the [`Entry`]'s [`SubspaceId`].
 /// - `PD` - The type used for the [`Entry`]'s [`PayloadDigest`].
-pub trait IsAuthorisedWrite<
+pub trait AuthorisationToken<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
