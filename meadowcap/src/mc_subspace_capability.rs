@@ -141,7 +141,7 @@ where
         &self.namespace_key
     }
 
-    /// Delegate this subspace capability to a new [`UserPublicKey`].
+    /// Delegate this subspace capability to a new `UserPublicKey`.
     /// Will fail if the given secret key does not correspond to the subspace capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
@@ -189,7 +189,7 @@ where
         Ok(())
     }
 
-    /// Return a slice of all [`Delegation`]s made to this capability.
+    /// Return a slice of all [`SubspaceDelegation`]s made to this capability.
     pub fn delegations(
         &self,
     ) -> impl Iterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {

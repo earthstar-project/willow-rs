@@ -65,7 +65,7 @@ where
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
-    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given [`UserPublicKey`].
+    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: NamespaceSecret,
@@ -141,7 +141,7 @@ where
         })
     }
 
-    /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
+    /// Delegate this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
@@ -187,7 +187,7 @@ where
         })
     }
 
-    /// Return whether this capability needs a complementing [`McSubspaceCapability`] ((definition))[https://willowprotocol.org/specs/pai/index.html#subspace_capability] to in order to be fully authorised by the Willow General Sync Protocol.
+    /// Return whether this capability needs a complementing [`crate::McSubspaceCapability`] [(definition)](https://willowprotocol.org/specs/pai/index.html#subspace_capability) to in order to be fully authorised by the Willow General Sync Protocol.
     pub fn needs_subspace_cap(&self) -> bool {
         if self.access_mode == AccessMode::Write {
             return false;

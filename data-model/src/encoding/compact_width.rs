@@ -76,7 +76,7 @@ impl CompactWidth {
         CompactWidth::One
     }
 
-    /// Return the width in bytes of this [`CompactSize`].
+    /// Return the width in bytes of this [`CompactWidth`].
     pub fn width(&self) -> usize {
         match self {
             CompactWidth::One => 1,

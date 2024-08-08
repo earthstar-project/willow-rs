@@ -46,7 +46,7 @@ where
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
-    /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given [`UserPublicKey`].
+    /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`.
     pub fn new(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -64,7 +64,7 @@ where
         })
     }
 
-    /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
+    /// Delegate this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
