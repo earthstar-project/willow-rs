@@ -1,3 +1,9 @@
+//! # Meadowcap
+//!
+//! An implementation of [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap), a capability system for permissioning read and write access to the [Willow data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
+//!
+//! Includes implementations of [communal capabilities](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities), [owned capabilities](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities), and a type [unifying the two](https://willowprotocol.org/specs/meadowcap/index.html#proper_capabilities), as well as the generation of [`McAuthorisationTokens`](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken) for use with the Willow data model's [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) parameter.
+
 use willow_data_model::{grouping::Area, SubspaceId};
 
 /// Maps namespace public keys to booleans, determining whether that namespace of a particular [`willow_data_model::NamespaceId`] is [communal](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace) or [owned](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
