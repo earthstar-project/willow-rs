@@ -5,7 +5,7 @@ use arbitrary::Arbitrary;
 
 use crate::{
     encoding::{DecodeError, U64BE},
-    parameters::{IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId},
+    parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
 
@@ -254,7 +254,7 @@ where
         token: AT,
     ) -> Result<Self, UnauthorisedWriteError>
     where
-        AT: IsAuthorisedWrite<MCL, MCC, MPL, N, S, PD>,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     {
         if token.is_authorised_write(&entry) {
             return Ok(Self(entry, token));

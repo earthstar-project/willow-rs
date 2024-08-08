@@ -1,12 +1,12 @@
 use signature::Verifier;
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
-    encoding::sync::Encodable, Entry, IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId,
+    encoding::sync::Encodable, AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId,
 };
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
 
-/// To be used as an AuthorisationToken for Willow.
+/// To be used as the [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) parameter for the [Willow data model](https://willowprotocol.org/specs/data-model).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken)
 #[derive(Debug, Clone)]
@@ -47,7 +47,7 @@ impl<
         UserPublicKey,
         UserSignature,
         PD,
-    > IsAuthorisedWrite<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>
+    > AuthorisationToken<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>
     for McAuthorisationToken<
         MCL,
         MCC,
