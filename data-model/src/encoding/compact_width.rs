@@ -1,6 +1,8 @@
 use crate::encoding::error::DecodeError;
 
 /// A minimum width of bytes needed to represent a unsigned integer.
+///
+/// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width)
 #[derive(PartialEq, Eq, Debug)]
 pub enum CompactWidth {
     /// The byte-width required to represent numbers up to 256 (i.e. a 8-bit number).

@@ -26,6 +26,7 @@ pub mod encoding {
     }
 }
 
+/// Return whether a bit at the given position is `1` or not.
 pub fn is_bitflagged(byte: u8, position: u8) -> bool {
     let mask = match position {
         0 => 0b1000_0000,
