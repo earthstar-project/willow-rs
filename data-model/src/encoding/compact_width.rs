@@ -18,6 +18,17 @@ pub enum CompactWidth {
 #[derive(Debug)]
 pub(crate) struct NotACompactWidthError();
 
+impl core::fmt::Display for NotACompactWidthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Tried to construct a CompactWidth from a u8 that was not 1, 2, 4, or 8."
+        )
+    }
+}
+
+impl std::error::Error for NotACompactWidthError {}
+
 impl CompactWidth {
     /// Return a new [`CompactWidth`].
     pub(crate) fn new(n: u8) -> Result<CompactWidth, NotACompactWidthError> {

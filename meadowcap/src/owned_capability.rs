@@ -9,11 +9,32 @@ use willow_data_model::{
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 
 /// Returned when an attempt to create a new owned capability failed.
+#[derive(Debug)]
 pub enum OwnedCapabilityCreationError<NamespacePublicKey> {
     /// [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given namespace to `true`.
     NamespaceIsCommunal(NamespacePublicKey),
     /// The resulting signature was faulty, probably due to the wrong secret being given.
     InvalidSignature(SignatureError),
+}
+
+impl<NamespacePublicKey> core::fmt::Display for OwnedCapabilityCreationError<NamespacePublicKey> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OwnedCapabilityCreationError::NamespaceIsCommunal(_) => write!(
+                f,
+                "Tried to construct an owned capability for a communal namespace."
+            ),
+            OwnedCapabilityCreationError::InvalidSignature(_) => write!(
+                f,
+                "Tried to construct an owned capability with an invalid initial authorisation signature."
+            ),
+        }
+    }
+}
+
+impl<NamespacePublicKey: std::fmt::Debug> std::error::Error
+    for OwnedCapabilityCreationError<NamespacePublicKey>
+{
 }
 
 /// A capability that implements [owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
