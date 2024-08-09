@@ -1,7 +1,5 @@
 #[cfg(feature = "dev")]
-use arbitrary::size_hint::and_all;
-#[cfg(feature = "dev")]
-use arbitrary::Arbitrary;
+use arbitrary::{size_hint::and_all, Arbitrary};
 
 use crate::{
     encoding::{DecodeError, U64BE},
