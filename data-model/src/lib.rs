@@ -1,3 +1,4 @@
+#![doc(html_logo_url = "https://willowprotocol.org/named_assets/willow_emblem_standalone.png")]
 //! # Willow Data Model
 //!
 //! This crate provides implementation of the [Willow Data Model](https://willowprotocol.org/specs/data-model/index.html#data_model), including:

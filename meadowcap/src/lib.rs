@@ -1,3 +1,4 @@
+#![doc(html_logo_url = "https://willowprotocol.org/named_assets/meadowcap_emblem_standalone.png")]
 //! # Meadowcap
 //!
 //! An implementation of [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap), a capability system for permissioning read and write access to the [Willow data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
