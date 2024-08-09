@@ -18,6 +18,17 @@ use crate::{
 #[derive(Debug)]
 pub struct NotAWriteCapabilityError;
 
+impl core::fmt::Display for NotAWriteCapabilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Tried to perform an operation on a read capability which is only permitted on write capabilities."
+        )
+    }
+}
+
+impl std::error::Error for NotAWriteCapabilityError {}
+
 /// A Meadowcap capability.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)

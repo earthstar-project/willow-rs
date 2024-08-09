@@ -212,7 +212,19 @@ where
 #[derive(Debug)]
 pub struct UnauthorisedWriteError;
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org) implementing [`AuthorisationToken`] for which [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) returns true.
+impl core::fmt::Display for UnauthorisedWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Tried to authorise the writing of an entry using a token which does not permit it."
+        )
+    }
+}
+
+impl std::error::Error for UnauthorisedWriteError {}
+
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(

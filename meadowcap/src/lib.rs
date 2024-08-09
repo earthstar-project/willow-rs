@@ -136,6 +136,35 @@ pub enum FailedDelegationError<
     WrongSecretForUser(UserPublicKey),
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey: SubspaceId>
+    core::fmt::Display for FailedDelegationError<MCL, MCC, MPL, UserPublicKey>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FailedDelegationError::AreaNotIncluded {
+                excluded_area: _,
+                claimed_receiver: _,
+            } => write!(
+                f,
+                "Tried to delegate access to an area not fully included by the granted area of the capability being delegated from."
+            ),
+            FailedDelegationError::WrongSecretForUser(_) => write!(
+                f,
+                "Provided the wrong secret for the capability's receiver."
+            ),
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        UserPublicKey: SubspaceId + std::fmt::Debug,
+    > std::error::Error for FailedDelegationError<MCL, MCC, MPL, UserPublicKey>
+{
+}
+
 /// Returned when an existing delegation was an invalid successor to an existing delegation chain.
 #[derive(Debug)]
 pub enum InvalidDelegationError<
@@ -156,6 +185,45 @@ pub enum InvalidDelegationError<
         claimed_receiver: UserPublicKey,
         signature: UserSignature,
     },
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        UserPublicKey: SubspaceId,
+        UserSignature,
+    > core::fmt::Display for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InvalidDelegationError::AreaNotIncluded {
+                excluded_area: _,
+                claimed_receiver: _,
+            } => write!(
+                f,
+                "Tried to append a delegation which granted access to an area not fully included by the granted area of the capability."
+            ),
+            InvalidDelegationError::InvalidSignature {
+                expected_signatory: _,
+                claimed_receiver: _,
+                signature: _,
+            } => write!(
+                f,
+                "Tried to append a delegation with an invalid signature for the receiver of the target capability."
+            ),
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        UserPublicKey: SubspaceId + std::fmt::Debug,
+        UserSignature: std::fmt::Debug,
+    > std::error::Error for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
+{
 }
 
 mod communal_capability;
