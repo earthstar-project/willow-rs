@@ -9,7 +9,7 @@ dev = ["dep:arbitrary"]
 
 [dependencies]
 signature = "2.2.0"
-ufotofu = "0.4.1"
+ufotofu = { version = "0.4.2", features = ["std"] }
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 either = "1.13.0"
 syncify = "0.1.0"
