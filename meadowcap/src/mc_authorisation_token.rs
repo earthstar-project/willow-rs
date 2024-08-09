@@ -1,7 +1,7 @@
 use signature::Verifier;
 use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{
-    encoding::sync::Encodable, Entry, IsAuthorisedWrite, NamespaceId, PayloadDigest, SubspaceId,
+    encoding::sync::Encodable, AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId,
 };
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
@@ -47,7 +47,7 @@ impl<
         UserPublicKey,
         UserSignature,
         PD,
-    > IsAuthorisedWrite<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>
+    > AuthorisationToken<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>
     for McAuthorisationToken<
         MCL,
         MCC,
