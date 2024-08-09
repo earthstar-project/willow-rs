@@ -14,7 +14,7 @@ use super::range::Range;
 pub enum AreaSubspace<S: SubspaceId> {
     /// A value that signals that an [`Area`] includes Entries with arbitrary subspace_ids.
     Any,
-    /// A concrete [`SubspaceId`]
+    /// A concrete [`SubspaceId`].
     Id(S),
 }
 
