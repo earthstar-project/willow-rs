@@ -16,13 +16,6 @@ pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
-///
-/// ## Type parameters
-///
-/// - `N` - The type used for [`NamespaceId`].
-/// - `S` - The type used for [`SubspaceId`].
-/// - `P` - The type used for [`Path`]s.
-/// - `PD` - The type used for [`PayloadDigest`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
@@ -224,14 +217,6 @@ pub struct UnauthorisedWriteError;
 /// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) implementing [`IsAuthorisedWrite`] for which [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
-///
-/// ## Type parameters
-///
-/// - `N` - The type used for [`NamespaceId`].
-/// - `S` - The type used for [`SubspaceId`].
-/// - `P` - The type used for [`Path`]s.
-/// - `PD` - The type used for [`PayloadDigest`].
-/// - `AT` - The type used for the [`AuthorisationToken` (willowprotocol.org)](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken).
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
     pub Entry<MCL, MCC, MPL, N, S, PD>,
     pub AT,

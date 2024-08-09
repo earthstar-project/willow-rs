@@ -9,6 +9,20 @@
 //! - Utilities for encoding and decoding, as well as implementations of all of Willow's [encodings](https://willowprotocol.org/specs/encodings/index.html#encodings).
 //!
 //! This crate **does not yet have** anything for Willow's concept of [stores](https://willowprotocol.org/specs/data-model/index.html#store). Stay tuned!
+//!
+//! ## Type parameters
+//!
+//! Willow is a parametrised family of protocols, and so this crate makes heavy use of generic parameters.
+//!
+//! The following generic parameter names are used consistently across this crate:
+//!
+//! - `MCL` - A `usize` representing [`max_component_length`](https://willowprotocol.org/specs/data-model/index.html#max_component_length).
+//! - `MCC` - A `usize` representing [`max_component_count`](https://willowprotocol.org/specs/data-model/index.html#max_component_count).
+//! - `MPL` - A `usize` representing [`max_path_length`](https://willowprotocol.org/specs/data-model/index.html#max_path_length).
+//! - `N` - The type used for [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) (willowprotocol.org), must implement the [`NamespaceId`] trait.
+//! - `S` - The type used for [`SubspaceId`](https://willowprotocol.org/specs/data-model/index.html#SubspaceId) (willowprotocol.org), must implement the [`SubspaceId`] trait.
+//! - `PD` - The type used for [`PayloadDigest`](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest) (willowprotocol.org), must implement the [`PayloadDigest`] trait.
+//! - `AT` - The type used for [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org), must implement the [`AuthorisationToken`] trait.
 
 #![feature(
     new_uninit,
