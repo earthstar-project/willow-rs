@@ -14,7 +14,7 @@ use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
 };
 
-/// Returned when an operation which should have been called on a write capability was called on a read capability.
+/// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
 #[derive(Debug)]
 pub struct NotAWriteCapabilityError;
 
@@ -75,7 +75,7 @@ where
     NamespaceSignature: Encodable + Clone,
     UserSignature: Encodable + Clone,
 {
-    /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given [`UserPublicKey`], or return an error if the namespace key is not communal.
+    /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
     pub fn new_communal(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -85,7 +85,7 @@ where
         Ok(Self::Communal(cap))
     }
 
-    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given [`UserPublicKey`].
+    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub async fn new_owned<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: NamespaceSecret,
@@ -159,7 +159,7 @@ where
         }
     }
 
-    /// Delegate this capability to a new [`UserPublicKey`] for a given [`Area`].
+    /// Delegate this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
     /// Will fail if the area is not included by this capability's granted area, or if the given secret key does not correspond to the capability's receiver.
     pub fn delegate<UserSecretKey>(
         &self,
@@ -238,7 +238,7 @@ where
         }
     }
 
-    /// Return a new [`AuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
+    /// Return a new [`McAuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
     pub fn authorisation_token<UserSecret, PD>(
         &self,
         entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,

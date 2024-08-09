@@ -1,6 +1,8 @@
 use crate::encoding::error::DecodeError;
 
 /// A minimum width of bytes needed to represent a unsigned integer.
+///
+/// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width)
 #[derive(PartialEq, Eq, Debug)]
 pub enum CompactWidth {
     /// The byte-width required to represent numbers up to 256 (i.e. a 8-bit number).
@@ -74,7 +76,7 @@ impl CompactWidth {
         CompactWidth::One
     }
 
-    /// Return the width in bytes of this [`CompactSize`].
+    /// Return the width in bytes of this [`CompactWidth`].
     pub fn width(&self) -> usize {
         match self {
             CompactWidth::One => 1,
@@ -135,7 +137,7 @@ pub mod encoding {
         Ok(())
     }
 
-    /// Decode the bytes representing a [`compact-width`]-bytes integer into a `usize`.
+    /// Decode the bytes representing a [`CompactWidth`]-bytes integer into a `usize`.
     pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
         compact_width: CompactWidth,
         producer: &mut Producer,

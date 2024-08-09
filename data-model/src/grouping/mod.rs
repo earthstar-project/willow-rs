@@ -1,3 +1,4 @@
+//! Utilities for Willow's entry [groupings](https://willowprotocol.org/specs/grouping-entries/index.html#grouping_entries).
 mod area;
 pub use area::*;
 mod area_of_interest;
