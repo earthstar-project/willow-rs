@@ -3,7 +3,7 @@ use syncify::syncify;
 #[syncify(encoding_sync)]
 pub mod encoding {
 
-    use crate::encoding::error::DecodeError;
+    use crate::error::DecodeError;
 
     use either::Either;
     use syncify::syncify_replace;

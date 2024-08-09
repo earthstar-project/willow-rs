@@ -7,7 +7,7 @@ use ufotofu::{
     sync::consumer::IntoVec,
 };
 
-use willow_data_model::encoding::{
+use willow_encoding::{
     DecodeError, {Decodable, Encodable, RelativeDecodable, RelativeEncodable},
 };
 

@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_data_model::encoding::U16BE;
+use willow_encoding::U16BE;
 use willow_fuzz::encode::encoding_roundtrip;
 
 fuzz_target!(|data: (u16, TestConsumer<u8, u16, ()>)| {

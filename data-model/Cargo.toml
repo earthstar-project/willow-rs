@@ -14,6 +14,9 @@ ufotofu = { version = "0.4.2", features = ["std"] }
 bytes = "1.6.0"
 syncify = "0.1.0"
 
+[dependencies.willow-encoding]
+path = "../encoding"
+
 [dev-dependencies]
 smol = "2.0.0"
 

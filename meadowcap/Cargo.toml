@@ -13,6 +13,7 @@ ufotofu = { version = "0.4.2", features = ["std"] }
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 either = "1.13.0"
 syncify = "0.1.0"
+willow-encoding = { path = "../encoding" }
 
 [dependencies.willow-data-model]
 path = "../data-model"

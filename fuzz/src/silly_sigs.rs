@@ -83,12 +83,12 @@ pub mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    use willow_data_model::encoding::DecodeError;
-    #[syncify_replace(use willow_data_model::encoding::sync::{Encodable, Decodable};)]
-    use willow_data_model::encoding::{Decodable, Encodable};
+    use willow_encoding::DecodeError;
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
+    use willow_encoding::{Decodable, Encodable};
 
-    #[syncify_replace(use willow_data_model::encoding::sync::produce_byte;)]
-    use willow_data_model::encoding::produce_byte;
+    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
+    use willow_encoding::produce_byte;
 
     impl Encodable for SillyPublicKey {
         async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
