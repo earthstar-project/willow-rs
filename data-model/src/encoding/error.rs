@@ -1,6 +1,6 @@
-use core::error::Error;
 use core::{fmt::Display, fmt::Formatter, num::TryFromIntError};
 use either::Either;
+use std::error::Error;
 use ufotofu::common::errors::OverwriteFullSliceError;
 
 /// Everything that can go wrong when decoding a value.

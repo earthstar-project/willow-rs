@@ -162,7 +162,7 @@ impl core::fmt::Display for InvalidPathError {
     }
 }
 
-impl core::error::Error for InvalidPathError {}
+impl std::error::Error for InvalidPathError {}
 
 /// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of, expensive to append to.
 ///
@@ -846,7 +846,7 @@ mod encoding {
 
                 // Decode the component itself into the scratch buffer.
                 producer
-                    .bulk_overwrite_full_slice_uninit(unsafe {
+                    .bulk_overwrite_full_slice(unsafe {
                         // Safe because we called set_component_Accumulated_length for all j <= i
                         buf.path_data_as_mut(i)
                     })

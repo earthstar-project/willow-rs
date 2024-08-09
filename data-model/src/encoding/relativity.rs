@@ -22,7 +22,7 @@ pub(super) mod encoding {
     #[syncify_replace(use crate::encoding::bytes::encoding_sync::produce_byte;)]
     use crate::encoding::bytes::encoding::produce_byte;
 
-    use core::mem::{size_of, MaybeUninit};
+    use core::mem::size_of;
 
     use crate::{
         encoding::{
@@ -121,12 +121,13 @@ pub(super) mod encoding {
             // Copy the raw path data of the prefix into the scratch buffer.
             unsafe {
                 // safe because we just copied the accumulated component lengths for the first `lcp_component_count` components.
-                MaybeUninit::copy_from_slice(
-                    buf.path_data_until_as_mut(lcp_component_count),
-                    &reference.raw_buf()[size_of::<usize>() * (reference.get_component_count() + 1)
-                        ..size_of::<usize>() * (reference.get_component_count() + 1)
-                            + prefix.get_path_length()],
-                );
+                buf.path_data_until_as_mut(lcp_component_count)
+                    .copy_from_slice(
+                        &reference.raw_buf()[size_of::<usize>()
+                            * (reference.get_component_count() + 1)
+                            ..size_of::<usize>() * (reference.get_component_count() + 1)
+                                + prefix.get_path_length()],
+                    );
             }
 
             let remaining_component_count: usize =
@@ -152,7 +153,7 @@ pub(super) mod encoding {
 
                 // Decode the component itself into the scratch buffer.
                 producer
-                    .bulk_overwrite_full_slice_uninit(unsafe {
+                    .bulk_overwrite_full_slice(unsafe {
                         // Safe because we called set_component_Accumulated_length for all j <= i
                         buf.path_data_as_mut(i)
                     })

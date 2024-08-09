@@ -7,7 +7,7 @@ edition = "2021"
 either = "1.10.0"
 willow-data-model = { path = "../data-model" }
 arbitrary = { version = "1.0.2", features = ["derive"]}
-ufotofu = "0.3.0"
+ufotofu = "0.4.1"
 
 [lints]
 workspace = true

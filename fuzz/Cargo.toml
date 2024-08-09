@@ -11,7 +11,7 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.3.0", features=["dev"]}
+ufotofu = { version = "0.4.1", features=["dev"]}
 smol = "2.0.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
