@@ -3,6 +3,21 @@
 //! An implementation of [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap), a capability system for permissioning read and write access to the [Willow data model](https://willowprotocol.org/specs/data-model/index.html#data_model).
 //!
 //! Includes implementations of [communal capabilities](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities), [owned capabilities](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities), a type [unifying the two](https://willowprotocol.org/specs/meadowcap/index.html#proper_capabilities), as well as the generation of [`McAuthorisationTokens`](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken) for use with the Willow data model's [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) parameter.
+//!
+//! ## Type parameters
+//!
+//! Willow is a parametrised family of protocols, and so this crate makes heavy use of generic parameters.
+//!
+//! The following generic parameter names are used consistently across this crate:
+//!
+//! - `MCL` - A `usize` representing [`max_component_length`](https://willowprotocol.org/specs/data-model/index.html#max_component_length).
+//! - `MCC` - A `usize` representing [`max_component_count`](https://willowprotocol.org/specs/data-model/index.html#max_component_count).
+//! - `MPL` - A `usize` representing [`max_path_length`](https://willowprotocol.org/specs/data-model/index.html#max_path_length).
+//! - `NamespacePublicKey` - The type used for [`NamespacePublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#NamespacePublicKey) (willowprotocol.org), must implement the [`willow_data_model::NamespaceId`] trait.
+//! - `NamespaceSignature` - The type used for [`NamespaceSignature`](https://willowprotocol.org/specs/meadowcap/index.html#NamespaceSignature) (willowprotocol.org).
+//! - `UserPublicKey` - The type used for [`UserPublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#UserPublicKey) (willowprotocol.org), must implement the [`SubspaceId`] trait.
+//! - `UserSignature` - The type used for [`UserSignature`](https://willowprotocol.org/specs/meadowcap/index.html#UserSignature) (willowprotocol.org).
+//! - `PD` - The type used for [`PayloadDigest`](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest) (willowprotocol.org), must implement the [`willow_data_model::PayloadDigest`] trait.
 
 use willow_data_model::{grouping::Area, SubspaceId};
 
