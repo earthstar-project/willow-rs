@@ -214,7 +214,7 @@ where
 #[derive(Debug)]
 pub struct UnauthorisedWriteError;
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) implementing [`IsAuthorisedWrite`] for which [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) returns true.
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org) implementing [`AuthorisationToken`] for which [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
