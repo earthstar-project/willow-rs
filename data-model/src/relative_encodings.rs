@@ -8,31 +8,27 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
-    use crate::encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
+    use willow_encoding::{is_bitflagged, CompactWidth, DecodeError};
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
+    use willow_encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
 
-    #[syncify_replace(use crate::encoding::sync::{decode_max_power, encode_max_power};)]
-    use crate::encoding::max_power::{decode_max_power, encode_max_power};
+    #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
+    use willow_encoding::{decode_max_power, encode_max_power};
 
-    #[syncify_replace(use crate::encoding::compact_width::encoding_sync::{ decode_compact_width_be, encode_compact_width_be};)]
-    use crate::encoding::compact_width::encoding::{
-        decode_compact_width_be, encode_compact_width_be,
-    };
+    #[syncify_replace(use willow_encoding::sync::{ decode_compact_width_be, encode_compact_width_be};)]
+    use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
 
-    #[syncify_replace(use crate::encoding::bytes::encoding_sync::produce_byte;)]
-    use crate::encoding::bytes::encoding::produce_byte;
+    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
+    use willow_encoding::produce_byte;
 
     use core::mem::size_of;
 
     use crate::{
-        encoding::{
-            bytes::is_bitflagged, compact_width::CompactWidth, error::DecodeError,
-            shared_buffers::ScratchSpacePathDecoding,
-        },
         entry::Entry,
         grouping::{Area, AreaSubspace, Range, Range3d, RangeEnd},
         parameters::{NamespaceId, PayloadDigest, SubspaceId},
         path::Path,
+        ScratchSpacePathDecoding,
     };
 
     // Path <> Path

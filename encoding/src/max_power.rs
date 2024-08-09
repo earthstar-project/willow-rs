@@ -30,7 +30,7 @@ pub(super) mod encoding {
 
     use core::mem::size_of;
 
-    use crate::encoding::error::DecodeError;
+    use crate::error::DecodeError;
 
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
@@ -78,4 +78,4 @@ pub(super) mod encoding {
     }
 }
 
-pub use encoding::{encode_max_power, decode_max_power};
+pub use encoding::{decode_max_power, encode_max_power};

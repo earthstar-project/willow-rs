@@ -220,6 +220,7 @@ dependencies = [
  "either",
  "ufotofu",
  "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]
@@ -344,6 +345,7 @@ dependencies = [
  "syncify",
  "ufotofu",
  "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]
@@ -534,6 +536,16 @@ dependencies = [
  "smol",
  "syncify",
  "ufotofu",
+ "willow-encoding",
+]
+
+[[package]]
+name = "willow-encoding"
+version = "0.1.0"
+dependencies = [
+ "either",
+ "syncify",
+ "ufotofu",
 ]
 
 [[package]]
@@ -549,6 +561,7 @@ dependencies = [
  "syncify",
  "ufotofu",
  "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]

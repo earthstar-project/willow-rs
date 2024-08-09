@@ -1,10 +1,7 @@
 use signature::{Signer, Verifier};
 use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
-use willow_data_model::{
-    encoding::sync::{Encodable, RelativeEncodable},
-    grouping::Area,
-    NamespaceId, SubspaceId,
-};
+use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
+use willow_encoding::sync::{Encodable, RelativeEncodable};
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 

@@ -17,7 +17,7 @@ arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 signature = "2.2.0"
 syncify = "0.1.0"
-
+willow-encoding = { path = "../encoding" }
 
 [dependencies.willow-data-model]
 path = "../data-model"

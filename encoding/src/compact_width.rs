@@ -1,4 +1,4 @@
-use crate::encoding::error::DecodeError;
+use crate::error::DecodeError;
 
 /// A minimum width of bytes needed to represent a unsigned integer.
 ///
@@ -117,10 +117,10 @@ pub mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    use crate::encoding::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
+    use crate::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 
-    #[syncify_replace(use crate::encoding::sync::{Decodable};)]
-    use crate::encoding::Decodable;
+    #[syncify_replace(use crate::sync::{Decodable};)]
+    use crate::Decodable;
 
     /// Encode a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
     pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(

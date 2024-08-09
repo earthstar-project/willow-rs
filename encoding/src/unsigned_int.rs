@@ -1,4 +1,4 @@
-use crate::encoding::error::DecodeError;
+use crate::error::DecodeError;
 
 use core::mem::size_of;
 
@@ -76,8 +76,8 @@ mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::sync::{Decodable, Encodable};)]
-    use crate::encoding::{Decodable, Encodable};
+    #[syncify_replace(use crate::sync::{Decodable, Encodable};)]
+    use crate::{Decodable, Encodable};
 
     impl Encodable for U8BE {
         async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>

@@ -1,8 +1,8 @@
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::sync::{consumer::IntoVec, Consumer};
-use willow_data_model::encoding::sync::Encodable;
 use willow_data_model::NamespaceId;
 use willow_data_model::SubspaceId;
+use willow_encoding::sync::Encodable;
 
 use crate::IsCommunal;
 
@@ -233,20 +233,18 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use willow_data_model::encoding::sync::{Encodable, Decodable};)]
-    use willow_data_model::encoding::{Decodable, Encodable};
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
+    use willow_encoding::{Decodable, Encodable};
 
-    use willow_data_model::encoding::{
-        sync::Encodable as EncodableSync, CompactWidth, DecodeError,
-    };
+    use willow_encoding::{sync::Encodable as EncodableSync, CompactWidth, DecodeError};
 
-    #[syncify_replace(use willow_data_model::encoding::sync::produce_byte;)]
-    use willow_data_model::encoding::produce_byte;
+    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
+    use willow_encoding::produce_byte;
 
     #[syncify_replace(
-      use willow_data_model::encoding::sync::{encode_compact_width_be, decode_compact_width_be};
+      use willow_encoding::sync::{encode_compact_width_be, decode_compact_width_be};
   )]
-    use willow_data_model::encoding::{decode_compact_width_be, encode_compact_width_be};
+    use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
 
     impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
         for McSubspaceCapability<

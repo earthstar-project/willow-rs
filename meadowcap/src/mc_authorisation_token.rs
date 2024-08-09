@@ -1,8 +1,7 @@
 use signature::Verifier;
 use ufotofu::sync::consumer::IntoVec;
-use willow_data_model::{
-    encoding::sync::Encodable, AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId,
-};
+use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
+use willow_encoding::sync::Encodable;
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
 

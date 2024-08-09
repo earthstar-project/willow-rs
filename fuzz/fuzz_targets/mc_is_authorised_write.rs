@@ -4,9 +4,9 @@ use libfuzzer_sys::fuzz_target;
 use meadowcap::{AccessMode, McAuthorisationToken};
 use signature::Signer;
 use ufotofu::sync::consumer::IntoVec;
-use willow_data_model::encoding::sync::Encodable;
 use willow_data_model::AuthorisationToken;
 use willow_data_model::Entry;
+use willow_encoding::sync::Encodable;
 use willow_fuzz::{
     placeholder_params::FakePayloadDigest,
     silly_sigs::{SillyPublicKey, SillySig},

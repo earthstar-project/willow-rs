@@ -1,4 +1,4 @@
-use crate::encoding::error::DecodeError;
+use crate::error::DecodeError;
 use ufotofu::sync::{BulkConsumer, BulkProducer};
 
 /// A type that can be encoded to a bytestring, ensuring that any value of `Self` maps to exactly one bytestring.

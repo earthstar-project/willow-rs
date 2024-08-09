@@ -1,0 +1,12 @@
+[package]
+name = "willow-encoding"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ufotofu = { version = "0.4.2", features = ["std"] }
+syncify = "0.1.0"
+either = "1.10.0"
+
+[lints]
+workspace = true

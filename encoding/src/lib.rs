@@ -18,10 +18,6 @@ pub use error::*;
 mod traits;
 pub use traits::*;
 
-mod relativity;
-
-pub(crate) mod shared_buffers;
-
 pub use unsigned_int::*;
 
 pub use max_power::{decode_max_power, encode_max_power, max_power};
