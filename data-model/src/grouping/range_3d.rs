@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
 use crate::{

@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 use arbitrary::{size_hint::and_all, Arbitrary};
 
 use crate::{

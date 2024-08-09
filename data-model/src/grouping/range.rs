@@ -1,6 +1,7 @@
 use core::cmp;
 use core::cmp::Ordering;
 
+#[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 use crate::path::Path;
