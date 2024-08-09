@@ -136,10 +136,10 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
         Producer: BulkProducer<Item = u8>,
     {
         if MIN_LENGTH == MAX_LENGTH {
-            let mut shortname_box = Box::new_uninit_slice(MIN_LENGTH);
+            let mut shortname_box = vec![0; MIN_LENGTH].into_boxed_slice();
 
-            let shortname_bytes = producer
-                .bulk_overwrite_full_slice_uninit(shortname_box.as_mut())
+            producer
+                .bulk_overwrite_full_slice(shortname_box.as_mut())
                 .await?;
 
             let mut underlying_slice = [0u8; 32];
@@ -149,7 +149,7 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
                 .await?;
 
             return Ok(Self {
-                shortname: Shortname(shortname_bytes.to_vec()),
+                shortname: Shortname(shortname_box.into()),
                 underlying: underlying_slice,
             });
         }

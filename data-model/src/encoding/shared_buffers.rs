@@ -1,7 +1,5 @@
 //! Shared buffers to be reused across many decoding operations.
 
-use core::mem::MaybeUninit;
-
 use bytes::BytesMut;
 
 use crate::path::Path;
@@ -10,15 +8,15 @@ use crate::path::Path;
 #[derive(Debug)]
 pub(crate) struct ScratchSpacePathDecoding<const MCC: usize, const MPL: usize> {
     // The i-th usize holds the total lengths of the first i components.
-    component_accumulated_lengths: [MaybeUninit<usize>; MCC],
-    path_data: [MaybeUninit<u8>; MPL],
+    component_accumulated_lengths: [usize; MCC],
+    path_data: [u8; MPL],
 }
 
 impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     pub fn new() -> Self {
         ScratchSpacePathDecoding {
-            component_accumulated_lengths: MaybeUninit::uninit_array(),
-            path_data: MaybeUninit::uninit_array(),
+            component_accumulated_lengths: [0; MCC],
+            path_data: [0; MPL],
         }
     }
 
@@ -28,29 +26,27 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         component_accumulated_length: usize,
         i: usize,
     ) {
-        MaybeUninit::write(
-            &mut self.component_accumulated_lengths[i],
-            component_accumulated_length,
-        );
+        self.component_accumulated_lengths[i] = component_accumulated_length;
     }
 
     /// # Safety
     ///
     /// UB if length of slice is greater than `size_of::<usize>() * MCC`.
     pub unsafe fn set_many_component_accumulated_lengths_from_ne(&mut self, lengths: &[u8]) {
-        let slice: &mut [MaybeUninit<u8>] = core::slice::from_raw_parts_mut(
+        let slice: &mut [u8] = core::slice::from_raw_parts_mut(
             self.component_accumulated_lengths[..lengths.len() / size_of::<usize>()].as_mut_ptr()
-                as *mut MaybeUninit<u8>,
+                as *mut u8,
             lengths.len(),
         );
-        MaybeUninit::copy_from_slice(slice, lengths);
+
+        slice.copy_from_slice(lengths);
     }
 
     /// # Safety
     ///
     /// Memory must have been initialised with a prior call to set_component_accumulated_length for the same `i`.
     unsafe fn get_component_accumulated_length(&self, i: usize) -> usize {
-        MaybeUninit::assume_init(self.component_accumulated_lengths[i])
+        self.component_accumulated_lengths[i]
     }
 
     /// Return a slice of the accumulated component lengths up to but excluding the `i`-th component, encoded as native-endian u8s.
@@ -60,8 +56,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     /// Memory must have been initialised with prior call to set_component_accumulated_length for all `j <= i`
     pub unsafe fn get_accumumulated_component_lengths(&self, i: usize) -> &[u8] {
         core::slice::from_raw_parts(
-            MaybeUninit::slice_assume_init_ref(&self.component_accumulated_lengths[..i]).as_ptr()
-                as *const u8,
+            self.component_accumulated_lengths[..i].as_ptr() as *const u8,
             i * size_of::<usize>(),
         )
     }
@@ -71,7 +66,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     /// # Safety
     ///
     /// Accumulated component lengths for `i` and `i - 1` must have been set (only for `i` if `i == 0`).
-    pub unsafe fn path_data_as_mut(&mut self, i: usize) -> &mut [MaybeUninit<u8>] {
+    pub unsafe fn path_data_as_mut(&mut self, i: usize) -> &mut [u8] {
         let start = if i == 0 {
             0
         } else {
@@ -86,7 +81,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
     /// # Safety
     ///
     /// Accumulated component lengths for `i - 1` must have been set (unless `i == 0`).
-    pub unsafe fn path_data_until_as_mut(&mut self, i: usize) -> &mut [MaybeUninit<u8>] {
+    pub unsafe fn path_data_until_as_mut(&mut self, i: usize) -> &mut [u8] {
         let end = self.get_component_accumulated_length(i - 1);
         &mut self.path_data[0..end]
     }
@@ -103,7 +98,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         } else {
             self.get_component_accumulated_length(i - 1)
         };
-        return MaybeUninit::slice_assume_init_ref(&self.path_data[..end]);
+        &self.path_data[..end]
     }
 
     /// Copy the data from this struct into a new Path of `i` components.

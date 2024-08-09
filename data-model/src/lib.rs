@@ -25,15 +25,6 @@
 //! - `PD` - The type used for [`PayloadDigest`](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest) (willowprotocol.org), must implement the [`PayloadDigest`] trait.
 //! - `AT` - The type used for [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org), must implement the [`AuthorisationToken`] trait.
 
-#![feature(
-    new_uninit,
-    async_fn_traits,
-    debug_closure_helpers,
-    maybe_uninit_uninit_array,
-    maybe_uninit_write_slice,
-    maybe_uninit_slice
-)]
-
 pub mod encoding;
 mod entry;
 pub use entry::*;

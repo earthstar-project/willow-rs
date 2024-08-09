@@ -26,7 +26,7 @@ where
 
     let mut new_vec = Vec::new();
 
-    new_vec.extend_from_slice(consumer.as_ref());
+    new_vec.extend_from_slice(consumer.consumed());
 
     // THis should eventually be a testproducer, when we are able to initialise one with some known data.
     let mut producer = FromBoxedSlice::from_vec(new_vec);
@@ -53,7 +53,7 @@ where
 
             item.encode(&mut consumer).await.unwrap();
 
-            let encoded = consumer.as_ref().as_slice();
+            let encoded = consumer.as_ref();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
         }
@@ -133,7 +133,7 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
 
     let mut new_vec = Vec::new();
 
-    new_vec.extend_from_slice(consumer.as_ref());
+    new_vec.extend_from_slice(consumer.consumed());
 
     // THis should eventually be a testproducer, when we are able to initialise one with some known data.
     let mut producer = FromBoxedSlice::from_vec(new_vec);
@@ -164,7 +164,7 @@ where
                 .await
                 .unwrap();
 
-            let encoded = consumer.as_ref().as_slice();
+            let encoded = consumer.as_ref();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
         }
