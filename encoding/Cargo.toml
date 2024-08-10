@@ -2,6 +2,8 @@
 name = "willow-encoding"
 version = "0.1.0"
 edition = "2021"
+description = "Utilities for implementing encoders and decoders of Willow types and messages."
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 ufotofu = { version = "0.4.2", features = ["std"] }

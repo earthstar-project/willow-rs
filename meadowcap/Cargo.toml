@@ -2,6 +2,8 @@
 name = "meadowcap"
 version = "0.1.0"
 edition = "2021"
+description = "A capability system for controlling access to Willow data."
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
@@ -13,7 +15,7 @@ ufotofu = { version = "0.4.2", features = ["std"] }
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 either = "1.13.0"
 syncify = "0.1.0"
-willow-encoding = { path = "../encoding" }
+willow-encoding = { path = "../encoding", version = "0.1.0" }
 
 [dependencies.willow-data-model]
 path = "../data-model"

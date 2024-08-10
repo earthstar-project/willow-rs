@@ -2,6 +2,8 @@
 name = "willow-data-model"
 version = "0.1.0"
 edition = "2021"
+description = "An eventually consistent data store with improved distributed deletion."
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
@@ -16,6 +18,7 @@ syncify = "0.1.0"
 
 [dependencies.willow-encoding]
 path = "../encoding"
+version = "0.1.0"
 
 [dev-dependencies]
 smol = "2.0.0"
