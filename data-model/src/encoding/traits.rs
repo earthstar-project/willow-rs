@@ -7,7 +7,7 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 ///
 /// [Definition](https://willowprotocol.org/specs/encodings/index.html#encodings_what)
 pub trait Encodable {
-    /// A function which maps the set `Self` to the set of bytestrings in such a way that any value of `Self` must map to exactly *one* bytestring.
+    /// Encode a value to a bytestring in a specific way that is best described over at [willowprotocol.org](https://willowprotocol.org/specs/encodings/index.html#encodings_what).
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#encode_s)
     fn encode<Consumer>(
@@ -22,7 +22,7 @@ pub trait Encodable {
 ///
 /// [Definition](https://willowprotocol.org/specs/encodings/index.html#encodings_what)
 pub trait Decodable {
-    /// A function which maps the set of bytestrings to the set of `T` in such a way that any bytestring must map to exactly *one* value of `Self`.
+    /// Decade a value to a bytestring in a specific way that is best described over at [willowprotocol.org](https://willowprotocol.org/specs/encodings/index.html#encodings_what).
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#decode_s)
     fn decode<Producer>(
@@ -36,7 +36,7 @@ pub trait Decodable {
 /// A type that can be used to encode `T` to a bytestring *encoded relative to `R`*.
 /// This can be used to create more compact encodings from which `T` can be derived by anyone with `R`.
 pub trait RelativeEncodable<R> {
-    /// A function which maps the set `(Self, R)` to the set of bytestrings in such a way that any value of `Self` must map to exactly *one* bytestring.
+    /// Encode a value (relative to a reference value) to a bytestring in a specific way that is best described over at [willowprotocol.org](https://willowprotocol.org/specs/encodings/index.html#encodings_what).
     fn relative_encode<Consumer>(
         &self,
         reference: &R,
@@ -49,7 +49,7 @@ pub trait RelativeEncodable<R> {
 /// A type that can be used to decode `T` from a bytestring *encoded relative to `Self`*.
 /// This can be used to decode a compact encoding frow which `T` can be derived by anyone with `R`.
 pub trait RelativeDecodable<R> {
-    /// A function which maps the set of `(bytestring, R)` to the set of `T` in such a way that any bytestring and reference value must map to exactly *one* value of `Self`.
+    /// Decode a value (relative to a reference value) to a bytestring in a specific way that is best described over at [willowprotocol.org](https://willowprotocol.org/specs/encodings/index.html#encodings_what).
     fn relative_decode<Producer>(
         reference: &R,
         producer: &mut Producer,
