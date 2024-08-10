@@ -7,7 +7,7 @@ use crate::{
     path::Path,
 };
 
-/// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 - 1 (exclusive).
+/// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
