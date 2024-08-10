@@ -216,7 +216,7 @@ impl core::fmt::Display for UnauthorisedWriteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Tried to authorise the writing of an entry using a token which does not permit it."
+            "Tried to authorise the writing of an entry using an AuthorisationToken which does not permit it."
         )
     }
 }
