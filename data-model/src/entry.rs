@@ -6,7 +6,7 @@ use crate::{
     path::Path,
 };
 
-/// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 - 1 (exclusive).
+/// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
@@ -213,7 +213,19 @@ where
 #[derive(Debug)]
 pub struct UnauthorisedWriteError;
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org) implementing [`AuthorisationToken`] for which [`is_authorised_write`](https://willowprotocol.org/specs/data-model/index.html#is_authorised_write) returns true.
+impl core::fmt::Display for UnauthorisedWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Tried to authorise the writing of an entry using an AuthorisationToken which does not permit it."
+        )
+    }
+}
+
+impl std::error::Error for UnauthorisedWriteError {}
+
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
+/// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(

@@ -6,7 +6,22 @@ use willow_encoding::sync::{Encodable, RelativeEncodable};
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 
 /// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given [`namespace`](https://willowprotocol.org/specs/data-model/index.html#namespace) to `false`.
+#[derive(Debug)]
 pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
+
+impl<NamespacePublicKey> core::fmt::Display for NamespaceIsNotCommunalError<NamespacePublicKey> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Tried to construct a communal capability for an owned namespace."
+        )
+    }
+}
+
+impl<NamespacePublicKey: std::fmt::Debug> std::error::Error
+    for NamespaceIsNotCommunalError<NamespacePublicKey>
+{
+}
 
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
