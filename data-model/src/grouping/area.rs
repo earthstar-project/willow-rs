@@ -10,7 +10,7 @@ use crate::{
 use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum AreaSubspace<S: SubspaceId> {
     /// A value that signals that an [`Area`] includes Entries with arbitrary subspace_ids.
     Any,
@@ -64,7 +64,7 @@ where
 
 /// A grouping of entries.
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#areas).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
     subspace: AreaSubspace<S>,

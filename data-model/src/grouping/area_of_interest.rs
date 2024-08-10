@@ -3,6 +3,7 @@ use crate::{grouping::area::Area, parameters::SubspaceId};
 /// A grouping of [`crate::Entry`]s that are among the newest in some [store](https://willowprotocol.org/specs/data-model/index.html#store).
 ///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aois).
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// To be included in this [`AreaOfInterest`], an [`crate::Entry`] must be included in the [`Area`].
     pub area: Area<MCL, MCC, MPL, S>,
