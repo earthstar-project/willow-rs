@@ -10,7 +10,7 @@ pub enum DecodeError<ProducerError> {
     Producer(ProducerError),
     /// The bytes produced by the producer cannot be decoded into anything meaningful.
     InvalidInput,
-    /// Tried to use a u64 as a usize when the current target's usize is not big enough.
+    /// Tried to use a u64 as a usize when the current compilation target's usize is not big enough.
     U64DoesNotFitUsize,
 }
 
