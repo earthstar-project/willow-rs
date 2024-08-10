@@ -132,7 +132,7 @@ pub enum FailedDelegationError<
         excluded_area: Area<MCL, MCC, MPL, UserPublicKey>,
         claimed_receiver: UserPublicKey,
     },
-    /// The given secret did not correspond to the receiver of the capability we tried to delegate from.
+    /// The given secret did not correspond to the receiver of the existing capability we tried to delegate from.
     WrongSecretForUser(UserPublicKey),
 }
 
@@ -150,7 +150,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey: Subspa
             ),
             FailedDelegationError::WrongSecretForUser(_) => write!(
                 f,
-                "Provided the wrong secret for the capability's receiver."
+                "Provided the wrong secret for the existing capability's receiver."
             ),
         }
     }
