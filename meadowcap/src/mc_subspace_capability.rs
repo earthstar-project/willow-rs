@@ -10,7 +10,8 @@ use crate::IsCommunal;
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 /// A [delegation](https://willowprotocol.org/specs/pai/index.html#subspace_cap_delegations) of read access for arbitrary `SubspaceId`s to a `UserPublicKey`.
-#[derive(Clone, Debug, PartialEq, Eq, Arbitrary)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct SubspaceDelegation<UserPublicKey, UserSignature>
 where
     UserPublicKey: SubspaceId,
