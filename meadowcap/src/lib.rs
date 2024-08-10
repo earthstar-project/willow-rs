@@ -202,7 +202,7 @@ impl<
                 claimed_receiver: _,
             } => write!(
                 f,
-                "Tried to append a delegation which granted access to an area not fully included by the granted area of the capability."
+                "Tried to append a delegation which grants access to an area not fully included by the granted area of the capability."
             ),
             InvalidDelegationError::InvalidSignature {
                 expected_signatory: _,
