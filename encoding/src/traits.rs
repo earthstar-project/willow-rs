@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::encoding::error::DecodeError;
+use crate::error::DecodeError;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
 /// A type that can be encoded to a bytestring, ensuring that any value of `Self` maps to exactly one bytestring.

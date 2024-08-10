@@ -4,7 +4,7 @@ use arbitrary::{
 };
 use either::Either;
 use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-use willow_data_model::encoding::{Decodable, DecodeError, Encodable};
+use willow_encoding::{Decodable, DecodeError, Encodable};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Shortname<const MIN_LENGTH: usize, const MAX_LENGTH: usize>(pub Vec<u8>);

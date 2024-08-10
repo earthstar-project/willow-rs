@@ -2,7 +2,6 @@
 use arbitrary::{size_hint::and_all, Arbitrary};
 
 use crate::{
-    encoding::{DecodeError, U64BE},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
@@ -112,8 +111,10 @@ mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::sync::{Decodable, Encodable};)]
-    use crate::encoding::{Decodable, Encodable};
+    use willow_encoding::{DecodeError, U64BE};
+
+    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable};)]
+    use willow_encoding::{Decodable, Encodable};
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
         for Entry<MCL, MCC, MPL, N, S, PD>

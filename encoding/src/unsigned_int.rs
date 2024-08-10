@@ -1,8 +1,8 @@
-use crate::encoding::error::DecodeError;
+use crate::error::DecodeError;
 
 use core::mem::size_of;
 
-/// A `u8` wrapper that implements [`crate::encoding::Encodable`] and [`crate::encoding::Decodable`] by encoding as a big-endian fixed-width integer.
+/// A `u8` wrapper that implements [`crate::Encodable`] and [`crate::Decodable`] by encoding as a big-endian fixed-width integer.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U8BE(u8);
 
@@ -18,7 +18,7 @@ impl From<U8BE> for u64 {
     }
 }
 
-/// A `u16` wrapper that implements [`crate::encoding::Encodable`] and [`crate::encoding::Decodable`] by encoding as a big-endian fixed-width integer.
+/// A `u16` wrapper that implements [`crate::Encodable`] and [`crate::Decodable`] by encoding as a big-endian fixed-width integer.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U16BE(u16);
 
@@ -34,7 +34,7 @@ impl From<U16BE> for u64 {
     }
 }
 
-/// A `u32` wrapper that implements [`crate::encoding::Encodable`] and [`crate::encoding::Decodable`] by encoding as a big-endian fixed-width integer.
+/// A `u32` wrapper that implements [`crate::Encodable`] and [`crate::Decodable`] by encoding as a big-endian fixed-width integer.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U32BE(u32);
 
@@ -50,7 +50,7 @@ impl From<U32BE> for u64 {
     }
 }
 
-/// A `u64` wrapper that implements [`crate::encoding::Encodable`] and [`crate::encoding::Decodable`] by encoding as a big-endian fixed-width integer.
+/// A `u64` wrapper that implements [`crate::Encodable`] and [`crate::Decodable`] by encoding as a big-endian fixed-width integer.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct U64BE(u64);
 
@@ -76,8 +76,8 @@ mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::encoding::sync::{Decodable, Encodable};)]
-    use crate::encoding::{Decodable, Encodable};
+    #[syncify_replace(use crate::sync::{Decodable, Encodable};)]
+    use crate::{Decodable, Encodable};
 
     impl Encodable for U8BE {
         async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
