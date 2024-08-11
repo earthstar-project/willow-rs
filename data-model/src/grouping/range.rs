@@ -6,7 +6,7 @@ use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 use crate::path::Path;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 /// Determines whether a [`Range`] is _closed_ or _open_.
 pub enum RangeEnd<T: Ord> {
     /// A [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) consists of a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and an [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value).
@@ -152,7 +152,7 @@ where
 /// One-dimensional grouping over a type of value.
 ///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#range)
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Range<T: Ord> {
     /// A range [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) all values greater than or equal to its [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) **and** less than its [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value)
     pub start: T,

@@ -10,7 +10,7 @@ use crate::{
 
 /// A three-dimensional range that includes every Entry included in all three of its ranges.
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#D3Range).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
     /// A range of [`SubspaceId`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
