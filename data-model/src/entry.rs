@@ -13,7 +13,7 @@ pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
     N: NamespaceId,

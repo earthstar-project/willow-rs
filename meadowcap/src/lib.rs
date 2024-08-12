@@ -28,7 +28,7 @@ pub trait IsCommunal {
 }
 
 /// A delegation of access rights to a user for a given [area](https://willowprotocol.org/specs/grouping-entries/index.html#areas).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Delegation<
     const MCL: usize,
     const MCC: usize,
@@ -100,7 +100,7 @@ where
 }
 
 /// A mode granting read or write access to some [`Area`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AccessMode {
     Read,
     Write,

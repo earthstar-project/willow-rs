@@ -6,7 +6,7 @@ use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 use crate::path::Path;
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 /// Determines whether a [`Range`] is _closed_ or _open_.
 pub enum RangeEnd<T: Ord> {
     /// A [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) consists of a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and an [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value).
@@ -119,18 +119,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd<RangeEnd<P
     }
 }
 
-impl<T> Clone for RangeEnd<T>
-where
-    T: Ord + Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            RangeEnd::Closed(val) => RangeEnd::Closed(val.clone()),
-            RangeEnd::Open => RangeEnd::Open,
-        }
-    }
-}
-
 #[cfg(feature = "dev")]
 impl<'a, T> Arbitrary<'a> for RangeEnd<T>
 where
@@ -152,7 +140,7 @@ where
 /// One-dimensional grouping over a type of value.
 ///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#range)
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct Range<T: Ord> {
     /// A range [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) all values greater than or equal to its [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) **and** less than its [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value)
     pub start: T,
@@ -164,6 +152,11 @@ impl<T> Range<T>
 where
     T: Ord + Clone,
 {
+    /// Construct a range.
+    pub fn new(start: T, end: RangeEnd<T>) -> Self {
+        Self { start, end }
+    }
+
     /// Construct a new [open range](https://willowprotocol.org/specs/grouping-entries/index.html#open_range) from a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value).
     pub fn new_open(start: T) -> Self {
         Self {
@@ -245,18 +238,6 @@ impl<T: Ord> Ord for Range<T> {
 impl<T: Ord> PartialOrd for Range<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl<T> Clone for Range<T>
-where
-    T: Ord + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            start: self.start.clone(),
-            end: self.end.clone(),
-        }
     }
 }
 

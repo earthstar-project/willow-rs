@@ -16,11 +16,16 @@ pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     AreaOfInterest<MCL, MCC, MPL, S>
 {
+    /// Creates a new [`AreaOfInterest`].
+    pub fn new(area: Area<MCL, MCC, MPL, S>, max_count: u64, max_size: u64) -> Self {
+        Self { area, max_count, max_size }
+    }
+
     /// Return the intersection of this [`AreaOfInterest`] with another.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aoi_intersection).
     pub fn intersection(
         &self,
-        other: AreaOfInterest<MCL, MCC, MPL, S>,
+        other: &AreaOfInterest<MCL, MCC, MPL, S>,
     ) -> Option<AreaOfInterest<MCL, MCC, MPL, S>> {
         match self.area.intersection(&other.area) {
             None => None,

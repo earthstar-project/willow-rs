@@ -31,7 +31,7 @@ impl std::error::Error for NotAWriteCapabilityError {}
 /// A Meadowcap capability.
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub enum McCapability<
     const MCL: usize,
@@ -96,9 +96,9 @@ where
     }
 
     /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
-    pub async fn new_owned<NamespaceSecret>(
+    pub fn new_owned<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
-        namespace_secret: NamespaceSecret,
+        namespace_secret: &NamespaceSecret,
         user_key: UserPublicKey,
         access_mode: AccessMode,
     ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>>
@@ -111,7 +111,7 @@ where
     }
 
     /// The kind of access this capability grants.
-    pub fn access_mode(&self) -> &AccessMode {
+    pub fn access_mode(&self) -> AccessMode {
         match self {
             Self::Communal(cap) => cap.access_mode(),
             Self::Owned(cap) => cap.access_mode(),
@@ -251,7 +251,7 @@ where
     /// Return a new [`McAuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
     pub fn authorisation_token<UserSecret, PD>(
         &self,
-        entry: Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        entry: &Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
         secret: UserSecret,
     ) -> Result<
         McAuthorisationToken<
@@ -354,12 +354,12 @@ pub(super) mod encoding {
 
             match self {
                 McCapability::Communal(_) => {
-                    if self.access_mode() == &AccessMode::Write {
+                    if self.access_mode() == AccessMode::Write {
                         header |= 0b0100_0000;
                     }
                 }
                 McCapability::Owned(_) => {
-                    if self.access_mode() == &AccessMode::Read {
+                    if self.access_mode() == AccessMode::Read {
                         header |= 0b1000_0000;
                     } else {
                         header |= 0b1100_0000;

@@ -40,7 +40,7 @@ impl<NamespacePublicKey: std::fmt::Debug> std::error::Error
 /// A capability that implements [owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_capabilities).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OwnedCapability<
     const MCL: usize,
     const MCC: usize,
@@ -89,7 +89,7 @@ where
     /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
-        namespace_secret: NamespaceSecret,
+        namespace_secret: &NamespaceSecret,
         user_key: UserPublicKey,
         access_mode: AccessMode,
     ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>>
@@ -263,8 +263,8 @@ where
     /// The kind of access this capability grants.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_mode)
-    pub fn access_mode(&self) -> &AccessMode {
-        &self.access_mode
+    pub fn access_mode(&self) -> AccessMode {
+        self.access_mode
     }
 
     /// The user to whom this capability grants access.
