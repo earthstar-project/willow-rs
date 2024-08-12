@@ -19,7 +19,7 @@ fuzz_target!(|data: (
     let (entry, token) = data;
 
     let is_within_granted_area = token.capability.granted_area().includes_entry(&entry);
-    let is_write_cap = token.capability.access_mode() == &AccessMode::Write;
+    let is_write_cap = token.capability.access_mode() == AccessMode::Write;
 
     let mut consumer = IntoVec::<u8>::new();
     entry.encode(&mut consumer).unwrap();
