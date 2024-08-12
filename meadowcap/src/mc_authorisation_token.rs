@@ -45,6 +45,49 @@ impl<
         NamespaceSignature,
         UserPublicKey,
         UserSignature,
+    >
+    McAuthorisationToken<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + Clone,
+    UserSignature: Encodable + Clone,
+{
+    pub fn new(
+        capability: McCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+        signature: UserSignature,
+    ) -> Self {
+        Self {
+            capability,
+            signature,
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
         PD,
     > AuthorisationToken<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>
     for McAuthorisationToken<

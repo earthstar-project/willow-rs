@@ -230,8 +230,8 @@ impl std::error::Error for UnauthorisedWriteError {}
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
-    pub Entry<MCL, MCC, MPL, N, S, PD>,
-    pub AT,
+    Entry<MCL, MCC, MPL, N, S, PD>,
+    AT,
 )
 where
     N: NamespaceId,
@@ -259,6 +259,35 @@ where
         }
 
         Err(UnauthorisedWriteError)
+    }
+
+    /// Construct an [`AuthorisedEntry`] without checking if the token permits the writing of this
+    /// entry.
+    ///
+    /// Should only be used if the token was created by ourselves or previously validated.
+    pub fn new_unchecked(
+        entry: Entry<MCL, MCC, MPL, N, S, PD>,
+        token: AT,
+    ) -> Self
+    where
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    {
+        Self(entry, token)
+    }
+
+    /// Split into [`Entry`] and [`AuthorisationToken`] halves.
+    pub fn into_parts(self) -> (Entry<MCL, MCC, MPL, N, S, PD>, AT) {
+        (self.0, self.1)
+    }
+
+    /// Get a reference to the [`Entry`].
+    pub fn entry(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
+        &self.0
+    }
+
+    /// Get a reference to the [`AuthorisationToken`].
+    pub fn token(&self) -> &AT {
+        &self.1
     }
 }
 
