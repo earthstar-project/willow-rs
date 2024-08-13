@@ -49,7 +49,7 @@ pub(super) mod encoding {
         }
 
         let power = max_power(max_size);
-        let value_encoded_raw: [u8; size_of::<u64>()] = value.to_be_bytes();
+        let value_encoded_raw: [u8; size_of::<u64>()] = (value as u64).to_be_bytes();
 
         consumer
             .bulk_consume_full_slice(&value_encoded_raw[size_of::<u64>() - (power as usize)..])
