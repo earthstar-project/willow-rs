@@ -8,15 +8,262 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings
+  MSRV: "1.76"
 
 jobs:
-  build:
+  build_and_test_nix:
+    timeout-minutes: 30
+    name: "Build and test (Linux and macOS)"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macOS-latest]
+        rust: [stable]
+        features: [all, none, default]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install ${{ matrix.rust }} rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
 
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
+
+    - name: Select features
+      run: |
+        case "${{ matrix.features }}" in
+            all)
+                echo "FEATURES=--all-features" >> "$GITHUB_ENV"
+                ;;
+            none)
+                echo "FEATURES=--no-default-features" >> "$GITHUB_ENV"
+                ;;
+            default)
+                echo "FEATURES=" >> "$GITHUB_ENV"
+                ;;
+            *)
+                exit 1
+        esac
+
+    - name: build tests
+      run: |
+        cargo nextest run --workspace ${{ env.FEATURES }} --lib --bins --tests --no-run
+
+    - name: run tests
+      run: |
+        cargo nextest run --workspace ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
+      env:
+        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
+
+    - name: run doctests
+      if: ${{ matrix.features == 'all' }}
+      env:
+        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
+      run: |
+        cargo test --workspace --all-features --doc
+
+  build_and_test_windows:
+    timeout-minutes: 30
+    name: "Build and test (Windows)"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        rust: [stable]
+        features: [all, none, default]
+        target:
+          - x86_64-pc-windows-msvc
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.git-ref }}
+
+    - name: Install ${{ matrix.rust }}
+      run: |
+        rustup toolchain install ${{ matrix.rust }}
+        rustup toolchain default ${{ matrix.rust }}
+        rustup target add ${{ matrix.target }}
+        rustup set default-host ${{ matrix.target }}
+
+    - name: Install cargo-nextest
+      shell: powershell
+      run: |
+        $tmp = New-TemporaryFile | Rename-Item -NewName { $_ -replace 'tmp$', 'zip' } -PassThru
+        Invoke-WebRequest -OutFile $tmp https://get.nexte.st/latest/windows
+        $outputDir = if ($Env:CARGO_HOME) { Join-Path $Env:CARGO_HOME "bin" } else { "~/.cargo/bin" }
+        $tmp | Expand-Archive -DestinationPath $outputDir -Force
+        $tmp | Remove-Item
+
+    - name: Select features
+      run: |
+        switch ("${{ matrix.features }}") {
+            "all" {
+                echo "FEATURES=--all-features" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+            }
+            "none" {
+                echo "FEATURES=--no-default-features" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+            }
+            "default" {
+                echo "FEATURES=" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+            }
+            default {
+                Exit 1
+            }
+        }
+
+    - uses: msys2/setup-msys2@v2
+
+    - name: build tests
+      run: |
+        cargo nextest run --workspace ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-run
+
+    - name: run tests
+      run: |
+        cargo nextest run --workspace ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-fail-fast
+      env:
+        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
+
+    - name: run doctests
+      if: ${{ matrix.features == 'all' }}
+      env:
+        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
+      run: |
+        cargo test --workspace --all-features --doc
+
+  android_build_and_test:
+    name: "Build and test (Android)"
+    timeout-minutes: 30
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        target: ${{ matrix.target }}
+    - name: Install rustup target
+      run: rustup target add ${{ matrix.target }}
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Setup Android NDK
+      uses: arqu/setup-ndk@main
+      id: setup-ndk
+      with:
+        ndk-version: r23
+        add-to-path: true
+
+    - name: Build
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        cargo install cargo-ndk
+        cargo ndk --target ${{ matrix.target }} build
+        cargo ndk --target ${{ matrix.target }} test
+
+  cross_build_and_test:
+    name: Cross-compile build and test
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - i686-unknown-linux-gnu
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install rust stable
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cleanup Docker
+      continue-on-error: true
+      run: |
+        docker kill $(docker ps -q)
+
+      # See https://github.com/cross-rs/cross/issues/1222
+    - uses: taiki-e/install-action@cross
+
+    - name: build
+      run: cross build --all --target ${{ matrix.target }}
+
+    - name: test
+      run: cross test --all --target ${{ matrix.target }} -- --test-threads=12
+      env:
+        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG' }}
+
+  check_fmt:
+    timeout-minutes: 30
+    name: Checking fmt
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - name: fmt
+      run: cargo fmt --all -- --check
+
+  check_docs:
+    timeout-minutes: 30
+    name: Checking docs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2024-05-02
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.5
+
+    - name: Docs
+      run: cargo doc --workspace --all-features --no-deps --document-private-items
+      env:
+        RUSTDOCFLAGS: --cfg docsrs
+
+  clippy_check:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.5
+
+    - name: clippy check (all features)
+      run: cargo clippy --workspace --all-features --all-targets --bins --tests --benches
+
+    - name: clippy check (no features)
+      run: cargo clippy --workspace --no-default-features --lib --bins --tests
+
+    - name: clippy check (default features)
+      run: cargo clippy --workspace --all-targets
