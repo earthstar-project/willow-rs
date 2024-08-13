@@ -23,6 +23,7 @@ jobs:
         os: [ubuntu-latest, macOS-latest]
         rust: [stable]
         features: [all, none, default]
+    runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -80,6 +81,7 @@ jobs:
         features: [all, none, default]
         target:
           - x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
