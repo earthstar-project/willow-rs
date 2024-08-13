@@ -200,6 +200,11 @@ jobs:
       matrix:
         target:
           - i686-unknown-linux-gnu
+          # note that there are known bugs in arm cross-compile qemu runners
+          # if issues appear we might have to disable these
+          # - see https://github.com/cross-rs/cross/issues/1311
+          - armv7-linux-androideabi
+          - aarch64-linux-android
     steps:
     - name: Checkout
       uses: actions/checkout@v4
