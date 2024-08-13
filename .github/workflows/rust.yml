@@ -55,11 +55,11 @@ jobs:
 
     - name: build tests
       run: |
-        cargo nextest run --exclude willow-fuzz --workspace ${{ env.FEATURES }} --lib --bins --tests --no-run
+        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --no-run
 
     - name: run tests
       run: |
-        cargo nextest run --exclude willow-fuzz --workspace ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
+        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
 
@@ -183,7 +183,7 @@ jobs:
       run: |
         cargo install cargo-ndk
         cargo ndk --target ${{ matrix.target }} build
-        cargo ndk --target ${{ matrix.target }} test --exclude willow-fuzz
+        cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz
 
   cross_build_and_test:
     name: Cross-compile build and test
@@ -212,10 +212,10 @@ jobs:
     - uses: taiki-e/install-action@cross
 
     - name: build
-      run: cross build --all --target ${{ matrix.target }}
+      run: cross build --all --target ${{ matrix.target }} --workspace
 
     - name: test
-      run: cross test --all --target ${{ matrix.target }} --exclude willow-fuzz-- --test-threads=12
+      run: cross test --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz-- --test-threads=12
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG' }}
 
