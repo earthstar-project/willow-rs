@@ -16,7 +16,7 @@ env:
 jobs:
   build_and_test_nix:
     timeout-minutes: 30
-    name: "Build and test (Linux and macOS)"
+    name: "Build and test (nix)"
     strategy:
       fail-fast: false
       matrix:
@@ -192,7 +192,7 @@ jobs:
         # cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz --exclude earthstar
 
   cross_build_and_test:
-    name: Cross-compile build and test
+    name: Cross build and test
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
