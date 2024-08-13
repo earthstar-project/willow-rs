@@ -32,6 +32,11 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
 
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: nextest
+
     - name: Select features
       run: |
         case "${{ matrix.features }}" in
@@ -50,11 +55,11 @@ jobs:
 
     - name: build tests
       run: |
-        cargo test --workspace ${{ env.FEATURES }} --lib --bins --tests --no-run
+        cargo nextest run --exclude willow-fuzz --workspace ${{ env.FEATURES }} --lib --bins --tests --no-run
 
     - name: run tests
       run: |
-        cargo test --workspace ${{ env.FEATURES }} --lib --bins --tests
+        cargo nextest run --exclude willow-fuzz --workspace ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
 
@@ -63,7 +68,7 @@ jobs:
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
       run: |
-        cargo test --workspace --all-features --doc
+        cargo test --workspace --exclude willow-fuzz --all-features --doc
 
   build_and_test_windows:
     timeout-minutes: 30
@@ -90,6 +95,15 @@ jobs:
         rustup target add ${{ matrix.target }}
         rustup set default-host ${{ matrix.target }}
 
+    - name: Install cargo-nextest
+      shell: powershell
+      run: |
+        $tmp = New-TemporaryFile | Rename-Item -NewName { $_ -replace 'tmp$', 'zip' } -PassThru
+        Invoke-WebRequest -OutFile $tmp https://get.nexte.st/latest/windows
+        $outputDir = if ($Env:CARGO_HOME) { Join-Path $Env:CARGO_HOME "bin" } else { "~/.cargo/bin" }
+        $tmp | Expand-Archive -DestinationPath $outputDir -Force
+        $tmp | Remove-Item
+
     - name: Select features
       run: |
         switch ("${{ matrix.features }}") {
@@ -111,11 +125,11 @@ jobs:
 
     - name: build tests
       run: |
-        cargo test --workspace ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-run
+        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-run
 
     - name: run tests
       run: |
-        cargo test --workspace ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }}
+        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-fail-fast
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
 
@@ -124,7 +138,7 @@ jobs:
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
       run: |
-        cargo test --workspace --all-features --doc
+        cargo test --workspace --exclude willow-fuzz --all-features --doc
 
   android_build_and_test:
     name: "Build and test (Android)"
@@ -169,7 +183,7 @@ jobs:
       run: |
         cargo install cargo-ndk
         cargo ndk --target ${{ matrix.target }} build
-        cargo ndk --target ${{ matrix.target }} test
+        cargo ndk --target ${{ matrix.target }} test --exclude willow-fuzz
 
   cross_build_and_test:
     name: Cross-compile build and test
@@ -201,9 +215,30 @@ jobs:
       run: cross build --all --target ${{ matrix.target }}
 
     - name: test
-      run: cross test --all --target ${{ matrix.target }} -- --test-threads=12
+      run: cross test --all --target ${{ matrix.target }} --exclude willow-fuzz-- --test-threads=12
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG' }}
+
+  fuzz_tests:
+    timeout-minutes: 30
+    name: "Run fuzz tests"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        rust: [nightly]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install ${{ matrix.rust }} rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: build and run fuzz tests
+      run: |
+        cargo test -p willow-fuzz
 
   check_fmt:
     timeout-minutes: 30
