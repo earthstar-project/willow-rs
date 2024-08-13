@@ -215,7 +215,7 @@ jobs:
       run: cross build --all --target ${{ matrix.target }} --workspace
 
     - name: test
-      run: cross test --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz-- --test-threads=12
+      run: cross test --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz -- --test-threads=12
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG' }}
 
