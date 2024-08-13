@@ -367,7 +367,7 @@ pub(super) mod encoding {
                 }
             }
 
-            let delegations_count = self.delegations_len();
+            let delegations_count = self.delegations_len() as u64;
 
             if delegations_count >= 4294967296 {
                 header |= 0b0011_1111;

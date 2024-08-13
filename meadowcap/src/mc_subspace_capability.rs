@@ -267,7 +267,7 @@ pub(super) mod encoding {
         {
             let mut header = 0;
 
-            let delegations_count = self.delegations.len();
+            let delegations_count = self.delegations.len() as u64;
 
             if delegations_count >= 4294967296 {
                 header |= 0b1111_1111;
