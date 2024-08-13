@@ -288,7 +288,7 @@ pub(super) mod encoding {
             Encodable::encode(&self.initial_authorisation, consumer).await?;
 
             if delegations_count >= 60 {
-                encode_compact_width_be(delegations_count as u64, consumer).await?;
+                encode_compact_width_be(delegations_count, consumer).await?;
             }
 
             for delegation in self.delegations.iter() {

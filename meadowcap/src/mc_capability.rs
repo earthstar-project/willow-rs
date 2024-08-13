@@ -394,7 +394,7 @@ pub(super) mod encoding {
             };
 
             if delegations_count >= 60 {
-                encode_compact_width_be(delegations_count as u64, consumer).await?;
+                encode_compact_width_be(delegations_count, consumer).await?;
             }
 
             let mut prev_area = out.clone();
