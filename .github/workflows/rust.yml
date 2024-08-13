@@ -223,7 +223,7 @@ jobs:
     - uses: taiki-e/install-action@cross
 
     - name: build
-      run: cross build --all --target ${{ matrix.target }} --workspace
+      run: cross build --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz
 
     - name: test
       run: cross test --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz -- --test-threads=12
