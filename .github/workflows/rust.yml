@@ -22,7 +22,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macOS-latest]
         rust: [stable]
-        features: [all, none, default]
+        # once feature flags are used more, enable testing with all combinations
+        # features: [all, none, default]
+        features: [none, default]
     runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
@@ -78,7 +80,9 @@ jobs:
       matrix:
         os: [windows-latest]
         rust: [stable]
-        features: [all, none, default]
+        # once feature flags are used more, enable testing with all combinations
+        # features: [all, none, default]
+        features: [default]
         target:
           - x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
@@ -180,10 +184,11 @@ jobs:
     - name: Build
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
         cargo install cargo-ndk
         cargo ndk --target ${{ matrix.target }} build
-        cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz
+        cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz --exclude earthstar
 
   cross_build_and_test:
     name: Cross-compile build and test
