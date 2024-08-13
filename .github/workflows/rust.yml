@@ -196,39 +196,35 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         target:
           - i686-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
           # note that there are known bugs in arm cross-compile qemu runners
           # if issues appear we might have to disable these
           # - see https://github.com/cross-rs/cross/issues/1311
-          - armv7-linux-androideabi
-          - aarch64-linux-android
+          - armv7-linux-androideabi@23
+          - aarch64-linux-android@23
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Install rust stable
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Cleanup Docker
-      continue-on-error: true
-      run: |
-        docker kill $(docker ps -q)
-
-      # See https://github.com/cross-rs/cross/issues/1222
-    - uses: taiki-e/install-action@cross
-
-    - name: build
-      run: cross build --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz
-
-    - name: test
-      run: cross test --all --target ${{ matrix.target }} --workspace --exclude willow-fuzz -- --test-threads=12
-      env:
-        RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG' }}
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Install cross-compilation tools
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - name: Cleanup Docker
+        continue-on-error: true
+        run: |
+          docker kill $(docker ps -q)
+      
+      # setup-cross-toolchain-action sets the `CARGO_BUILD_TARGET` environment variable,
+      # so there is no need for an explicit `--target` flag.
+      - name: Build tests
+        run: cargo build --workspace --exclude willow-fuzz
+      - name: Run tests
+        run: cargo test --verbose --workspace --exclude willow-fuzz
 
   fuzz_tests:
     timeout-minutes: 30
