@@ -16,7 +16,7 @@ env:
 jobs:
   build_and_test_nix:
     timeout-minutes: 30
-    name: "Build and test (nix)"
+    name: "Build and test"
     strategy:
       fail-fast: false
       matrix:
@@ -82,7 +82,7 @@ jobs:
         rust: [stable]
         # once feature flags are used more, enable testing with all combinations
         # features: [all, none, default]
-        features: [default]
+        features: [default, none]
         target:
           - x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
@@ -144,55 +144,8 @@ jobs:
       run: |
         cargo test --workspace --exclude willow-fuzz --all-features --doc
 
-  android_build:
-    name: "Build only (Android)"
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - aarch64-linux-android
-          - armv7-linux-androideabi
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        target: ${{ matrix.target }}
-    - name: Install rustup target
-      run: rustup target add ${{ matrix.target }}
-
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Setup Android NDK
-      uses: arqu/setup-ndk@main
-      id: setup-ndk
-      with:
-        ndk-version: r23
-        add-to-path: true
-
-    - name: Build
-      env:
-        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-      run: |
-        cargo install cargo-ndk
-        cargo ndk --target ${{ matrix.target }} build
-        # TODO: would be good to actually run tests on android, but this is not working at the moment.
-        # cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz --exclude earthstar
-
   cross_build_and_test:
-    name: Cross build and test
+    name: Build and test (cross)
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
@@ -205,6 +158,16 @@ jobs:
           # - see https://github.com/cross-rs/cross/issues/1311
           - armv7-linux-androideabi@23
           - aarch64-linux-android@23
+        include:
+          - target: i686-unknown-linux-gnu
+            name: Linux 32bit
+          - target: aarch64-unknown-linux-gnu
+            name: Linux aarch64
+          - target: armv7-linux-androideabi@23
+            name: Android armv7
+          - target: aarch64-linux-android@23
+            name: Android aarch64
+          
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -249,7 +212,7 @@ jobs:
 
   check_fmt:
     timeout-minutes: 30
-    name: Checking fmt
+    name: Chec fmt
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -263,7 +226,7 @@ jobs:
 
   check_docs:
     timeout-minutes: 30
-    name: Checking docs
+    name: Check docs
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -279,6 +242,7 @@ jobs:
         RUSTDOCFLAGS: --cfg docsrs
 
   clippy_check:
+    name: Check clippy
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
