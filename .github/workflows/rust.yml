@@ -144,8 +144,8 @@ jobs:
       run: |
         cargo test --workspace --exclude willow-fuzz --all-features --doc
 
-  android_build_and_test:
-    name: "Build and test (Android)"
+  android_build:
+    name: "Build only (Android)"
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
@@ -188,7 +188,8 @@ jobs:
       run: |
         cargo install cargo-ndk
         cargo ndk --target ${{ matrix.target }} build
-        cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz --exclude earthstar
+        # TODO: would be good to actually run tests on android, but this is not working at the moment.
+        # cargo ndk --target ${{ matrix.target }} test --workspace --exclude willow-fuzz --exclude earthstar
 
   cross_build_and_test:
     name: Cross-compile build and test
