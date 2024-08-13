@@ -4,20 +4,20 @@ use syncify::syncify_replace;
 /// Return the least natural number such that 256^`n` is greater than or equal to `n`.
 ///
 /// Used for determining the minimal number of bytes needed to represent a given unsigned integer, and more specifically [`path_length_power`](https://willowprotocol.org/specs/encodings/index.html#path_length_power) and [`path_count_power`](https://willowprotocol.org/specs/encodings/index.html#path_count_power).
-pub const fn max_power(max_size: usize) -> u8 {
+pub const fn max_power(max_size: u64) -> u8 {
     if max_size < 256 {
         1
-    } else if max_size < 65536 {
+    } else if max_size < 256u64.pow(2) {
         2
-    } else if max_size < 16777216 {
+    } else if max_size < 256u64.pow(3) {
         3
-    } else if max_size < 4294967296 {
+    } else if max_size < 256u64.pow(4) {
         4
-    } else if max_size < (256_usize).pow(5) {
+    } else if max_size < 256u64.pow(5) {
         5
-    } else if max_size < (256_usize).pow(6) {
+    } else if max_size < 256u64.pow(6) {
         6
-    } else if max_size < (256_usize).pow(7) {
+    } else if max_size < 256u64.pow(7) {
         7
     } else {
         8
@@ -48,7 +48,7 @@ pub(super) mod encoding {
             panic!("Can't encode a value larger than its maximum possible value!")
         }
 
-        let power = max_power(max_size);
+        let power = max_power(max_size as u64);
         let value_encoded_raw: [u8; size_of::<u64>()] = (value as u64).to_be_bytes();
 
         consumer
@@ -67,7 +67,7 @@ pub(super) mod encoding {
     where
         P: BulkProducer<Item = u8>,
     {
-        let power = max_power(max_size);
+        let power = max_power(max_size as u64);
         let mut slice = [0u8; size_of::<u64>()];
 
         producer
