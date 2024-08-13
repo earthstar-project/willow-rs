@@ -2,13 +2,14 @@ use syncify::syncify;
 
 #[syncify(encoding_sync)]
 pub mod encoding {
-
     use crate::error::DecodeError;
-
     use either::Either;
+    // TODO: Somehow this is marked as unused. But if I remove it, the syncify_replace is not
+    // working. Weird!
+    #[allow(unused_imports)]
     use syncify::syncify_replace;
 
-    #[syncify_replace(use ufotofu::sync::{ BulkProducer};)]
+    #[syncify_replace(use ufotofu::sync::BulkProducer;)]
     use ufotofu::local_nb::BulkProducer;
 
     /// Have `Producer` produce a single byte, or return an error if the final value was produced or the producer experienced an error.
