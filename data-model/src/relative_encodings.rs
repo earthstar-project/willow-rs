@@ -1,9 +1,10 @@
 use syncify::syncify;
-use syncify::syncify_replace;
 
 #[syncify(encoding_sync)]
 pub(super) mod encoding {
-    use super::*;
+    // TODO: Unclear why this is marked unused.
+    #[allow(unused_imports)]
+    use syncify::syncify_replace;
 
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
