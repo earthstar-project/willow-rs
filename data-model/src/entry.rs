@@ -13,6 +13,9 @@ pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
+///
+/// [`Entry`] implements `Ord` and `PartialOrd`, and sorts by namespace id first, then subspace id,
+/// then path, then timestamp, then payload digest, and then payload length.
 #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd, Hash)]
 pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
@@ -28,10 +31,10 @@ where
     path: Path<MCL, MCC, MPL>,
     /// The claimed creation time of the [`Entry`].
     timestamp: Timestamp,
-    /// The length of the Payload in bytes.
-    payload_length: u64,
     /// The result of applying hash_payload to the Payload.
     payload_digest: PD,
+    /// The length of the Payload in bytes.
+    payload_length: u64,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
