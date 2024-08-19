@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 #[cfg(feature = "dev")]
 use arbitrary::{size_hint::and_all, Arbitrary};
 
@@ -13,7 +15,7 @@ pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
     N: NamespaceId,
@@ -28,10 +30,10 @@ where
     path: Path<MCL, MCC, MPL>,
     /// The claimed creation time of the [`Entry`].
     timestamp: Timestamp,
-    /// The length of the Payload in bytes.
-    payload_length: u64,
     /// The result of applying hash_payload to the Payload.
     payload_digest: PD,
+    /// The length of the Payload in bytes.
+    payload_length: u64,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
@@ -98,6 +100,52 @@ where
             || (other.timestamp == self.timestamp
                 && other.payload_digest == self.payload_digest
                 && other.payload_length < self.payload_length)
+    }
+}
+
+/// Returns an ordering between `self` and `other`.
+///
+/// See the implementation of [`Ord`] on [`Entry`].
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> PartialOrd
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Ord,
+    S: SubspaceId,
+    PD: PayloadDigest,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Returns an ordering between `self` and `other`.
+///
+/// The ordering is the ordering defined in the [sideloading protocol]: Entries are first compared
+/// by namespace id, then by subspace id, then by path. If those are all equal, the entries are
+/// sorted by their newer relation (see [`Self::is_newer_than`]).
+///
+/// [sideloading protocol]: https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Ord
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Ord,
+    S: SubspaceId,
+    PD: PayloadDigest,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.namespace_id
+            .cmp(&other.namespace_id)
+            .then_with(|| self.subspace_id.cmp(&other.subspace_id))
+            .then_with(|| self.path.cmp(&other.path))
+            .then_with(|| {
+                if self.is_newer_than(other) {
+                    Ordering::Greater
+                } else if other.is_newer_than(self) {
+                    Ordering::Less
+                } else {
+                    Ordering::Equal
+                }
+            })
     }
 }
 
@@ -230,8 +278,8 @@ impl std::error::Error for UnauthorisedWriteError {}
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
-    pub Entry<MCL, MCC, MPL, N, S, PD>,
-    pub AT,
+    Entry<MCL, MCC, MPL, N, S, PD>,
+    AT,
 )
 where
     N: NamespaceId,
@@ -259,6 +307,32 @@ where
         }
 
         Err(UnauthorisedWriteError)
+    }
+
+    /// Construct an [`AuthorisedEntry`] without checking if the token permits the writing of this
+    /// entry.
+    ///
+    /// Should only be used if the token was created by ourselves or previously validated.
+    pub fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self
+    where
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    {
+        Self(entry, token)
+    }
+
+    /// Split into [`Entry`] and [`AuthorisationToken`] halves.
+    pub fn into_parts(self) -> (Entry<MCL, MCC, MPL, N, S, PD>, AT) {
+        (self.0, self.1)
+    }
+
+    /// Get a reference to the [`Entry`].
+    pub fn entry(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
+        &self.0
+    }
+
+    /// Get a reference to the [`AuthorisationToken`].
+    pub fn token(&self) -> &AT {
+        &self.1
     }
 }
 

@@ -26,7 +26,7 @@ impl<NamespacePublicKey: std::fmt::Debug> std::error::Error
 /// A capability that implements [communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_capabilities).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CommunalCapability<
     const MCL: usize,
     const MCC: usize,
@@ -157,8 +157,8 @@ where
     /// The kind of access this capability grants.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_mode)
-    pub fn access_mode(&self) -> &AccessMode {
-        &self.access_mode
+    pub fn access_mode(&self) -> AccessMode {
+        self.access_mode
     }
 
     /// The user to whom this capability grants access.

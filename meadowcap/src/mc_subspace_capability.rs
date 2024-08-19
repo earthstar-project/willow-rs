@@ -10,7 +10,7 @@ use crate::IsCommunal;
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 /// A [delegation](https://willowprotocol.org/specs/pai/index.html#subspace_cap_delegations) of read access for arbitrary `SubspaceId`s to a `UserPublicKey`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct SubspaceDelegation<UserPublicKey, UserSignature>
 where
@@ -42,7 +42,7 @@ where
 /// A capability that certifies read access to arbitrary [SubspaceIds](https://willowprotocol.org/specs/data-model/index.html#SubspaceId) at some unspecified non-empty [`willow_data_model::Path`].
 ///
 /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_capability)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct McSubspaceCapability<
     NamespacePublicKey,
     NamespaceSignature,
@@ -69,9 +69,9 @@ where
     UserSignature: Encodable + Clone,
 {
     /// Generate a new [`McSubspaceCapability`] for a given user, or return an error if the given namespace secret is incorrect.
-    pub fn new<const MCL: usize, const MCC: usize, const MPL: usize, NamespaceSecret>(
+    pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
-        namespace_secret: NamespaceSecret,
+        namespace_secret: &NamespaceSecret,
         user_key: UserPublicKey,
     ) -> Result<
         McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>,
