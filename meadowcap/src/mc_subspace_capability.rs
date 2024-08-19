@@ -267,7 +267,7 @@ pub(super) mod encoding {
         {
             let mut header = 0;
 
-            let delegations_count = self.delegations.len();
+            let delegations_count = self.delegations.len() as u64;
 
             if delegations_count >= 4294967296 {
                 header |= 0b1111_1111;
@@ -288,7 +288,7 @@ pub(super) mod encoding {
             Encodable::encode(&self.initial_authorisation, consumer).await?;
 
             if delegations_count >= 60 {
-                encode_compact_width_be(delegations_count as u64, consumer).await?;
+                encode_compact_width_be(delegations_count, consumer).await?;
             }
 
             for delegation in self.delegations.iter() {
