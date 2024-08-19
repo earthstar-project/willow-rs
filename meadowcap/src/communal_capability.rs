@@ -114,7 +114,7 @@ where
         ));
 
         Ok(Self {
-            access_mode: self.access_mode.clone(),
+            access_mode: self.access_mode,
             namespace_key: self.namespace_key.clone(),
             user_key: self.user_key.clone(),
             delegations: new_delegations,
