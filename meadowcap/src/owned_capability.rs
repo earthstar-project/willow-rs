@@ -200,7 +200,7 @@ where
         ));
 
         Ok(Self {
-            access_mode: self.access_mode.clone(),
+            access_mode: self.access_mode,
             namespace_key: self.namespace_key.clone(),
             initial_authorisation: self.initial_authorisation.clone(),
             user_key: self.user_key.clone(),

@@ -31,13 +31,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
         &self,
         other: &AreaOfInterest<MCL, MCC, MPL, S>,
     ) -> Option<AreaOfInterest<MCL, MCC, MPL, S>> {
-        match self.area.intersection(&other.area) {
-            None => None,
-            Some(area_intersection) => Some(Self {
+        self.area
+            .intersection(&other.area)
+            .map(|area_intersection| Self {
                 area: area_intersection,
                 max_count: core::cmp::min(self.max_count, other.max_count),
                 max_size: self.max_size.min(other.max_size),
-            }),
-        }
+            })
     }
 }
