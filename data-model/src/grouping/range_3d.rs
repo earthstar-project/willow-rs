@@ -41,7 +41,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
 
     /// Create a new [`Range3d`] that covers everything.
     pub fn new_full() -> Self {
-        Self::new(Default::default(), Range::new_open(Path::new_empty()), Default::default())
+        Self::new(
+            Default::default(),
+            Range::new_open(Path::new_empty()),
+            Default::default(),
+        )
     }
 
     /// Return a reference to the range of [`SubspaceId`]s.

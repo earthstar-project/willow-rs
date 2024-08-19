@@ -18,7 +18,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
 {
     /// Creates a new [`AreaOfInterest`].
     pub fn new(area: Area<MCL, MCC, MPL, S>, max_count: u64, max_size: u64) -> Self {
-        Self { area, max_count, max_size }
+        Self {
+            area,
+            max_count,
+            max_size,
+        }
     }
 
     /// Return the intersection of this [`AreaOfInterest`] with another.
