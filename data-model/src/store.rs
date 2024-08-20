@@ -1,8 +1,9 @@
 use crate::{
     entry::{AuthorisedEntry, Entry},
-    grouping::{area::Area, area_of_interest::AreaOfInterest, range_3d::Range3d},
+    grouping::{Area, AreaOfInterest, Range3d},
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
+    AuthorisationToken,
 };
 
 // eheheheh
@@ -10,12 +11,13 @@ type Payload = String;
 
 /// Returned when an entry is successfully ingested into a [`Store`].
 pub enum EntryIngestionSuccess<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest,
-    AT,
-    AEI: Iterator<Item = AuthorisedEntry<N, S, P, PD, AT>>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 > {
     /// The entry was successfully ingested.
     Success,
@@ -24,9 +26,9 @@ pub enum EntryIngestionSuccess<
     /// The entry was not ingested because a newer entry with same prfieiuhnsuthaeusntaheouonsth
     Obsolete {
         /// The obsolete entry which was not ingested.
-        obsolete: AuthorisedEntry<N, S, P, PD, AT>,
+        obsolete: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         /// The newer entry which was not overwritten.
-        newer: AuthorisedEntry<N, S, P, PD, AT>,
+        newer: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     },
 }
 
@@ -57,10 +59,8 @@ pub enum QueryOrder {
 pub trait Store<
     N: NamespaceId,
     S: SubspaceId,
-    P: Path,
     PD: PayloadDigest,
     AT,
-    AEI: Iterator<Item = AuthorisedEntry<N, S, P, PD, AT>>,
     // Do we need a trait for fingerprints?
     FP,
 >
