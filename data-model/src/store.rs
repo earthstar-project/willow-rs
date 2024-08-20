@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use ufotofu::nb::BulkProducer;
 
 use crate::{
@@ -91,10 +93,14 @@ where
     fn ingest_entry(
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-    ) -> Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+    ) -> impl Future<
+        Output = Result<
+            EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
+            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+        >,
     >;
+
+    // TODO: Bulk ingestion entry. The annoying there is it needs its own success / error types. We could get around this by exposing a BulkConsumer from the Store, but [then we need to support multi-writer consumption](https://github.com/earthstar-project/willow-rs/pull/21#issuecomment-2192393204).
 
     /// Attempt to append part of a payload for a given [`AuthorisedEntry`].
     ///
@@ -111,7 +117,7 @@ where
         expected_digest: PD,
         expected_size: u64,
         producer: &mut Producer,
-    ) -> Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>
+    ) -> impl Future<Output = Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>>
     where
         Producer: BulkProducer<Item = u8>;
 }
