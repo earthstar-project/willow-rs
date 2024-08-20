@@ -5,7 +5,7 @@ use ufotofu::nb::BulkProducer;
 use crate::{
     entry::AuthorisedEntry,
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyEntry,
+    LengthyEntry, Path,
 };
 
 /// Returned when an entry is successfully ingested into a [`Store`].
@@ -71,11 +71,8 @@ pub enum PayloadAppendError {
     SomethingElseWentWrong,
 }
 
-pub enum QueryOrder {
-    Subspace,
-    Path,
-    Timestamp,
-}
+/// Returned when no entry was found for some criteria.
+pub struct NoSuchEntryError();
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -120,4 +117,15 @@ where
     ) -> impl Future<Output = Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>>
     where
         Producer: BulkProducer<Item = u8>;
+
+    /// Locally forget an entry with a given [path] and [subspace] id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the data. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting.
+    fn forget_entry(
+        path: Path<MCL, MCC, MPL>,
+        subspace_id: S,
+        traceless: bool,
+    ) -> Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>;
 }
