@@ -27,6 +27,8 @@
 
 mod entry;
 pub use entry::*;
+mod lengthy_entry;
+pub use lengthy_entry::*;
 pub mod grouping;
 mod parameters;
 pub use parameters::*;
