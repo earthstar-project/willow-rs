@@ -4,6 +4,7 @@ use ufotofu::nb::BulkProducer;
 
 use crate::{
     entry::AuthorisedEntry,
+    grouping::AreaOfInterest,
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     LengthyEntry, Path,
 };
@@ -120,12 +121,32 @@ where
 
     /// Locally forget an entry with a given [path] and [subspace] id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the data. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting.
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
-        path: Path<MCL, MCC, MPL>,
+        path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
         traceless: bool,
-    ) -> Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>;
+    ) -> impl Future<Output = Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>>;
+
+    /// Locally forget all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
+    fn forget_area(
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        traceless: bool,
+    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
+
+    /// Locally forget all [`AuthorisedEntry`] **not** [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
+    fn forget_everything_but_area(
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        traceless: bool,
+    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
 }
