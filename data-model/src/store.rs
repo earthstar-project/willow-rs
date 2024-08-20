@@ -149,4 +149,34 @@ where
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
+
+    /// Locally forget a payload with a given [`PayloadDigest`], or an error if no payload with that digest is held by this store.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    fn forget_payload(
+        digest: PD,
+        traceless: bool,
+    ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
+
+    /// Locally forget all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    fn forget_area_payloads(
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        traceless: bool,
+    ) -> impl Future<Output = Vec<PD>>;
+
+    /// Locally forget all payloads with corresponding [`AuthorisedEntry`] **not** [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    fn forget_everything_but_area_payloads(
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        traceless: bool,
+    ) -> impl Future<Output = Vec<PD>>;
 }
