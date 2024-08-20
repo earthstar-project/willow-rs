@@ -179,4 +179,7 @@ where
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
+
+    /// Force persistence of all previous mutations
+    fn flush() -> impl Future<Output = ()>;
 }
