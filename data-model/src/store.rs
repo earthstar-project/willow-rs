@@ -6,7 +6,7 @@ use crate::{
     entry::AuthorisedEntry,
     grouping::AreaOfInterest,
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyEntry, Path,
+    LengthyAuthorisedEntry, LengthyEntry, Path,
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
@@ -162,7 +162,7 @@ where
     where
         Producer: BulkProducer<Item = u8>;
 
-    /// Locally forget an entry with a given [path] and [subspace] id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
+    /// Locally forget an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
@@ -225,4 +225,15 @@ where
 
     /// Force persistence of all previous mutations
     fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
+
+    /// Return a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
+    ///
+    /// If `ignore_incomplete_payloads` is `true`, will return `None` if the entry's corresponding payload  is incomplete, even if there is an entry present.
+    /// If `ignore_empty_payloads` is `true`, will return `None` if the entry's payload length is `0`, even if there is an entry present.
+    fn entry(
+        path: Path<MCL, MCC, MPL>,
+        subspace_id: S,
+        ignore_incomplete_payloads: bool,
+        ignore_empty_payloads: bool,
+    ) -> Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 }
