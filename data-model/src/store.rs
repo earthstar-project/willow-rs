@@ -66,10 +66,10 @@ pub struct BulkIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    ConsumerError,
+    IngestionError,
 > {
     pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
-    pub error: ConsumerError,
+    pub error: IngestionError,
 }
 
 /// Return when a payload is successfully appended to the [`Store`].
@@ -111,7 +111,7 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     type FlushError;
-    type ConsumerError;
+    type BulkIngestionError;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -130,6 +130,8 @@ where
     >;
 
     /// Attempt to ingest many [`AuthorisedEntry`] in the [`Store`].
+    ///
+    /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have returned [`EntryIngestionError`]. The `Err` type of this result is only returned if there was some internal error.
     fn bulk_ingest_entry(
         &self,
         authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
@@ -137,7 +139,7 @@ where
     ) -> impl Future<
         Output = Result<
             Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
-            BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::ConsumerError>,
+            BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::BulkIngestionError>,
         >,
     >;
 
