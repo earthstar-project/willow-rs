@@ -44,22 +44,8 @@ pub enum EntryIngestionError<
 > {
     /// The entry belonged to another namespace.
     WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
-}
-
-/// Returned when an entry failed to be ingested during a bulk ingestion.
-pub enum BulkIngestionError<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT,
-> {
-    /// The entry belonged to another namespace.
-    WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
-    /// The consumer failed for some reason.
-    ConsumerFailure,
+    /// The ingestion would have triggered prefix pruning when that was not desired.
+    PruningPrevented,
 }
 
 /// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
@@ -67,9 +53,24 @@ pub type BulkIngestionResult<const MCL: usize, const MCC: usize, const MPL: usiz
     AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
     >,
 );
+
+/// Returned when a bulk ingestion failed due to a consumer error.
+pub struct BulkIngestionError<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    ConsumerError,
+> {
+    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
+    pub error: ConsumerError,
+}
 
 /// Return when a payload is successfully appended to the [`Store`].
 pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
@@ -110,15 +111,17 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     type FlushError;
+    type ConsumerError;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
 
-    /// Attempt to store an [`AuthorisedEntry`] in the [`Store`].
-    /// Will fail if the entry belonged to a different namespace than the store's.
+    /// Attempt to ingest an [`AuthorisedEntry`] into the [`Store`].
+    /// Will fail if the entry belonged to a different namespace than the store's, or if the `prevent_pruning` param is `true` and an ingestion would have triggered [prefix pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning).
     fn ingest_entry(
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        prevent_pruning: bool,
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
@@ -126,13 +129,17 @@ where
         >,
     >;
 
-    // TODO: Bulk ingestion entry. The annoying there is it needs its own success / error types. We could get around this by exposing a BulkConsumer from the Store, but [then we need to support multi-writer consumption](https://github.com/earthstar-project/willow-rs/pull/21#issuecomment-2192393204).
-    /// Attempt to store an [`AuthorisedEntry`] in the [`Store`].
-    /// Will fail if the entry belonged to a different namespace than the store's.
+    /// Attempt to ingest many [`AuthorisedEntry`] in the [`Store`].
     fn bulk_ingest_entry(
         &self,
         authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
-    ) -> impl Future<Output = Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>>;
+        prevent_pruning: bool,
+    ) -> impl Future<
+        Output = Result<
+            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
+            BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::ConsumerError>,
+        >,
+    >;
 
     /// Attempt to append part of a payload for a given [`AuthorisedEntry`].
     ///
