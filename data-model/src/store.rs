@@ -301,9 +301,9 @@ where
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_subscription(
+        progress_id: u64,
         area: AreaOfInterest<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
-        progress_id: Option<u64>,
     ) -> Result<Self::EventProducer, ResumptionFailedError>;
 }
