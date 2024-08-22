@@ -114,6 +114,32 @@ pub enum QueryOrder {
     Efficient,
 }
 
+/// An event which took place within a [`Store`].
+/// Each event includes a *progress ID* which can be used to *resume* a subscription at any point in the future.
+pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    /// A new entry was ingested.
+    Ingested(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    /// An existing entry received a portion of its corresponding payload.
+    Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    /// An entry was forgotten.
+    EntryForgotten(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    /// A payload was forgotten.
+    PayloadForgotten(u64, PD),
+    /// An entry was overwritten.
+    Overwritten(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    /// An entry was pruned via prefix pruning.
+    Pruned(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+}
+
+/// Returned when the store could not resume a subscription because the provided ID was too outdated or not present.
+pub struct ResumptionFailedError(pub u64);
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -125,6 +151,7 @@ where
     type FlushError;
     type BulkIngestionError;
     type EntryProducer: Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    type EventProducer: Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -250,10 +277,10 @@ where
         ignore_empty_payloads: bool,
     ) -> Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
-    /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`].
+    /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
     ///
-    /// If `ignore_incomplete_payloads` is `true`, entries with incomplete corresponding payloads will be excluded from results.
-    /// If `ignore_empty_payloads` is `true`, entries with a `payload_length` of `0` will be excluded from results.
+    /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
+    /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_area(
         area: AreaOfInterest<MCL, MCC, MPL, S>,
         order: QueryOrder,
@@ -261,4 +288,22 @@ where
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> Self::EntryProducer;
+
+    /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
+    ///
+    /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
+    /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
+    fn subscribe_area(
+        area: AreaOfInterest<MCL, MCC, MPL, S>,
+        ignore_incomplete_payloads: bool,
+        ignore_empty_payloads: bool,
+    ) -> Self::EventProducer;
+
+    /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
+    fn resume_subscription(
+        area: AreaOfInterest<MCL, MCC, MPL, S>,
+        ignore_incomplete_payloads: bool,
+        ignore_empty_payloads: bool,
+        progress_id: Option<u64>,
+    ) -> Result<Self::EventProducer, ResumptionFailedError>;
 }
