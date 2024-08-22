@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use ufotofu::nb::BulkProducer;
+use ufotofu::{local_nb::Producer, nb::BulkProducer};
 
 use crate::{
     entry::AuthorisedEntry,
@@ -102,6 +102,18 @@ pub enum PayloadAppendError {
 /// Returned when no entry was found for some criteria.
 pub struct NoSuchEntryError();
 
+/// Orderings for a
+pub enum QueryOrder {
+    /// Ordered by subspace, then path, then timestamp
+    Subspace,
+    /// Ordered by path, them timestamp, then subspace
+    Path,
+    /// Ordered by timestamp, then subspace, then path
+    Timestamp,
+    /// Whichever order is most efficient.
+    Efficient,
+}
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -112,6 +124,7 @@ where
 {
     type FlushError;
     type BulkIngestionError;
+    type EntryProducer: Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -236,4 +249,16 @@ where
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+
+    /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`].
+    ///
+    /// If `ignore_incomplete_payloads` is `true`, entries with incomplete corresponding payloads will be excluded from results.
+    /// If `ignore_empty_payloads` is `true`, entries with a `payload_length` of `0` will be excluded from results.
+    fn query_area(
+        area: AreaOfInterest<MCL, MCC, MPL, S>,
+        order: QueryOrder,
+        reverse: bool,
+        ignore_incomplete_payloads: bool,
+        ignore_empty_payloads: bool,
+    ) -> Self::EntryProducer;
 }
