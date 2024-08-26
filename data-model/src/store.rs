@@ -285,7 +285,7 @@ where
         subspace_id: S,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
-    ) -> Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
     ///
