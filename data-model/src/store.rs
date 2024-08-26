@@ -197,7 +197,7 @@ where
     where
         Producer: BulkProducer<Item = u8>;
 
-    /// Locally forget an entry with a given [path] and [subspace] id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
+    /// Locally forget an entry with a given [path] and [subspace] id, succeeding if there is no entry at that path and subspace ID, or returning an implementation-specific error if something went wrong.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
@@ -206,7 +206,7 @@ where
         path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
         traceless: bool,
-    ) -> impl Future<Output = Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>>;
+    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
     /// Locally forget all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
     ///
