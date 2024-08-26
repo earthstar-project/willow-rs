@@ -147,7 +147,7 @@ where
     Pruned(u64, PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 }
 
-/// Returned when the store could not resume a subscription because the provided ID was too outdated or not present.
+/// Returned when the store chooses to not resume a subscription.
 pub struct ResumptionFailedError(pub u64);
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
