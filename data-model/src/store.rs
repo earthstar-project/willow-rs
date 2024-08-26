@@ -160,8 +160,6 @@ where
 {
     type FlushError;
     type BulkIngestionError;
-    type EntryProducer: Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
-    type EventProducer: Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -297,7 +295,7 @@ where
         reverse: bool,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
-    ) -> Self::EntryProducer;
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     ///
@@ -307,7 +305,7 @@ where
         area: AreaOfInterest<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
-    ) -> Self::EventProducer;
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_subscription(
@@ -315,5 +313,5 @@ where
         area: AreaOfInterest<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
-    ) -> Result<Self::EventProducer, ResumptionFailedError>;
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 }
