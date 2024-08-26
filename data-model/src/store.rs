@@ -199,7 +199,7 @@ where
 
     /// Locally forget an entry with a given [path] and [subspace] id, succeeding if there is no entry at that path and subspace ID, or returning an implementation-specific error if something went wrong.
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgotten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
