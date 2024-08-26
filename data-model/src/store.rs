@@ -115,6 +115,12 @@ pub enum PayloadAppendError<OE> {
 /// Returned when no entry was found for some criteria.
 pub struct NoSuchEntryError();
 
+/// Returned when a payload could not be forgotten.
+pub enum ForgetPayloadError {
+    NoSuchEntry,
+    ReferredToByOtherEntries,
+}
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -222,13 +228,27 @@ where
         traceless: bool,
     ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
 
-    /// Locally forget a payload with a given [`PayloadDigest`], or an error if no payload with that digest is held by this store.
+    /// Locally forget the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
-        digest: PD,
+        path: &Path<MCL, MCC, MPL>,
+        subspace_id: S,
+        traceless: bool,
+    ) -> impl Future<Output = Result<(), ForgetPayloadError>>;
+
+    /// Locally forget the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store. **The payload will be forgotten even if it corresponds to other entries**.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// If the `even_if_referred_to_by_other_entries` parameter is `true`, the payload will be forgotten even if other entries with a different path and/or subspace ID refer to this payload.
+    ///
+    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    fn forget_payload_unchecked(
+        path: &Path<MCL, MCC, MPL>,
+        subspace_id: S,
         traceless: bool,
     ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
 
