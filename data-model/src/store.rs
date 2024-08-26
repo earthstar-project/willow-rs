@@ -98,7 +98,7 @@ pub enum PayloadAppendError {
 }
 
 /// Returned when no entry was found for some criteria.
-pub struct NoSuchEntryError();
+pub struct NoSuchEntryError;
 
 /// Orderings for a
 pub enum QueryOrder {
