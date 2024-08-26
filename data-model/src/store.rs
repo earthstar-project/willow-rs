@@ -41,19 +41,31 @@ pub enum EntryIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT,
+    OE,
 > {
     /// The entry belonged to another namespace.
     WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
+    /// Something specific to this store implementation went wrong.
+    OperationsError(OE),
 }
 
 /// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
-pub type BulkIngestionResult<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> = (
+pub type BulkIngestionResult<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    OE,
+> = (
     AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>,
     >,
 );
 
@@ -66,9 +78,10 @@ pub struct BulkIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    OE,
     IngestionError,
 > {
-    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
+    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, OE>>,
     pub error: IngestionError,
 }
 
@@ -86,7 +99,7 @@ where
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
-pub enum PayloadAppendError {
+pub enum PayloadAppendError<OE> {
     /// None of the entries in the store reference this payload.
     NotEntryReference,
     /// The payload is already held in storage.
@@ -95,8 +108,8 @@ pub enum PayloadAppendError {
     PayloadTooLarge,
     /// The completed payload's digest is not what was expected.
     DigestMismatch,
-    /// Try deleting some files!!!
-    SomethingElseWentWrong,
+    /// Something specific to this store implementation went wrong.
+    OperationError(OE),
 }
 
 /// Returned when no entry was found for some criteria.
@@ -112,6 +125,7 @@ where
 {
     type FlushError;
     type BulkIngestionError;
+    type OperationsError;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -125,7 +139,7 @@ where
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
         >,
     >;
 
@@ -138,8 +152,18 @@ where
         prevent_pruning: bool,
     ) -> impl Future<
         Output = Result<
-            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
-            BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::BulkIngestionError>,
+            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
+            BulkIngestionError<
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                PD,
+                AT,
+                Self::BulkIngestionError,
+                Self::OperationsError,
+            >,
         >,
     >;
 
@@ -158,7 +182,12 @@ where
         expected_digest: PD,
         expected_size: u64,
         producer: &mut Producer,
-    ) -> impl Future<Output = Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>>
+    ) -> impl Future<
+        Output = Result<
+            PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
+            PayloadAppendError<Self::OperationsError>,
+        >,
+    >
     where
         Producer: BulkProducer<Item = u8>;
 
