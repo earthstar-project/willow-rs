@@ -187,7 +187,7 @@ where
         &self,
         expected_digest: PD,
         expected_size: u64,
-        producer: &mut Producer,
+        payload_source: &mut Producer,
     ) -> impl Future<
         Output = Result<
             PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
