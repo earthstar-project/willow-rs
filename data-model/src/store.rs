@@ -21,8 +21,6 @@ pub enum EntryIngestionSuccess<
 > {
     /// The entry was successfully ingested.
     Success,
-    /// The entry was successfully ingested and prefix pruned some entries.
-    SuccessAndPruned(Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>),
     /// The entry was not ingested because a newer entry with same
     Obsolete {
         /// The obsolete entry which was not ingested.
@@ -114,6 +112,20 @@ pub enum QueryOrder {
     Efficient,
 }
 
+/// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
+pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    /// The entry which was pruned.
+    pub pruned: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    /// The entry which triggered the pruning.
+    pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+}
+
 /// An event which took place within a [`Store`].
 /// Each event includes a *progress ID* which can be used to *resume* a subscription at any point in the future.
 pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -131,10 +143,8 @@ where
     EntryForgotten(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// A payload was forgotten.
     PayloadForgotten(u64, PD),
-    /// An entry was overwritten.
-    Overwritten(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was pruned via prefix pruning.
-    Pruned(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    Pruned(u64, PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 }
 
 /// Returned when the store could not resume a subscription because the provided ID was too outdated or not present.
