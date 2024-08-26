@@ -201,7 +201,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
         path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
@@ -212,7 +212,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
@@ -222,7 +222,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_everything_but_area(
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
@@ -232,7 +232,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
         path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
@@ -245,7 +245,7 @@ where
     ///
     /// If the `even_if_referred_to_by_other_entries` parameter is `true`, the payload will be forgotten even if other entries with a different path and/or subspace ID refer to this payload.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload_unchecked(
         path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
@@ -256,7 +256,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_area_payloads(
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
@@ -266,7 +266,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_everything_but_area_payloads(
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
