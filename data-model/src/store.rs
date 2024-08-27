@@ -155,7 +155,7 @@ pub struct ResumptionFailedError(pub u64);
 pub struct QueryIgnoreParams {
     /// Omit entries with locally incomplete corresponding payloads.
     pub ignore_incomplete_payloads: bool,
-    /// Omit entries with an empty payload.
+    /// Omit entries whose payload is the empty string.
     pub ignore_empty_payloads: bool,
 }
 
