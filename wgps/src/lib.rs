@@ -18,6 +18,7 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_range(
+        &self,
         range: Range3d<MCL, MCC, MPL, S>,
         will_sort: bool,
         ignore_incomplete_payloads: bool,
@@ -29,6 +30,7 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_range(
+        &self,
         range: Range3d<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
@@ -36,6 +38,7 @@ where
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_range_subscription(
+        &self,
         progress_id: u64,
         range: Range3d<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
@@ -43,15 +46,17 @@ where
     ) -> Result<Self::EventProducer, ResumptionFailedError>;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
-    fn summarise(range: Range3d<MCL, MCC, MPL, S>) -> FP;
+    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> FP;
 
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(
+        &self,
         aoi: AreaOfInterest<MCL, MCC, MPL, S>,
     ) -> Range3d<MCL, MCC, MPL, S>;
 
     /// Partition a [`Range3d`] into `K` parts, or return `None` if the given range cannot be split into `K` many parts (for instance because the range only includes a single entry).
     fn partition_range<const K: usize>(
+        &self,
         range: Range3d<MCL, MCC, MPL, S>,
     ) -> Option<[Range3d<MCL, MCC, MPL, S>; K]>;
 }
