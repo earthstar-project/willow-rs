@@ -4,7 +4,7 @@ use ufotofu::{local_nb::Producer, nb::BulkProducer};
 
 use crate::{
     entry::AuthorisedEntry,
-    grouping::AreaOfInterest,
+    grouping::{Area, AreaOfInterest},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     LengthyAuthorisedEntry, LengthyEntry, Path,
 };
@@ -39,19 +39,31 @@ pub enum EntryIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT,
+    OE,
 > {
     /// The entry belonged to another namespace.
     WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
+    /// Something specific to this store implementation went wrong.
+    OperationsError(OE),
 }
 
 /// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
-pub type BulkIngestionResult<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> = (
+pub type BulkIngestionResult<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    OE,
+> = (
     AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>,
     >,
 );
 
@@ -64,9 +76,10 @@ pub struct BulkIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    OE,
     IngestionError,
 > {
-    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
+    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, OE>>,
     pub error: IngestionError,
 }
 
@@ -84,17 +97,17 @@ where
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
-pub enum PayloadAppendError {
+pub enum PayloadAppendError<OE> {
     /// None of the entries in the store reference this payload.
     NotEntryReference,
     /// The payload is already held in storage.
     AlreadyHaveIt,
-    /// The received payload is larger than was expected.
-    PayloadTooLarge,
+    /// The payload source produced more bytes than were expected for this payload.
+    TooManyBytes,
     /// The completed payload's digest is not what was expected.
     DigestMismatch,
-    /// Try deleting some files!!!
-    SomethingElseWentWrong,
+    /// Something specific to this store implementation went wrong.
+    OperationError(OE),
 }
 
 /// Returned when no entry was found for some criteria.
@@ -169,6 +182,12 @@ impl QueryIgnoreParams {
     }
 }
 
+/// Returned when a payload could not be forgotten.
+pub enum ForgetPayloadError {
+    NoSuchEntry,
+    ReferredToByOtherEntries,
+}
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -179,6 +198,7 @@ where
 {
     type FlushError;
     type BulkIngestionError;
+    type OperationsError;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
@@ -192,7 +212,7 @@ where
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT>,
+            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
         >,
     >;
 
@@ -205,8 +225,18 @@ where
         prevent_pruning: bool,
     ) -> impl Future<
         Output = Result<
-            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT>>,
-            BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::BulkIngestionError>,
+            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
+            BulkIngestionError<
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                PD,
+                AT,
+                Self::BulkIngestionError,
+                Self::OperationsError,
+            >,
         >,
     >;
 
@@ -215,62 +245,70 @@ where
     /// Will fail if:
     /// - The payload digest is not referred to by any of the store's entries.
     /// - A complete payload with the same digest is already held in storage.
-    /// - The payload exceeded the expected size
+    /// - The payload source produced more bytes than were expected for this payload.
     /// - The final payload's digest did not match the expected digest
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
-    /// This method **cannot** verify the integrity of partial payload. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
+    /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
     fn append_payload<Producer>(
         &self,
         expected_digest: &PD,
         expected_size: u64,
-        producer: &mut Producer,
-    ) -> impl Future<Output = Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>>
+        payload_source: &mut Producer,
+    ) -> impl Future<
+        Output = Result<
+            PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
+            PayloadAppendError<Self::OperationsError>,
+        >,
+    >
     where
         Producer: BulkProducer<Item = u8>;
 
     /// Locally forget an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgotten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
         traceless: bool,
-    ) -> impl Future<Output = Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>>;
+    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
     /// Locally forget all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
     ///
+    /// If `protected` is `Some`, then all entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
+    ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
     ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
 
-    /// Locally forget all [`AuthorisedEntry`] **not** [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
-    ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
-    ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
-    fn forget_everything_but_area(
-        &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        traceless: bool,
-    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
-
-    /// Locally forget a payload with a given [`PayloadDigest`], or an error if no payload with that digest is held by this store.
+    /// Locally forget the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
-        &self,
-        digest: PD,
+        path: &Path<MCL, MCC, MPL>,
+        subspace_id: S,
+        traceless: bool,
+    ) -> impl Future<Output = Result<(), ForgetPayloadError>>;
+
+    /// Locally forget the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store. **The payload will be forgotten even if it corresponds to other entries**.
+    ///
+    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
+    ///
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
+    fn forget_payload_unchecked(
+        path: &Path<MCL, MCC, MPL>,
+        subspace_id: S,
         traceless: bool,
     ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
 
@@ -278,7 +316,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_area_payloads(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
@@ -289,7 +327,7 @@ where
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
-    /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
+    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_everything_but_area_payloads(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
