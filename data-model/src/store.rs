@@ -100,16 +100,16 @@ pub enum PayloadAppendError {
 /// Returned when no entry was found for some criteria.
 pub struct NoSuchEntryError;
 
-/// Orderings for a
+/// The order by which entries should be returned for a given query.
 pub enum QueryOrder {
-    /// Ordered by subspace, then path, then timestamp
+    /// Ordered by subspace, then path, then timestamp.
     Subspace,
-    /// Ordered by path, them timestamp, then subspace
+    /// Ordered by path, then by an arbitrary order determined by the implementation.
     Path,
-    /// Ordered by timestamp, then subspace, then path
+    /// Ordered by timestamp, then by an arbitrary order determined by the implementation.
     Timestamp,
-    /// Whichever order is most efficient.
-    Efficient,
+    /// An arbitrary order chosen by the implementation, hopefully the most efficient one.
+    Arbitrary,
 }
 
 /// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
