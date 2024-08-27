@@ -104,8 +104,8 @@ pub enum PayloadAppendError<OE> {
     NotEntryReference,
     /// The payload is already held in storage.
     AlreadyHaveIt,
-    /// The received payload is larger than was expected.
-    PayloadTooLarge,
+    /// The payload source produced more bytes than were expected for this payload.
+    TooManyBytes,
     /// The completed payload's digest is not what was expected.
     DigestMismatch,
     /// Something specific to this store implementation went wrong.
@@ -178,7 +178,7 @@ where
     /// Will fail if:
     /// - The payload digest is not referred to by any of the store's entries.
     /// - A complete payload with the same digest is already held in storage.
-    /// - The payload exceeded the expected size
+    /// - The payload source produced more bytes than were expected for this payload.
     /// - The final payload's digest did not match the expected digest
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
