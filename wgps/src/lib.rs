@@ -39,7 +39,7 @@ where
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_range(
         &self,
-        range: Range3d<MCL, MCC, MPL, S>,
+        range: &Range3d<MCL, MCC, MPL, S>,
         will_sort: bool,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
@@ -51,7 +51,7 @@ where
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_range(
         &self,
-        range: Range3d<MCL, MCC, MPL, S>,
+        range: &Range3d<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> Self::EventProducer;
@@ -60,7 +60,7 @@ where
     fn resume_range_subscription(
         &self,
         progress_id: u64,
-        range: Range3d<MCL, MCC, MPL, S>,
+        range: &Range3d<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> Result<Self::EventProducer, ResumptionFailedError>;
@@ -71,13 +71,13 @@ where
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(
         &self,
-        aoi: AreaOfInterest<MCL, MCC, MPL, S>,
+        aoi: &AreaOfInterest<MCL, MCC, MPL, S>,
     ) -> Range3d<MCL, MCC, MPL, S>;
 
     /// Partition a [`Range3d`] into many parts, or return `None` if the given range cannot be split (for instance because the range only includes a single entry).
     fn partition_range(
         &self,
-        range: Range3d<MCL, MCC, MPL, S>,
-        options: PartitionOpts,
+        range: &Range3d<MCL, MCC, MPL, S>,
+        options: &PartitionOpts,
     ) -> Option<impl Iterator<Item = RangeSplit<MCL, MCC, MPL, S, FP>>>;
 }
