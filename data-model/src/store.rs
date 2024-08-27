@@ -203,7 +203,7 @@ where
     /// This method **cannot** verify the integrity of partial payload. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
     fn append_payload<Producer>(
         &self,
-        expected_digest: PD,
+        expected_digest: &PD,
         expected_size: u64,
         producer: &mut Producer,
     ) -> impl Future<Output = Result<PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>, PayloadAppendError>>
@@ -216,8 +216,9 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
+        &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: &S,
         traceless: bool,
     ) -> impl Future<Output = Result<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, NoSuchEntryError>>;
 
@@ -227,6 +228,7 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
+        &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
@@ -237,6 +239,7 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_everything_but_area(
+        &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
@@ -247,6 +250,7 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
+        &self,
         digest: PD,
         traceless: bool,
     ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
@@ -257,6 +261,7 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_area_payloads(
+        &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
@@ -267,6 +272,7 @@ where
     ///
     /// Forgetting is not the same as deleting! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_everything_but_area_payloads(
+        &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
@@ -279,8 +285,9 @@ where
     /// If `ignore_incomplete_payloads` is `true`, will return `None` if the entry's corresponding payload  is incomplete, even if there is an entry present.
     /// If `ignore_empty_payloads` is `true`, will return `None` if the entry's payload length is `0`, even if there is an entry present.
     fn entry(
-        path: Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        &self,
+        path: &Path<MCL, MCC, MPL>,
+        subspace_id: &S,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
@@ -290,8 +297,9 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_area(
-        area: AreaOfInterest<MCL, MCC, MPL, S>,
-        order: QueryOrder,
+        &self,
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        order: &QueryOrder,
         reverse: bool,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
@@ -302,15 +310,17 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_area(
-        area: AreaOfInterest<MCL, MCC, MPL, S>,
+        &self,
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_subscription(
+        &self,
         progress_id: u64,
-        area: AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &AreaOfInterest<MCL, MCC, MPL, S>,
         ignore_incomplete_payloads: bool,
         ignore_empty_payloads: bool,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
