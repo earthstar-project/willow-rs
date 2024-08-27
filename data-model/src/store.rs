@@ -150,6 +150,25 @@ where
 /// Returned when the store chooses to not resume a subscription.
 pub struct ResumptionFailedError(pub u64);
 
+/// Describes which entries to ignore during a query.
+#[derive(Default)]
+pub struct QueryIgnoreParams {
+    /// Omit entries with locally incomplete corresponding payloads.
+    pub ignore_incomplete_payloads: bool,
+    /// Omit entries with an empty payload.
+    pub ignore_empty_payloads: bool,
+}
+
+impl QueryIgnoreParams {
+    pub fn ignore_incomplete_payloads(&mut self) {
+        self.ignore_incomplete_payloads = true;
+    }
+
+    pub fn ignore_empty_payloads(&mut self) {
+        self.ignore_empty_payloads = true;
+    }
+}
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -288,8 +307,7 @@ where
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
+        ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
@@ -301,8 +319,7 @@ where
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
+        ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
@@ -312,8 +329,7 @@ where
     fn subscribe_area(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
+        ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
@@ -321,7 +337,6 @@ where
         &self,
         progress_id: u64,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
+        ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 }
