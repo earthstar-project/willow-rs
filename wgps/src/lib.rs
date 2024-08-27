@@ -3,6 +3,26 @@ use willow_data_model::{
     AuthorisationToken, NamespaceId, PayloadDigest, ResumptionFailedError, Store, SubspaceId,
 };
 
+/// Options to specify how ranges should be partitioned.
+#[derive(Debug, Clone, Copy)]
+pub struct PartitionOpts {
+    /// The largest number of entries that can be included by a range before it is better to send that range's fingerprint instead of sending its entries.
+    pub max_range_size: usize,
+    /// The maximum number of partitions to split a range into. Must be at least 2.
+    pub max_splits: usize,
+}
+
+/// A split range and the action which should be taken with that split range during range-based set reconciliation.
+pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP> =
+    (Range3d<MCL, MCC, MPL, S>, SplitAction<FP>);
+
+/// Whether to send a split range's fingerprint or its included entries.
+#[derive(Debug)]
+pub enum SplitAction<FP> {
+    SendFingerprint(FP),
+    SendEntries(u64),
+}
+
 /// A [`Store`] capable of performing [3d range-based set reconciliation](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3_range_based_set_reconciliation).
 pub trait RbsrStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP>
 where
@@ -54,9 +74,10 @@ where
         aoi: AreaOfInterest<MCL, MCC, MPL, S>,
     ) -> Range3d<MCL, MCC, MPL, S>;
 
-    /// Partition a [`Range3d`] into `K` parts, or return `None` if the given range cannot be split into `K` many parts (for instance because the range only includes a single entry).
-    fn partition_range<const K: usize>(
+    /// Partition a [`Range3d`] into many parts, or return `None` if the given range cannot be split (for instance because the range only includes a single entry).
+    fn partition_range(
         &self,
         range: Range3d<MCL, MCC, MPL, S>,
-    ) -> Option<[Range3d<MCL, MCC, MPL, S>; K]>;
+        options: PartitionOpts,
+    ) -> Option<impl Iterator<Item = RangeSplit<MCL, MCC, MPL, S, FP>>>;
 }
