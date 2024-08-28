@@ -36,6 +36,23 @@ where
     pub fn available(&self) -> u64 {
         self.available
     }
+
+    /// Turn this into a regular [`Entry`].
+    pub fn into_entry(self) -> Entry<MCL, MCC, MPL, N, S, PD> {
+        self.entry
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    AsRef<Entry<MCL, MCC, MPL, N, S, PD>> for LengthyEntry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+{
+    fn as_ref(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
+        &self.entry
+    }
 }
 
 /// An [`AuthorisedEntry`] together with information about how much of its payload a given [`Store`] holds.
@@ -80,5 +97,24 @@ where
     /// The number of consecutive bytes from the start of the entry’s Payload that the peer holds.
     pub fn available(&self) -> u64 {
         self.available
+    }
+
+    /// Turn this into a [`AuthorisedEntry`].
+    pub fn into_authorised_entry(self) -> AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
+        self.entry
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    AsRef<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
+    for LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    fn as_ref(&self) -> &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
+        &self.entry
     }
 }
