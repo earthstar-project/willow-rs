@@ -133,8 +133,8 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// The entry which was pruned.
-    pub pruned: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    /// The subspace ID and path of the entry which was pruned.
+    pub pruned: (S, Path<MCL, MCC, MPL>),
     /// The entry which triggered the pruning.
     pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
 }
@@ -153,7 +153,7 @@ where
     /// An existing entry received a portion of its corresponding payload.
     Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
-    EntryForgotten(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    EntryForgotten(u64, (S, Path<MCL, MCC, MPL>)),
     /// A payload was forgotten.
     PayloadForgotten(u64, PD),
     /// An entry was pruned via prefix pruning.
@@ -312,7 +312,9 @@ where
         traceless: bool,
     ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
 
-    /// Locally forget all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads.
+    /// Locally forget all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
+    ///
+    /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
@@ -320,17 +322,21 @@ where
     fn forget_area_payloads(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
 
-    /// Locally forget all payloads with corresponding [`AuthorisedEntry`] **not** [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads.
+    /// Locally forget all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. **Payloads will be forgotten even if it corresponds to other entries outside the given area**.
+    ///
+    /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
-    fn forget_everything_but_area_payloads(
+    fn force_forget_area_payloads(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
 
