@@ -1,6 +1,10 @@
+use std::future::Future;
+
+use ufotofu::local_nb::Producer;
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
-    AuthorisationToken, NamespaceId, PayloadDigest, ResumptionFailedError, Store, SubspaceId,
+    AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
+    ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
 
 /// Options to specify how ranges should be partitioned.
@@ -41,9 +45,8 @@ where
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
         will_sort: bool,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
-    ) -> Self::EntryProducer;
+        ignore: Option<QueryIgnoreParams>,
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Range3d`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     ///
@@ -52,32 +55,34 @@ where
     fn subscribe_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
-    ) -> Self::EventProducer;
+        ignore: Option<QueryIgnoreParams>,
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_range_subscription(
         &self,
         progress_id: u64,
         range: &Range3d<MCL, MCC, MPL, S>,
-        ignore_incomplete_payloads: bool,
-        ignore_empty_payloads: bool,
-    ) -> Result<Self::EventProducer, ResumptionFailedError>;
+        ignore: Option<QueryIgnoreParams>,
+    ) -> impl Future<
+        Output = impl Producer<
+            Item = Result<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, ResumptionFailedError>,
+        >,
+    >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
-    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> FP;
+    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = FP>;
 
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(
         &self,
         aoi: &AreaOfInterest<MCL, MCC, MPL, S>,
-    ) -> Range3d<MCL, MCC, MPL, S>;
+    ) -> impl Future<Output = Range3d<MCL, MCC, MPL, S>>;
 
     /// Partition a [`Range3d`] into many parts, or return `None` if the given range cannot be split (for instance because the range only includes a single entry).
     fn partition_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
         options: &PartitionOpts,
-    ) -> Option<impl Iterator<Item = RangeSplit<MCL, MCC, MPL, S, FP>>>;
+    ) -> impl Future<Output = Option<impl Iterator<Item = RangeSplit<MCL, MCC, MPL, S, FP>>>>;
 }
