@@ -306,7 +306,7 @@ where
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
-    fn forget_payload_unchecked(
+    fn force_forget_payload(
         path: &Path<MCL, MCC, MPL>,
         subspace_id: S,
         traceless: bool,
