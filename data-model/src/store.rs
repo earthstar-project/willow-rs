@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
+#[derive(Debug, Clone)]
 pub enum EntryIngestionSuccess<
     const MCL: usize,
     const MCC: usize,
@@ -31,6 +32,7 @@ pub enum EntryIngestionSuccess<
 }
 
 /// Returned when an entry cannot be ingested into a [`Store`].
+#[derive(Debug, Clone)]
 pub enum EntryIngestionError<
     const MCL: usize,
     const MCC: usize,
@@ -68,6 +70,7 @@ pub type BulkIngestionResult<
 );
 
 /// Returned when a bulk ingestion failed due to a consumer error.
+#[derive(Debug, Clone)]
 pub struct BulkIngestionError<
     const MCL: usize,
     const MCC: usize,
@@ -84,6 +87,7 @@ pub struct BulkIngestionError<
 }
 
 /// Return when a payload is successfully appended to the [`Store`].
+#[derive(Debug, Clone)]
 pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
     N: NamespaceId,
@@ -97,6 +101,7 @@ where
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
+#[derive(Debug, Clone)]
 pub enum PayloadAppendError<OE> {
     /// None of the entries in the store reference this payload.
     NotEntryReference,
@@ -111,9 +116,11 @@ pub enum PayloadAppendError<OE> {
 }
 
 /// Returned when no entry was found for some criteria.
+#[derive(Debug, Clone)]
 pub struct NoSuchEntryError;
 
 /// The order by which entries should be returned for a given query.
+#[derive(Debug, Clone)]
 pub enum QueryOrder {
     /// Ordered by subspace, then path, then timestamp.
     Subspace,
@@ -126,6 +133,7 @@ pub enum QueryOrder {
 }
 
 /// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
+#[derive(Debug, Clone)]
 pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -141,6 +149,7 @@ where
 
 /// An event which took place within a [`Store`].
 /// Each event includes a *progress ID* which can be used to *resume* a subscription at any point in the future.
+#[derive(Debug, Clone)]
 pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -165,10 +174,11 @@ where
 }
 
 /// Returned when the store chooses to not resume a subscription.
+#[derive(Debug, Clone)]
 pub struct ResumptionFailedError(pub u64);
 
 /// Describes which entries to ignore during a query.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct QueryIgnoreParams {
     /// Omit entries with locally incomplete corresponding payloads.
     pub ignore_incomplete_payloads: bool,
@@ -187,12 +197,14 @@ impl QueryIgnoreParams {
 }
 
 /// Returned when a payload could not be forgotten.
+#[derive(Debug, Clone)]
 pub enum ForgetPayloadError {
     NoSuchEntry,
     ReferredToByOtherEntries,
 }
 
 /// The origin of an entry ingestion event.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryOrigin {
     /// The entry was probably created on this machine.
     Local,
