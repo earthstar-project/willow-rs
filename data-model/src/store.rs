@@ -1,4 +1,8 @@
-use std::future::Future;
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+    future::Future,
+};
 
 use ufotofu::{local_nb::Producer, nb::BulkProducer};
 
@@ -41,7 +45,7 @@ pub enum EntryIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT,
-    OE,
+    OE: Display + Error,
 > {
     /// The entry belonged to another namespace.
     WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
@@ -49,6 +53,43 @@ pub enum EntryIngestionError<
     PruningPrevented,
     /// Something specific to this store implementation went wrong.
     OperationsError(OE),
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N: NamespaceId,
+        S: SubspaceId,
+        PD: PayloadDigest,
+        AT,
+        OE: Display + Error,
+    > Display for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntryIngestionError::WrongNamespace(_) => {
+                write!(f, "Tried to ingest an entry from a different namespace.")
+            }
+            EntryIngestionError::PruningPrevented => {
+                write!(f, "Entry ingestion would have triggered undesired pruning.")
+            }
+            EntryIngestionError::OperationsError(err) => Display::fmt(err, f),
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N: NamespaceId + Debug,
+        S: SubspaceId + Debug,
+        PD: PayloadDigest + Debug,
+        AT: Debug,
+        OE: Display + Error,
+    > Error for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
+{
 }
 
 /// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
@@ -79,11 +120,46 @@ pub struct BulkIngestionError<
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    OE,
+    OE: Error,
     IngestionError,
 > {
     pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, OE>>,
     pub error: IngestionError,
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N: NamespaceId,
+        S: SubspaceId,
+        PD: PayloadDigest,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+        OE: Display + Error,
+        IngestionError: Error,
+    > std::fmt::Display for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "An error stopped bulk ingestion after successfully ingesting {:?} entries",
+            self.ingested.len()
+        )
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N: NamespaceId + Debug,
+        S: SubspaceId + Debug,
+        PD: PayloadDigest + Debug,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Debug,
+        OE: Display + Error,
+        IngestionError: Error,
+    > Error for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
+{
 }
 
 /// Return when a payload is successfully appended to the [`Store`].
@@ -115,9 +191,41 @@ pub enum PayloadAppendError<OE> {
     OperationError(OE),
 }
 
+impl<OE: Display + Error> Display for PayloadAppendError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PayloadAppendError::NotEntryReference => write!(
+                f,
+                "None of the entries in the soter reference this payload."
+            ),
+            PayloadAppendError::AlreadyHaveIt => {
+                write!(f, "The payload is already held in storage.")
+            }
+            PayloadAppendError::TooManyBytes => write!(
+                f,
+                "The payload source produced more bytes than were expected for this payload."
+            ),
+            PayloadAppendError::DigestMismatch => {
+                write!(f, "The complete payload's digest is not what was expected.")
+            }
+            PayloadAppendError::OperationError(err) => std::fmt::Display::fmt(err, f),
+        }
+    }
+}
+
+impl<OE: Display + Error> Error for PayloadAppendError<OE> {}
+
 /// Returned when no entry was found for some criteria.
 #[derive(Debug, Clone)]
 pub struct NoSuchEntryError;
+
+impl Display for NoSuchEntryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "No entry was found for the given criteria.")
+    }
+}
+
+impl Error for NoSuchEntryError {}
 
 /// The order by which entries should be returned for a given query.
 #[derive(Debug, Clone)]
@@ -177,6 +285,18 @@ where
 #[derive(Debug, Clone)]
 pub struct ResumptionFailedError(pub u64);
 
+impl Display for ResumptionFailedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "The subscription with ID {:?} could not be resumed.",
+            self.0
+        )
+    }
+}
+
+impl Error for ResumptionFailedError {}
+
 /// Describes which entries to ignore during a query.
 #[derive(Default, Clone)]
 pub struct QueryIgnoreParams {
@@ -203,6 +323,25 @@ pub enum ForgetPayloadError {
     ReferredToByOtherEntries,
 }
 
+impl Display for ForgetPayloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForgetPayloadError::NoSuchEntry => {
+                write!(
+                    f,
+                    "No entry for the given criteria could be found in this store."
+                )
+            }
+            ForgetPayloadError::ReferredToByOtherEntries => write!(
+                f,
+                "The payload could not be forgotten because it is referred to by other entries."
+            ),
+        }
+    }
+}
+
+impl Error for ForgetPayloadError {}
+
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryOrigin {
@@ -220,9 +359,9 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    type FlushError;
-    type BulkIngestionError;
-    type OperationsError;
+    type FlushError: Display + Error;
+    type BulkIngestionError: Display + Error;
+    type OperationsError: Display + Error;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id() -> N;
