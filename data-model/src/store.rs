@@ -149,7 +149,11 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     /// A new entry was ingested.
-    Ingested(u64, AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    Ingested(
+        u64,
+        AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        EntryOrigin,
+    ),
     /// An existing entry received a portion of its corresponding payload.
     Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
@@ -186,6 +190,14 @@ impl QueryIgnoreParams {
 pub enum ForgetPayloadError {
     NoSuchEntry,
     ReferredToByOtherEntries,
+}
+
+/// The origin of an entry ingestion event.
+pub enum EntryOrigin {
+    /// The entry was probably created on this machine.
+    Local,
+    /// The entry was sourced from another device, e.g. a networked sync session.
+    Remote(u64),
 }
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
