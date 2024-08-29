@@ -384,7 +384,7 @@ where
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_area(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
@@ -392,7 +392,7 @@ where
     fn resume_subscription(
         &self,
         progress_id: u64,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 }
