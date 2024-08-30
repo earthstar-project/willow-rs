@@ -533,6 +533,7 @@ where
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_subscription(
+        &self,
         progress_id: u64,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
