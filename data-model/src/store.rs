@@ -537,5 +537,10 @@ where
         progress_id: u64,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> Result<impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>, ResumptionFailedError>;
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            ResumptionFailedError,
+        >,
+    >;
 }

@@ -64,7 +64,12 @@ where
         progress_id: u64,
         range: &Range3d<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> Result<impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>, ResumptionFailedError>;
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            ResumptionFailedError,
+        >,
+    >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
     fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = FP>;
