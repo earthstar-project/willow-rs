@@ -3,6 +3,7 @@ use crate::{AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, PayloadDige
 /// An [`Entry`] together with information about how much of its payload a given [`Store`] holds.
 ///
 /// [Definition](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#LengthyEntry)
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LengthyEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 where
     N: NamespaceId,
@@ -56,6 +57,7 @@ where
 }
 
 /// An [`AuthorisedEntry`] together with information about how much of its payload a given [`Store`] holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LengthyAuthorisedEntry<
     const MCL: usize,
     const MCC: usize,
