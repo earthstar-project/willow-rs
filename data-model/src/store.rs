@@ -8,7 +8,7 @@ use ufotofu::{local_nb::Producer, nb::BulkProducer};
 
 use crate::{
     entry::AuthorisedEntry,
-    grouping::{Area, AreaOfInterest, Range3d},
+    grouping::{Area, AreaOfInterest},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     LengthyAuthorisedEntry, LengthyEntry, Path,
 };
