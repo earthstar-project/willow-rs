@@ -27,9 +27,13 @@
 
 mod entry;
 pub use entry::*;
+mod lengthy_entry;
+pub use lengthy_entry::*;
 pub mod grouping;
 mod parameters;
 pub use parameters::*;
 mod path;
 pub use path::*;
 mod relative_encodings;
+mod store;
+pub use store::*;
