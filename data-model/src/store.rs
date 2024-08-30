@@ -347,7 +347,8 @@ impl Error for ForgetPayloadError {}
 pub enum EntryOrigin {
     /// The entry was probably created on this machine.
     Local,
-    /// The entry was sourced from another device, e.g. a networked sync session.
+    /// The entry was sourced from another source with an ID assigned by us.
+    /// This is useful if you want to suppress the forwarding of entries to the peers from which the entry was originally sourced.
     Remote(u64),
 }
 
