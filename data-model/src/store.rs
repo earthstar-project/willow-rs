@@ -508,9 +508,6 @@ where
     fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
 
     /// Return a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
-    ///
-    /// If `ignore_incomplete_payloads` is `true`, will return `None` if the entry's corresponding payload  is incomplete, even if there is an entry present.
-    /// If `ignore_empty_payloads` is `true`, will return `None` if the entry's payload length is `0`, even if there is an entry present.
     fn entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
@@ -519,9 +516,6 @@ where
     ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
-    ///
-    /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
-    /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_area(
         &self,
         area: &AreaOfInterest<MCL, MCC, MPL, S>,
@@ -531,9 +525,6 @@ where
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
-    ///
-    /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
-    /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
@@ -546,5 +537,10 @@ where
         progress_id: u64,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            ResumptionFailedError,
+        >,
+    >;
 }
