@@ -37,3 +37,5 @@ pub use path::*;
 mod relative_encodings;
 mod store;
 pub use store::*;
+mod schemes;
+pub use schemes::*;

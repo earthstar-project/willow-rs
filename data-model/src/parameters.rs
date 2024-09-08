@@ -1,4 +1,4 @@
-use crate::entry::Entry;
+use crate::{entry::Entry, EntryScheme};
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
@@ -32,11 +32,9 @@ pub trait AuthorisationToken<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
+    Scheme: EntryScheme,
 >
 {
     /// Determine whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
-    fn is_authorised_write(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool;
+    fn is_authorised_write(&self, entry: &Entry<MCL, MCC, MPL, Scheme>) -> bool;
 }
