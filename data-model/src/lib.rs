@@ -3,7 +3,7 @@
 //!
 //! This crate provides implementation of the [Willow Data Model](https://willowprotocol.org/specs/data-model/index.html#data_model), including:
 //!
-//! - Traits to assist in your implementation of Willow [parameters](https://willowprotocol.org/specs/data-model/index.html#willow_parameters), such as [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) and [`SubspaceId`](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).  
+//! - Traits to assist in your implementation of Willow [parameters](https://willowprotocol.org/specs/data-model/index.html#willow_parameters), such as [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) and [`SubspaceId`](https://willowprotocol.org/specs/data-model/index.html#SubspaceId).
 //! - A [zero-copy](https://en.wikipedia.org/wiki/Zero-copy) implementation of Willow [paths](https://willowprotocol.org/specs/data-model/index.html#Path) and their constituent [components](https://willowprotocol.org/specs/data-model/index.html#Component).
 //! - An implementation of Willow's [entries](https://willowprotocol.org/specs/data-model/index.html#Entry).
 //! - Utilities for Willow's entry [groupings](https://willowprotocol.org/specs/grouping-entries/index.html#grouping_entries), such as [ranges](https://willowprotocol.org/specs/grouping-entries/index.html#ranges) and [areas](https://willowprotocol.org/specs/grouping-entries/index.html#areas)
@@ -35,7 +35,7 @@ pub use parameters::*;
 mod path;
 pub use path::*;
 mod relative_encodings;
-mod store;
-pub use store::*;
+// mod store;
+// pub use store::*;
 mod schemes;
 pub use schemes::*;

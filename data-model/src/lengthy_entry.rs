@@ -60,7 +60,7 @@ where
 }
 
 /// An [`AuthorisedEntry`] together with information about how much of its payload a given [`Store`] holds.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LengthyAuthorisedEntry<
     const MCL: usize,
     const MCC: usize,
@@ -111,29 +111,5 @@ impl<
 {
     fn as_ref(&self) -> &AuthorisedEntry<MCL, MCC, MPL, Scheme> {
         &self.entry
-    }
-}
-
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
-    > std::fmt::Debug for LengthyAuthorisedEntry<MCL, MCC, MPL, Scheme>
-where
-    <Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry: std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::NamespaceId:
-        std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::SubspaceId:
-        std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::PayloadDigest:
-        std::fmt::Debug,
-    Scheme::AuthorisationToken: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(&"AuthorisedEntry")
-            .field("entry", self.entry())
-            .field("available", &self.available)
-            .finish()
     }
 }

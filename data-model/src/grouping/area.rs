@@ -3,8 +3,9 @@ use arbitrary::{size_hint::and_all, Arbitrary};
 
 use crate::{
     entry::{Entry, Timestamp},
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    parameters::SubspaceId,
     path::Path,
+    EntryScheme,
 };
 
 use super::range::Range;
@@ -130,9 +131,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
     }
 
     /// Return whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) an [`Entry`].
-    pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
+    pub fn includes_entry<Scheme: EntryScheme<SubspaceId = S>>(
         &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
+        entry: &Entry<MCL, MCC, MPL, Scheme>,
     ) -> bool {
         self.subspace.includes(entry.subspace_id())
             && self.path.is_prefix_of(entry.path())

@@ -261,7 +261,7 @@ impl std::error::Error for UnauthorisedWriteError {}
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct AuthorisedEntry<
     const MCL: usize,
     const MCC: usize,
@@ -324,41 +324,17 @@ impl<
     }
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
-    > std::fmt::Debug for AuthorisedEntry<MCL, MCC, MPL, Scheme>
-where
-    <Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry: std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::NamespaceId:
-        std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::SubspaceId:
-        std::fmt::Debug,
-    <<Scheme as AuthorisedEntryScheme<MCL, MCC, MPL>>::Entry as EntryScheme>::PayloadDigest:
-        std::fmt::Debug,
-    Scheme::AuthorisationToken: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(&"AuthorisedEntry")
-            .field("entry", self.entry())
-            .field("token", self.token())
-            .finish()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{path::Component, NamespaceId, PayloadDigest, SubspaceId};
 
     use super::*;
 
-    #[derive(Default, PartialEq, Eq, Clone)]
+    #[derive(Default, PartialEq, Eq, Clone, Debug)]
     struct FakeNamespaceId(usize);
     impl NamespaceId for FakeNamespaceId {}
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
     struct FakeSubspaceId(usize);
     impl SubspaceId for FakeSubspaceId {
         fn successor(&self) -> Option<Self> {
@@ -366,7 +342,7 @@ mod tests {
         }
     }
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
     struct FakePayloadDigest(usize);
     impl PayloadDigest for FakePayloadDigest {}
 
@@ -374,7 +350,7 @@ mod tests {
     const MCC: usize = 4;
     const MPL: usize = 16;
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Debug, Clone)]
     struct FakeEntryScheme;
 
     impl EntryScheme for FakeEntryScheme {

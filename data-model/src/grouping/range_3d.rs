@@ -4,8 +4,9 @@ use arbitrary::Arbitrary;
 use crate::{
     entry::{Entry, Timestamp},
     grouping::{area::Area, range::Range},
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    parameters::SubspaceId,
     path::Path,
+    EntryScheme,
 };
 
 /// A three-dimensional range that includes every Entry included in all three of its ranges.
@@ -67,9 +68,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     }
 
     /// Return whether an [`Entry`] is [included](https://willowprotocol.org/specs/grouping-entries/index.html#d3_range_include) by this 3d range.
-    pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
+    pub fn includes_entry<Scheme: EntryScheme<SubspaceId = S>>(
         &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
+        entry: &Entry<MCL, MCC, MPL, Scheme>,
     ) -> bool {
         self.subspaces.includes(entry.subspace_id())
             && self.paths.includes(entry.path())
@@ -128,11 +129,11 @@ where
 #[cfg(test)]
 mod tests {
 
-    use crate::path::Component;
+    use crate::{path::Component, NamespaceId, PayloadDigest};
 
     use super::*;
 
-    #[derive(Default, PartialEq, Eq, Clone)]
+    #[derive(Default, PartialEq, Eq, Clone, Debug)]
     struct FakeNamespaceId(usize);
     impl NamespaceId for FakeNamespaceId {}
 
@@ -144,7 +145,7 @@ mod tests {
         }
     }
 
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
     struct FakePayloadDigest(usize);
     impl PayloadDigest for FakePayloadDigest {}
 
@@ -152,9 +153,18 @@ mod tests {
     const MCC: usize = 4;
     const MPL: usize = 16;
 
+    #[derive(PartialEq, Eq, Debug, Clone)]
+    struct FakeEntryScheme;
+
+    impl EntryScheme for FakeEntryScheme {
+        type NamespaceId = FakeNamespaceId;
+        type SubspaceId = FakeSubspaceId;
+        type PayloadDigest = FakePayloadDigest;
+    }
+
     #[test]
     fn includes_entry() {
-        let entry = Entry::new(
+        let entry: Entry<MCL, MCC, MPL, FakeEntryScheme> = Entry::new(
             FakeNamespaceId::default(),
             FakeSubspaceId(10),
             Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
