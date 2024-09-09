@@ -27,9 +27,9 @@ pub(super) mod encoding {
     use crate::{
         entry::Entry,
         grouping::{Area, AreaSubspace, Range, Range3d, RangeEnd},
-        parameters::{NamespaceId, PayloadDigest, SubspaceId},
+        parameters::SubspaceId,
         path::Path,
-        ScratchSpacePathDecoding,
+        EntryScheme, ScratchSpacePathDecoding,
     };
 
     // Path <> Path
@@ -175,19 +175,18 @@ pub(super) mod encoding {
 
     // Entry <> Entry
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeEncodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeEncodable<Entry<MCL, MCC, MPL, Scheme>> for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Encodable,
-        S: SubspaceId + Encodable,
-        PD: PayloadDigest + Encodable,
+        Scheme:
+            EntryScheme<NamespaceId: Encodable, SubspaceId: Encodable, PayloadDigest: Encodable>,
     {
         /// Encode an [`Entry`] relative to a reference [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_encode<Consumer>(
             &self,
-            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
+            reference: &Entry<MCL, MCC, MPL, Scheme>,
             consumer: &mut Consumer,
         ) -> Result<(), Consumer::Error>
         where
@@ -237,20 +236,19 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeDecodable<Entry<MCL, MCC, MPL, Scheme>> for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Decodable + std::fmt::Debug,
-        S: SubspaceId + Decodable + std::fmt::Debug,
-        PD: PayloadDigest + Decodable,
+        Scheme:
+            EntryScheme<NamespaceId: Decodable, SubspaceId: Decodable, PayloadDigest: Decodable>,
     {
         /// Decode an [`Entry`] relative from this [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_decode<Producer>(
-            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
+            reference: &Entry<MCL, MCC, MPL, Scheme>,
             producer: &mut Producer,
-        ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
+        ) -> Result<Entry<MCL, MCC, MPL, Scheme>, DecodeError<Producer::Error>>
         where
             Producer: BulkProducer<Item = u8>,
             Self: Sized,
@@ -269,7 +267,7 @@ pub(super) mod encoding {
             let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
             let namespace_id = if is_namespace_encoded {
-                N::decode(producer).await?
+                Scheme::NamespaceId::decode(producer).await?
             } else {
                 reference.namespace_id().clone()
             };
@@ -283,7 +281,7 @@ pub(super) mod encoding {
             */
 
             let subspace_id = if is_subspace_encoded {
-                S::decode(producer).await?
+                Scheme::SubspaceId::decode(producer).await?
             } else {
                 reference.subspace_id().clone()
             };
@@ -324,7 +322,7 @@ pub(super) mod encoding {
             let payload_length =
                 decode_compact_width_be(compact_width_payload_length, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = Scheme::PayloadDigest::decode(producer).await?;
 
             Ok(Entry::new(
                 namespace_id,
@@ -337,19 +335,19 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeEncodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeEncodable<(Scheme::NamespaceId, Area<MCL, MCC, MPL, Scheme::SubspaceId>)>
+        for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Encodable,
-        S: SubspaceId + Encodable,
-        PD: PayloadDigest + Encodable,
+        Scheme:
+            EntryScheme<NamespaceId: Encodable, SubspaceId: Encodable, PayloadDigest: Encodable>,
     {
         /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_encode<Consumer>(
             &self,
-            reference: &(N, Area<MCL, MCC, MPL, S>),
+            reference: &(Scheme::NamespaceId, Area<MCL, MCC, MPL, Scheme::SubspaceId>),
             consumer: &mut Consumer,
         ) -> Result<(), Consumer::Error>
         where
@@ -400,18 +398,18 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeDecodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeDecodable<(Scheme::NamespaceId, Area<MCL, MCC, MPL, Scheme::SubspaceId>)>
+        for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Decodable,
-        S: SubspaceId + Decodable + std::fmt::Debug,
-        PD: PayloadDigest + Decodable,
+        Scheme:
+            EntryScheme<NamespaceId: Decodable, SubspaceId: Decodable, PayloadDigest: Decodable>,
     {
         /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_decode<Producer>(
-            reference: &(N, Area<MCL, MCC, MPL, S>),
+            reference: &(Scheme::NamespaceId, Area<MCL, MCC, MPL, Scheme::SubspaceId>),
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -433,7 +431,7 @@ pub(super) mod encoding {
 
             let subspace_id = if is_subspace_encoded {
                 match &out.subspace() {
-                    AreaSubspace::Any => S::decode(producer).await?,
+                    AreaSubspace::Any => Scheme::SubspaceId::decode(producer).await?,
                     AreaSubspace::Id(_) => return Err(DecodeError::InvalidInput),
                 }
             } else {
@@ -453,7 +451,7 @@ pub(super) mod encoding {
             let payload_length =
                 decode_compact_width_be(payload_length_compact_width, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = Scheme::PayloadDigest::decode(producer).await?;
 
             let timestamp = if add_time_diff_to_start {
                 out.times().start.checked_add(time_diff)
@@ -487,19 +485,24 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeEncodable<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeEncodable<(
+            Scheme::NamespaceId,
+            Range3d<MCL, MCC, MPL, Scheme::SubspaceId>,
+        )> for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Encodable,
-        S: SubspaceId + Encodable,
-        PD: PayloadDigest + Encodable,
+        Scheme:
+            EntryScheme<NamespaceId: Encodable, SubspaceId: Encodable, PayloadDigest: Encodable>,
     {
         /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
         async fn relative_encode<Consumer>(
             &self,
-            reference: &(N, Range3d<MCL, MCC, MPL, S>),
+            reference: &(
+                Scheme::NamespaceId,
+                Range3d<MCL, MCC, MPL, Scheme::SubspaceId>,
+            ),
             consumer: &mut Consumer,
         ) -> Result<(), Consumer::Error>
         where
@@ -588,18 +591,23 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeDecodable<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
+        RelativeDecodable<(
+            Scheme::NamespaceId,
+            Range3d<MCL, MCC, MPL, Scheme::SubspaceId>,
+        )> for Entry<MCL, MCC, MPL, Scheme>
     where
-        N: NamespaceId + Decodable,
-        S: SubspaceId + Decodable + std::fmt::Debug,
-        PD: PayloadDigest + Decodable,
+        Scheme:
+            EntryScheme<NamespaceId: Decodable, SubspaceId: Decodable, PayloadDigest: Decodable>,
     {
         /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
         async fn relative_decode<Producer>(
-            reference: &(N, Range3d<MCL, MCC, MPL, S>),
+            reference: &(
+                Scheme::NamespaceId,
+                Range3d<MCL, MCC, MPL, Scheme::SubspaceId>,
+            ),
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -627,7 +635,7 @@ pub(super) mod encoding {
             let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
             let subspace_id = if is_subspace_encoded {
-                S::decode(producer).await?
+                Scheme::SubspaceId::decode(producer).await?
             } else {
                 out.subspaces().start.clone()
             };
@@ -680,7 +688,7 @@ pub(super) mod encoding {
             let payload_length =
                 decode_compact_width_be(payload_length_compact_width, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = Scheme::PayloadDigest::decode(producer).await?;
 
             let timestamp = if add_time_diff_with_start {
                 out.times().start.checked_add(time_diff)

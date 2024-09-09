@@ -9,8 +9,7 @@ use ufotofu::{local_nb::Producer, nb::BulkProducer};
 use crate::{
     entry::AuthorisedEntry,
     grouping::{Area, AreaOfInterest},
-    parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyAuthorisedEntry, LengthyEntry, Path,
+    AuthorisedEntryScheme, EntryScheme, LengthyAuthorisedEntry, LengthyEntry, Path,
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
@@ -19,19 +18,16 @@ pub enum EntryIngestionSuccess<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
 > {
     /// The entry was successfully ingested.
     Success,
     /// The entry was not ingested because a newer entry with same
     Obsolete {
         /// The obsolete entry which was not ingested.
-        obsolete: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        obsolete: AuthorisedEntry<MCL, MCC, MPL, Scheme>,
         /// The newer entry which was not overwritten.
-        newer: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        newer: AuthorisedEntry<MCL, MCC, MPL, Scheme>,
     },
 }
 
@@ -41,14 +37,11 @@ pub enum EntryIngestionError<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
     OE: Display + Error,
 > {
     /// The entry belonged to another namespace.
-    WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, Scheme>),
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
     /// Something specific to this store implementation went wrong.
@@ -59,12 +52,9 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
-        PD: PayloadDigest,
-        AT,
+        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
         OE: Display + Error,
-    > Display for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
+    > Display for EntryIngestionError<MCL, MCC, MPL, Scheme, OE>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -83,47 +73,38 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Debug,
-        S: SubspaceId + Debug,
-        PD: PayloadDigest + Debug,
-        AT: Debug,
+        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
         OE: Display + Error,
-    > Error for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
+    > Error for EntryIngestionError<MCL, MCC, MPL, Scheme, OE>
 {
 }
 
 /// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
-pub type BulkIngestionResult<
+#[derive(Debug, Clone)]
+pub struct BulkIngestionResult<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N,
-    S,
-    PD,
-    AT,
-    OE,
-> = (
-    AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
+    OE: Display + Error,
+>(
+    AuthorisedEntry<MCL, MCC, MPL, Scheme>,
     Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>,
+        EntryIngestionSuccess<MCL, MCC, MPL, Scheme>,
+        EntryIngestionError<MCL, MCC, MPL, Scheme, OE>,
     >,
 );
-
 /// Returned when a bulk ingestion failed due to a consumer error.
 #[derive(Debug, Clone)]
 pub struct BulkIngestionError<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
     OE: Error,
     IngestionError,
 > {
-    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, OE>>,
+    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, Scheme, OE>>,
     pub error: IngestionError,
 }
 
@@ -131,13 +112,10 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
-        PD: PayloadDigest,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
         OE: Display + Error,
         IngestionError: Error,
-    > std::fmt::Display for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
+    > std::fmt::Display for BulkIngestionError<MCL, MCC, MPL, Scheme, OE, IngestionError>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -152,28 +130,23 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Debug,
-        S: SubspaceId + Debug,
-        PD: PayloadDigest + Debug,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Debug,
+        Scheme: AuthorisedEntryScheme<MCL, MCC, MPL> + Debug,
         OE: Display + Error,
         IngestionError: Error,
-    > Error for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
+    > Error for BulkIngestionError<MCL, MCC, MPL, Scheme, OE, IngestionError>
 {
 }
 
 /// Return when a payload is successfully appended to the [`Store`].
 #[derive(Debug, Clone)]
-pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
+    Scheme: EntryScheme,
 {
     /// The payload was appended to but not completed.
-    Appended(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Appended(Vec<LengthyEntry<MCL, MCC, MPL, Scheme>>),
     /// The payload was completed by the appendment.
-    Completed(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Completed(Vec<LengthyEntry<MCL, MCC, MPL, Scheme>>),
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
@@ -242,43 +215,42 @@ pub enum QueryOrder {
 
 /// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
 #[derive(Debug, Clone)]
-pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
 {
     /// The subspace ID and path of the entry which was pruned.
-    pub pruned: (S, Path<MCL, MCC, MPL>),
+    pub pruned: (
+        <Scheme::Entry as EntryScheme>::SubspaceId,
+        Path<MCL, MCC, MPL>,
+    ),
     /// The entry which triggered the pruning.
-    pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    pub by: AuthorisedEntry<MCL, MCC, MPL, Scheme>,
 }
 
 /// An event which took place within a [`Store`].
 /// Each event includes a *progress ID* which can be used to *resume* a subscription at any point in the future.
 #[derive(Debug, Clone)]
-pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
 {
     /// A new entry was ingested.
-    Ingested(
-        u64,
-        AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryOrigin,
-    ),
+    Ingested(u64, AuthorisedEntry<MCL, MCC, MPL, Scheme>, EntryOrigin),
     /// An existing entry received a portion of its corresponding payload.
-    Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, Scheme>),
     /// An entry was forgotten.
-    EntryForgotten(u64, (S, Path<MCL, MCC, MPL>)),
+    EntryForgotten(
+        u64,
+        (
+            <Scheme::Entry as EntryScheme>::SubspaceId,
+            Path<MCL, MCC, MPL>,
+        ),
+    ),
     /// A payload was forgotten.
-    PayloadForgotten(u64, PD),
+    PayloadForgotten(u64, <Scheme::Entry as EntryScheme>::PayloadDigest),
     /// An entry was pruned via prefix pruning.
-    Pruned(u64, PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
+    Pruned(u64, PruneEvent<MCL, MCC, MPL, Scheme>),
 }
 
 /// Returned when the store chooses to not resume a subscription.
@@ -353,30 +325,27 @@ pub enum EntryOrigin {
 }
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
-pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, Scheme>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    Scheme: AuthorisedEntryScheme<MCL, MCC, MPL>,
 {
     type FlushError: Display + Error;
     type BulkIngestionError: Display + Error;
     type OperationsError: Display + Error;
 
     /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
-    fn namespace_id() -> N;
+    fn namespace_id() -> <Scheme::Entry as EntryScheme>::NamespaceId;
 
     /// Attempt to ingest an [`AuthorisedEntry`] into the [`Store`].
     /// Will fail if the entry belonged to a different namespace than the store's, or if the `prevent_pruning` param is `true` and an ingestion would have triggered [prefix pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning).
     fn ingest_entry(
         &self,
-        authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        authorised_entry: AuthorisedEntry<MCL, MCC, MPL, Scheme>,
         prevent_pruning: bool,
     ) -> impl Future<
         Output = Result<
-            EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+            EntryIngestionSuccess<MCL, MCC, MPL, Scheme>,
+            EntryIngestionError<MCL, MCC, MPL, Scheme, Self::OperationsError>,
         >,
     >;
 
@@ -385,19 +354,16 @@ where
     /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have returned [`EntryIngestionError`]. The `Err` type of this result is only returned if there was some internal error.
     fn bulk_ingest_entry(
         &self,
-        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
+        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, Scheme>],
         prevent_pruning: bool,
     ) -> impl Future<
         Output = Result<
-            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
+            Vec<BulkIngestionResult<MCL, MCC, MPL, Scheme, Self::OperationsError>>,
             BulkIngestionError<
                 MCL,
                 MCC,
                 MPL,
-                N,
-                S,
-                PD,
-                AT,
+                Scheme,
                 Self::BulkIngestionError,
                 Self::OperationsError,
             >,
@@ -416,12 +382,12 @@ where
     /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
     fn append_payload<Producer>(
         &self,
-        expected_digest: &PD,
+        expected_digest: &<Scheme::Entry as EntryScheme>::PayloadDigest,
         expected_size: u64,
         payload_source: &mut Producer,
     ) -> impl Future<
         Output = Result<
-            PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
+            PayloadAppendSuccess<MCL, MCC, MPL, Scheme::Entry>,
             PayloadAppendError<Self::OperationsError>,
         >,
     >
@@ -436,7 +402,7 @@ where
     fn forget_entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: &S,
+        subspace_id: &<Scheme::Entry as EntryScheme>::SubspaceId,
         traceless: bool,
     ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
@@ -449,10 +415,10 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        area: &AreaOfInterest<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
+        protected: Option<Area<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>>,
         traceless: bool,
-    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
+    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, Scheme>>>;
 
     /// Locally forget the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
@@ -461,7 +427,7 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: <Scheme::Entry as EntryScheme>::SubspaceId,
         traceless: bool,
     ) -> impl Future<Output = Result<(), ForgetPayloadError>>;
 
@@ -472,7 +438,7 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn force_forget_payload(
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: <Scheme::Entry as EntryScheme>::SubspaceId,
         traceless: bool,
     ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
 
@@ -485,10 +451,10 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_area_payloads(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        area: &AreaOfInterest<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
+        protected: Option<Area<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>>,
         traceless: bool,
-    ) -> impl Future<Output = Vec<PD>>;
+    ) -> impl Future<Output = Vec<<Scheme::Entry as EntryScheme>::PayloadDigest>>;
 
     /// Locally forget all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. **Payloads will be forgotten even if it corresponds to other entries outside the given area**.
     ///
@@ -499,10 +465,10 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn force_forget_area_payloads(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        area: &AreaOfInterest<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
+        protected: Option<Area<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>>,
         traceless: bool,
-    ) -> impl Future<Output = Vec<PD>>;
+    ) -> impl Future<Output = Vec<<Scheme::Entry as EntryScheme>::PayloadDigest>>;
 
     /// Force persistence of all previous mutations
     fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
@@ -511,35 +477,35 @@ where
     fn entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: &S,
+        subspace_id: &<Scheme::Entry as EntryScheme>::SubspaceId,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, Scheme>>;
 
     /// Query which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
     fn query_area(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &AreaOfInterest<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
         order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, Scheme>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
         &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, Scheme>>;
 
     /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
     fn resume_subscription(
         &self,
         progress_id: u64,
-        area: &Area<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, <Scheme::Entry as EntryScheme>::SubspaceId>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<
         Output = Result<
-            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            impl Producer<Item = StoreEvent<MCL, MCC, MPL, Scheme>>,
             ResumptionFailedError,
         >,
     >;
