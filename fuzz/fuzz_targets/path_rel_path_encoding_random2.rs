@@ -11,11 +11,5 @@ const MPL: usize = 3;
 fuzz_target!(|data: (&[u8], Path<MCL, MCC, MPL>)| {
     let (random_bytes, ref_path) = data;
 
-    smol::block_on(async {
-        relative_encoding_random::<Path<MCL, MCC, MPL>, Path<MCL, MCC, MPL>>(
-            ref_path,
-            random_bytes,
-        )
-        .await;
-    });
+    relative_encoding_random::<Path<MCL, MCC, MPL>, Path<MCL, MCC, MPL>>(ref_path, random_bytes)
 });

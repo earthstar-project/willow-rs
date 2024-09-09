@@ -3,8 +3,6 @@ use arbitrary::{
     Arbitrary, Error as ArbitraryError,
 };
 use either::Either;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-use willow_encoding::{Decodable, DecodeError, Encodable};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Shortname<const MIN_LENGTH: usize, const MAX_LENGTH: usize>(pub Vec<u8>);
@@ -97,50 +95,96 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Cinn25519PublicKey<MIN_LE
     // TODO: fn verify
 }
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable
-    for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
-{
-    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-    where
-        Consumer: BulkConsumer<Item = u8>,
+use syncify::syncify;
+use syncify::syncify_replace;
+
+#[syncify(encoding_sync)]
+pub(super) mod encoding {
+    use super::*;
+
+    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
+    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use willow_encoding::DecodeError;
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
+    use willow_encoding::{Decodable, Encodable};
+
+    impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable
+        for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
     {
-        let mut vec = Vec::new();
+        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
+        where
+            Consumer: BulkConsumer<Item = u8>,
+        {
+            let mut vec = Vec::new();
 
-        vec.extend_from_slice(&self.shortname.0);
+            vec.extend_from_slice(&self.shortname.0);
 
-        consumer
-            .bulk_consume_full_slice(&self.shortname.0)
-            .await
-            .map_err(|f| f.reason)?;
+            consumer
+                .bulk_consume_full_slice(&self.shortname.0)
+                .await
+                .map_err(|f| f.reason)?;
 
-        if MIN_LENGTH < MAX_LENGTH {
-            consumer.consume(0x0).await?;
+            if MIN_LENGTH < MAX_LENGTH {
+                consumer.consume(0x0).await?;
+            }
+
+            consumer
+                .bulk_consume_full_slice(&self.underlying)
+                .await
+                .map_err(|f| f.reason)?;
+
+            Ok(())
         }
-
-        consumer
-            .bulk_consume_full_slice(&self.underlying)
-            .await
-            .map_err(|f| f.reason)?;
-
-        Ok(())
     }
-}
 
-impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
-    for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
-{
-    async fn decode<Producer>(
-        producer: &mut Producer,
-    ) -> Result<Self, DecodeError<<Producer>::Error>>
-    where
-        Producer: BulkProducer<Item = u8>,
+    impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
+        for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
     {
-        if MIN_LENGTH == MAX_LENGTH {
-            let mut shortname_box = vec![0; MIN_LENGTH].into_boxed_slice();
+        async fn decode<Producer>(
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<<Producer>::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+        {
+            if MIN_LENGTH == MAX_LENGTH {
+                let mut shortname_box = vec![0; MIN_LENGTH].into_boxed_slice();
 
-            producer
-                .bulk_overwrite_full_slice(shortname_box.as_mut())
-                .await?;
+                producer
+                    .bulk_overwrite_full_slice(shortname_box.as_mut())
+                    .await?;
+
+                let mut underlying_slice = [0u8; 32];
+
+                producer
+                    .bulk_overwrite_full_slice(&mut underlying_slice)
+                    .await?;
+
+                return Ok(Self {
+                    shortname: Shortname(shortname_box.into()),
+                    underlying: underlying_slice,
+                });
+            }
+
+            let mut shortname_vec: Vec<u8> = Vec::new();
+
+            loop {
+                match producer.produce().await {
+                    Ok(Either::Left(item)) => {
+                        // if item is 0x0, stop
+                        if item == 0x0 {
+                            break;
+                        }
+
+                        shortname_vec.push(item);
+                    }
+                    Ok(Either::Right(_)) => {
+                        // whatever happens, we won't be able to make a full public key.
+                        // Error!
+                        return Err(DecodeError::InvalidInput);
+                    }
+                    Err(err) => return Err(DecodeError::Producer(err)),
+                }
+            }
 
             let mut underlying_slice = [0u8; 32];
 
@@ -148,43 +192,11 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
                 .bulk_overwrite_full_slice(&mut underlying_slice)
                 .await?;
 
-            return Ok(Self {
-                shortname: Shortname(shortname_box.into()),
+            Ok(Self {
+                shortname: Shortname(shortname_vec),
                 underlying: underlying_slice,
-            });
+            })
         }
-
-        let mut shortname_vec: Vec<u8> = Vec::new();
-
-        loop {
-            match producer.produce().await {
-                Ok(Either::Left(item)) => {
-                    // if item is 0x0, stop
-                    if item == 0x0 {
-                        break;
-                    }
-
-                    shortname_vec.push(item);
-                }
-                Ok(Either::Right(_)) => {
-                    // whatever happens, we won't be able to make a full public key.
-                    // Error!
-                    return Err(DecodeError::InvalidInput);
-                }
-                Err(err) => return Err(DecodeError::Producer(err)),
-            }
-        }
-
-        let mut underlying_slice = [0u8; 32];
-
-        producer
-            .bulk_overwrite_full_slice(&mut underlying_slice)
-            .await?;
-
-        Ok(Self {
-            shortname: Shortname(shortname_vec),
-            underlying: underlying_slice,
-        })
     }
 }
 

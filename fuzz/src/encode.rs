@@ -1,26 +1,27 @@
 use ufotofu::{
     common::consumer::TestConsumer,
-    local_nb::{
+    sync::consumer::IntoVec,
+    sync::{
         producer::{FromBoxedSlice, FromSlice},
         BufferedConsumer, BulkConsumer,
     },
-    sync::consumer::IntoVec,
 };
 
 use willow_encoding::{
-    DecodeError, {Decodable, Encodable, RelativeDecodable, RelativeEncodable},
+    sync::{Decodable, Encodable, RelativeDecodable, RelativeEncodable},
+    DecodeError,
 };
 
-pub async fn encoding_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
+pub fn encoding_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
 where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
     C: BulkConsumer<Item = u8>,
 {
-    if let Err(_err) = item.encode(consumer).await {
+    if let Err(_err) = item.encode(consumer) {
         return;
     }
 
-    if let Err(_err) = consumer.flush().await {
+    if let Err(_err) = consumer.flush() {
         return;
     }
 
@@ -32,18 +33,18 @@ where
     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
-    let decoded_item = T::decode(&mut producer).await.unwrap();
+    let decoded_item = T::decode(&mut producer).unwrap();
 
     assert_eq!(decoded_item, item);
 }
 
-pub async fn encoding_random<T>(data: &[u8])
+pub fn encoding_random<T>(data: &[u8])
 where
     T: Encodable + Decodable + std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::decode(&mut producer).await {
+    match T::decode(&mut producer) {
         Ok(item) => {
             // println!("item {:?}", item);
 
@@ -51,7 +52,7 @@ where
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
-            item.encode(&mut consumer).await.unwrap();
+            item.encode(&mut consumer).unwrap();
 
             let encoded = consumer.as_ref();
 
@@ -70,13 +71,13 @@ where
     };
 }
 
-pub async fn encoding_random_less_strict<T>(data: &[u8])
+pub fn encoding_relation_random<T>(data: &[u8])
 where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::decode(&mut producer).await {
+    match T::decode(&mut producer) {
         Ok(item) => {
             // println!("item {:?}", item);
 
@@ -84,11 +85,11 @@ where
             // Can we turn it back into the same encoding?
             let mut consumer = IntoVec::<u8>::new();
 
-            item.encode(&mut consumer).await.unwrap();
+            item.encode(&mut consumer).unwrap();
 
             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            match T::decode(&mut producer_2).await {
+            match T::decode(&mut producer_2) {
                 Ok(decoded_again) => {
                     assert_eq!(item, decoded_again);
                 }
@@ -111,7 +112,7 @@ where
     };
 }
 
-pub async fn relative_encoding_roundtrip<T, R, C>(
+pub fn relative_encoding_roundtrip<T, R, C>(
     subject: T,
     reference: R,
     consumer: &mut TestConsumer<u8, u16, ()>,
@@ -123,11 +124,11 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     //println!("item {:?}", subject);
     //println!("ref {:?}", reference);
 
-    if let Err(_err) = subject.relative_encode(&reference, consumer).await {
+    if let Err(_err) = subject.relative_encode(&reference, consumer) {
         return;
     }
 
-    if let Err(_err) = consumer.flush().await {
+    if let Err(_err) = consumer.flush() {
         return;
     }
 
@@ -139,19 +140,19 @@ pub async fn relative_encoding_roundtrip<T, R, C>(
     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
-    let decoded_item = T::relative_decode(&reference, &mut producer).await.unwrap();
+    let decoded_item = T::relative_decode(&reference, &mut producer).unwrap();
 
     assert_eq!(decoded_item, subject);
 }
 
-pub async fn relative_encoding_random<R, T>(reference: R, data: &[u8])
+pub fn relative_encoding_random<R, T>(reference: R, data: &[u8])
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
     R: std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode(&reference, &mut producer).await {
+    match T::relative_decode(&reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -160,9 +161,7 @@ where
             //  println!("item {:?}", item);
             //  println!("ref {:?}", reference);
 
-            item.relative_encode(&reference, &mut consumer)
-                .await
-                .unwrap();
+            item.relative_encode(&reference, &mut consumer).unwrap();
 
             let encoded = consumer.as_ref();
 
@@ -181,14 +180,14 @@ where
     };
 }
 
-pub async fn relative_encoding_random_less_strict<R, T>(reference: R, data: &[u8])
+pub fn relative_encoding_relation_random<R, T>(reference: R, data: &[u8])
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode(&reference, &mut producer).await {
+    match T::relative_decode(&reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -197,13 +196,11 @@ where
             //  println!("item {:?}", item);
             //  println!("ref {:?}", reference);
 
-            item.relative_encode(&reference, &mut consumer)
-                .await
-                .unwrap();
+            item.relative_encode(&reference, &mut consumer).unwrap();
 
             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            match T::relative_decode(&reference, &mut producer_2).await {
+            match T::relative_decode(&reference, &mut producer_2) {
                 Ok(decoded_again) => {
                     assert_eq!(item, decoded_again);
                 }

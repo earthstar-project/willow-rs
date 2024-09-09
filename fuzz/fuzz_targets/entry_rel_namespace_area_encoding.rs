@@ -22,12 +22,9 @@ fuzz_target!(|data: (
 
     let namespace = entry.namespace_id().clone();
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            (EsNamespaceId, Area<16, 16, 16, IdentityId>),
-            TestConsumer<u8, u16, ()>,
-        >(entry, (namespace, area), &mut consumer)
-        .await;
-    });
+    relative_encoding_roundtrip::<
+        Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+        (EsNamespaceId, Area<16, 16, 16, IdentityId>),
+        TestConsumer<u8, u16, ()>,
+    >(entry, (namespace, area), &mut consumer)
 });

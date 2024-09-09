@@ -9,7 +9,5 @@ const MCC: usize = 3;
 const MPL: usize = 3;
 
 fuzz_target!(|data: &[u8]| {
-    smol::block_on(async {
-        encoding_random::<Path<MCL, MCC, MPL>>(data).await;
-    });
+    encoding_random::<Path<MCL, MCC, MPL>>(data);
 });

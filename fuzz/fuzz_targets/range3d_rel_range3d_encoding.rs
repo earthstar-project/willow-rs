@@ -13,12 +13,9 @@ fuzz_target!(|data: (
 )| {
     let (ran, reference, mut consumer) = data;
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Range3d<16, 16, 16, IdentityId>,
-            Range3d<16, 16, 16, IdentityId>,
-            TestConsumer<u8, u16, ()>,
-        >(ran, reference, &mut consumer)
-        .await;
-    });
+    relative_encoding_roundtrip::<
+        Range3d<16, 16, 16, IdentityId>,
+        Range3d<16, 16, 16, IdentityId>,
+        TestConsumer<u8, u16, ()>,
+    >(ran, reference, &mut consumer);
 });

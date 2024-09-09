@@ -15,12 +15,9 @@ fuzz_target!(|data: (
 )| {
     let (entry_sub, entry_ref, mut consumer) = data;
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
-            TestConsumer<u8, u16, ()>,
-        >(entry_sub, entry_ref, &mut consumer)
-        .await;
-    });
+    relative_encoding_roundtrip::<
+        Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+        Entry<16, 16, 16, EsNamespaceId, IdentityId, FakePayloadDigest>,
+        TestConsumer<u8, u16, ()>,
+    >(entry_sub, entry_ref, &mut consumer);
 });

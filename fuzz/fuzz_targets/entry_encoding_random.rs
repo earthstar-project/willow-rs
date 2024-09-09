@@ -9,7 +9,5 @@ use libfuzzer_sys::fuzz_target;
 use willow_fuzz::{encode::encoding_random, placeholder_params::FakePayloadDigest};
 
 fuzz_target!(|data: &[u8]| {
-    smol::block_on(async {
-        encoding_random::<Entry<3, 3, 3, EsNamespaceId, IdentityId, FakePayloadDigest>>(data).await;
-    });
+    encoding_random::<Entry<3, 3, 3, EsNamespaceId, IdentityId, FakePayloadDigest>>(data);
 });

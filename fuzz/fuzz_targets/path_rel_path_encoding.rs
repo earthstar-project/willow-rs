@@ -17,12 +17,9 @@ fuzz_target!(|data: (
 )| {
     let (path_sub, path_ref, mut consumer) = data;
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Path<MCL, MCC, MPL>,
-            Path<MCL, MCC, MPL>,
-            TestConsumer<u8, u16, ()>,
-        >(path_sub, path_ref, &mut consumer)
-        .await;
-    });
+    relative_encoding_roundtrip::<Path<MCL, MCC, MPL>, Path<MCL, MCC, MPL>, TestConsumer<u8, u16, ()>>(
+        path_sub,
+        path_ref,
+        &mut consumer,
+    )
 });

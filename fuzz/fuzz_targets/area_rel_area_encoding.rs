@@ -17,12 +17,9 @@ fuzz_target!(|data: (
         return;
     }
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            Area<16, 16, 16, IdentityId>,
-            Area<16, 16, 16, IdentityId>,
-            TestConsumer<u8, u16, ()>,
-        >(a, out, &mut consumer)
-        .await;
-    });
+    relative_encoding_roundtrip::<
+        Area<16, 16, 16, IdentityId>,
+        Area<16, 16, 16, IdentityId>,
+        TestConsumer<u8, u16, ()>,
+    >(a, out, &mut consumer)
 });

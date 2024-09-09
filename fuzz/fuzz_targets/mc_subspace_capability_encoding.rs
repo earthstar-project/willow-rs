@@ -23,11 +23,8 @@ fuzz_target!(|data: (
         last_receiver = delegee;
     }
 
-    smol::block_on(async {
-        encoding_roundtrip::<
-            McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-            TestConsumer<u8, u16, ()>,
-        >(cap_with_delegees, &mut consumer)
-        .await;
-    });
+    encoding_roundtrip::<
+        McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
+        TestConsumer<u8, u16, ()>,
+    >(cap_with_delegees, &mut consumer)
 });

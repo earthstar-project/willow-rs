@@ -14,7 +14,5 @@ fuzz_target!(|data: (
 )| {
     let (entry, mut consumer) = data;
 
-    smol::block_on(async {
-        encoding_roundtrip::<_, TestConsumer<u8, u16, ()>>(entry, &mut consumer).await;
-    });
+    encoding_roundtrip::<_, TestConsumer<u8, u16, ()>>(entry, &mut consumer);
 });
