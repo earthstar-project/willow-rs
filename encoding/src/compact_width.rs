@@ -148,7 +148,23 @@ pub mod encoding {
         Ok(())
     }
 
+    /// Decode the bytes representing a [`CompactWidth`]-bytes integer into a `usize` as encoding relation.
+    pub async fn decode_relation_compact_width_be<Producer: BulkProducer<Item = u8>>(
+        compact_width: CompactWidth,
+        producer: &mut Producer,
+    ) -> Result<u64, DecodeError<Producer::Error>> {
+        let decoded = match compact_width {
+            CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
+            CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
+            CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
+            CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
+        }?;
+
+        Ok(decoded)
+    }
+
     /// Decode the bytes representing a [`CompactWidth`]-bytes integer into a `usize`.
+    /// Will fail if the decoded value could have been encoded with a smaller [`CompactWidth`].
     pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
         compact_width: CompactWidth,
         producer: &mut Producer,
