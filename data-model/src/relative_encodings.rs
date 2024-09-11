@@ -73,7 +73,7 @@ pub(super) mod encoding {
         /// Decode a path relative to this path.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             reference: &Path<MCL, MCC, MPL>,
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -84,7 +84,7 @@ pub(super) mod encoding {
             let lcp_component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
 
             if lcp_component_count == 0 {
-                let decoded = Path::<MCL, MCC, MPL>::decode(producer).await?;
+                let decoded = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
 
                 // === Necessary to produce canonic encodings. ===
                 if lcp_component_count
@@ -247,7 +247,7 @@ pub(super) mod encoding {
         /// Decode an [`Entry`] relative from this [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             reference: &Entry<MCL, MCC, MPL, N, S, PD>,
             producer: &mut Producer,
         ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
@@ -269,34 +269,31 @@ pub(super) mod encoding {
             let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
             let namespace_id = if is_namespace_encoded {
-                N::decode(producer).await?
+                N::decode_canonical(producer).await?
             } else {
                 reference.namespace_id().clone()
             };
 
-            /*
             // Verify that the encoded namespace wasn't the same as ours
             // Which would indicate invalid input
-            if is_namespace_encoded && namespace_id == reference.get_namespace_id() {
+            if is_namespace_encoded && &namespace_id == reference.namespace_id() {
                 return Err(DecodeError::InvalidInput);
             }
-            */
 
             let subspace_id = if is_subspace_encoded {
-                S::decode(producer).await?
+                S::decode_canonical(producer).await?
             } else {
                 reference.subspace_id().clone()
             };
 
-            /*
             // Verify that the encoded subspace wasn't the same as ours
             // Which would indicate invalid input
-            if is_subspace_encoded && subspace_id == reference.get_subspace_id() {
+            if is_subspace_encoded && &subspace_id == reference.subspace_id() {
                 return Err(DecodeError::InvalidInput);
             }
-            */
 
-            let path = Path::<MCL, MCC, MPL>::relative_decode(reference.path(), producer).await?;
+            let path = Path::<MCL, MCC, MPL>::relative_decode_canonical(reference.path(), producer)
+                .await?;
 
             let time_diff = decode_compact_width_be(compact_width_time_diff, producer).await?;
 
@@ -313,18 +310,16 @@ pub(super) mod encoding {
                     .ok_or(DecodeError::InvalidInput)?
             };
 
-            /*
             // Verify that the correct add_or_subtract_time_diff flag was set.
-            let should_have_subtracted = timestamp <= reference.get_timestamp();
+            let should_have_subtracted = timestamp <= reference.timestamp();
             if add_or_subtract_time_diff && should_have_subtracted {
                 return Err(DecodeError::InvalidInput);
             }
-            */
 
             let payload_length =
                 decode_compact_width_be(compact_width_payload_length, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = PD::decode_canonical(producer).await?;
 
             Ok(Entry::new(
                 namespace_id,
@@ -410,7 +405,7 @@ pub(super) mod encoding {
         /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             reference: &(N, Area<MCL, MCC, MPL, S>),
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -433,7 +428,7 @@ pub(super) mod encoding {
 
             let subspace_id = if is_subspace_encoded {
                 match &out.subspace() {
-                    AreaSubspace::Any => S::decode(producer).await?,
+                    AreaSubspace::Any => S::decode_canonical(producer).await?,
                     AreaSubspace::Id(_) => return Err(DecodeError::InvalidInput),
                 }
             } else {
@@ -443,7 +438,7 @@ pub(super) mod encoding {
                 }
             };
 
-            let path = Path::relative_decode(out.path(), producer).await?;
+            let path = Path::relative_decode_canonical(out.path(), producer).await?;
 
             if !path.is_prefixed_by(out.path()) {
                 return Err(DecodeError::InvalidInput);
@@ -453,7 +448,7 @@ pub(super) mod encoding {
             let payload_length =
                 decode_compact_width_be(payload_length_compact_width, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = PD::decode_canonical(producer).await?;
 
             let timestamp = if add_time_diff_to_start {
                 out.times().start.checked_add(time_diff)
@@ -598,7 +593,7 @@ pub(super) mod encoding {
         /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             reference: &(N, Range3d<MCL, MCC, MPL, S>),
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -627,7 +622,7 @@ pub(super) mod encoding {
             let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 6);
 
             let subspace_id = if is_subspace_encoded {
-                S::decode(producer).await?
+                S::decode_canonical(producer).await?
             } else {
                 out.subspaces().start.clone()
             };
@@ -645,10 +640,12 @@ pub(super) mod encoding {
             }
 
             let path = if decode_path_relative_to_start {
-                Path::relative_decode(&out.paths().start, producer).await?
+                Path::relative_decode_canonical(&out.paths().start, producer).await?
             } else {
                 match &out.paths().end {
-                    RangeEnd::Closed(end_path) => Path::relative_decode(end_path, producer).await?,
+                    RangeEnd::Closed(end_path) => {
+                        Path::relative_decode_canonical(end_path, producer).await?
+                    }
                     RangeEnd::Open => return Err(DecodeError::InvalidInput),
                 }
             };
@@ -680,7 +677,7 @@ pub(super) mod encoding {
             let payload_length =
                 decode_compact_width_be(payload_length_compact_width, producer).await?;
 
-            let payload_digest = PD::decode(producer).await?;
+            let payload_digest = PD::decode_canonical(producer).await?;
 
             let timestamp = if add_time_diff_with_start {
                 out.times().start.checked_add(time_diff)
@@ -815,7 +812,7 @@ pub(super) mod encoding {
         /// Decode an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             out: &Area<MCL, MCC, MPL, S>,
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -855,7 +852,7 @@ pub(super) mod encoding {
             // ===============================================
 
             let subspace = if is_subspace_encoded {
-                let id = S::decode(producer).await?;
+                let id = S::decode_canonical(producer).await?;
                 let sub = AreaSubspace::Id(id);
 
                 // === Necessary to produce canonic encodings. ===
@@ -884,7 +881,7 @@ pub(super) mod encoding {
                 }
             }
 
-            let path = Path::relative_decode(out.path(), producer).await?;
+            let path = Path::relative_decode_canonical(out.path(), producer).await?;
 
             // Verify the decoded path is prefixed by the reference path
             if !path.is_prefixed_by(out.path()) {
@@ -1174,7 +1171,7 @@ pub(super) mod encoding {
         /// Encode an [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             reference: &Range3d<MCL, MCC, MPL, S>,
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -1209,7 +1206,7 @@ pub(super) mod encoding {
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 },
                 // This can only be 0b1100_0000
-                _ => S::decode(producer).await?,
+                _ => S::decode_canonical(producer).await?,
             };
 
             let subspace_end = match subspace_end_flags {
@@ -1220,18 +1217,18 @@ pub(super) mod encoding {
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 },
                 // This can only be 0b0011_0000
-                _ => RangeEnd::Closed(S::decode(producer).await?),
+                _ => RangeEnd::Closed(S::decode_canonical(producer).await?),
             };
 
             let path_start = match (is_path_start_rel_to_start, &reference.paths().end) {
                 (true, RangeEnd::Closed(_)) => {
-                    Path::relative_decode(&reference.paths().start, producer).await?
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?
                 }
                 (true, RangeEnd::Open) => {
-                    Path::relative_decode(&reference.paths().start, producer).await?
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?
                 }
                 (false, RangeEnd::Closed(path_end)) => {
-                    Path::relative_decode(path_end, producer).await?
+                    Path::relative_decode_canonical(path_end, producer).await?
                 }
                 (false, RangeEnd::Open) => Err(DecodeError::InvalidInput)?,
             };
@@ -1239,11 +1236,13 @@ pub(super) mod encoding {
             let path_end = if is_path_end_open {
                 RangeEnd::Open
             } else if is_path_end_rel_to_start {
-                RangeEnd::Closed(Path::relative_decode(&reference.paths().start, producer).await?)
+                RangeEnd::Closed(
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?,
+                )
             } else {
                 match &reference.paths().end {
                     RangeEnd::Closed(end) => {
-                        RangeEnd::Closed(Path::relative_decode(end, producer).await?)
+                        RangeEnd::Closed(Path::relative_decode_canonical(end, producer).await?)
                     }
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 }

@@ -102,7 +102,7 @@ pub mod encoding {
     }
 
     impl Decodable for SillyPublicKey {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -126,7 +126,7 @@ pub mod encoding {
     }
 
     impl Decodable for SillySig {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where

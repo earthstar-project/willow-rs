@@ -33,7 +33,7 @@ where
     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
-    let decoded_item = T::decode(&mut producer).unwrap();
+    let decoded_item = T::decode_canonical(&mut producer).unwrap();
 
     assert_eq!(decoded_item, item);
 }
@@ -44,7 +44,7 @@ where
 {
     let mut producer = FromSlice::new(data);
 
-    match T::decode(&mut producer) {
+    match T::decode_canonical(&mut producer) {
         Ok(item) => {
             // println!("item {:?}", item);
 
@@ -77,7 +77,7 @@ where
 {
     let mut producer = FromSlice::new(data);
 
-    match T::decode(&mut producer) {
+    match T::decode_canonical(&mut producer) {
         Ok(item) => {
             // println!("item {:?}", item);
 
@@ -89,7 +89,7 @@ where
 
             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            match T::decode(&mut producer_2) {
+            match T::decode_canonical(&mut producer_2) {
                 Ok(decoded_again) => {
                     assert_eq!(item, decoded_again);
                 }
@@ -140,7 +140,7 @@ pub fn relative_encoding_roundtrip<T, R, C>(
     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
     // Check for correct errors
-    let decoded_item = T::relative_decode(&reference, &mut producer).unwrap();
+    let decoded_item = T::relative_decode_canonical(&reference, &mut producer).unwrap();
 
     assert_eq!(decoded_item, subject);
 }
@@ -152,7 +152,7 @@ where
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode(&reference, &mut producer) {
+    match T::relative_decode_canonical(&reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -187,7 +187,7 @@ where
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode(&reference, &mut producer) {
+    match T::relative_decode_relation(&reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -200,7 +200,7 @@ where
 
             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            match T::relative_decode(&reference, &mut producer_2) {
+            match T::relative_decode_relation(&reference, &mut producer_2) {
                 Ok(decoded_again) => {
                     assert_eq!(item, decoded_again);
                 }

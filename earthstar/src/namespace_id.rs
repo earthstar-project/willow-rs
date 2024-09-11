@@ -40,11 +40,11 @@ pub(super) mod encoding {
     }
 
     impl Decodable for NamespaceIdentifier {
-        async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<<P>::Error>>
+        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<<P>::Error>>
         where
             P: BulkProducer<Item = u8>,
         {
-            match Cinn25519PublicKey::decode(producer).await {
+            match Cinn25519PublicKey::decode_canonical(producer).await {
                 Ok(pk) => Ok(Self(pk)),
                 Err(err) => Err(err),
             }

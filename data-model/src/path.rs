@@ -818,7 +818,7 @@ mod encoding {
     }
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for Path<MCL, MCC, MPL> {
-        async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
         where
             P: BulkProducer<Item = u8>,
         {
@@ -853,6 +853,13 @@ mod encoding {
             }
 
             Ok(unsafe { buf.to_path(component_count) })
+        }
+
+        async fn decode_relation<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+        where
+            P: BulkProducer<Item = u8>,
+        {
+            Self::decode_canonical(producer).await
         }
     }
 }

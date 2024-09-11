@@ -314,7 +314,7 @@ pub(super) mod encoding {
         UserPublicKey: SubspaceId + EncodableSync + Decodable + Verifier<UserSignature>,
         UserSignature: EncodableSync + Decodable + Clone,
     {
-        async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
         where
             P: BulkProducer<Item = u8>,
         {
@@ -322,9 +322,9 @@ pub(super) mod encoding {
 
             let header = produce_byte(producer).await?;
 
-            let namespace_key = NamespacePublicKey::decode(producer).await?;
-            let user_key = UserPublicKey::decode(producer).await?;
-            let initial_authorisation = NamespaceSignature::decode(producer).await?;
+            let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
+            let user_key = UserPublicKey::decode_canonical(producer).await?;
+            let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
 
             let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
                 .map_err(|_| DecodeError::InvalidInput)?;
@@ -354,8 +354,8 @@ pub(super) mod encoding {
             };
 
             for _ in 0..delegations_to_decode {
-                let user = UserPublicKey::decode(producer).await?;
-                let signature = UserSignature::decode(producer).await?;
+                let user = UserPublicKey::decode_canonical(producer).await?;
+                let signature = UserSignature::decode_canonical(producer).await?;
                 let delegation = SubspaceDelegation::new(user, signature);
 
                 base_cap

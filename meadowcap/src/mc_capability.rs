@@ -438,7 +438,7 @@ pub(super) mod encoding {
         NamespaceSignature: EncodableSync + Decodable + Clone,
         UserSignature: EncodableSync + Decodable + Clone,
     {
-        async fn relative_decode<Producer>(
+        async fn relative_decode_canonical<Producer>(
             out: &Area<MCL, MCC, MPL, UserPublicKey>,
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
@@ -455,11 +455,11 @@ pub(super) mod encoding {
                 AccessMode::Read
             };
 
-            let namespace_key = NamespacePublicKey::decode(producer).await?;
-            let user_key = UserPublicKey::decode(producer).await?;
+            let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
+            let user_key = UserPublicKey::decode_canonical(producer).await?;
 
             let mut base_cap = if is_owned {
-                let initial_authorisation = NamespaceSignature::decode(producer).await?;
+                let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
 
                 let cap = OwnedCapability::from_existing(
                     namespace_key,
@@ -497,12 +497,13 @@ pub(super) mod encoding {
             let mut prev_area = out.clone();
 
             for _ in 0..delegations_to_decode {
-                let area =
-                    Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode(&prev_area, producer)
-                        .await?;
+                let area = Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode_canonical(
+                    &prev_area, producer,
+                )
+                .await?;
                 prev_area = area.clone();
-                let user = UserPublicKey::decode(producer).await?;
-                let signature = UserSignature::decode(producer).await?;
+                let user = UserPublicKey::decode_canonical(producer).await?;
+                let signature = UserSignature::decode_canonical(producer).await?;
 
                 base_cap
                     .append_existing_delegation(Delegation {

@@ -140,7 +140,7 @@ pub(super) mod encoding {
     impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Decodable
         for Cinn25519PublicKey<MIN_LENGTH, MAX_LENGTH>
     {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<<Producer>::Error>>
         where

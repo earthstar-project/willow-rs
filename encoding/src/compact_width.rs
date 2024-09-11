@@ -154,10 +154,10 @@ pub mod encoding {
         producer: &mut Producer,
     ) -> Result<u64, DecodeError<Producer::Error>> {
         let decoded = match compact_width {
-            CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
-            CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
-            CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
-            CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
+            CompactWidth::One => U8BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Two => U16BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Four => U32BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Eight => U64BE::decode_canonical(producer).await.map(u64::from),
         }?;
 
         Ok(decoded)
@@ -170,10 +170,10 @@ pub mod encoding {
         producer: &mut Producer,
     ) -> Result<u64, DecodeError<Producer::Error>> {
         let decoded = match compact_width {
-            CompactWidth::One => U8BE::decode(producer).await.map(u64::from),
-            CompactWidth::Two => U16BE::decode(producer).await.map(u64::from),
-            CompactWidth::Four => U32BE::decode(producer).await.map(u64::from),
-            CompactWidth::Eight => U64BE::decode(producer).await.map(u64::from),
+            CompactWidth::One => U8BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Two => U16BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Four => U32BE::decode_canonical(producer).await.map(u64::from),
+            CompactWidth::Eight => U64BE::decode_canonical(producer).await.map(u64::from),
         }?;
 
         let real_width = CompactWidth::from_u64(decoded);

@@ -195,16 +195,18 @@ mod encoding {
         S: SubspaceId + Decodable,
         PD: PayloadDigest + Decodable,
     {
-        async fn decode<Prod>(producer: &mut Prod) -> Result<Self, DecodeError<Prod::Error>>
+        async fn decode_canonical<Prod>(
+            producer: &mut Prod,
+        ) -> Result<Self, DecodeError<Prod::Error>>
         where
             Prod: BulkProducer<Item = u8>,
         {
-            let namespace_id = N::decode(producer).await?;
-            let subspace_id = S::decode(producer).await?;
-            let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
-            let timestamp = U64BE::decode(producer).await?.into();
-            let payload_length = U64BE::decode(producer).await?.into();
-            let payload_digest = PD::decode(producer).await?;
+            let namespace_id = N::decode_canonical(producer).await?;
+            let subspace_id = S::decode_canonical(producer).await?;
+            let path = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
+            let timestamp = U64BE::decode_canonical(producer).await?.into();
+            let payload_length = U64BE::decode_canonical(producer).await?.into();
+            let payload_digest = PD::decode_canonical(producer).await?;
 
             Ok(Entry {
                 namespace_id,

@@ -25,7 +25,7 @@ impl Encodable for FakePayloadDigest {
 }
 
 impl Decodable for FakePayloadDigest {
-    async fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducer<Item = u8>,
     {
@@ -51,7 +51,7 @@ impl EncodableSync for FakePayloadDigest {
 }
 
 impl DecodableSync for FakePayloadDigest {
-    fn decode<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
     where
         P: BulkProducerSync<Item = u8>,
     {
