@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use meadowcap::McSubspaceCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
-use willow_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::encode::encoding_canonical_roundtrip;
 use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
@@ -23,7 +23,7 @@ fuzz_target!(|data: (
         last_receiver = delegee;
     }
 
-    encoding_roundtrip::<
+    encoding_canonical_roundtrip::<
         McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
         TestConsumer<u8, u16, ()>,
     >(cap_with_delegees, &mut consumer)

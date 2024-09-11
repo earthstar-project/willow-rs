@@ -12,7 +12,7 @@ use willow_encoding::{
     DecodeError,
 };
 
-pub fn encoding_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
+pub fn encoding_canonical_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
 where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
     C: BulkConsumer<Item = u8>,
@@ -38,7 +38,7 @@ where
     assert_eq!(decoded_item, item);
 }
 
-pub fn encoding_random<T>(data: &[u8])
+pub fn encoding_canonical_random<T>(data: &[u8])
 where
     T: Encodable + Decodable + std::fmt::Debug,
 {
@@ -112,7 +112,7 @@ where
     };
 }
 
-pub fn relative_encoding_roundtrip<T, R, C>(
+pub fn relative_encoding_canonical_roundtrip<T, R, C>(
     subject: T,
     reference: R,
     consumer: &mut TestConsumer<u8, u16, ()>,
@@ -145,7 +145,7 @@ pub fn relative_encoding_roundtrip<T, R, C>(
     assert_eq!(decoded_item, subject);
 }
 
-pub fn relative_encoding_random<R, T>(reference: R, data: &[u8])
+pub fn relative_encoding_canonical_random<R, T>(reference: R, data: &[u8])
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
     R: std::fmt::Debug,
