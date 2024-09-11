@@ -38,6 +38,14 @@ where
     assert_eq!(decoded_item, item);
 }
 
+pub fn encoding_random<T>(data: &[u8])
+where
+    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
+{
+    encoding_canonical_random::<T>(data);
+    encoding_relation_random::<T>(data);
+}
+
 pub fn encoding_canonical_random<T>(data: &[u8])
 where
     T: Encodable + Decodable + std::fmt::Debug,
@@ -145,14 +153,23 @@ pub fn relative_encoding_canonical_roundtrip<T, R, C>(
     assert_eq!(decoded_item, subject);
 }
 
-pub fn relative_encoding_canonical_random<R, T>(reference: R, data: &[u8])
+pub fn relative_encoding_random<R, T>(reference: &R, data: &[u8])
+where
+    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
+    R: std::fmt::Debug,
+{
+    relative_encoding_canonical_random::<R, T>(reference, data);
+    relative_encoding_relation_random::<R, T>(reference, data);
+}
+
+pub fn relative_encoding_canonical_random<R, T>(reference: &R, data: &[u8])
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
     R: std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode_canonical(&reference, &mut producer) {
+    match T::relative_decode_canonical(reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -161,7 +178,7 @@ where
             //  println!("item {:?}", item);
             //  println!("ref {:?}", reference);
 
-            item.relative_encode(&reference, &mut consumer).unwrap();
+            item.relative_encode(reference, &mut consumer).unwrap();
 
             let encoded = consumer.as_ref();
 
@@ -180,14 +197,14 @@ where
     };
 }
 
-pub fn relative_encoding_relation_random<R, T>(reference: R, data: &[u8])
+pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8])
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);
 
-    match T::relative_decode_relation(&reference, &mut producer) {
+    match T::relative_decode_relation(reference, &mut producer) {
         Ok(item) => {
             // It decoded to a valid item! Gasp!
             // Can we turn it back into the same encoding?
@@ -196,11 +213,11 @@ where
             //  println!("item {:?}", item);
             //  println!("ref {:?}", reference);
 
-            item.relative_encode(&reference, &mut consumer).unwrap();
+            item.relative_encode(reference, &mut consumer).unwrap();
 
             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            match T::relative_decode_relation(&reference, &mut producer_2) {
+            match T::relative_decode_relation(reference, &mut producer_2) {
                 Ok(decoded_again) => {
                     assert_eq!(item, decoded_again);
                 }
