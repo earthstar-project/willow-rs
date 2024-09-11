@@ -21,7 +21,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 pub struct Component<'a, const MAX_COMPONENT_LENGTH: usize>(&'a [u8]);
 
 impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> {
-    /// Create a `Component` from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
+    /// Creates a `Component` from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
     pub fn new(slice: &'a [u8]) -> Option<Self> {
         if slice.len() <= MAX_COMPONENT_LENGTH {
             return Some(unsafe { Self::new_unchecked(slice) }); // Safe because we just checked the length.
@@ -30,7 +30,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
         }
     }
 
-    /// Create a `Component` from a byte slice, without verifying its length.
+    /// Creates a `Component` from a byte slice, without verifying its length.
     ///
     /// #### Safety
     ///
@@ -40,7 +40,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
         Self(slice)
     }
 
-    /// Create an empty component.
+    /// Returns an empty component.
     pub fn new_empty() -> Self {
         Self(&[])
     }
@@ -77,7 +77,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'a, MAX_C
 pub struct OwnedComponent<const MAX_COMPONENT_LENGTH: usize>(Bytes);
 
 impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
-    /// Create an `OwnedComponent` by copying data from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
+    /// Creates an `OwnedComponent` by copying data from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
     ///
     /// #### Complexity
     ///
@@ -90,7 +90,7 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
         }
     }
 
-    /// Create an `OwnedComponent` by copying data from a byte slice, without verifying its length.
+    /// Creates an `OwnedComponent` by copying data from a byte slice, without verifying its length.
     ///
     /// #### Safety
     ///
@@ -104,7 +104,7 @@ impl<const MAX_COMPONENT_LENGTH: usize> OwnedComponent<MAX_COMPONENT_LENGTH> {
         Self(Bytes::copy_from_slice(data))
     }
 
-    /// Create an empty component.
+    /// Returns an empty component.
     ///
     /// #### Complexity
     ///
@@ -177,7 +177,7 @@ pub struct Path<const MCL: usize, const MCC: usize, const MPL: usize> {
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
-    /// Construct an empty path, i.e., a path of zero components.
+    /// Returns an empty path, i.e., a path of zero components.
     ///
     /// #### Complexity
     ///
@@ -192,7 +192,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
     }
 
-    /// Construct a singleton path, i.e., a path of exactly one component.
+    /// Creates a singleton path, i.e., a path of exactly one component.
     ///
     /// Copies the bytes of the component into an owned allocation on the heap.
     ///
@@ -217,7 +217,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
     }
 
-    /// Construct a path of known total length from an [`ExactSizeIterator`][core::iter::ExactSizeIterator] of components.
+    /// Creates a path of known total length from an [`ExactSizeIterator`][core::iter::ExactSizeIterator] of components.
     ///
     /// Copies the bytes of the components into an owned allocation on the heap.
     ///
@@ -270,7 +270,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         })
     }
 
-    /// Construct a path from a slice of components.
+    /// Creates a path from a slice of components.
     ///
     /// Copies the bytes of the components into an owned allocation on the heap.
     ///
@@ -286,7 +286,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         return Self::new_from_iter(total_length, &mut components.iter().copied());
     }
 
-    /// Construct a new path by appending a component to this one.
+    /// Creates a new path by appending a component to this one.
     ///
     /// Creates a fully separate copy of the new data on the heap; this function is not more efficient than constructing the new path from scratch.
     ///
@@ -301,7 +301,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         );
     }
 
-    /// Construct a new path by appending a slice of components to this one.
+    /// Creates a new path by appending a slice of components to this one.
     ///
     /// Creates a fully separate copy of the new data on the heap; this function is not more efficient than constructing the new path from scratch.
     ///
@@ -320,7 +320,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         );
     }
 
-    /// Get the number of components in this path.
+    /// Returns the number of components in this path.
     ///
     /// Guaranteed to be at most `MCC`.
     ///
@@ -331,7 +331,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.component_count
     }
 
-    /// Return whether this path has zero components.
+    /// Returns whether this path has zero components.
     ///
     /// #### Complexity
     ///
@@ -340,7 +340,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.get_component_count() == 0
     }
 
-    /// Get the sum of the lengths of all components in this path.
+    /// Returns the sum of the lengths of all components in this path.
     ///
     /// Guaranteed to be at most `MCC`.
     ///
@@ -359,7 +359,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
     }
 
-    /// Get the `i`-th [`Component`] of this path.
+    /// Returns the `i`-th [`Component`] of this path.
     ///
     /// #### Complexity
     ///
@@ -368,7 +368,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         return HeapEncoding::<MCL>::get_component(self.data.as_ref(), i);
     }
 
-    /// Get an owned handle to the `i`-th [`Component`] of this path.
+    /// Returns an owned handle to the `i`-th [`Component`] of this path.
     ///
     /// #### Complexity
     ///
@@ -379,7 +379,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Some(OwnedComponent(self.data.0.slice(start..end)))
     }
 
-    /// Create an iterator over the components of this path.
+    /// Creates an iterator over the components of this path.
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
@@ -393,7 +393,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.suffix_components(0)
     }
 
-    /// Create an iterator over the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    /// Creates an iterator over the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
@@ -410,7 +410,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         })
     }
 
-    /// Create an iterator over owned handles to the components of this path.
+    /// Creates an iterator over owned handles to the components of this path.
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
@@ -425,7 +425,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.suffix_owned_components(0)
     }
 
-    /// Create an iterator over owned handles to the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
+    /// Creates an iterator over owned handles to the components of this path, starting at the `i`-th component. If `i` is greater than or equal to the number of components, the iterator yields zero items.
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
@@ -443,7 +443,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         })
     }
 
-    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    /// Creates a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
     ///
     /// Returns `None` if `length` is greater than `self.get_component_count()`.
     ///
@@ -458,7 +458,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
     }
 
-    /// Create a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    /// Creates a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
     ///
     /// #### Safety
     ///
@@ -475,7 +475,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
     }
 
-    /// Create an iterator over all prefixes of this path (including th empty path and the path itself).
+    /// Creates an iterator over all prefixes of this path (including th empty path and the path itself).
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
@@ -490,7 +490,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         })
     }
 
-    /// Test whether this path is a prefix of the given path.
+    /// Tests whether this path is a prefix of the given path.
     /// Paths are always a prefix of themselves, and the empty path is a prefix of every path.
     ///
     /// #### Complexity
@@ -506,7 +506,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.get_component_count() <= other.get_component_count()
     }
 
-    /// Test whether this path is prefixed by the given path.
+    /// Tests whether this path is prefixed by the given path.
     /// Paths are always a prefix of themselves.
     ///
     /// #### Complexity
@@ -516,7 +516,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         other.is_prefix_of(self)
     }
 
-    /// Return the longest common prefix of this path and the given path.
+    /// Returns the longest common prefix of this path and the given path.
     ///
     /// #### Complexity
     ///
@@ -535,7 +535,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         self.create_prefix(lcp_len).unwrap() // zip ensures that lcp_len <= self.get_component_count()
     }
 
-    /// Return the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
+    /// Returns the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
     ///
     /// #### Complexity
     ///
@@ -594,7 +594,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         None
     }
 
-    /// Return the least path that is strictly greater than `self` and which is not prefixed by `self`, or `None` if no such path exists.
+    /// Returns the least path that is strictly greater than `self` and which is not prefixed by `self`, or `None` if no such path exists.
     ///
     /// #### Complexity
     ///
@@ -693,7 +693,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for Path<M
     }
 }
 
-/// Compare paths lexicogrphically, since that is the path ordering that the Willow spec always uses.
+/// Compares paths lexicogrphically, since that is the path ordering that the Willow spec always uses.
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for Path<MCL, MCC, MPL> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         return self.components().cmp(other.components());
@@ -1022,7 +1022,7 @@ fn fixed_width_increment(buf: &mut [u8]) {
     }
 }
 
-/// Create a new BufMut that stores the heap encoding of the first i components of `original`, but increasing the length of the final component by `extra_capacity`. No data to fill that extra capacity is written into the buffer.
+/// Creates a new BufMut that stores the heap encoding of the first i components of `original`, but increasing the length of the final component by `extra_capacity`. No data to fill that extra capacity is written into the buffer.
 fn clone_prefix_and_lengthen_final_component<
     const MCL: usize,
     const MCC: usize,
@@ -1073,7 +1073,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         }
     }
 
-    /// Panic if i >= MCC.
+    /// Panics if i >= MCC.
     pub fn set_component_accumulated_length(
         &mut self,
         component_accumulated_length: usize,
@@ -1102,7 +1102,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         self.component_accumulated_lengths[i]
     }
 
-    /// Return a slice of the accumulated component lengths up to but excluding the `i`-th component, encoded as native-endian u8s.
+    /// Returns a slice of the accumulated component lengths up to but excluding the `i`-th component, encoded as native-endian u8s.
     ///
     /// # Safety
     ///
@@ -1114,7 +1114,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         )
     }
 
-    /// Return a mutable slice of the i-th path_data.
+    /// Returns a mutable slice of the i-th path_data.
     ///
     /// # Safety
     ///
@@ -1129,7 +1129,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         &mut self.path_data[start..end]
     }
 
-    /// Return a mutable slice of the path_data up to but excluding the i-th component.
+    /// Returns a mutable slice of the path_data up to but excluding the i-th component.
     ///
     /// # Safety
     ///
@@ -1139,7 +1139,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         &mut self.path_data[0..end]
     }
 
-    /// Get the path data of the first `i` components.
+    /// Returns the path data of the first `i` components.
     ///
     /// # Safety
     ///
@@ -1154,7 +1154,7 @@ impl<const MCC: usize, const MPL: usize> ScratchSpacePathDecoding<MCC, MPL> {
         &self.path_data[..end]
     }
 
-    /// Copy the data from this struct into a new Path of `i` components.
+    /// Copies the data from this struct into a new Path of `i` components.
     ///
     /// # Safety
     ///

@@ -25,7 +25,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
         }
     }
 
-    /// Return the intersection of this [`AreaOfInterest`] with another.
+    /// Returns the intersection of this [`AreaOfInterest`] with another.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aoi_intersection).
     pub fn intersection(
         &self,

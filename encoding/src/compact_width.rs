@@ -30,7 +30,7 @@ impl core::fmt::Display for NotACompactWidthError {
 impl std::error::Error for NotACompactWidthError {}
 
 impl CompactWidth {
-    /// Return a new [`CompactWidth`].
+    /// Returns a new [`CompactWidth`].
     pub(crate) fn new(n: u8) -> Result<CompactWidth, NotACompactWidthError> {
         match n {
             1 => Ok(CompactWidth::One),
@@ -41,7 +41,7 @@ impl CompactWidth {
         }
     }
 
-    /// Return the most compact width in bytes (1, 2, 4, or 8) needed to represent a given `u64` as a corresponding 8-bit, 16-bit, 32-bit, or 64-bit number.
+    /// Returns the most compact width in bytes (1, 2, 4, or 8) needed to represent a given `u64` as a corresponding 8-bit, 16-bit, 32-bit, or 64-bit number.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width).
     pub fn from_u64(value: u64) -> Self {
@@ -56,7 +56,7 @@ impl CompactWidth {
         }
     }
 
-    /// Return the most compact width in bytes (1, 2, 4) needed to represent a given `u32` as a corresponding 8-bit, 16-bit, or 32-bit number.
+    /// Returns the most compact width in bytes (1, 2, 4) needed to represent a given `u32` as a corresponding 8-bit, 16-bit, or 32-bit number.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width).
     pub fn from_u32(value: u32) -> Self {
@@ -69,7 +69,7 @@ impl CompactWidth {
         }
     }
 
-    /// Return the most compact width in bytes (1 or 2) needed to represent a given `u16` as a corresponding 8-bit or 16-bit number.
+    /// Returns the most compact width in bytes (1 or 2) needed to represent a given `u16` as a corresponding 8-bit or 16-bit number.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width).
     pub fn from_u16(value: u16) -> Self {
@@ -80,14 +80,14 @@ impl CompactWidth {
         }
     }
 
-    /// Return [`CompactWidth::One`], the only [`CompactWidth`] needed to represent a given `u8`.
+    /// Returns [`CompactWidth::One`], the only [`CompactWidth`] needed to represent a given `u8`.
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width).
     pub fn from_u8(_: u8) -> Self {
         CompactWidth::One
     }
 
-    /// Return the width in bytes of this [`CompactWidth`].
+    /// Returns the width in bytes of this [`CompactWidth`].
     pub fn width(&self) -> usize {
         match self {
             CompactWidth::One => 1,
@@ -97,7 +97,7 @@ impl CompactWidth {
         }
     }
 
-    /// Encode a [`CompactWidth`] as a 2-bit integer `n` such that 2^n gives the bytewidth of the [`CompactWidth`], and then place that 2-bit number into a `u8` at the bit-index of `position`.
+    /// Encodes a [`CompactWidth`] as a 2-bit integer `n` such that 2^n gives the bytewidth of the [`CompactWidth`], and then place that 2-bit number into a `u8` at the bit-index of `position`.
     pub fn bitmask(&self, position: u8) -> u8 {
         let og = match self {
             CompactWidth::One => 0b0000_0000,
@@ -133,7 +133,7 @@ pub mod encoding {
     #[syncify_replace(use crate::sync::{Decodable};)]
     use crate::Decodable;
 
-    /// Encode a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
+    /// Encodes a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
     pub async fn encode_compact_width_be<Consumer: BulkConsumer<Item = u8>>(
         value: u64,
         consumer: &mut Consumer,
@@ -148,7 +148,7 @@ pub mod encoding {
         Ok(())
     }
 
-    /// Decode the bytes representing a [`CompactWidth`]-bytes integer into a `usize`.
+    /// Decodes the bytes representing a [`CompactWidth`]-bytes integer into a `usize`.
     pub async fn decode_compact_width_be<Producer: BulkProducer<Item = u8>>(
         compact_width: CompactWidth,
         producer: &mut Producer,

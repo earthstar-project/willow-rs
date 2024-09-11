@@ -61,6 +61,9 @@ where
     NamespaceSignature: Encodable + Clone,
     UserSignature: Encodable + Clone,
 {
+    /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and [`UserSignature`].
+    ///
+    /// Does **not** verify the signature's validity.
     pub fn new(
         capability: McCapability<
             MCL,
