@@ -68,7 +68,7 @@ where
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
-    /// Generate a new [`McSubspaceCapability`] for a given user, or return an error if the given namespace secret is incorrect.
+    /// Creates a new [`McSubspaceCapability`] for a given user, or return an error if the given namespace secret is incorrect.
     pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: &NamespaceSecret,
@@ -99,7 +99,7 @@ where
         })
     }
 
-    /// Instantiate an [`McSubspaceCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
+    /// Creates an [`McSubspaceCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
     pub fn from_existing(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -122,7 +122,7 @@ where
         })
     }
 
-    /// The user to whom this capability grants access.
+    /// Returns the public key of the user to whom this capability grants access.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_receiver)
     pub fn receiver(&self) -> &UserPublicKey {
@@ -135,14 +135,14 @@ where
         last_delegation.user()
     }
 
-    /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
+    /// Returns the public key of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
     ///
     /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_cap_receiver)
     pub fn granted_namespace(&self) -> &NamespacePublicKey {
         &self.namespace_key
     }
 
-    /// Delegate this subspace capability to a new `UserPublicKey`.
+    /// Delegates this subspace capability to a new `UserPublicKey`.
     /// Will fail if the given secret key does not correspond to the subspace capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
@@ -171,7 +171,7 @@ where
         })
     }
 
-    /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
+    /// Appends an existing delegation to an existing capability, or return an error if the delegation is invalid.
     pub fn append_existing_delegation(
         &mut self,
         delegation: SubspaceDelegation<UserPublicKey, UserSignature>,
@@ -190,14 +190,14 @@ where
         Ok(())
     }
 
-    /// Return a slice of all [`SubspaceDelegation`]s made to this capability.
+    /// Returns a slice of all [`SubspaceDelegation`]s made to this capability.
     pub fn delegations(
         &self,
     ) -> impl Iterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 
-    /// A bytestring to be signed for a new subspace capability delegation.
+    /// Returns a bytestring to be signed for a new subspace capability delegation.
     ///
     /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_handover)
     fn handover(&self, new_user: &UserPublicKey) -> Box<[u8]> {

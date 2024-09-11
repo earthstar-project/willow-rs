@@ -26,7 +26,7 @@ pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S: Subs
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     Range3d<MCL, MCC, MPL, S>
 {
-    /// Create a new [`Range3d`].
+    /// Creates a new [`Range3d`].
     pub fn new(
         subspaces: Range<S>,
         paths: Range<Path<MCL, MCC, MPL>>,
@@ -39,7 +39,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
         }
     }
 
-    /// Create a new [`Range3d`] that covers everything.
+    /// Creates a new [`Range3d`] that covers everything.
     pub fn new_full() -> Self {
         Self::new(
             Default::default(),
@@ -48,25 +48,28 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
         )
     }
 
-    /// Return a reference to the range of [`SubspaceId`]s.
+    /// Returns a reference to the range of [`SubspaceId`]s.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
     pub fn subspaces(&self) -> &Range<S> {
         &self.subspaces
     }
 
-    /// Return a reference to the range of [`Path`]s.
+    /// Returns a reference to the range of [`Path`]s.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#PathRange).
     pub fn paths(&self) -> &Range<Path<MCL, MCC, MPL>> {
         &self.paths
     }
 
-    /// Return a reference to the range of [`Timestamp`]s.
+    /// Returns a reference to the range of [`Timestamp`]s.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#TimeRange).
     pub fn times(&self) -> &Range<Timestamp> {
         &self.times
     }
 
-    /// Return whether an [`Entry`] is [included](https://willowprotocol.org/specs/grouping-entries/index.html#d3_range_include) by this 3d range.
+    /// Returns whether an [`Entry`] is [included](https://willowprotocol.org/specs/grouping-entries/index.html#d3_range_include) by this 3d range.
     pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
@@ -76,7 +79,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
             && self.times.includes(&entry.timestamp())
     }
 
-    /// Return the intersection between this [`Range3d`] and another.
+    /// Returns the intersection between this [`Range3d`] and another.
     pub fn intersection(&self, other: &Range3d<MCL, MCC, MPL, S>) -> Option<Self> {
         let paths = self.paths.intersection(&other.paths)?;
         let times = self.times.intersection(&other.times)?;

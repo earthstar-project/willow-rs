@@ -36,7 +36,7 @@ pub(super) mod encoding {
     impl<const MCL: usize, const MCC: usize, const MPL: usize>
         RelativeEncodable<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
     {
-        /// Encode a path relative to another path.
+        /// Encodes this [`Path`] relative to a reference [`Path`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
         async fn relative_encode<Consumer>(
@@ -70,7 +70,7 @@ pub(super) mod encoding {
     impl<const MCL: usize, const MCC: usize, const MPL: usize>
         RelativeDecodable<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
     {
-        /// Decode a path relative to this path.
+        /// Decodes a [`Path`] relative to a reference [`Path`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
         async fn relative_decode<Producer>(
@@ -182,7 +182,7 @@ pub(super) mod encoding {
         S: SubspaceId + Encodable,
         PD: PayloadDigest + Encodable,
     {
-        /// Encode an [`Entry`] relative to a reference [`Entry`].
+        /// Encodes this [`Entry`] relative to a reference [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_encode<Consumer>(
@@ -244,7 +244,7 @@ pub(super) mod encoding {
         S: SubspaceId + Decodable + std::fmt::Debug,
         PD: PayloadDigest + Decodable,
     {
-        /// Decode an [`Entry`] relative from this [`Entry`].
+        /// Decodes an [`Entry`] relative to the given reference [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_decode<Producer>(
@@ -344,7 +344,7 @@ pub(super) mod encoding {
         S: SubspaceId + Encodable,
         PD: PayloadDigest + Encodable,
     {
-        /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+        /// Encodes this [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_encode<Consumer>(
@@ -407,7 +407,7 @@ pub(super) mod encoding {
         S: SubspaceId + Decodable + std::fmt::Debug,
         PD: PayloadDigest + Decodable,
     {
-        /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+        /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_decode<Producer>(
@@ -494,7 +494,7 @@ pub(super) mod encoding {
         S: SubspaceId + Encodable,
         PD: PayloadDigest + Encodable,
     {
-        /// Encode an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
+        /// Encodes this [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
         async fn relative_encode<Consumer>(
@@ -595,7 +595,7 @@ pub(super) mod encoding {
         S: SubspaceId + Decodable + std::fmt::Debug,
         PD: PayloadDigest + Decodable,
     {
-        /// Decode an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
+        /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
         async fn relative_decode<Producer>(
@@ -732,7 +732,7 @@ pub(super) mod encoding {
     where
         S: SubspaceId + Encodable,
     {
-        /// Encode an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        /// Encodes this [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_encode<Consumer>(
@@ -812,7 +812,7 @@ pub(super) mod encoding {
     where
         S: SubspaceId + Decodable,
     {
-        /// Decode an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_decode<Producer>(
@@ -980,7 +980,7 @@ pub(super) mod encoding {
     where
         S: SubspaceId + Encodable + std::fmt::Debug,
     {
-        /// Encode an [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        /// Encodes this [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_encode<Consumer>(
@@ -1171,7 +1171,7 @@ pub(super) mod encoding {
     where
         S: SubspaceId + Decodable + std::fmt::Debug,
     {
-        /// Encode an [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_decode<Producer>(

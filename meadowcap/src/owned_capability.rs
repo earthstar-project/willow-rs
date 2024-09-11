@@ -86,7 +86,7 @@ where
     UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
     UserSignature: Encodable + Clone,
 {
-    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
+    /// Creates a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub fn new<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: &NamespaceSecret,
@@ -129,7 +129,7 @@ where
         })
     }
 
-    /// Instantiate an [`OwnedCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
+    /// Creates an [`OwnedCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
     pub fn from_existing(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -162,7 +162,7 @@ where
         })
     }
 
-    /// Delegate this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
+    /// Delegates this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
     /// Will fail if the area is not included by this capability's [granted area](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_granted_area), or if the given secret key does not correspond to the capability's [receiver](https://willowprotocol.org/specs/meadowcap/index.html#communal_cap_receiver).
     pub fn delegate<UserSecretKey>(
         &self,
@@ -208,7 +208,7 @@ where
         })
     }
 
-    /// Return whether this capability needs a complementing [`crate::McSubspaceCapability`] [(definition)](https://willowprotocol.org/specs/pai/index.html#subspace_capability) to in order to be fully authorised by the Willow General Sync Protocol.
+    /// Returns whether this capability needs a complementing [`crate::McSubspaceCapability`] [(definition)](https://willowprotocol.org/specs/pai/index.html#subspace_capability) to in order to be fully authorised by the Willow General Sync Protocol.
     pub fn needs_subspace_cap(&self) -> bool {
         if self.access_mode == AccessMode::Write {
             return false;
@@ -227,7 +227,7 @@ where
         true
     }
 
-    /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
+    /// Appends an existing delegation to an existing capability, or return an error if the delegation is invalid.
     pub fn append_existing_delegation(
         &mut self,
         delegation: Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>,
@@ -260,14 +260,14 @@ where
         Ok(())
     }
 
-    /// The kind of access this capability grants.
+    /// Returns the kind of access this capability grants.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_mode)
     pub fn access_mode(&self) -> AccessMode {
         self.access_mode
     }
 
-    /// The user to whom this capability grants access.
+    /// Returns the public key of the user to whom this capability grants access.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_receiver)
     pub fn receiver(&self) -> &UserPublicKey {
@@ -282,14 +282,14 @@ where
         receiver
     }
 
-    /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
+    /// Returns the public key of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_granted_namespace)
     pub fn granted_namespace(&self) -> &NamespacePublicKey {
         &self.namespace_key
     }
 
-    /// The [`Area`] for which this capability grants access.
+    /// Returns [`Area`] for which this capability grants access.
     ///
     /// [Definition](`https://willowprotocol.org/specs/meadowcap/index.html#owned_cap_granted_area`)
     pub fn granted_area(&self) -> Area<MCL, MCC, MPL, UserPublicKey> {
@@ -303,14 +303,14 @@ where
         last_delegation.area().clone()
     }
 
-    /// Return a slice of all [`Delegation`]s made to this capability, with a concrete return type.
+    /// Returns a slice of all [`Delegation`]s made to this capability, with a concrete return type.
     pub(crate) fn delegations_(
         &self,
     ) -> core::slice::Iter<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 
-    /// Return a slice of all [`Delegation`]s made to this capability.
+    /// Returns a slice of all [`Delegation`]s made to this capability.
     pub fn delegations(
         &self,
     ) -> impl ExactSizeIterator<Item = &Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>
@@ -318,22 +318,22 @@ where
         self.delegations_()
     }
 
-    /// Return the number of delegations present on this capability.
+    /// Returns the number of delegations present on this capability.
     pub fn delegations_len(&self) -> usize {
         self.delegations.len()
     }
 
-    /// Return the public key of the very first user this capability was issued to.
+    /// Returns the public key of the very first user this capability was issued to.
     pub fn progenitor(&self) -> &UserPublicKey {
         &self.user_key
     }
 
-    /// Return the original signature authorising this namespace capability.
+    /// Returns the original signature authorising this namespace capability.
     pub fn initial_authorisation(&self) -> &NamespaceSignature {
         &self.initial_authorisation
     }
 
-    /// A bytestring to be signed for a new [`Delegation`].
+    /// Returns a bytestring to be signed for a new [`Delegation`].
     ///
     /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_handover)
     fn handover(
