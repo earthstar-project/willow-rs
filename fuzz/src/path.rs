@@ -238,7 +238,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
         self.0.len()
     }
 
-    pub fn get_component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
+    pub fn component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
         return self.0.get(i);
     }
 
@@ -930,24 +930,24 @@ pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: us
     p1: &Path<MCL, MCC, MPL>,
     p2: &Path<MCL, MCC, MPL>,
 ) {
-    assert_eq!(ctrl1.component_count(), p1.get_component_count());
+    assert_eq!(ctrl1.component_count(), p1.component_count());
 
     assert_eq!(ctrl1.component_count() == 0, p1.is_empty());
 
     assert_eq!(
         ctrl1.components().fold(0, |acc, comp| acc + comp.len()),
-        p1.get_path_length()
+        p1.path_length()
     );
 
     for i in 0..ctrl1.component_count() {
         assert_eq!(
-            ctrl1.get_component(i).map(|comp| comp.as_ref()),
-            p1.get_component(i).map(|comp| comp.into_inner())
+            ctrl1.component(i).map(|comp| comp.as_ref()),
+            p1.component(i).map(|comp| comp.into_inner())
         );
 
-        match p1.get_owned_component(i) {
-            None => assert_eq!(ctrl1.get_component(i), None),
-            Some(comp) => assert_eq!(ctrl1.get_component(i).unwrap().as_ref(), comp.as_ref()),
+        match p1.owned_component(i) {
+            None => assert_eq!(ctrl1.component(i), None),
+            Some(comp) => assert_eq!(ctrl1.component(i).unwrap().as_ref(), comp.as_ref()),
         }
     }
 

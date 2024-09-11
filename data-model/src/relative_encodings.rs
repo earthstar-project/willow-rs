@@ -48,10 +48,10 @@ pub(super) mod encoding {
             Consumer: BulkConsumer<Item = u8>,
         {
             let lcp = self.longest_common_prefix(reference);
-            let lcp_component_count = lcp.get_component_count();
+            let lcp_component_count = lcp.component_count();
             encode_max_power(lcp_component_count, MCC, consumer).await?;
 
-            let suffix_component_count = self.get_component_count() - lcp_component_count;
+            let suffix_component_count = self.component_count() - lcp_component_count;
             encode_max_power(suffix_component_count, MCC, consumer).await?;
 
             for component in self.suffix_components(lcp_component_count) {
@@ -87,10 +87,7 @@ pub(super) mod encoding {
                 let decoded = Path::<MCL, MCC, MPL>::decode(producer).await?;
 
                 // === Necessary to produce canonic encodings. ===
-                if lcp_component_count
-                    != decoded
-                        .longest_common_prefix(reference)
-                        .get_component_count()
+                if lcp_component_count != decoded.longest_common_prefix(reference).component_count()
                 {
                     return Err(DecodeError::InvalidInput);
                 }
@@ -120,10 +117,9 @@ pub(super) mod encoding {
                 // safe because we just copied the accumulated component lengths for the first `lcp_component_count` components.
                 buf.path_data_until_as_mut(lcp_component_count)
                     .copy_from_slice(
-                        &reference.raw_buf()[size_of::<usize>()
-                            * (reference.get_component_count() + 1)
-                            ..size_of::<usize>() * (reference.get_component_count() + 1)
-                                + prefix.get_path_length()],
+                        &reference.raw_buf()[size_of::<usize>() * (reference.component_count() + 1)
+                            ..size_of::<usize>() * (reference.component_count() + 1)
+                                + prefix.path_length()],
                     );
             }
 
@@ -134,7 +130,7 @@ pub(super) mod encoding {
                 return Err(DecodeError::InvalidInput);
             }
 
-            let mut accumulated_component_length: usize = prefix.get_path_length(); // Always holds the acc length of all components we copied so far.
+            let mut accumulated_component_length: usize = prefix.path_length(); // Always holds the acc length of all components we copied so far.
             for i in lcp_component_count..total_component_count {
                 let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
                 if component_len > MCL {
@@ -160,11 +156,7 @@ pub(super) mod encoding {
             let decoded = unsafe { buf.to_path(total_component_count) };
 
             // === Necessary to produce canonic encodings. ===
-            if lcp_component_count
-                != decoded
-                    .longest_common_prefix(reference)
-                    .get_component_count()
-            {
+            if lcp_component_count != decoded.longest_common_prefix(reference).component_count() {
                 return Err(DecodeError::InvalidInput);
             }
             // ===============================================
@@ -533,7 +525,7 @@ pub(super) mod encoding {
                     let start_lcp = self.path().longest_common_prefix(&out.paths().start);
                     let end_lcp = self.path().longest_common_prefix(end_path);
 
-                    start_lcp.get_component_count() >= end_lcp.get_component_count()
+                    start_lcp.component_count() >= end_lcp.component_count()
                 }
                 RangeEnd::Open => true,
             };
@@ -665,7 +657,7 @@ pub(super) mod encoding {
                     let start_lcp = path.longest_common_prefix(&out.paths().start);
                     let end_lcp = path.longest_common_prefix(end_path);
 
-                    start_lcp.get_component_count() >= end_lcp.get_component_count()
+                    start_lcp.component_count() >= end_lcp.component_count()
                 }
                 RangeEnd::Open => true,
             };
@@ -1043,7 +1035,7 @@ pub(super) mod encoding {
                     .longest_common_prefix(&reference.paths().start);
                 let lcp_start_end = self.paths().start.longest_common_prefix(ref_path_end);
 
-                if lcp_start_start.get_component_count() >= lcp_start_end.get_component_count() {
+                if lcp_start_start.component_count() >= lcp_start_end.component_count() {
                     header_1 |= 0b0000_1000;
                 }
             } else {
@@ -1062,7 +1054,7 @@ pub(super) mod encoding {
                         self_path_end.longest_common_prefix(&reference.paths().start);
                     let lcp_end_end = self_path_end.longest_common_prefix(ref_path_end);
 
-                    if lcp_end_start.get_component_count() > lcp_end_end.get_component_count() {
+                    if lcp_end_start.component_count() > lcp_end_end.component_count() {
                         header_1 |= 0b0000_0010;
                     }
                 }
