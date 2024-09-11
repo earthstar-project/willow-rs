@@ -42,7 +42,7 @@ where
     S: SubspaceId,
     PD: PayloadDigest,
 {
-    /// Create a new [`Entry`].
+    /// Creates a new [`Entry`].
     pub fn new(
         namespace_id: N,
         subspace_id: S,
@@ -61,38 +61,39 @@ where
         }
     }
 
-    /// Return a reference to the identifier of the namespace to which the [`Entry`] belongs.
+    /// Returns a reference to the identifier of the namespace to which the [`Entry`] belongs.
     pub fn namespace_id(&self) -> &N {
         &self.namespace_id
     }
 
-    /// Return a reference to the identifier of the subspace_id to which the [`Entry`] belongs.
+    /// Returns a reference to the identifier of the subspace_id to which the [`Entry`] belongs.
     pub fn subspace_id(&self) -> &S {
         &self.subspace_id
     }
 
-    /// Return a reference to the [`Path`] to which the [`Entry`] was written.
+    /// Returns a reference to the [`Path`] to which the [`Entry`] was written.
     pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
 
-    /// Return the claimed creation time of the [`Entry`].
+    /// Returns the claimed creation time of the [`Entry`].
     pub fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
 
-    /// Return the length of the Payload in bytes.
+    /// Returns the length of the Payload in bytes.
     pub fn payload_length(&self) -> u64 {
         self.payload_length
     }
 
-    /// Return a reference to the result of applying hash_payload to the Payload.
+    /// Returns a reference to the result of applying hash_payload to the Payload.
     pub fn payload_digest(&self) -> &PD {
         &self.payload_digest
     }
 
-    /// Return if this [`Entry`] is newer than another using their timestamps.
+    /// Returns if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
+    ///
     /// [Definition](https://willowprotocol.org/specs/data-model/index.html#entry_newer).
     pub fn is_newer_than(&self, other: &Self) -> bool {
         other.timestamp < self.timestamp
@@ -295,7 +296,7 @@ where
     S: SubspaceId,
     PD: PayloadDigest,
 {
-    /// Construct an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise return an [`UnauthorisedWriteError`]
+    /// Returns an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise returns an [`UnauthorisedWriteError`]
 
     pub fn new(
         entry: Entry<MCL, MCC, MPL, N, S, PD>,
@@ -311,8 +312,7 @@ where
         Err(UnauthorisedWriteError)
     }
 
-    /// Construct an [`AuthorisedEntry`] without checking if the token permits the writing of this
-    /// entry.
+    /// Returns an [`AuthorisedEntry`] without checking if the token permits the writing of this entry.
     ///
     /// Should only be used if the token was created by ourselves or previously validated.
     pub fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self
@@ -322,17 +322,17 @@ where
         Self(entry, token)
     }
 
-    /// Split into [`Entry`] and [`AuthorisationToken`] halves.
+    /// Splits this into [`Entry`] and [`AuthorisationToken`] halves.
     pub fn into_parts(self) -> (Entry<MCL, MCC, MPL, N, S, PD>, AT) {
         (self.0, self.1)
     }
 
-    /// Get a reference to the [`Entry`].
+    /// Gets a reference to the [`Entry`].
     pub fn entry(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
         &self.0
     }
 
-    /// Get a reference to the [`AuthorisationToken`].
+    /// Gets a reference to the [`AuthorisationToken`].
     pub fn token(&self) -> &AT {
         &self.1
     }

@@ -152,12 +152,12 @@ impl<T> Range<T>
 where
     T: Ord + Clone,
 {
-    /// Construct a range.
+    /// Returns a new [`Range`].
     pub fn new(start: T, end: RangeEnd<T>) -> Self {
         Self { start, end }
     }
 
-    /// Construct a new [open range](https://willowprotocol.org/specs/grouping-entries/index.html#open_range) from a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value).
+    /// Returns a new [open range](https://willowprotocol.org/specs/grouping-entries/index.html#open_range) from a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value).
     pub fn new_open(start: T) -> Self {
         Self {
             start,
@@ -165,7 +165,7 @@ where
         }
     }
 
-    /// Construct a new [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) from a [start](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value), or [`None`] if the resulting range would never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
+    /// Returns a new [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) from a [start](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value), or [`None`] if the resulting range would never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
     pub fn new_closed(start: T, end: T) -> Option<Self> {
         if start < end {
             return Some(Self {
@@ -177,7 +177,7 @@ where
         None
     }
 
-    /// Return whether a given value is [included](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) by the [`Range`] or not.
+    /// Returns whether a given value is [included](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) by the [`Range`] or not.
     pub fn includes(&self, value: &T) -> bool {
         &self.start <= value && self.end.gt_val(value)
     }
@@ -187,7 +187,7 @@ where
         self.start <= other.start && self.end >= other.end
     }
 
-    /// Create the [intersection](https://willowprotocol.org/specs/grouping-entries/index.html#range_intersection) between this [`Range`] and another `Range`.
+    /// Creates the [intersection](https://willowprotocol.org/specs/grouping-entries/index.html#range_intersection) between this [`Range`] and another `Range`, if any.
     pub fn intersection(&self, other: &Self) -> Option<Self> {
         let start = cmp::max(&self.start, &other.start);
         let end = match (&self.end, &other.end) {
@@ -210,7 +210,7 @@ impl<T: Default> Range<T>
 where
     T: Ord + Clone,
 {
-    /// Create a new range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) everything.
+    /// Creates a new range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) everything.
     pub fn full() -> Self {
         Self::new_open(T::default())
     }

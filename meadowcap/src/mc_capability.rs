@@ -85,7 +85,7 @@ where
     NamespaceSignature: Encodable + Clone,
     UserSignature: Encodable + Clone,
 {
-    /// Create a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
+    /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
     pub fn new_communal(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -95,7 +95,7 @@ where
         Ok(Self::Communal(cap))
     }
 
-    /// Create a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
+    /// Creates a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub fn new_owned<NamespaceSecret>(
         namespace_key: NamespacePublicKey,
         namespace_secret: &NamespaceSecret,
@@ -110,7 +110,7 @@ where
         Ok(Self::Owned(cap))
     }
 
-    /// The kind of access this capability grants.
+    /// Returns the kind of access this capability grants.
     pub fn access_mode(&self) -> AccessMode {
         match self {
             Self::Communal(cap) => cap.access_mode(),
@@ -118,7 +118,7 @@ where
         }
     }
 
-    /// The user to whom this capability grants access.
+    /// Returns the public key of the user to whom this capability grants access.
     pub fn receiver(&self) -> &UserPublicKey {
         match self {
             Self::Communal(cap) => cap.receiver(),
@@ -126,7 +126,7 @@ where
         }
     }
 
-    /// The [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
+    /// Returns the public key of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) for which this capability grants access.
     pub fn granted_namespace(&self) -> &NamespacePublicKey {
         match self {
             Self::Communal(cap) => cap.granted_namespace(),
@@ -134,7 +134,7 @@ where
         }
     }
 
-    /// The [`Area`] for which this capability grants access.
+    /// Returns the [`Area`] for which this capability grants access.
     pub fn granted_area(&self) -> Area<MCL, MCC, MPL, UserPublicKey> {
         match self {
             Self::Communal(cap) => cap.granted_area(),
@@ -142,7 +142,7 @@ where
         }
     }
 
-    /// Return a slice of all [`Delegation`]s made to this capability.
+    /// Returns a slice of all [`Delegation`]s made to this capability.
     pub fn delegations(
         &self,
     ) -> impl ExactSizeIterator<Item = &Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>
@@ -153,7 +153,7 @@ where
         }
     }
 
-    /// Return the number of delegations present on this capability.
+    /// Returns the number of delegations present on this capability.
     pub fn delegations_len(&self) -> usize {
         match self {
             McCapability::Communal(cap) => cap.delegations_len(),
@@ -161,7 +161,7 @@ where
         }
     }
 
-    /// Return the public key of the very first user this capability was issued to.
+    /// Returns the public key of the very first user this capability was issued to.
     pub fn progenitor(&self) -> &UserPublicKey {
         match self {
             McCapability::Communal(cap) => cap.progenitor(),
@@ -169,7 +169,7 @@ where
         }
     }
 
-    /// Delegate this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
+    /// Delegates this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
     /// Will fail if the area is not included by this capability's granted area, or if the given secret key does not correspond to the capability's receiver.
     pub fn delegate<UserSecretKey>(
         &self,
@@ -196,7 +196,7 @@ where
         Ok(delegated)
     }
 
-    /// Append an existing delegation to an existing capability, or return an error if the delegation is invalid.
+    /// Appends an existing delegation to an existing capability, or return an error if the delegation is invalid.
     pub fn append_existing_delegation(
         &mut self,
         delegation: Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>,
@@ -207,7 +207,7 @@ where
         }
     }
 
-    /// Return a new AuthorisationToken without checking if the resulting signature is correct (e.g. because you are going to immediately do that by constructing an [`willow_data_model::AuthorisedEntry`]).
+    /// Returns a new AuthorisationToken without checking if the resulting signature is correct (e.g. because you are going to immediately do that by constructing an [`willow_data_model::AuthorisedEntry`]).
     ///
     /// ## Safety
     ///
@@ -248,7 +248,7 @@ where
         }
     }
 
-    /// Return a new [`McAuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
+    /// Returns a new [`McAuthorisationToken`], or an error if the resulting signature was not for the capability's receiver.
     pub fn authorisation_token<UserSecret, PD>(
         &self,
         entry: &Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,

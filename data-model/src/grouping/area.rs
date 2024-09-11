@@ -19,7 +19,7 @@ pub enum AreaSubspace<S: SubspaceId> {
 }
 
 impl<S: SubspaceId> AreaSubspace<S> {
-    /// Return whether this [`AreaSubspace`] includes a given [`SubspaceId`].
+    /// Returns whether this [`AreaSubspace`] includes a given [`SubspaceId`].
     pub fn includes(&self, sub: &S) -> bool {
         match self {
             AreaSubspace::Any => true,
@@ -27,7 +27,7 @@ impl<S: SubspaceId> AreaSubspace<S> {
         }
     }
 
-    /// Return the intersection between two [`AreaSubspace`].
+    /// Returns the intersection between two [`AreaSubspace`].
     fn intersection(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (Self::Any, Self::Any) => Some(Self::Any),
@@ -38,7 +38,7 @@ impl<S: SubspaceId> AreaSubspace<S> {
         }
     }
 
-    /// Return whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
+    /// Returns whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
     pub fn is_any(&self) -> bool {
         matches!(self, AreaSubspace::Any)
     }
@@ -75,7 +75,7 @@ pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: Subspac
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<MCL, MCC, MPL, S> {
-    /// Create a new [`Area`].
+    /// Creates a new [`Area`].
     pub fn new(
         subspace: AreaSubspace<S>,
         path: Path<MCL, MCC, MPL>,
@@ -88,28 +88,29 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
-    /// Return a reference to the [`AreaSubspace`].
+    /// Returns a reference to the [`AreaSubspace`].
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
     pub fn subspace(&self) -> &AreaSubspace<S> {
         &self.subspace
     }
 
-    /// Return a reference to the [`Path`].
+    /// Returns a reference to the [`Path`].
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
     pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
 
-    /// Return a reference to the range of [`Timestamp`]s.
+    /// Returns a reference to the range of [`Timestamp`]s.
     ///
     /// To be included in this [`Area`], an [`Entry`]’s `timestamp` must be included in the times.
     pub fn times(&self) -> &Range<Timestamp> {
         &self.times
     }
 
-    /// Return an [`Area`] which includes all entries.
+    /// Returns an [`Area`] which includes all entries.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#full_area).
     pub fn new_full() -> Self {
         Self {
@@ -119,7 +120,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
-    /// Return an [`Area`] which includes all entries within a [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
+    /// Returns an [`Area`] which includes all entries within a [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#subspace_area).
     pub fn new_subspace(sub: S) -> Self {
         Self {
@@ -129,7 +131,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
-    /// Return whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) an [`Entry`].
+    /// Returns whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) an [`Entry`].
     pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
@@ -139,7 +141,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             && self.times.includes(&entry.timestamp())
     }
 
-    /// Return whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
+    /// Returns whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
     pub fn includes_area(&self, area: &Self) -> bool {
         match (&self.subspace, &area.subspace) {
             (AreaSubspace::Any, AreaSubspace::Any) => {
@@ -157,7 +159,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
-    /// Return the intersection of this [`Area`] with another.
+    /// Returns the intersection of this [`Area`] with another.
+    ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#area_intersection).
     pub fn intersection(&self, other: &Area<MCL, MCC, MPL, S>) -> Option<Self> {
         let subspace_id = self.subspace.intersection(&other.subspace)?;
