@@ -410,8 +410,6 @@ pub(super) mod encoding {
     {
         /// Encodes this [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
-        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
-        ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_encode<Consumer>(
             &self,
@@ -474,6 +472,8 @@ pub(super) mod encoding {
         PD: PayloadDigest + Decodable,
     {
         /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+        ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_decode_canonical<Producer>(
@@ -740,6 +740,8 @@ pub(super) mod encoding {
     {
         /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
+        ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
         async fn relative_decode_canonical<Producer>(
             reference: &(N, Range3d<MCL, MCC, MPL, S>),
@@ -860,6 +862,93 @@ pub(super) mod encoding {
                 return Err(DecodeError::InvalidInput);
             }
             // ==============================================
+
+            Ok(Self::new(
+                namespace.clone(),
+                subspace_id,
+                path,
+                timestamp,
+                payload_length,
+                payload_digest,
+            ))
+        }
+
+        /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
+        ///
+        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
+        async fn relative_decode_relation<Producer>(
+            reference: &(N, Range3d<MCL, MCC, MPL, S>),
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            let (namespace, out) = reference;
+
+            let header = produce_byte(producer).await?;
+
+            // Decode e.get_subspace_id()?
+            let is_subspace_encoded = is_bitflagged(header, 0);
+
+            // Decode e.get_path() relative to out.get_paths().start or to out.get_paths().end?
+            let decode_path_relative_to_start = is_bitflagged(header, 1);
+
+            // Add time_diff to out.get_times().start, or subtract from out.get_times().end?
+            let add_time_diff_with_start = is_bitflagged(header, 2);
+
+            let time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
+            let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 6);
+
+            let subspace_id = if is_subspace_encoded {
+                S::decode_relation(producer).await?
+            } else {
+                out.subspaces().start.clone()
+            };
+
+            // Verify that subspace is included by range
+            if !out.subspaces().includes(&subspace_id) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            let path = if decode_path_relative_to_start {
+                Path::relative_decode_relation(&out.paths().start, producer).await?
+            } else {
+                match &out.paths().end {
+                    RangeEnd::Closed(end_path) => {
+                        Path::relative_decode_relation(end_path, producer).await?
+                    }
+                    RangeEnd::Open => return Err(DecodeError::InvalidInput),
+                }
+            };
+
+            // Verify that path is included by range
+            if !out.paths().includes(&path) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            let time_diff =
+                decode_compact_width_be_relation(time_diff_compact_width, producer).await?;
+
+            let payload_length =
+                decode_compact_width_be_relation(payload_length_compact_width, producer).await?;
+
+            let payload_digest = PD::decode_relation(producer).await?;
+
+            let timestamp = if add_time_diff_with_start {
+                out.times().start.checked_add(time_diff)
+            } else {
+                match &out.times().end {
+                    RangeEnd::Closed(end_time) => end_time.checked_sub(time_diff),
+                    RangeEnd::Open => u64::from(&out.times().end).checked_sub(time_diff),
+                }
+            }
+            .ok_or(DecodeError::InvalidInput)?;
+
+            // Verify that timestamp is included by range
+            if !out.times().includes(&timestamp) {
+                return Err(DecodeError::InvalidInput);
+            }
 
             Ok(Self::new(
                 namespace.clone(),
