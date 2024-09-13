@@ -1059,7 +1059,7 @@ pub(super) mod encoding {
                         self_path_end.longest_common_prefix(&reference.paths().start);
                     let lcp_end_end = self_path_end.longest_common_prefix(ref_path_end);
 
-                    if lcp_end_start.get_component_count() > lcp_end_end.get_component_count() {
+                    if lcp_end_start.get_component_count() >= lcp_end_end.get_component_count() {
                         header_1 |= 0b0000_0010;
                     }
                 }
@@ -1157,7 +1157,10 @@ pub(super) mod encoding {
             }
 
             encode_compact_width_be(start_time_diff, consumer).await?;
-            encode_compact_width_be(end_time_diff, consumer).await?;
+
+            if self.times().end != RangeEnd::Open {
+                encode_compact_width_be(end_time_diff, consumer).await?;
+            }
 
             Ok(())
         }
@@ -1194,7 +1197,7 @@ pub(super) mod encoding {
             let add_or_subtract_start_time_diff = is_bitflagged(header_2, 1);
             let start_time_diff_compact_width =
                 CompactWidth::decode_fixed_width_bitmask(header_2, 2);
-            let is_times_end_rel_to_start = is_bitflagged(header_2, 4);
+            let is_time_end_rel_to_start = is_bitflagged(header_2, 4);
             let add_or_subtract_end_time_diff = is_bitflagged(header_2, 5);
             let end_time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header_2, 6);
 
@@ -1205,8 +1208,19 @@ pub(super) mod encoding {
                     RangeEnd::Closed(end) => end.clone(),
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 },
-                // This can only be 0b1100_0000
-                _ => S::decode_canonical(producer).await?,
+                0b1100_0000 => {
+                    let decoded_subspace = S::decode_canonical(producer).await?;
+
+                    if decoded_subspace == reference.subspaces().start
+                        || reference.subspaces().end == decoded_subspace
+                    {
+                        return Err(DecodeError::InvalidInput);
+                    }
+
+                    decoded_subspace
+                }
+                // This can only be b0000_0000 (which is not valid!)
+                _ => Err(DecodeError::InvalidInput)?,
             };
 
             let subspace_end = match subspace_end_flags {
@@ -1217,8 +1231,20 @@ pub(super) mod encoding {
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 },
                 // This can only be 0b0011_0000
-                _ => RangeEnd::Closed(S::decode_canonical(producer).await?),
+                _ => {
+                    let decoded_subspace = RangeEnd::Closed(S::decode_canonical(producer).await?);
+
+                    if decoded_subspace == reference.subspaces().start
+                        || reference.subspaces().end == decoded_subspace
+                    {
+                        return Err(DecodeError::InvalidInput);
+                    }
+
+                    decoded_subspace
+                }
             };
+
+            // Check subspace end...
 
             let path_start = match (is_path_start_rel_to_start, &reference.paths().end) {
                 (true, RangeEnd::Closed(_)) => {
@@ -1232,6 +1258,28 @@ pub(super) mod encoding {
                 }
                 (false, RangeEnd::Open) => Err(DecodeError::InvalidInput)?,
             };
+
+            // Canonicity check for path start
+            match &reference.paths().end {
+                RangeEnd::Closed(ref_path_end) => {
+                    let lcp_start_start =
+                        path_start.longest_common_prefix(&reference.paths().start);
+                    let lcp_start_end = path_start.longest_common_prefix(ref_path_end);
+
+                    let expected_is_start_rel_to_start = lcp_start_start.get_component_count()
+                        >= lcp_start_end.get_component_count();
+
+                    if expected_is_start_rel_to_start != is_path_start_rel_to_start {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+                RangeEnd::Open => {
+                    if !is_path_start_rel_to_start {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+            }
+            // Canonicity check for path start over
 
             let path_end = if is_path_end_open {
                 RangeEnd::Open
@@ -1247,6 +1295,30 @@ pub(super) mod encoding {
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 }
             };
+
+            // Canonicity check for path end
+            match &path_end {
+                RangeEnd::Closed(p_end) => match &reference.paths().end {
+                    RangeEnd::Closed(ref_end) => {
+                        let lcp_end_start = p_end.longest_common_prefix(&reference.paths().start);
+                        let lcp_end_end = p_end.longest_common_prefix(ref_end);
+
+                        let expected_is_path_end_rel_to_start = lcp_end_start.get_component_count()
+                            >= lcp_end_end.get_component_count();
+
+                        if expected_is_path_end_rel_to_start != is_path_end_rel_to_start {
+                            return Err(DecodeError::InvalidInput);
+                        }
+                    }
+                    RangeEnd::Open => {}
+                },
+                RangeEnd::Open => {
+                    if is_path_end_rel_to_start {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+            }
+            // End canonicity check
 
             let start_time_diff =
                 decode_compact_width_be(start_time_diff_compact_width, producer).await?;
@@ -1265,44 +1337,115 @@ pub(super) mod encoding {
             }
             .ok_or(DecodeError::InvalidInput)?;
 
-            let end_time_diff =
-                decode_compact_width_be(end_time_diff_compact_width, producer).await?;
+            // Canonicity check for start time
+            match reference.times().end {
+                RangeEnd::Closed(ref_time_end) => {
+                    let start_to_start = time_start.abs_diff(reference.times().start);
+                    let start_to_end = time_start.abs_diff(ref_time_end);
+
+                    let expected_is_start_rel_to_start = start_to_start <= start_to_end;
+
+                    if expected_is_start_rel_to_start != is_time_start_rel_to_start {
+                        return Err(DecodeError::InvalidInput);
+                    }
+
+                    let expected_add_or_subtract_start_time_diff = is_time_start_rel_to_start
+                        && time_start >= reference.times().start
+                        || !expected_is_start_rel_to_start && time_start >= ref_time_end;
+
+                    if expected_add_or_subtract_start_time_diff != add_or_subtract_start_time_diff {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+                RangeEnd::Open => {
+                    if !is_time_start_rel_to_start {
+                        return Err(DecodeError::InvalidInput);
+                    }
+
+                    // I need to very add or subtract time diff here.
+                    let expected_add_or_subtract_time_diff = time_start >= reference.times().start;
+
+                    if expected_add_or_subtract_time_diff != add_or_subtract_start_time_diff {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+            }
+            // End of canonicity check for start time
 
             let time_end = if is_times_end_open {
+                if add_or_subtract_end_time_diff {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                if is_time_end_rel_to_start {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                let end_time_diff_compact_width_flags = 0b0000_0011;
+                if header_2 & end_time_diff_compact_width_flags != 0b0000_0000 {
+                    return Err(DecodeError::InvalidInput);
+                }
+
                 RangeEnd::Open
             } else {
-                match (is_times_end_rel_to_start, add_or_subtract_end_time_diff) {
-                    (true, true) => RangeEnd::Closed(
-                        reference
-                            .times()
-                            .start
+                let end_time_diff =
+                    decode_compact_width_be(end_time_diff_compact_width, producer).await?;
+
+                let time_end = match (is_time_end_rel_to_start, add_or_subtract_end_time_diff) {
+                    (true, true) => reference
+                        .times()
+                        .start
+                        .checked_add(end_time_diff)
+                        .ok_or(DecodeError::InvalidInput)?,
+
+                    (true, false) => reference
+                        .times()
+                        .start
+                        .checked_sub(end_time_diff)
+                        .ok_or(DecodeError::InvalidInput)?,
+
+                    (false, true) => match reference.times().end {
+                        RangeEnd::Closed(ref_end) => ref_end
                             .checked_add(end_time_diff)
                             .ok_or(DecodeError::InvalidInput)?,
-                    ),
-                    (true, false) => RangeEnd::Closed(
-                        reference
-                            .times()
-                            .start
-                            .checked_sub(end_time_diff)
-                            .ok_or(DecodeError::InvalidInput)?,
-                    ),
-                    (false, true) => match reference.times().end {
-                        RangeEnd::Closed(ref_end) => RangeEnd::Closed(
-                            ref_end
-                                .checked_add(end_time_diff)
-                                .ok_or(DecodeError::InvalidInput)?,
-                        ),
+
                         RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                     },
                     (false, false) => match reference.times().end {
-                        RangeEnd::Closed(ref_end) => RangeEnd::Closed(
-                            ref_end
-                                .checked_sub(end_time_diff)
-                                .ok_or(DecodeError::InvalidInput)?,
-                        ),
+                        RangeEnd::Closed(ref_end) => ref_end
+                            .checked_sub(end_time_diff)
+                            .ok_or(DecodeError::InvalidInput)?,
+
                         RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                     },
+                };
+
+                let end_to_start = time_end.abs_diff(reference.times().start);
+                let end_to_end = match &reference.times().end {
+                    RangeEnd::Closed(ref_end) => time_end.abs_diff(*ref_end),
+                    RangeEnd::Open => u64::MAX,
+                };
+
+                let expected_is_time_end_rel_to_start = end_to_start <= end_to_end;
+                if expected_is_time_end_rel_to_start != is_time_end_rel_to_start {
+                    return Err(DecodeError::InvalidInput);
                 }
+
+                let expected_end_time_diff = core::cmp::min(end_to_start, end_to_end);
+
+                if expected_end_time_diff != end_time_diff {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                let expected_add_or_subtract_end_time_diff = (is_time_end_rel_to_start
+                    && time_end >= reference.times().start)
+                    || (!is_time_end_rel_to_start && time_end >= reference.times().end);
+
+                if expected_add_or_subtract_end_time_diff != add_or_subtract_end_time_diff {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                RangeEnd::Closed(time_end)
             };
 
             Ok(Self::new(
