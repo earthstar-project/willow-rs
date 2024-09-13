@@ -1530,6 +1530,8 @@ pub(super) mod encoding {
     {
         /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
+        ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_decode_canonical<Producer>(
             reference: &Range3d<MCL, MCC, MPL, S>,
@@ -1801,6 +1803,158 @@ pub(super) mod encoding {
                 if expected_add_or_subtract_end_time_diff != add_or_subtract_end_time_diff {
                     return Err(DecodeError::InvalidInput);
                 }
+
+                RangeEnd::Closed(time_end)
+            };
+
+            Ok(Self::new(
+                Range {
+                    start: subspace_start,
+                    end: subspace_end,
+                },
+                Range {
+                    start: path_start,
+                    end: path_end,
+                },
+                Range {
+                    start: time_start,
+                    end: time_end,
+                },
+            ))
+        }
+
+        /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        ///
+        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
+        async fn relative_decode_relation<Producer>(
+            reference: &Range3d<MCL, MCC, MPL, S>,
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            let header_1 = produce_byte(producer).await?;
+
+            let subspace_start_flags = header_1 & 0b1100_0000;
+            let subspace_end_flags = header_1 & 0b0011_0000;
+            let is_path_start_rel_to_start = is_bitflagged(header_1, 4);
+            let is_path_end_open = is_bitflagged(header_1, 5);
+            let is_path_end_rel_to_start = is_bitflagged(header_1, 6);
+            let is_times_end_open = is_bitflagged(header_1, 7);
+
+            let header_2 = produce_byte(producer).await?;
+
+            let is_time_start_rel_to_start = is_bitflagged(header_2, 0);
+            let add_or_subtract_start_time_diff = is_bitflagged(header_2, 1);
+            let start_time_diff_compact_width =
+                CompactWidth::decode_fixed_width_bitmask(header_2, 2);
+            let is_time_end_rel_to_start = is_bitflagged(header_2, 4);
+            let add_or_subtract_end_time_diff = is_bitflagged(header_2, 5);
+            let end_time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header_2, 6);
+
+            // Decode subspace start
+            let subspace_start = match subspace_start_flags {
+                0b0100_0000 => reference.subspaces().start.clone(),
+                0b1000_0000 => match &reference.subspaces().end {
+                    RangeEnd::Closed(end) => end.clone(),
+                    RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                },
+                0b1100_0000 => S::decode_canonical(producer).await?,
+                // This can only be b0000_0000 (which is not valid!)
+                _ => Err(DecodeError::InvalidInput)?,
+            };
+
+            let subspace_end = match subspace_end_flags {
+                0b0000_0000 => RangeEnd::Open,
+                0b0001_0000 => RangeEnd::Closed(reference.subspaces().start.clone()),
+                0b0010_0000 => match &reference.subspaces().end {
+                    RangeEnd::Closed(end) => RangeEnd::Closed(end.clone()),
+                    RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                },
+                // This can only be 0b0011_0000
+                _ => RangeEnd::Closed(S::decode_relation(producer).await?),
+            };
+
+            let path_start = match (is_path_start_rel_to_start, &reference.paths().end) {
+                (true, RangeEnd::Closed(_)) => {
+                    Path::relative_decode_relation(&reference.paths().start, producer).await?
+                }
+                (true, RangeEnd::Open) => {
+                    Path::relative_decode_relation(&reference.paths().start, producer).await?
+                }
+                (false, RangeEnd::Closed(path_end)) => {
+                    Path::relative_decode_relation(path_end, producer).await?
+                }
+                (false, RangeEnd::Open) => Err(DecodeError::InvalidInput)?,
+            };
+
+            let path_end = if is_path_end_open {
+                RangeEnd::Open
+            } else if is_path_end_rel_to_start {
+                RangeEnd::Closed(
+                    Path::relative_decode_relation(&reference.paths().start, producer).await?,
+                )
+            } else {
+                match &reference.paths().end {
+                    RangeEnd::Closed(end) => {
+                        RangeEnd::Closed(Path::relative_decode_relation(end, producer).await?)
+                    }
+                    RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                }
+            };
+
+            let start_time_diff =
+                decode_compact_width_be_relation(start_time_diff_compact_width, producer).await?;
+
+            let time_start = match (is_time_start_rel_to_start, add_or_subtract_start_time_diff) {
+                (true, true) => reference.times().start.checked_add(start_time_diff),
+                (true, false) => reference.times().start.checked_sub(start_time_diff),
+                (false, true) => match reference.times().end {
+                    RangeEnd::Closed(ref_end) => ref_end.checked_add(start_time_diff),
+                    RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                },
+                (false, false) => match reference.times().end {
+                    RangeEnd::Closed(ref_end) => ref_end.checked_sub(start_time_diff),
+                    RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                },
+            }
+            .ok_or(DecodeError::InvalidInput)?;
+
+            let time_end = if is_times_end_open {
+                RangeEnd::Open
+            } else {
+                let end_time_diff =
+                    decode_compact_width_be_relation(end_time_diff_compact_width, producer).await?;
+
+                let time_end = match (is_time_end_rel_to_start, add_or_subtract_end_time_diff) {
+                    (true, true) => reference
+                        .times()
+                        .start
+                        .checked_add(end_time_diff)
+                        .ok_or(DecodeError::InvalidInput)?,
+
+                    (true, false) => reference
+                        .times()
+                        .start
+                        .checked_sub(end_time_diff)
+                        .ok_or(DecodeError::InvalidInput)?,
+
+                    (false, true) => match reference.times().end {
+                        RangeEnd::Closed(ref_end) => ref_end
+                            .checked_add(end_time_diff)
+                            .ok_or(DecodeError::InvalidInput)?,
+
+                        RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                    },
+                    (false, false) => match reference.times().end {
+                        RangeEnd::Closed(ref_end) => ref_end
+                            .checked_sub(end_time_diff)
+                            .ok_or(DecodeError::InvalidInput)?,
+
+                        RangeEnd::Open => Err(DecodeError::InvalidInput)?,
+                    },
+                };
 
                 RangeEnd::Closed(time_end)
             };
