@@ -544,6 +544,83 @@ pub(super) mod encoding {
                 payload_digest,
             ))
         }
+
+        /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+        ///
+        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
+        async fn relative_decode_relation<Producer>(
+            reference: &(N, Area<MCL, MCC, MPL, S>),
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            let (namespace, out) = reference;
+
+            let header = produce_byte(producer).await?;
+
+            let is_subspace_encoded = is_bitflagged(header, 0);
+            let add_time_diff_to_start = is_bitflagged(header, 1);
+            let time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 2);
+            let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
+
+            let subspace_id = match &out.subspace() {
+                AreaSubspace::Any => {
+                    if !is_subspace_encoded {
+                        return Err(DecodeError::InvalidInput);
+                    }
+
+                    S::decode_relation(producer).await?
+                }
+                AreaSubspace::Id(out_subspace) => {
+                    if !is_subspace_encoded {
+                        out_subspace.clone()
+                    } else {
+                        let subspace_id = S::decode_relation(producer).await?;
+
+                        if &subspace_id != out_subspace {
+                            return Err(DecodeError::InvalidInput);
+                        }
+
+                        subspace_id
+                    }
+                }
+            };
+
+            let path = Path::relative_decode_relation(out.path(), producer).await?;
+
+            if !path.is_prefixed_by(out.path()) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            let time_diff =
+                decode_compact_width_be_relation(time_diff_compact_width, producer).await?;
+            let payload_length =
+                decode_compact_width_be_relation(payload_length_compact_width, producer).await?;
+
+            let payload_digest = PD::decode_relation(producer).await?;
+
+            let timestamp = if add_time_diff_to_start {
+                out.times().start.checked_add(time_diff)
+            } else {
+                u64::from(&out.times().end).checked_sub(time_diff)
+            }
+            .ok_or(DecodeError::InvalidInput)?;
+
+            if !out.times().includes(&timestamp) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            Ok(Self::new(
+                namespace.clone(),
+                subspace_id,
+                path,
+                timestamp,
+                payload_length,
+                payload_digest,
+            ))
+        }
     }
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
