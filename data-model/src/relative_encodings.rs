@@ -16,8 +16,10 @@ pub(super) mod encoding {
     #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
     use willow_encoding::{decode_max_power, encode_max_power};
 
-    #[syncify_replace(use willow_encoding::sync::{ decode_compact_width_be, encode_compact_width_be};)]
-    use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
+    #[syncify_replace(use willow_encoding::sync::{ decode_compact_width_be, decode_compact_width_be_relation,encode_compact_width_be};)]
+    use willow_encoding::{
+        decode_compact_width_be, decode_compact_width_be_relation, encode_compact_width_be,
+    };
 
     #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
@@ -320,6 +322,68 @@ pub(super) mod encoding {
                 decode_compact_width_be(compact_width_payload_length, producer).await?;
 
             let payload_digest = PD::decode_canonical(producer).await?;
+
+            Ok(Entry::new(
+                namespace_id,
+                subspace_id,
+                path,
+                timestamp,
+                payload_length,
+                payload_digest,
+            ))
+        }
+
+        async fn relative_decode_relation<Producer>(
+            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
+            producer: &mut Producer,
+        ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            let header = produce_byte(producer).await?;
+
+            let is_namespace_encoded = is_bitflagged(header, 0);
+            let is_subspace_encoded = is_bitflagged(header, 1);
+            let add_or_subtract_time_diff = is_bitflagged(header, 2);
+            let compact_width_time_diff = CompactWidth::decode_fixed_width_bitmask(header, 4);
+            let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
+
+            let namespace_id = if is_namespace_encoded {
+                N::decode_relation(producer).await?
+            } else {
+                reference.namespace_id().clone()
+            };
+
+            let subspace_id = if is_subspace_encoded {
+                S::decode_relation(producer).await?
+            } else {
+                reference.subspace_id().clone()
+            };
+
+            let path =
+                Path::<MCL, MCC, MPL>::relative_decode_relation(reference.path(), producer).await?;
+
+            let time_diff =
+                decode_compact_width_be_relation(compact_width_time_diff, producer).await?;
+
+            // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
+            let timestamp = if add_or_subtract_time_diff {
+                reference
+                    .timestamp()
+                    .checked_add(time_diff)
+                    .ok_or(DecodeError::InvalidInput)?
+            } else {
+                reference
+                    .timestamp()
+                    .checked_sub(time_diff)
+                    .ok_or(DecodeError::InvalidInput)?
+            };
+
+            let payload_length =
+                decode_compact_width_be_relation(compact_width_payload_length, producer).await?;
+
+            let payload_digest = PD::decode_relation(producer).await?;
 
             Ok(Entry::new(
                 namespace_id,
