@@ -1048,6 +1048,8 @@ pub(super) mod encoding {
     {
         /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
+        ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
         async fn relative_decode_canonical<Producer>(
             out: &Area<MCL, MCC, MPL, S>,
@@ -1194,6 +1196,124 @@ pub(super) mod encoding {
                     return Err(DecodeError::InvalidInput);
                 }
                 // ============================================
+
+                RangeEnd::Closed(end)
+            };
+
+            let times = Range { start, end };
+
+            // Verify the decoded time range is included by the reference time range
+            if !out.times().includes_range(&times) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            Ok(Self::new(subspace, path, times))
+        }
+
+        /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
+        ///
+        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
+        async fn relative_decode_relation<Producer>(
+            out: &Area<MCL, MCC, MPL, S>,
+            producer: &mut Producer,
+        ) -> Result<Self, DecodeError<Producer::Error>>
+        where
+            Producer: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            let header = produce_byte(producer).await?;
+
+            // Decode subspace?
+            let is_subspace_encoded = is_bitflagged(header, 0);
+
+            // Decode end value of times?
+            let is_times_end_open = is_bitflagged(header, 1);
+
+            // Add start_diff to out.get_times().start, or subtract from out.get_times().end?
+            let add_start_diff = is_bitflagged(header, 2);
+
+            // Add end_diff to out.get_times().start, or subtract from out.get_times().end?
+            let add_end_diff = is_bitflagged(header, 3);
+
+            let start_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
+            let end_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 6);
+
+            let subspace = if is_subspace_encoded {
+                let id = S::decode_relation(producer).await?;
+                AreaSubspace::Id(id)
+            } else {
+                out.subspace().clone()
+            };
+
+            // Verify that the decoded subspace is included by the reference subspace
+            match (&out.subspace(), &subspace) {
+                (AreaSubspace::Any, AreaSubspace::Any) => {}
+                (AreaSubspace::Any, AreaSubspace::Id(_)) => {}
+                (AreaSubspace::Id(_), AreaSubspace::Any) => {
+                    return Err(DecodeError::InvalidInput);
+                }
+                (AreaSubspace::Id(a), AreaSubspace::Id(b)) => {
+                    if a != b {
+                        return Err(DecodeError::InvalidInput);
+                    }
+                }
+            }
+
+            let path = Path::relative_decode_relation(out.path(), producer).await?;
+
+            // Verify the decoded path is prefixed by the reference path
+            if !path.is_prefixed_by(out.path()) {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            let start_diff =
+                decode_compact_width_be_relation(start_diff_compact_width, producer).await?;
+
+            let start = if add_start_diff {
+                out.times().start.checked_add(start_diff)
+            } else {
+                u64::from(&out.times().end).checked_sub(start_diff)
+            }
+            .ok_or(DecodeError::InvalidInput)?;
+
+            // Verify they sent correct start diff
+            let expected_start_diff = core::cmp::min(
+                start.checked_sub(out.times().start),
+                u64::from(&out.times().end).checked_sub(start),
+            )
+            .ok_or(DecodeError::InvalidInput)?;
+
+            if expected_start_diff != start_diff {
+                return Err(DecodeError::InvalidInput);
+            }
+
+            let end = if is_times_end_open {
+                if add_end_diff {
+                    return Err(DecodeError::InvalidInput);
+                }
+
+                RangeEnd::Open
+            } else {
+                let end_diff =
+                    decode_compact_width_be_relation(end_diff_compact_width, producer).await?;
+
+                let end = if add_end_diff {
+                    out.times().start.checked_add(end_diff)
+                } else {
+                    u64::from(&out.times().end).checked_sub(end_diff)
+                }
+                .ok_or(DecodeError::InvalidInput)?;
+
+                // Verify they sent correct end diff
+                let expected_end_diff = core::cmp::min(
+                    end.checked_sub(out.times().start),
+                    u64::from(&out.times().end).checked_sub(end),
+                )
+                .ok_or(DecodeError::InvalidInput)?;
+
+                if end_diff != expected_end_diff {
+                    return Err(DecodeError::InvalidInput);
+                }
 
                 RangeEnd::Closed(end)
             };
