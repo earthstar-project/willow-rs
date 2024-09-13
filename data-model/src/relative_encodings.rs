@@ -248,6 +248,8 @@ pub(super) mod encoding {
     {
         /// Decodes an [`Entry`] relative to the given reference [`Entry`].
         ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
+        ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_decode_canonical<Producer>(
             reference: &Entry<MCL, MCC, MPL, N, S, PD>,
@@ -333,6 +335,9 @@ pub(super) mod encoding {
             ))
         }
 
+        /// Decodes an [`Entry`] relative to the given reference [`Entry`].
+        ///
+        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_decode_relation<Producer>(
             reference: &Entry<MCL, MCC, MPL, N, S, PD>,
             producer: &mut Producer,
@@ -404,6 +409,8 @@ pub(super) mod encoding {
         PD: PayloadDigest + Encodable,
     {
         /// Encodes this [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
+        ///
+        /// Will return an error if the encoding has not been produced by the corresponding encoding function.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
         async fn relative_encode<Consumer>(
