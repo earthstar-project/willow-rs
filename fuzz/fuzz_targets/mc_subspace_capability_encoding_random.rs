@@ -8,5 +8,5 @@ use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 fuzz_target!(|data: &[u8]| {
     encoding_canonical_random::<
         McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-    >(data)
+    >(data);
 });
