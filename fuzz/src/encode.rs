@@ -42,11 +42,25 @@ pub fn encoding_random<T>(data: &[u8])
 where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
 {
-    encoding_canonical_random::<T>(data);
-    encoding_relation_random::<T>(data);
+    let res_canonical = encoding_canonical_random::<T>(data);
+    let res_relation = encoding_relation_random::<T>(data);
+
+    match (res_canonical, res_relation) {
+        (Some(item_a), Some(item_b)) => {
+            if item_a != item_b {
+                panic!("The canonical and relation decoders did not produce the same result!")
+            }
+        }
+        (Some(_), None) => {
+            panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
+        }
+        _ => {
+            // Expected result.
+        }
+    }
 }
 
-pub fn encoding_canonical_random<T>(data: &[u8])
+pub fn encoding_canonical_random<T>(data: &[u8]) -> Option<T>
 where
     T: Encodable + Decodable + std::fmt::Debug,
 {
@@ -65,21 +79,21 @@ where
             let encoded = consumer.as_ref();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
+
+            Some(item)
         }
         Err(err) => match err {
             // There was an error.
             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => {
-                // GOOD.
-            }
+            DecodeError::InvalidInput => None,
             DecodeError::U64DoesNotFitUsize => {
                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
             }
         },
-    };
+    }
 }
 
-pub fn encoding_relation_random<T>(data: &[u8])
+pub fn encoding_relation_random<T>(data: &[u8]) -> Option<T>
 where
     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
 {
@@ -106,18 +120,18 @@ where
                     panic!("Could not decode again, argh!")
                 }
             }
+
+            Some(item)
         }
         Err(err) => match err {
             // There was an error.
             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => {
-                // GOOD.
-            }
+            DecodeError::InvalidInput => None,
             DecodeError::U64DoesNotFitUsize => {
                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
             }
         },
-    };
+    }
 }
 
 pub fn relative_encoding_canonical_roundtrip<T, R, C>(
@@ -158,11 +172,25 @@ where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
 {
-    relative_encoding_canonical_random::<R, T>(reference, data);
-    relative_encoding_relation_random::<R, T>(reference, data);
+    let res_canonical = relative_encoding_canonical_random::<R, T>(reference, data);
+    let res_relation = relative_encoding_relation_random::<R, T>(reference, data);
+
+    match (res_canonical, res_relation) {
+        (Some(item_a), Some(item_b)) => {
+            if item_a != item_b {
+                panic!("The canonical and relation decoders did not produce the same result!")
+            }
+        }
+        (Some(_), None) => {
+            panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
+        }
+        _ => {
+            // Expected result.
+        }
+    }
 }
 
-pub fn relative_encoding_canonical_random<R, T>(reference: &R, data: &[u8])
+pub fn relative_encoding_canonical_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
     R: std::fmt::Debug,
@@ -183,21 +211,21 @@ where
             let encoded = consumer.as_ref();
 
             assert_eq!(encoded, &data[0..producer.get_offset()]);
+
+            Some(item)
         }
         Err(err) => match err {
             // There was an error.
             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => {
-                // GOOD.
-            }
+            DecodeError::InvalidInput => None,
             DecodeError::U64DoesNotFitUsize => {
                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
             }
         },
-    };
+    }
 }
 
-pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8])
+pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
 where
     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
@@ -226,16 +254,16 @@ where
                     panic!("Could not decode again, argh!")
                 }
             }
+
+            Some(item)
         }
         Err(err) => match err {
             // There was an error.
             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => {
-                // GOOD.
-            }
+            DecodeError::InvalidInput => None,
             DecodeError::U64DoesNotFitUsize => {
                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
             }
         },
-    };
+    }
 }
