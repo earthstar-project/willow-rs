@@ -2,14 +2,12 @@
 
 use libfuzzer_sys::fuzz_target;
 use willow_data_model::Path;
-use willow_fuzz::encode::encoding_random;
+use willow_fuzz::encode::encoding_canonical_random;
 
 const MCL: usize = 2;
 const MCC: usize = 3;
 const MPL: usize = 3;
 
 fuzz_target!(|data: &[u8]| {
-    smol::block_on(async {
-        encoding_random::<Path<MCL, MCC, MPL>>(data).await;
-    });
+    encoding_canonical_random::<Path<MCL, MCC, MPL>>(data);
 });

@@ -4,7 +4,7 @@ use libfuzzer_sys::fuzz_target;
 use meadowcap::McCapability;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model::grouping::Area;
-use willow_fuzz::encode::relative_encoding_roundtrip;
+use willow_fuzz::encode::relative_encoding_canonical_roundtrip;
 use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
@@ -38,12 +38,9 @@ fuzz_target!(|data: (
         return;
     }
 
-    smol::block_on(async {
-        relative_encoding_roundtrip::<
-            McCapability<3, 3, 3, SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-            Area<3, 3, 3, SillyPublicKey>,
-            TestConsumer<u8, u16, ()>,
-        >(cap_with_delegees, out, &mut consumer)
-        .await;
-    });
+    relative_encoding_canonical_roundtrip::<
+        McCapability<3, 3, 3, SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
+        Area<3, 3, 3, SillyPublicKey>,
+        TestConsumer<u8, u16, ()>,
+    >(cap_with_delegees, out, &mut consumer)
 });

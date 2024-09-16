@@ -35,6 +35,22 @@ the repo's issues, milestones, and projects.
   protocol.
 - [meadowcap-js](https://github.com/earthstar-project/meadowcap-js) - TypeScript
   implementation of Meadowcap
+  
+## Fuzz tests
+
+This repository has many fuzz tests. To use `cargo fuzz` commands, you must first make `fuzz` the working directory so that the nightly compiler (on which cargo-fuzz relies) is used for compiling the tests.
+
+```
+cd fuzz
+cargo fuzz run <test_name_here>
+```
+
+There is also a command for running all the fuzz tests sequentially:
+
+```
+cd fuzz
+./run_all.sh -- -max_total_time=<number_of_seconds>
+```
 
 ---
 
