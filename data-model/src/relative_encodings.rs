@@ -178,11 +178,6 @@ pub(super) mod encoding {
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize>
-        RelativeRelationDecodable<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
-    {
-    }
-
     // Entry <> Entry
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
@@ -382,8 +377,8 @@ pub(super) mod encoding {
                 reference.subspace_id().clone()
             };
 
-            let path =
-                Path::<MCL, MCC, MPL>::relative_decode_relation(reference.path(), producer).await?;
+            let path = Path::<MCL, MCC, MPL>::relative_decode_canonical(reference.path(), producer)
+                .await?;
 
             let time_diff =
                 decode_compact_width_be_relation(compact_width_time_diff, producer).await?;
@@ -619,7 +614,7 @@ pub(super) mod encoding {
                 }
             };
 
-            let path = Path::relative_decode_relation(out.path(), producer).await?;
+            let path = Path::relative_decode_canonical(out.path(), producer).await?;
 
             if !path.is_prefixed_by(out.path()) {
                 return Err(DecodeError::InvalidInput);
@@ -944,11 +939,11 @@ pub(super) mod encoding {
             }
 
             let path = if decode_path_relative_to_start {
-                Path::relative_decode_relation(&out.paths().start, producer).await?
+                Path::relative_decode_canonical(&out.paths().start, producer).await?
             } else {
                 match &out.paths().end {
                     RangeEnd::Closed(end_path) => {
-                        Path::relative_decode_relation(end_path, producer).await?
+                        Path::relative_decode_canonical(end_path, producer).await?
                     }
                     RangeEnd::Open => return Err(DecodeError::InvalidInput),
                 }
@@ -1297,7 +1292,7 @@ pub(super) mod encoding {
                 }
             }
 
-            let path = Path::relative_decode_relation(out.path(), producer).await?;
+            let path = Path::relative_decode_canonical(out.path(), producer).await?;
 
             // Verify the decoded path is prefixed by the reference path
             if !path.is_prefixed_by(out.path()) {
@@ -1922,13 +1917,13 @@ pub(super) mod encoding {
 
             let path_start = match (is_path_start_rel_to_start, &reference.paths().end) {
                 (true, RangeEnd::Closed(_)) => {
-                    Path::relative_decode_relation(&reference.paths().start, producer).await?
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?
                 }
                 (true, RangeEnd::Open) => {
-                    Path::relative_decode_relation(&reference.paths().start, producer).await?
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?
                 }
                 (false, RangeEnd::Closed(path_end)) => {
-                    Path::relative_decode_relation(path_end, producer).await?
+                    Path::relative_decode_canonical(path_end, producer).await?
                 }
                 (false, RangeEnd::Open) => Err(DecodeError::InvalidInput)?,
             };
@@ -1937,12 +1932,12 @@ pub(super) mod encoding {
                 RangeEnd::Open
             } else if is_path_end_rel_to_start {
                 RangeEnd::Closed(
-                    Path::relative_decode_relation(&reference.paths().start, producer).await?,
+                    Path::relative_decode_canonical(&reference.paths().start, producer).await?,
                 )
             } else {
                 match &reference.paths().end {
                     RangeEnd::Closed(end) => {
-                        RangeEnd::Closed(Path::relative_decode_relation(end, producer).await?)
+                        RangeEnd::Closed(Path::relative_decode_canonical(end, producer).await?)
                     }
                     RangeEnd::Open => Err(DecodeError::InvalidInput)?,
                 }
