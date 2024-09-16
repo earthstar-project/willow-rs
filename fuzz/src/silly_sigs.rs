@@ -84,8 +84,8 @@ pub mod encoding {
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
-    use willow_encoding::{Decodable, Encodable};
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelationDecodable};)]
+    use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
     #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
@@ -137,4 +137,8 @@ pub mod encoding {
             Ok(SillySig(num))
         }
     }
+
+    impl RelationDecodable for SillyPublicKey {}
+
+    impl RelationDecodable for SillySig {}
 }

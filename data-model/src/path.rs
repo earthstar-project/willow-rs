@@ -791,8 +791,8 @@ mod encoding {
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable};)]
-    use willow_encoding::{Decodable, Encodable};
+    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable, RelationDecodable};)]
+    use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
     #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
     use willow_encoding::{decode_max_power, encode_max_power};
@@ -854,13 +854,11 @@ mod encoding {
 
             Ok(unsafe { buf.to_path(component_count) })
         }
+    }
 
-        async fn decode_relation<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
-        where
-            P: BulkProducer<Item = u8>,
-        {
-            Self::decode_canonical(producer).await
-        }
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> RelationDecodable
+        for Path<MCL, MCC, MPL>
+    {
     }
 }
 

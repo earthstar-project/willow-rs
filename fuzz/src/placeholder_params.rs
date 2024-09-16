@@ -3,8 +3,11 @@ use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 use ufotofu::sync::{BulkConsumer as BulkConsumerSync, BulkProducer as BulkProducerSync};
 use willow_data_model::PayloadDigest;
 use willow_encoding::{
-    sync::{Decodable as DecodableSync, Encodable as EncodableSync},
-    Decodable, DecodeError, Encodable,
+    sync::{
+        Decodable as DecodableSync, Encodable as EncodableSync,
+        RelationDecodable as RelationDecodableSync,
+    },
+    Decodable, DecodeError, Encodable, RelationDecodable,
 };
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -62,5 +65,9 @@ impl DecodableSync for FakePayloadDigest {
         Ok(FakePayloadDigest(slice))
     }
 }
+
+impl RelationDecodable for FakePayloadDigest {}
+
+impl RelationDecodableSync for FakePayloadDigest {}
 
 impl PayloadDigest for FakePayloadDigest {}

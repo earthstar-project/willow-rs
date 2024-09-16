@@ -35,7 +35,12 @@ pub trait Decodable {
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized;
+}
 
+/// A type which can be decoded from bytes (belonging to an encoding relation) produced by a [`ufotofu::local_nb::BulkProducer`]
+///
+/// [Definition](https://willowprotocol.org/specs/encodings/index.html#encodings_what)
+pub trait RelationDecodable: Decodable {
     /// Decode a bytestring belonging to the **encoding relation** on the set of `Self` and the set of bytestrings, such that:
     ///
     /// - for every `s` in `Self`, there is at least one bytestring in relation with `s`, and
@@ -92,7 +97,12 @@ pub trait RelativeDecodable<R> {
     where
         Producer: BulkProducer<Item = u8>,
         Self: Sized;
+}
 
+/// A type relative to a value of type `R` which can be decoded from bytes (belonging to an encoding relation) produced by a [`ufotofu::local_nb::BulkProducer`]
+///
+/// [Definition](https://willowprotocol.org/specs/encodings/index.html#encodings_what)
+pub trait RelativeRelationDecodable<R>: RelativeDecodable<R> {
     /// Decode a bytestring belonging to the **encoding relation** on the set of `Self` relative to a value of the set of `R`, and the set of bytestrings, such that:
     ///
     /// - for every pair of `s` in `Self` and `r` in `R`, there is at least one bytestring in relation with the pair of `s` and `r`, and

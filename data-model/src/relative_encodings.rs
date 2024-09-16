@@ -10,8 +10,11 @@ pub(super) mod encoding {
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
     use willow_encoding::{is_bitflagged, CompactWidth, DecodeError};
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
-    use willow_encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable, RelationDecodable, RelativeRelationDecodable};)]
+    use willow_encoding::{
+        Decodable, Encodable, RelationDecodable, RelativeDecodable, RelativeEncodable,
+        RelativeRelationDecodable,
+    };
 
     #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
     use willow_encoding::{decode_max_power, encode_max_power};
@@ -175,6 +178,11 @@ pub(super) mod encoding {
         }
     }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize>
+        RelativeRelationDecodable<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
+    {
+    }
+
     // Entry <> Entry
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
@@ -334,7 +342,15 @@ pub(super) mod encoding {
                 payload_digest,
             ))
         }
+    }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeRelationDecodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + RelationDecodable + std::fmt::Debug,
+        S: SubspaceId + RelationDecodable + std::fmt::Debug,
+        PD: PayloadDigest + RelationDecodable,
+    {
         /// Decodes an [`Entry`] relative to the given reference [`Entry`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
@@ -551,7 +567,15 @@ pub(super) mod encoding {
                 payload_digest,
             ))
         }
+    }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeRelationDecodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + RelationDecodable,
+        S: SubspaceId + RelationDecodable + std::fmt::Debug,
+        PD: PayloadDigest + RelationDecodable,
+    {
         /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_area).
@@ -872,7 +896,15 @@ pub(super) mod encoding {
                 payload_digest,
             ))
         }
+    }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeRelationDecodable<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + RelationDecodable,
+        S: SubspaceId + RelationDecodable + std::fmt::Debug,
+        PD: PayloadDigest + RelationDecodable,
+    {
         /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
@@ -1209,7 +1241,13 @@ pub(super) mod encoding {
 
             Ok(Self::new(subspace, path, times))
         }
+    }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
+        RelativeRelationDecodable<Area<MCL, MCC, MPL, S>> for Area<MCL, MCC, MPL, S>
+    where
+        S: SubspaceId + RelationDecodable,
+    {
         /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).
@@ -1822,7 +1860,13 @@ pub(super) mod encoding {
                 },
             ))
         }
+    }
 
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
+        RelativeRelationDecodable<Range3d<MCL, MCC, MPL, S>> for Range3d<MCL, MCC, MPL, S>
+    where
+        S: SubspaceId + RelationDecodable + std::fmt::Debug,
+    {
         /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_area_in_area).

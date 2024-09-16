@@ -8,7 +8,7 @@ use ufotofu::{
 };
 
 use willow_encoding::{
-    sync::{Decodable, Encodable, RelativeDecodable, RelativeEncodable},
+    sync::{Decodable, Encodable, RelativeDecodable, RelativeEncodable, RelativeRelationDecodable},
     DecodeError,
 };
 
@@ -169,7 +169,7 @@ pub fn relative_encoding_canonical_roundtrip<T, R, C>(
 
 pub fn relative_encoding_random<R, T>(reference: &R, data: &[u8])
 where
-    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
+    T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
 {
     let res_canonical = relative_encoding_canonical_random::<R, T>(reference, data);
@@ -227,7 +227,7 @@ where
 
 pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
 where
-    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug + Eq,
+    T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
     R: std::fmt::Debug,
 {
     let mut producer = FromSlice::new(data);

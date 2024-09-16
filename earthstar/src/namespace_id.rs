@@ -26,8 +26,8 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
-    use willow_encoding::{Decodable, Encodable};
+    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelationDecodable};)]
+    use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
     impl Encodable for NamespaceIdentifier {
         async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -40,7 +40,7 @@ pub(super) mod encoding {
     }
 
     impl Decodable for NamespaceIdentifier {
-        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<<P>::Error>>
+        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
         where
             P: BulkProducer<Item = u8>,
         {
@@ -50,6 +50,8 @@ pub(super) mod encoding {
             }
         }
     }
+
+    impl RelationDecodable for NamespaceIdentifier {}
 }
 
 impl NamespaceId for NamespaceIdentifier {}
