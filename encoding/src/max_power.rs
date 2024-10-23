@@ -1,7 +1,7 @@
 use syncify::syncify;
 use syncify::syncify_replace;
 
-/// Return the least natural number such that 256^`n` is greater than or equal to `n`.
+/// Returns the least natural number such that 256^`n` is greater than or equal to `n`.
 ///
 /// Used for determining the minimal number of bytes needed to represent a given unsigned integer, and more specifically [`path_length_power`](https://willowprotocol.org/specs/encodings/index.html#path_length_power) and [`path_count_power`](https://willowprotocol.org/specs/encodings/index.html#path_count_power).
 pub const fn max_power(max_size: u64) -> u8 {
@@ -35,7 +35,7 @@ pub(super) mod encoding {
     #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
     use ufotofu::local_nb::{BulkConsumer, BulkProducer};
 
-    /// Encode a `usize` to a `n`-width unsigned integer, where `n` is the least number of bytes needed to represent `max_size`.
+    /// Encodes a `usize` to a `n`-width unsigned integer, where `n` is the least number of bytes needed to represent `max_size`.
     pub async fn encode_max_power<C>(
         value: usize,
         max_size: usize,
@@ -59,7 +59,7 @@ pub(super) mod encoding {
         Ok(())
     }
 
-    /// Decode a `u64` from `n`-width bytestring, where `n` is the least number of bytes needed to represent `max_size`.
+    /// Decodes a `u64` from `n`-width bytestring, where `n` is the least number of bytes needed to represent `max_size`.
     pub async fn decode_max_power<P>(
         max_size: usize,
         producer: &mut P,

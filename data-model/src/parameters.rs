@@ -12,7 +12,8 @@ pub trait NamespaceId: Eq + Default + Clone {}
 ///
 /// The [`Default`] implementation **must** return the least element in the total order of [`SubspaceId`].
 pub trait SubspaceId: Ord + Default + Clone {
-    /// Return the next possible value in the set of all [`SubspaceId`].
+    /// Returns the next possible value in the set of all [`SubspaceId`].
+    ///
     /// e.g. the successor of 3 is 4.
     fn successor(&self) -> Option<Self>;
 }
@@ -37,6 +38,6 @@ pub trait AuthorisationToken<
     PD: PayloadDigest,
 >
 {
-    /// Determine whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
+    /// Determines whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
     fn is_authorised_write(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool;
 }

@@ -9,6 +9,7 @@ willow-data-model = { path = "../data-model" }
 arbitrary = { version = "1.0.2", features = ["derive"]}
 ufotofu = { version = "0.4.2", features = ["std"] }
 willow-encoding = { path = "../encoding" }
+syncify = "0.1.0"
 
 [lints]
 workspace = true

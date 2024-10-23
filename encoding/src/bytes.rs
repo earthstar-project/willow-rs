@@ -12,7 +12,7 @@ pub mod encoding {
     #[syncify_replace(use ufotofu::sync::BulkProducer;)]
     use ufotofu::local_nb::BulkProducer;
 
-    /// Have `Producer` produce a single byte, or return an error if the final value was produced or the producer experienced an error.
+    /// Produces a single byte from the given `producer`, or return an error if the final value was produced or the producer experienced an error.
     pub async fn produce_byte<Producer>(
         producer: &mut Producer,
     ) -> Result<u8, DecodeError<Producer::Error>>
@@ -27,7 +27,7 @@ pub mod encoding {
     }
 }
 
-/// Return whether a bit at the given position is `1` or not.
+/// Returns whether a bit at the given position is `1` or not.
 pub fn is_bitflagged(byte: u8, position: u8) -> bool {
     let mask = match position {
         0 => 0b1000_0000,

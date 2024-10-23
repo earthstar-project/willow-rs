@@ -23,22 +23,22 @@ where
     S: SubspaceId,
     PD: PayloadDigest,
 {
-    /// Create a new lengthy entry from a given [`Entry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
+    /// Returns a new lengthy entry from a given [`Entry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
     pub fn new(entry: Entry<MCL, MCC, MPL, N, S, PD>, available: u64) -> Self {
         Self { entry, available }
     }
 
-    /// The entry in question.
+    /// Returns the entry in question.
     pub fn entry(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
         &self.entry
     }
 
-    /// The number of consecutive bytes from the start of the entry’s Payload that the peer holds.
+    /// Returns the number of consecutive bytes from the start of the entry’s Payload that the peer holds.
     pub fn available(&self) -> u64 {
         self.available
     }
 
-    /// Turn this into a regular [`Entry`].
+    /// Turns this into a regular [`Entry`].
     pub fn into_entry(self) -> Entry<MCL, MCC, MPL, N, S, PD> {
         self.entry
     }
@@ -86,22 +86,22 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// Create a new lengthy entry from a given [`AuthorisedEntry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
+    /// Returns a new lengthy entry from a given [`AuthorisedEntry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
     pub fn new(entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, available: u64) -> Self {
         Self { entry, available }
     }
 
-    /// The entry in question.
+    /// Returns the authorised entry in question.
     pub fn entry(&self) -> &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
         &self.entry
     }
 
-    /// The number of consecutive bytes from the start of the entry’s Payload that the peer holds.
+    /// Returns the number of consecutive bytes from the start of the entry’s Payload that the peer holds.
     pub fn available(&self) -> u64 {
         self.available
     }
 
-    /// Turn this into a [`AuthorisedEntry`].
+    /// Turns this into a [`AuthorisedEntry`].
     pub fn into_authorised_entry(self) -> AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
         self.entry
     }
