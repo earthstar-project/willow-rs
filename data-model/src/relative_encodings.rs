@@ -1650,8 +1650,8 @@ pub(super) mod encoding {
                         path_start.longest_common_prefix(&reference.paths().start);
                     let lcp_start_end = path_start.longest_common_prefix(ref_path_end);
 
-                    let expected_is_start_rel_to_start = lcp_start_start.get_component_count()
-                        >= lcp_start_end.get_component_count();
+                    let expected_is_start_rel_to_start =
+                        lcp_start_start.component_count() >= lcp_start_end.component_count();
 
                     if expected_is_start_rel_to_start != is_path_start_rel_to_start {
                         return Err(DecodeError::InvalidInput);
@@ -1687,8 +1687,8 @@ pub(super) mod encoding {
                         let lcp_end_start = p_end.longest_common_prefix(&reference.paths().start);
                         let lcp_end_end = p_end.longest_common_prefix(ref_end);
 
-                        let expected_is_path_end_rel_to_start = lcp_end_start.get_component_count()
-                            >= lcp_end_end.get_component_count();
+                        let expected_is_path_end_rel_to_start =
+                            lcp_end_start.component_count() >= lcp_end_end.component_count();
 
                         if expected_is_path_end_rel_to_start != is_path_end_rel_to_start {
                             return Err(DecodeError::InvalidInput);
