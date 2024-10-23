@@ -218,6 +218,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "either",
+ "syncify",
  "ufotofu",
  "willow-data-model",
  "willow-encoding",

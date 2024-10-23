@@ -94,7 +94,7 @@ mod encoding {
     }
 
     impl Decodable for U8BE {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -122,7 +122,7 @@ mod encoding {
     }
 
     impl Decodable for U16BE {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -150,7 +150,7 @@ mod encoding {
     }
 
     impl Decodable for U32BE {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where
@@ -178,7 +178,7 @@ mod encoding {
     }
 
     impl Decodable for U64BE {
-        async fn decode<Producer>(
+        async fn decode_canonical<Producer>(
             producer: &mut Producer,
         ) -> Result<Self, DecodeError<Producer::Error>>
         where

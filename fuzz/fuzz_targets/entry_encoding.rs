@@ -5,7 +5,7 @@ use earthstar::namespace_id::NamespaceIdentifier as EsNamespaceId;
 use libfuzzer_sys::fuzz_target;
 use ufotofu::local_nb::consumer::TestConsumer;
 use willow_data_model::Entry;
-use willow_fuzz::encode::encoding_roundtrip;
+use willow_fuzz::encode::encoding_canonical_roundtrip;
 use willow_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(|data: (
@@ -14,7 +14,5 @@ fuzz_target!(|data: (
 )| {
     let (entry, mut consumer) = data;
 
-    smol::block_on(async {
-        encoding_roundtrip::<_, TestConsumer<u8, u16, ()>>(entry, &mut consumer).await;
-    });
+    encoding_canonical_roundtrip::<_, TestConsumer<u8, u16, ()>>(entry, &mut consumer);
 });
