@@ -1,5 +1,5 @@
 use either::Either;
-use ufotofu::local_nb::Producer;
+use ufotofu::local_nb::BulkProducer;
 
 /** When things go wrong while trying to make a WGPS transport ready. */
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl<E: core::fmt::Display> core::fmt::Display for ReadyTransportError<E> {
 pub(crate) struct ReadyTransport<
     const CHALLENGE_HASH_LENGTH: usize,
     E: core::fmt::Display,
-    P: Producer<Item = u8, Final = (), Error = E>,
+    P: BulkProducer<Item = u8, Final = (), Error = E>,
 > {
     /** The maximum payload size which may be sent without being explicitly requested.*/
     pub maximum_payload_size: usize,
@@ -48,7 +48,7 @@ pub(crate) struct ReadyTransport<
 pub(crate) async fn ready_transport<
     const CHALLENGE_HASH_LENGTH: usize,
     E: core::fmt::Display,
-    P: Producer<Item = u8, Final = (), Error = E>,
+    P: BulkProducer<Item = u8, Final = (), Error = E>,
 >(
     mut transport: P,
 ) -> Result<ReadyTransport<CHALLENGE_HASH_LENGTH, E, P>, ReadyTransportError<E>> {
@@ -68,17 +68,15 @@ pub(crate) async fn ready_transport<
 
     let mut received_commitment = [0_u8; CHALLENGE_HASH_LENGTH];
 
-    for commitment_byte in received_commitment.iter_mut() {
-        match transport.produce().await {
-            Ok(either) => match either {
-                Either::Left(byte) => {
-                    *commitment_byte = byte;
-                }
-                Either::Right(_) => return Err(ReadyTransportError::FinishedTooSoon),
-            },
-            Err(transport_err) => return Err(ReadyTransportError::Transport(transport_err)),
-        };
-    }
+    if let Err(e) = transport
+        .bulk_overwrite_full_slice(&mut received_commitment)
+        .await
+    {
+        match e.reason {
+            Either::Left(_) => return Err(ReadyTransportError::FinishedTooSoon),
+            Either::Right(e) => return Err(ReadyTransportError::Transport(e)),
+        }
+    };
 
     Ok(ReadyTransport {
         maximum_payload_size,
