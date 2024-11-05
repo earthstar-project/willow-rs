@@ -30,6 +30,7 @@ impl<E: core::fmt::Display> core::fmt::Display for ReadyTransportError<E> {
 
 /** The result of intercepting the first few bytes of a WGPS transport. */
 #[derive(Debug)]
+#[allow(dead_code)] // TODO: Remove when this is used.
 pub(crate) struct ReadyTransport<
     const CHALLENGE_HASH_LENGTH: usize,
     E: core::fmt::Display,
@@ -43,8 +44,21 @@ pub(crate) struct ReadyTransport<
     pub transport: P,
 }
 
+impl<
+        const CHALLENGE_HASH_LENGTH: usize,
+        E: core::fmt::Display,
+        P: BulkProducer<Item = u8, Final = (), Error = E>,
+    > ReadyTransport<CHALLENGE_HASH_LENGTH, E, P>
+{
+    #[allow(dead_code)] // TODO: Remove when this is used.
+    pub(crate) fn transport(&self) -> &P {
+        &self.transport
+    }
+}
+
 /** Given a producer of bytes which is to immediately produce the bytes corresponding to the WGPS' [maximum payload size](https://willowprotocol.org/specs/sync/index.html#peer_max_payload_size) and [received commitment](https://willowprotocol.org/specs/sync/index.html#received_commitment), returns the computed maximum payload size, received commitment, and a 'ready' transport set to produce encoded WGPS messages.
 */
+#[allow(dead_code)] // TODO: Remove when this is used.
 pub(crate) async fn ready_transport<
     const CHALLENGE_HASH_LENGTH: usize,
     E: core::fmt::Display,
