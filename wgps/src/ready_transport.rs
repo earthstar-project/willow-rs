@@ -52,13 +52,10 @@ pub(crate) async fn ready_transport<
 >(
     mut transport: P,
 ) -> Result<ReadyTransport<CHALLENGE_HASH_LENGTH, E, P>, ReadyTransportError<E>> {
-    let maximum_payload_power = match transport.produce().await {
-        Ok(either) => match either {
-            Either::Left(byte) => Ok(byte),
-            Either::Right(_) => Err(ReadyTransportError::FinishedTooSoon),
-        },
-        Err(transport_err) => Err(ReadyTransportError::Transport(transport_err)),
-    }?;
+    let maximum_payload_power = match transport.produce().await? {
+        Either::Left(byte) => byte,
+        Either::Right(_) => return Err(ReadyTransportError::FinishedTooSoon),
+    };
 
     if maximum_payload_power > 64 {
         return Err(ReadyTransportError::MaxPayloadInvalid);
@@ -83,6 +80,12 @@ pub(crate) async fn ready_transport<
         received_commitment,
         transport,
     })
+}
+
+impl<E: core::fmt::Display> From<E> for ReadyTransportError<E> {
+    fn from(value: E) -> Self {
+        ReadyTransportError::Transport(value)
+    }
 }
 
 #[cfg(test)]
