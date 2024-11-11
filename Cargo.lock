@@ -534,6 +534,7 @@ dependencies = [
  "either",
  "smol",
  "ufotofu",
+ "ufotofu_queues",
  "willow-data-model",
 ]
 

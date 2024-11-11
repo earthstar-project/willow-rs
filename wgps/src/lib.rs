@@ -7,6 +7,8 @@ use willow_data_model::{
     ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
 
+mod spsc_channel;
+
 mod ready_transport;
 pub use ready_transport::*;
 

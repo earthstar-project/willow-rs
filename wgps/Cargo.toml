@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 willow-data-model = { path = "../data-model", version = "0.1.0" }
 ufotofu = { version = "0.4.2", features = ["std"] }
+ufotofu_queues = { version = "0.5.0", features = ["std"]}
 either = "1.10.0"
 
 [dev-dependencies]
