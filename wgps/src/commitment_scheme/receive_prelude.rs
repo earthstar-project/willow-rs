@@ -39,17 +39,13 @@ pub(crate) struct ReceivedPrelude<const CHALLENGE_HASH_LENGTH: usize> {
 }
 
 /// Given a producer of bytes which is to immediately produce the bytes corresponding to the WGPS' [maximum payload size](https://willowprotocol.org/specs/sync/index.html#peer_max_payload_size) and [received commitment](https://willowprotocol.org/specs/sync/index.html#received_commitment), returns the computed maximum payload size, received commitment, and a 'ready' transport set to produce encoded WGPS messages.
-
 #[allow(dead_code)] // TODO: Remove when this is used.
 pub(crate) async fn receive_prelude<
     const CHALLENGE_HASH_LENGTH: usize,
     P: BulkProducer<Item = u8>,
 >(
     transport: &mut P,
-) -> Result<ReceivedPrelude<CHALLENGE_HASH_LENGTH>, ReceivePreludeError<P::Error>>
-where
-    P::Error: core::fmt::Display,
-{
+) -> Result<ReceivedPrelude<CHALLENGE_HASH_LENGTH>, ReceivePreludeError<P::Error>> {
     let maximum_payload_power = match transport.produce().await? {
         Either::Left(byte) => byte,
         Either::Right(_) => return Err(ReceivePreludeError::FinishedTooSoon),
@@ -79,7 +75,7 @@ where
     })
 }
 
-impl<E: core::fmt::Display> From<E> for ReceivePreludeError<E> {
+impl<E> From<E> for ReceivePreludeError<E> {
     fn from(value: E) -> Self {
         ReceivePreludeError::Transport(value)
     }
