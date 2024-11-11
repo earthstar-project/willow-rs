@@ -7,8 +7,8 @@ use willow_data_model::{
     ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
 
-mod ready_transport;
-pub use ready_transport::*;
+mod commitment_scheme;
+pub use commitment_scheme::*;
 
 /// Options to specify how ranges should be partitioned.
 #[derive(Debug, Clone, Copy)]
