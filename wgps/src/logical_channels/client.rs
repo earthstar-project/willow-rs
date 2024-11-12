@@ -203,3 +203,7 @@ impl<'wfg> Future for WaitForGuarannteesFuture<'wfg> {
         }
     }
 }
+
+// TODO rewrite based on `async_cell::unsync::AsyncCell`
+// TODO must also handle channel closing
+// TODO provide a Consumer for items that can be encoded with known size
