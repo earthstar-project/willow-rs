@@ -12,6 +12,8 @@ pub mod logical_channels;
 mod ready_transport;
 pub use ready_transport::*;
 
+mod util;
+
 /// Options to specify how ranges should be partitioned.
 #[derive(Debug, Clone, Copy)]
 pub struct PartitionOpts {

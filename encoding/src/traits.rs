@@ -22,6 +22,12 @@ pub trait Encodable {
         Consumer: BulkConsumer<Item = u8>;
 }
 
+/// An [`Encodable`] that can (synchronously) precompute the exact size of the encoding it will produce.
+pub trait EncodableExactSize: Encodable {
+    /// Computes the size of the encoding in bytes. Calling [`encode`] must feed exactly that many bytes into the consumer.
+    fn encoded_size(&self) -> usize;
+}
+
 /// A type which can be asynchronously decoded from bytes produced by a [`ufotofu::local_nb::BulkProducer`]
 ///
 /// [Definition](https://willowprotocol.org/specs/encodings/index.html#encodings_what)

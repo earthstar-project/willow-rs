@@ -7,6 +7,8 @@ edition = "2021"
 willow-data-model = { path = "../data-model", version = "0.1.0" }
 ufotofu = { version = "0.4.2", features = ["std"] }
 either = "1.10.0"
+async_cell = "0.2.2"
+willow-encoding = { path = "../encoding", version = "0.1.0" }
 
 [dev-dependencies]
 smol = "2.0.0"
