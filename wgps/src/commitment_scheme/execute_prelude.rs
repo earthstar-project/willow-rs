@@ -14,7 +14,7 @@ use super::{
     send_prelude::send_prelude,
 };
 
-pub(crate) enum ExecutePreludeError<E> {
+pub enum ExecutePreludeError<E> {
     ReceiveError(ReceivePreludeError<E>),
     SendError(E),
 }
@@ -42,7 +42,7 @@ pub(crate) async fn execute_prelude<
     C: BulkConsumer<Item = u8, Error = E>,
     P: BulkProducer<Item = u8, Error = E>,
 >(
-    max_payload_size: u8,
+    max_payload_power: u8,
     our_nonce: [u8; CHALLENGE_LENGTH],
     consumer: &mut C,
     producer: &mut P,
@@ -50,7 +50,7 @@ pub(crate) async fn execute_prelude<
     let commitment = CH::hash(our_nonce);
 
     let receive_fut = Box::pin(receive_prelude::<CHALLENGE_HASH_LENGTH, _>(producer));
-    let send_fut = Box::pin(send_prelude(max_payload_size, commitment, consumer));
+    let send_fut = Box::pin(send_prelude(max_payload_power, commitment, consumer));
 
     let (received_prelude, ()) = match try_select(receive_fut, send_fut).await {
         Ok(Either::Left((received, send_fut))) => (received, send_fut.await?),
