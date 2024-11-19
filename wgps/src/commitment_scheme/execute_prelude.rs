@@ -14,8 +14,11 @@ use super::{
     send_prelude::send_prelude,
 };
 
+/// An error which only occurs during the initial phase of a WGPS session.
 pub enum ExecutePreludeError<E> {
+    /// There was a problem receiving their prelude.
     ReceiveError(ReceivePreludeError<E>),
+    /// There was a problem sending our prelude.
     SendError(E),
 }
 
@@ -28,6 +31,17 @@ impl<E> From<ReceivePreludeError<E>> for ExecutePreludeError<E> {
 impl<E> From<E> for ExecutePreludeError<E> {
     fn from(value: E) -> Self {
         ExecutePreludeError::SendError(value)
+    }
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for ExecutePreludeError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutePreludeError::ReceiveError(receive_prelude_error) => {
+                write!(f, "{}", receive_prelude_error)
+            }
+            ExecutePreludeError::SendError(error) => write!(f, "{}", error),
+        }
     }
 }
 

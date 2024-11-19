@@ -18,6 +18,7 @@ mod commitment_scheme;
 use commitment_scheme::execute_prelude::execute_prelude;
 pub use commitment_scheme::*;
 
+/// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
     Prelude(ExecutePreludeError<E>),
 }
@@ -25,6 +26,14 @@ pub enum WgpsError<E> {
 impl<E> From<ExecutePreludeError<E>> for WgpsError<E> {
     fn from(value: ExecutePreludeError<E>) -> Self {
         Self::Prelude(value)
+    }
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WgpsError::Prelude(execute_prelude_error) => write!(f, "{}", execute_prelude_error),
+        }
     }
 }
 
