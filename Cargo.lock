@@ -625,6 +625,7 @@ dependencies = [
  "smol",
  "ufotofu",
  "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]

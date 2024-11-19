@@ -7,6 +7,12 @@ use willow_data_model::{
     ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
 
+mod parameters;
+pub use parameters::*;
+
+mod messages;
+pub use messages::*;
+
 mod commitment_scheme;
 pub use commitment_scheme::*;
 
