@@ -1,4 +1,4 @@
-use futures::future::{select, try_select, Either};
+use futures::future::{try_select, Either};
 
 // send our own commitment reveal message only after we have received the prelude.
 
