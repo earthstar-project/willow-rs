@@ -16,7 +16,7 @@ struct SpscState<Q: Queue> {
 
 impl<Q: Queue> SpscState<Q> {}
 
-struct Output<Q: Queue> {
+pub(crate) struct Output<Q: Queue> {
     state: Rc<RefCell<SpscState<Q>>>,
 }
 
@@ -129,7 +129,7 @@ impl<Q: Queue> BulkProducer for Output<Q> {
     }
 }
 
-struct Input<Q: Queue> {
+pub(crate) struct Input<Q: Queue> {
     state: Rc<RefCell<SpscState<Q>>>,
 }
 

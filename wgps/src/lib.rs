@@ -8,10 +8,6 @@ use willow_data_model::{
 };
 
 pub mod logical_channels;
-mod spsc_channel;
-
-mod ready_transport;
-pub use ready_transport::*;
 
 mod util;
 
