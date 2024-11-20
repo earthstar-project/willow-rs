@@ -1,14 +1,71 @@
 use std::future::Future;
 
-use ufotofu::local_nb::Producer;
+use execute_prelude::ExecutePreludeError;
+use ufotofu::local_nb::{BulkConsumer, BulkProducer, Producer};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
     ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
 
-mod ready_transport;
-pub use ready_transport::*;
+mod parameters;
+pub use parameters::*;
+
+mod messages;
+pub use messages::*;
+
+mod commitment_scheme;
+use commitment_scheme::execute_prelude::execute_prelude;
+pub use commitment_scheme::*;
+
+/// An error which can occur during a WGPS synchronisation session.
+pub enum WgpsError<E> {
+    Prelude(ExecutePreludeError<E>),
+}
+
+impl<E> From<ExecutePreludeError<E>> for WgpsError<E> {
+    fn from(value: ExecutePreludeError<E>) -> Self {
+        Self::Prelude(value)
+    }
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WgpsError::Prelude(execute_prelude_error) => write!(f, "{}", execute_prelude_error),
+        }
+    }
+}
+
+pub struct SyncOptions<const CHALLENGE_LENGTH: usize> {
+    max_payload_power: u8,
+    challenge_nonce: [u8; CHALLENGE_LENGTH],
+}
+
+pub async fn sync_with_peer<
+    const CHALLENGE_LENGTH: usize,
+    const CHALLENGE_HASH_LENGTH: usize,
+    CH: ChallengeHash<CHALLENGE_LENGTH, CHALLENGE_HASH_LENGTH>,
+    E,
+    C: BulkConsumer<Item = u8, Error = E>,
+    P: BulkProducer<Item = u8, Error = E>,
+>(
+    options: &SyncOptions<CHALLENGE_LENGTH>,
+    mut consumer: C,
+    mut producer: P,
+) -> Result<(), WgpsError<E>> {
+    execute_prelude::<CHALLENGE_LENGTH, CHALLENGE_HASH_LENGTH, CH, _, _, _>(
+        options.max_payload_power,
+        options.challenge_nonce,
+        &mut consumer,
+        &mut producer,
+    )
+    .await?;
+
+    // TODO: The rest of the WGPS. No probs!
+
+    Ok(())
+}
 
 /// Options to specify how ranges should be partitioned.
 #[derive(Debug, Clone, Copy)]
