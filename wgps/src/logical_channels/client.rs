@@ -1,9 +1,9 @@
 //! Components for the client side of logical channels, i.e., the side that receives guarantees and respects them. This implementation always respects the granted guarantees, it does not allow for optimistic sending, and has no way of handling the communication that can be caused by overly optimistic sending.
 //!
 //! For each logical channel to write to, the client tracks the available guarantees at any point in time. It further tracks incoming `Plead` messages. This implementation fully honours all `Plead` messages. Finally, it tracks the bounds communicated by incoming `ControlLimitReceiving` messages.
-//! 
+//!
 //! On the outgoing side, the module allows for sending to the logical channel while respecting the available guarantees; the implementation does not support optimistic sending. It provides notifications when `Absolve` messages should be sent in response to incoming `Plead` messages; it does not support unsolicited absolutions. It sends a `LimitSending` message with a `bound` of zero when the `Consumer` representation of the logical channel is closed; it does not support earlier `LimitSending` messages with nonzero bounds.
-//! 
+//!
 //! The implementation does not concern itself with incoming `AnnounceDropping` messages, nor with sending `Apologise` messages, because neither occurs (in communication with a correct peer) since it never sends optimistically.
 //!
 //! Note that this module does not deal with any sort of message encoding or decoding, it merely provides the machinery for tracking and modifying guarantees. The one exception is the sending of the `LimitSending` message when the consumer is closed, that one is encoded as bytes and sent directly into the underlying consumer.
@@ -13,7 +13,7 @@
 // We have three access points to the mutable state:
 //
 // - A receiving end that synchronously updates the state based on incoming `IssueGuarantee`, `Plead`, and `ControlLimitReceiving` messages (there are no facilities for processing `Apologise` messages, since this implementation never causes them): `Input`.
-// - An end for sending messages on the logical channel: the program can asynchronously wait for a notification that a certain amount of credit has become available; this credit is considered to be used up once the async notification has been delivered: `WaitForGuarantees`.
+// - An end for sending messages on the logical channel: the program can asynchronously wait for a notification that a certain amount of guarantees has become available; this credit is considered to be used up once the async notification has been delivered: `WaitForGuarantees`.
 // - An end for asynchronously listening for received `Plead` messages. This component generates information about what sort of `Absolve` messages the client must then send to keep everything consistent. Internally, every `Plead` message is immediately respected (i.e., the `WaitForGuarantees` endpoint will have to wait even longer): `AbsolutionsToGrant`.
 
 // On top of the `WaitForGuarantees` endpoint, we then implement a Consumer of messages that respects guarantees. The `WaitForGuarantees` endpoint itself is not part of the exported interface.
