@@ -10,16 +10,17 @@
 
 // Implementing correct server behaviour requires working both with incoming data and sending data to an outgoing channel. Both happen concurrently, and both need to be able to modify the state that the server must track. Since rust is not keen on shared mutable state, we follow the common pattern of having a shared state inside some cell(s) inside an Rc, with multiple values having access to the Rc. In particular, we use `AsyncCell`s.
 
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 
-use crate::util::spsc_channel as spsc;
+use crate::util::mpmc_channel as mpmc; // TODO use a spsc channel instead (nested TODO: implement one (nested TODO: write an SPSCAsyncCell crate))
 use async_cell::unsync::AsyncCell;
-use ufotofu::local_nb::BulkProducer;
+use either::Either::{self, *};
+use ufotofu::local_nb::{BulkProducer, BulkConsumer};
 use ufotofu_queues::Queue;
 
 struct SharedState<Q: Queue> {
-    buffer_in: spsc::Input<Q>,
-    buffer_out: spsc::Output<Q>,
+    buffer_in: mpmc::Input<Q, Infallible>,
+    buffer_out: mpmc::Output<Q, Infallible>,
     max_queue_capacity: usize,
     /// The number of guarantees we are currently allowed to give to the client.
     /// We accumulate these until we hit the watermark.
@@ -71,17 +72,17 @@ struct Input<Q: Queue> {
     state: Rc<SharedState<Q>>,
 }
 
-impl<Q: Queue> Input<Q> {
+impl<Q: Queue<Item = u8>> Input<Q> {
     async fn receive_data<P: BulkProducer<Item = u8>>(
         &mut self,
         length: u64,
         producer: &mut P,
-    ) -> Result<(), ()> {
+    ) -> Result<(), PipeExactError<P::Final, P::Error>> { // TODO needs another error case for length > bound, also PipeExactError should stay internal to this file
         // Check if the amount is larger than state.guarantees_bound
         if let Some(bound) = self.state.guarantees_bound.get() {
             if length > bound {
-                //    if it is! Enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error).
-                return Err(());
+                // It is, so enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error; TODO decide on this).
+                return Err(unimplemented!());
             }
         }
 
@@ -94,8 +95,7 @@ impl<Q: Queue> Input<Q> {
             // Check whether we have enough capacity.
             if (self.state.max_queue_capacity - self.state.buffer_in.len()) as u64 >= length {
                 //  and if so, feed the next length-many produced bytes into state.buffer_in.
-
-                bounded_pipe(producer, &mut self.state.buffer_in).await?;
+                bulk_pipe_exact(producer, &mut self.state.buffer_in, length).await?; // TODO move channel ends out of shared state
 
                 //    (and decrease state.their_guarantees by length)
                 //    (and decrease state.guarantees_bound by length...)
@@ -167,7 +167,47 @@ struct DroppingsToAnnounce {}
 // should also keep track of state.guarantees_bound. emit final once that value reaches zero.
 struct Data {}
 
-// Do this for real in Ufotofu
-async fn bounded_pipe<P, C>(producer: &mut P, consumer: &mut C) -> Result<(), u16> {
-    unimplemented!()
+enum PipeExactError<F, E> {
+    EarlyFinal(F),
+    ProducerError(E),
+}
+
+/// Like `bulk_pipe`, but piping exactly `n` many items (stopping after `n` many, and returning an error if the final value is emitted before).
+async fn bulk_pipe_exact<P, C>(
+    producer: &mut P,
+    consumer: &mut C,
+    n: u64,
+) -> Result<(), PipeExactError<P::Final, P::Error>>
+where
+    P: BulkProducer,
+    P::Item: Copy,
+    C: BulkConsumer<Item = P::Item, Final = Infallible, Error = Infallible>,
+{
+    let mut count = 0;
+
+    loop {
+        match producer.expose_items().await {
+            Ok(Left(items)) => {
+                let length: u64 = min(min(n - count, items.len() as u64), usize::MAX as u64);
+                let items = &items[..length as usize];
+                let amount = match consumer.bulk_consume(items).await {
+                    Ok(amount) => amount,
+                    Err(_consumer_error) => unreachable!(),
+                };
+                match producer.consider_produced(amount).await {
+                    Ok(()) => {
+                        count += amount as u64;
+                        // Continue with next loop iteration.
+                    }
+                    Err(producer_error) => return Err(PipeExactError::ProducerError(producer_error)),
+                };
+            }
+            Ok(Right(final_value)) => {
+                return Err(PipeExactError::EarlyFinal(final_value));
+            }
+            Err(producer_error) => {
+                return Err(PipeExactError::ProducerError(producer_error));
+            }
+        }
+    }
 }
