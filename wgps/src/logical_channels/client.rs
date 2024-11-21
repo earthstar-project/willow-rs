@@ -79,7 +79,7 @@ impl Input {
     /// Silently ignores when the server sends guarantees exceeding a previously communicated bound.
     pub fn receive_guarantees(&mut self, amount: u64) -> Result<(), ()> {
         // By the way: we take `&mut self` instead of `&self` (which would also compile) because to the outside this function looks like it mutates some state.
-        // The fact that all of that happens via interiour mutability is a detail we don't need to communicate to the outside.
+        // The fact that all of that happens via interior mutability is a detail we don't need to communicate to the outside.
 
         // Can we increase the guarantees without an overflow?
         match self.state.guarantees_available.get().checked_add(amount) {

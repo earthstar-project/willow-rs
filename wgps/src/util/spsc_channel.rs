@@ -6,7 +6,9 @@ use std::{
     rc::Rc,
     task::{Poll, Waker},
 };
-use ufotofu::local_nb::{BufferedProducer, BulkProducer, Producer};
+use ufotofu::local_nb::{
+    BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer,
+};
 use ufotofu_queues::Queue;
 
 struct SpscState<Q: Queue> {
@@ -134,7 +136,7 @@ pub(crate) struct Input<Q: Queue> {
 }
 
 impl<Q: Queue> Input<Q> {
-    fn consume(self, item: Q::Item) -> Option<Q::Item> {
+    pub fn consume(&mut self, item: Q::Item) -> Option<Q::Item> {
         let mut state_ref = self.state.borrow_mut();
 
         match state_ref.queue.enqueue(item) {
@@ -147,5 +149,46 @@ impl<Q: Queue> Input<Q> {
                 None
             }
         }
+    }
+
+    pub fn len(&self) -> usize {
+        let state_ref = self.state.borrow();
+
+        state_ref.queue.len()
+    }
+}
+
+impl<Q: Queue> Consumer for Input<Q> {
+    type Item = Q::Item;
+
+    type Final = Infallible;
+
+    type Error = Infallible;
+
+    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
+        todo!()
+    }
+}
+
+impl<Q: Queue> BufferedConsumer for Input<Q> {
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        todo!()
+    }
+}
+
+impl<Q: Queue> BulkConsumer for Input<Q> {
+    async fn expose_slots<'a>(&'a mut self) -> Result<&'a mut [Self::Item], Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        todo!()
+    }
+
+    async fn consume_slots(&mut self, amount: usize) -> Result<(), Self::Error> {
+        todo!()
     }
 }

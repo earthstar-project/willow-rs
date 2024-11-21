@@ -21,12 +21,50 @@ struct SharedState<Q: Queue> {
     buffer_in: spsc::Input<Q>,
     buffer_out: spsc::Output<Q>,
     max_queue_capacity: usize,
-    guarantees_to_give: AsyncCell<u64>,
+    /// The number of guarantees we are currently allowed to give to the client.
+    /// We accumulate these until we hit the watermark.
+    guarantees_to_give: Cell<u64>,
+    /// Notify of guarantees to give only once accumulated guarantees have crossed this threshold.
+    watermark: u64,
+    /// Notify of when the watermark has been reached.
+    crossed_watermark: AsyncCell<()>,
     droppings_to_announce: AsyncCell<()>,
     currently_dropping: Cell<bool>,
     their_guarantees: Cell<u64>,
     /// How many more guarantees the client will use at most.
     guarantees_bound: Cell<Option<u64>>,
+    no_more_data_will_ever_arrive: AsyncCell<()>,
+}
+
+impl<Q: Queue> SharedState<Q> {
+    pub fn increase_guarantees_to_give(&self, amount: u64) -> Result<(), ()> {
+        let current_gtg = self.guarantees_to_give.get();
+        let next_gtg = current_gtg.checked_add(amount).ok_or(())?;
+        self.guarantees_to_give.set(next_gtg);
+
+        // Have we reached the watermark?
+        // If so, set that!
+        if next_gtg >= self.watermark {
+            self.crossed_watermark.set(());
+        }
+
+        Ok(())
+    }
+
+    pub fn decrease_their_guarantees(&self, amount: u64) -> Result<(), ()> {
+        let current_their_guarantees = self.their_guarantees.get();
+        let next_their_guarantees = current_their_guarantees.checked_sub(amount).ok_or(())?;
+        self.their_guarantees.set(next_their_guarantees);
+
+        // Check if we have a known bound and decrease that bound as well
+        if let Some(bound) = self.guarantees_bound.get() {
+            let next_bound = bound.saturating_sub(amount);
+
+            self.guarantees_bound.set(Some(next_bound));
+        }
+
+        Ok(())
+    }
 }
 
 struct Input<Q: Queue> {
@@ -34,39 +72,86 @@ struct Input<Q: Queue> {
 }
 
 impl<Q: Queue> Input<Q> {
-    async fn receive_data<P: BulkProducer<Item = u8>>(&mut self, length: usize, producer: P) {
+    async fn receive_data<P: BulkProducer<Item = u8>>(
+        &mut self,
+        length: u64,
+        producer: &mut P,
+    ) -> Result<(), ()> {
         // Check if the amount is larger than state.guarantees_bound
-        //    if it is! Enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error).
+        if let Some(bound) = self.state.guarantees_bound.get() {
+            if length > bound {
+                //    if it is! Enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error).
+                return Err(());
+            }
+        }
+
         // Check if we're currently dropping.
-        //  if so, do nothing.
-        // otherwise...
-        // Check whether we have enough capacity.
-        //  and if so, feed the next length-many produced bytes into state.buffer_in.
-        //    (and decrease state.their_guarantees by length)
-        //    (and decrease state.guarantees_bound by length...)
-        //  otherwise, announce a dropping, and change our state to indicate that we are now dropping things on this channel.
+        if self.state.currently_dropping.get() {
+            //  if so, do nothing.
+            return Ok(());
+        } else {
+            // otherwise...
+            // Check whether we have enough capacity.
+            if (self.state.max_queue_capacity - self.state.buffer_in.len()) as u64 >= length {
+                //  and if so, feed the next length-many produced bytes into state.buffer_in.
+
+                bounded_pipe(producer, &mut self.state.buffer_in).await?;
+
+                //    (and decrease state.their_guarantees by length)
+                //    (and decrease state.guarantees_bound by length...)
+                self.state.decrease_their_guarantees(length);
+            } else {
+                //  otherwise, announce a dropping, and change our state to indicate that we are now dropping things on this channel.
+                self.state.droppings_to_announce.set(());
+                self.state.currently_dropping.set(true);
+            }
+        }
+
+        Ok(())
     }
 
-    fn receive_absolve(&mut self, amount: u64) {
+    /// Updates the server state after receiving an `Absolve` message of a given amount.
+    ///
+    /// An error indicates an overflow which never occurs with a spec conformant peer.
+    fn receive_absolve(&mut self, amount: u64) -> Result<(), ()> {
         // The other peer reduced their available guarantees by some amount.
         // We now decrease state.their_guarantees by amount,
+        self.state.decrease_their_guarantees(amount)?;
         // and increase state.guarantees_to_give by amount.
+        self.state.increase_guarantees_to_give(amount)?;
+
+        Ok(())
     }
 
     fn receive_limit_sending(&mut self, bound: u64) {
         // high level: this is about emitting the Final value of the Data producer, GuaranteesToGive producer, and DroppingsToAnnounce producer.
         // set state.guarantees_bound to bound (if bound is tighter than whatever's there - otherwise ignore)
+        let new_bound = match self.state.guarantees_bound.get() {
+            None => {
+                self.state.guarantees_bound.set(Some(bound));
+                bound
+            }
+            Some(old) => {
+                let new_bound = core::cmp::min(old, bound);
+                self.state.guarantees_bound.set(Some(new_bound));
+                new_bound
+            }
+        };
+
+        if new_bound == 0 {
+            // Notify Data that it can emit its final value.
+            self.state.no_more_data_will_ever_arrive.set(())
+        }
     }
 
-    fn receive_apologise() {
-        // TODO!
+    fn receive_apology(&mut self) {
+        // Stop being mad at the other peer, i.e. set state.currently_dropping to false.
+        self.state.currently_dropping.set(false)
     }
 }
 
 struct GuaranteesToGive<Q: Queue> {
     state: Rc<SharedState<Q>>,
-    /// Notify of guarantees to give only once accumulated guarantees have crossed this threshold.
-    watermark: u64,
 }
 
 // implement producer of u64 for GuaranteesToGive
@@ -81,3 +166,8 @@ struct DroppingsToAnnounce {}
 // and whenever we produce data we check whether we want to send more guarantees.
 // should also keep track of state.guarantees_bound. emit final once that value reaches zero.
 struct Data {}
+
+// Do this for real in Ufotofu
+async fn bounded_pipe<P, C>(producer: &mut P, consumer: &mut C) -> Result<(), u16> {
+    unimplemented!()
+}
