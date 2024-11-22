@@ -14,13 +14,11 @@ use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 
 use crate::util::mpmc_channel as mpmc; // TODO use a spsc channel instead (nested TODO: implement one (nested TODO: write an SPSCAsyncCell crate))
 use async_cell::unsync::AsyncCell;
-use either::Either::{self, *};
-use ufotofu::local_nb::{BulkProducer, BulkConsumer};
+use either::Either::*;
+use ufotofu::local_nb::{BulkConsumer, BulkProducer, Producer};
 use ufotofu_queues::Queue;
 
-struct SharedState<Q: Queue> {
-    buffer_in: mpmc::Input<Q, Infallible>,
-    buffer_out: mpmc::Output<Q, Infallible>,
+pub struct SharedState {
     max_queue_capacity: usize,
     /// The number of guarantees we are currently allowed to give to the client.
     /// We accumulate these until we hit the watermark.
@@ -28,8 +26,10 @@ struct SharedState<Q: Queue> {
     /// Notify of guarantees to give only once accumulated guarantees have crossed this threshold.
     watermark: u64,
     /// Notify of when the watermark has been reached.
-    crossed_watermark: AsyncCell<()>,
-    droppings_to_announce: AsyncCell<()>,
+    /// Success is the watermark being reached and guarantees can be given.
+    /// Failure is when the client has disrespected its own bound.
+    guarantee_related_action_necessary: AsyncCell<Result<(), ()>>,
+    droppings_to_announce: AsyncCell<Result<(), ()>>,
     currently_dropping: Cell<bool>,
     their_guarantees: Cell<u64>,
     /// How many more guarantees the client will use at most.
@@ -37,24 +37,80 @@ struct SharedState<Q: Queue> {
     no_more_data_will_ever_arrive: AsyncCell<()>,
 }
 
-impl<Q: Queue> SharedState<Q> {
-    pub fn increase_guarantees_to_give(&self, amount: u64) -> Result<(), ()> {
+/// Creates the three endpoint for managing the server-side state of a single logical channel.
+///
+/// This function uses the given queue (of the given `max_queue_capacity`) to buffer incoming bytes. It never issues guarantees exceeding that capacity. It only starts actually granting guarantees once the amount of free space exceeds the watermark.
+///
+/// - The queue's max capacity must match the given `max_queue_capacity`.
+/// - `max_queue_capacity` must be greater than zero.
+/// - `watermark` must be less than or equal to `max_queue_capacity`.
+pub fn new_logical_channel_server_state_internal<Q>(
+    max_queue_capacity: usize,
+    watermark: usize,
+    queue: Q,
+) -> (
+    Input<Q>,
+    GuaranteesToGive,
+    DroppingsToAnnounce,
+    ReceivedData<Q>,
+) {
+    let state = Rc::new(SharedState {
+        max_queue_capacity,
+        guarantees_to_give: Cell::new(max_queue_capacity as u64),
+        watermark: watermark as u64,
+        guarantee_related_action_necessary: AsyncCell::new_with(Ok(())),
+        droppings_to_announce: AsyncCell::new(),
+        currently_dropping: Cell::new(false),
+        their_guarantees: Cell::new(0),
+        guarantees_bound: Cell::new(None),
+        no_more_data_will_ever_arrive: AsyncCell::new(),
+    });
+
+    let (buffer_in, buffer_out) = mpmc::new_mpmc(queue);
+
+    (
+        Input {
+            buffer_in,
+            state: state.clone(),
+        },
+        GuaranteesToGive {
+            state: state.clone(),
+        },
+        DroppingsToAnnounce {
+            state: state.clone(),
+        },
+        ReceivedData { buffer_out, state },
+    )
+}
+
+pub struct GuaranteeOverflow;
+
+impl<F, PE> From<GuaranteeOverflow> for ReceiveDataError<F, PE> {
+    fn from(_value: GuaranteeOverflow) -> Self {
+        ReceiveDataError::GuaranteeOverflow
+    }
+}
+
+impl SharedState {
+    fn increase_guarantees_to_give(&self, amount: u64) -> Result<(), GuaranteeOverflow> {
         let current_gtg = self.guarantees_to_give.get();
-        let next_gtg = current_gtg.checked_add(amount).ok_or(())?;
+        let next_gtg = current_gtg.checked_add(amount).ok_or(GuaranteeOverflow)?;
         self.guarantees_to_give.set(next_gtg);
 
         // Have we reached the watermark?
         // If so, set that!
         if next_gtg >= self.watermark {
-            self.crossed_watermark.set(());
+            self.guarantee_related_action_necessary.set(Ok(()));
         }
 
         Ok(())
     }
 
-    pub fn decrease_their_guarantees(&self, amount: u64) -> Result<(), ()> {
+    fn decrease_their_guarantees(&self, amount: u64) -> Result<(), GuaranteeOverflow> {
         let current_their_guarantees = self.their_guarantees.get();
-        let next_their_guarantees = current_their_guarantees.checked_sub(amount).ok_or(())?;
+        let next_their_guarantees = current_their_guarantees
+            .checked_sub(amount)
+            .ok_or(GuaranteeOverflow)?;
         self.their_guarantees.set(next_their_guarantees);
 
         // Check if we have a known bound and decrease that bound as well
@@ -68,21 +124,33 @@ impl<Q: Queue> SharedState<Q> {
     }
 }
 
-struct Input<Q: Queue> {
-    state: Rc<SharedState<Q>>,
+pub enum ReceiveDataError<ProducerFinal, ProducerError> {
+    UnexpectedEndOfInput(ProducerFinal),
+    ProducerError(ProducerError),
+    DisrespectedLimitSendingMessage,
+    GuaranteeOverflow,
+}
+
+pub struct Input<Q> {
+    state: Rc<SharedState>,
+    buffer_in: mpmc::Input<Q, Infallible>,
 }
 
 impl<Q: Queue<Item = u8>> Input<Q> {
-    async fn receive_data<P: BulkProducer<Item = u8>>(
+    pub async fn receive_data<P: BulkProducer<Item = u8>>(
         &mut self,
         length: u64,
         producer: &mut P,
-    ) -> Result<(), PipeExactError<P::Final, P::Error>> { // TODO needs another error case for length > bound, also PipeExactError should stay internal to this file
+    ) -> Result<(), ReceiveDataError<P::Final, P::Error>> {
+        // TODO needs another error case for length > bound, also PipeExactError should stay internal to this file
         // Check if the amount is larger than state.guarantees_bound
         if let Some(bound) = self.state.guarantees_bound.get() {
             if length > bound {
                 // It is, so enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error; TODO decide on this).
-                return Err(unimplemented!());
+                self.state.guarantee_related_action_necessary.set(Err(()));
+                self.state.droppings_to_announce.set(Err(()));
+
+                return Err(ReceiveDataError::DisrespectedLimitSendingMessage);
             }
         }
 
@@ -93,16 +161,16 @@ impl<Q: Queue<Item = u8>> Input<Q> {
         } else {
             // otherwise...
             // Check whether we have enough capacity.
-            if (self.state.max_queue_capacity - self.state.buffer_in.len()) as u64 >= length {
+            if (self.state.max_queue_capacity - self.buffer_in.len()) as u64 >= length {
                 //  and if so, feed the next length-many produced bytes into state.buffer_in.
-                bulk_pipe_exact(producer, &mut self.state.buffer_in, length).await?; // TODO move channel ends out of shared state
+                bulk_pipe_exact(producer, &mut self.buffer_in, length).await?;
 
                 //    (and decrease state.their_guarantees by length)
                 //    (and decrease state.guarantees_bound by length...)
-                self.state.decrease_their_guarantees(length);
+                self.state.decrease_their_guarantees(length)?;
             } else {
                 //  otherwise, announce a dropping, and change our state to indicate that we are now dropping things on this channel.
-                self.state.droppings_to_announce.set(());
+                self.state.droppings_to_announce.set(Ok(()));
                 self.state.currently_dropping.set(true);
             }
         }
@@ -113,7 +181,7 @@ impl<Q: Queue<Item = u8>> Input<Q> {
     /// Updates the server state after receiving an `Absolve` message of a given amount.
     ///
     /// An error indicates an overflow which never occurs with a spec conformant peer.
-    fn receive_absolve(&mut self, amount: u64) -> Result<(), ()> {
+    pub fn receive_absolve(&mut self, amount: u64) -> Result<(), GuaranteeOverflow> {
         // The other peer reduced their available guarantees by some amount.
         // We now decrease state.their_guarantees by amount,
         self.state.decrease_their_guarantees(amount)?;
@@ -123,7 +191,7 @@ impl<Q: Queue<Item = u8>> Input<Q> {
         Ok(())
     }
 
-    fn receive_limit_sending(&mut self, bound: u64) {
+    pub fn receive_limit_sending(&mut self, bound: u64) {
         // high level: this is about emitting the Final value of the Data producer, GuaranteesToGive producer, and DroppingsToAnnounce producer.
         // set state.guarantees_bound to bound (if bound is tighter than whatever's there - otherwise ignore)
         let new_bound = match self.state.guarantees_bound.get() {
@@ -144,40 +212,80 @@ impl<Q: Queue<Item = u8>> Input<Q> {
         }
     }
 
-    fn receive_apology(&mut self) {
+    pub fn receive_apology(&mut self) {
         // Stop being mad at the other peer, i.e. set state.currently_dropping to false.
         self.state.currently_dropping.set(false)
     }
 }
 
-struct GuaranteesToGive<Q: Queue> {
-    state: Rc<SharedState<Q>>,
+/// A producer of how many guarantees should be granted to the client.
+/// NOTE: Once it produces some guarantees, it really definitely assumes those guarantees **will** be granted via a transmitted `IssueGuarantee` message.
+pub struct GuaranteesToGive {
+    state: Rc<SharedState>,
 }
 
-// implement producer of u64 for GuaranteesToGive
-// and in produce method await state.guarantees_to_give, compare against threshold,
-// if guarantees above threshold, empty state.guarantees_to_give and produce value.
-// else await on state.guarantees_to_give again.
-// do this in a looooooop (not recursively)
+impl Producer for GuaranteesToGive {
+    type Item = u64;
 
-struct DroppingsToAnnounce {}
+    type Final = Infallible;
+
+    type Error = ();
+
+    async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
+        let () = self.state.guarantee_related_action_necessary.get().await?;
+        Ok(Left(self.state.guarantees_to_give.get()))
+    }
+}
+
+/// A producer of events each of which indicating that it is time to transmit an `AnnounceDropping`(s) messages.
+pub struct DroppingsToAnnounce {
+    state: Rc<SharedState>,
+}
+
+impl Producer for DroppingsToAnnounce {
+    type Item = ();
+
+    type Final = Infallible;
+
+    type Error = ();
+
+    async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
+        Ok(Left(self.state.droppings_to_announce.get().await?))
+    }
+}
 
 // this is a producer of data taken from SharedState.buffer_out,
 // and whenever we produce data we check whether we want to send more guarantees.
 // should also keep track of state.guarantees_bound. emit final once that value reaches zero.
-struct Data {}
+pub struct ReceivedData<Q> {
+    state: Rc<SharedState>,
+    buffer_out: mpmc::Output<Q, Infallible>,
+}
 
-enum PipeExactError<F, E> {
+impl<Q> Producer for ReceivedData<Q> {
+    type Item = u8;
+
+    type Final = ();
+
+    type Error = ();
+
+    async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
+        // let's not do this right now.
+        unimplemented!();
+    }
+}
+
+pub enum PipeExactError<F, E> {
     EarlyFinal(F),
     ProducerError(E),
 }
 
 /// Like `bulk_pipe`, but piping exactly `n` many items (stopping after `n` many, and returning an error if the final value is emitted before).
-async fn bulk_pipe_exact<P, C>(
+pub async fn bulk_pipe_exact<P, C>(
     producer: &mut P,
     consumer: &mut C,
     n: u64,
-) -> Result<(), PipeExactError<P::Final, P::Error>>
+) -> Result<(), ReceiveDataError<P::Final, P::Error>>
 where
     P: BulkProducer,
     P::Item: Copy,
@@ -199,14 +307,16 @@ where
                         count += amount as u64;
                         // Continue with next loop iteration.
                     }
-                    Err(producer_error) => return Err(PipeExactError::ProducerError(producer_error)),
+                    Err(producer_error) => {
+                        return Err(ReceiveDataError::ProducerError(producer_error))
+                    }
                 };
             }
             Ok(Right(final_value)) => {
-                return Err(PipeExactError::EarlyFinal(final_value));
+                return Err(ReceiveDataError::UnexpectedEndOfInput(final_value));
             }
             Err(producer_error) => {
-                return Err(PipeExactError::ProducerError(producer_error));
+                return Err(ReceiveDataError::ProducerError(producer_error));
             }
         }
     }
