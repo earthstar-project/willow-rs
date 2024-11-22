@@ -15,7 +15,7 @@ use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 use crate::util::mpmc_channel as mpmc; // TODO use a spsc channel instead (nested TODO: implement one (nested TODO: write an SPSCAsyncCell crate))
 use async_cell::unsync::AsyncCell;
 use either::Either::*;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::local_nb::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
 use ufotofu_queues::Queue;
 
 pub struct SharedState {
@@ -133,7 +133,7 @@ pub enum ReceiveDataError<ProducerFinal, ProducerError> {
 
 pub struct Input<Q> {
     state: Rc<SharedState>,
-    buffer_in: mpmc::Input<Q, Infallible>,
+    buffer_in: mpmc::Input<Q, Infallible, ()>,
 }
 
 impl<Q: Queue<Item = u8>> Input<Q> {
@@ -142,11 +142,10 @@ impl<Q: Queue<Item = u8>> Input<Q> {
         length: u64,
         producer: &mut P,
     ) -> Result<(), ReceiveDataError<P::Final, P::Error>> {
-        // TODO needs another error case for length > bound, also PipeExactError should stay internal to this file
         // Check if the amount is larger than state.guarantees_bound
         if let Some(bound) = self.state.guarantees_bound.get() {
             if length > bound {
-                // It is, so enter an error state, all producers (Data, GuaranteesToGive, DroppingsToAnnounce should now emit Final or probably an Error; TODO decide on this).
+                self.buffer_in.cause_error(());
                 self.state.guarantee_related_action_necessary.set(Err(()));
                 self.state.droppings_to_announce.set(Err(()));
 
@@ -254,13 +253,14 @@ impl Producer for DroppingsToAnnounce {
     }
 }
 
+/// A `BulkProducer` of all data being sent to the logical channel.
+pub struct ReceivedData<Q> {
+    state: Rc<SharedState>,
+    buffer_out: mpmc::Output<Q, Infallible, ()>,
+}
 // this is a producer of data taken from SharedState.buffer_out,
 // and whenever we produce data we check whether we want to send more guarantees.
 // should also keep track of state.guarantees_bound. emit final once that value reaches zero.
-pub struct ReceivedData<Q> {
-    state: Rc<SharedState>,
-    buffer_out: mpmc::Output<Q, Infallible>,
-}
 
 impl<Q> Producer for ReceivedData<Q> {
     type Item = u8;
@@ -271,7 +271,28 @@ impl<Q> Producer for ReceivedData<Q> {
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
         // let's not do this right now.
-        unimplemented!();
+        todo!();
+    }
+}
+
+impl<Q> BufferedProducer for ReceivedData<Q> {
+    async fn slurp(&mut self) -> Result<(), Self::Error> {
+        todo!()
+    }
+}
+
+impl<Q> BulkProducer for ReceivedData<Q> {
+    async fn expose_items<'a>(
+        &'a mut self,
+    ) -> Result<either::Either<&'a [Self::Item], Self::Final>, Self::Error>
+    where
+        Self::Item: 'a {
+        todo!()
+    }
+
+    async fn consider_produced(&mut self, amount: usize)
+        -> Result<(), Self::Error> {
+        todo!()
     }
 }
 
