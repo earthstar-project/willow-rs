@@ -9,6 +9,7 @@ willow-encoding = { path = "../encoding", version = "0.1.0" }
 ufotofu = { version = "0.4.2", features = ["std"] }
 futures = { version = "0.3.31" }
 either = "1.10.0"
+async_cell = "0.2.2"
 
 [dev-dependencies]
 smol = "2.0.0"

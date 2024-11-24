@@ -1,6 +1,9 @@
 use std::future::Future;
 
-use execute_prelude::ExecutePreludeError;
+use async_cell::unsync::AsyncCell;
+use futures::try_join;
+
+use receive_prelude::{ReceivePreludeError, ReceivedPrelude};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer, Producer};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -15,24 +18,47 @@ mod messages;
 pub use messages::*;
 
 mod commitment_scheme;
-use commitment_scheme::execute_prelude::execute_prelude;
 pub use commitment_scheme::*;
+use commitment_scheme::{receive_prelude::receive_prelude, send_prelude::send_prelude};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
-    Prelude(ExecutePreludeError<E>),
+    /// The received max payload power was invalid, i.e. greater than 64.
+    PreludeMaxPayloadInvalid,
+    /// The transport stopped producing bytes before it could be deemed ready.
+    PreludeFinishedTooSoon,
+    /// The underlying transport emitted an error.
+    Transport(E),
 }
 
-impl<E> From<ExecutePreludeError<E>> for WgpsError<E> {
-    fn from(value: ExecutePreludeError<E>) -> Self {
-        Self::Prelude(value)
+impl<E> From<E> for WgpsError<E> {
+    fn from(value: E) -> Self {
+        Self::Transport(value)
+    }
+}
+
+impl<E> From<ReceivePreludeError<E>> for WgpsError<E> {
+    fn from(value: ReceivePreludeError<E>) -> Self {
+        match value {
+            ReceivePreludeError::Transport(err) => err.into(),
+            ReceivePreludeError::MaxPayloadInvalid => WgpsError::PreludeMaxPayloadInvalid,
+            ReceivePreludeError::FinishedTooSoon => WgpsError::PreludeFinishedTooSoon,
+        }
     }
 }
 
 impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WgpsError::Prelude(execute_prelude_error) => write!(f, "{}", execute_prelude_error),
+            WgpsError::Transport(transport_error) => write!(f, "{}", transport_error),
+            WgpsError::PreludeMaxPayloadInvalid => write!(
+                f,
+                "The peer sent an invalid max payload power in their prelude."
+            ),
+            WgpsError::PreludeFinishedTooSoon => write!(
+                f,
+                "The peer terminated the connection before sending their full prelude."
+            ),
         }
     }
 }
@@ -51,19 +77,48 @@ pub async fn sync_with_peer<
     P: BulkProducer<Item = u8, Error = E>,
 >(
     options: &SyncOptions<CHALLENGE_LENGTH>,
-    mut consumer: C,
+    consumer: C,
     mut producer: P,
 ) -> Result<(), WgpsError<E>> {
-    execute_prelude::<CHALLENGE_LENGTH, CHALLENGE_HASH_LENGTH, CH, _, _, _>(
-        options.max_payload_power,
-        options.challenge_nonce,
-        &mut consumer,
-        &mut producer,
-    )
-    .await?;
+    // Compute the commitment to our [nonce](https://willowprotocol.org/specs/sync/index.html#nonce); we send this
+    // commitment to the peer at the start (the *prelude*) of the sync session.
+    let our_commitment = CH::hash(&options.challenge_nonce);
+    
+    let mut consumer = consumer; // TODO turn into a SharedConsumer in an Arc here. See util::shared_encoder on the logical_channels branch (and ask Aljoscha about it).
 
-    // TODO: The rest of the WGPS. No probs!
+    // This is set to `()` once our own prelude has been sent.
+    let sent_own_prelude = AsyncCell::<()>::new();
+    // This is set to the prelude received from the peer once it has arrived.
+    let received_prelude = AsyncCell::<ReceivedPrelude<CHALLENGE_HASH_LENGTH>>::new();
 
+    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    // If one of these futures needs another unit of work to have been completed, this should be enforced by
+    // calling `some_cell.get().await` for one of the cells defined above. Generally, these futures should *not* call
+    // `some_cell.take().await`, since that might mess with other futures depending on the same step to have completed.
+    //
+    // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
+    // Since type annotations for async blocks are not possible in today's rust, we instead provide
+    // a type annotation on the return value; that's why the last two lines of each of the following
+    // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
+
+    let do_send_prelude = async {
+        send_prelude(options.max_payload_power, &our_commitment, &mut consumer).await?;
+        sent_own_prelude.set(());
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    let do_receive_prelude = async {
+        received_prelude.set(receive_prelude(&mut producer).await?);
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    // Add each of the futures here. The macro polls them all to completion, until the first one hits
+    // an error, in which case this function immediately returns with that first error.
+    let ((), ()) = try_join!(do_send_prelude, do_receive_prelude,)?;
     Ok(())
 }
 
