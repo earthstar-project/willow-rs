@@ -631,6 +631,7 @@ dependencies = [
  "futures",
  "smol",
  "ufotofu",
+ "ufotofu_queues",
  "willow-data-model",
  "willow-encoding",
 ]

@@ -1,15 +1,18 @@
-use std::future::Future;
+use std::{future::Future, rc::Rc};
 
 use async_cell::unsync::AsyncCell;
 use futures::try_join;
 
 use receive_prelude::{ReceivePreludeError, ReceivedPrelude};
-use ufotofu::local_nb::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
+use util::{NbMutex, SharedEncoder};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
     ResumptionFailedError, Store, StoreEvent, SubspaceId,
 };
+
+mod util;
 
 mod parameters;
 pub use parameters::*;
@@ -18,8 +21,8 @@ mod messages;
 pub use messages::*;
 
 mod commitment_scheme;
-pub use commitment_scheme::*;
-use commitment_scheme::{receive_prelude::receive_prelude, send_prelude::send_prelude};
+use commitment_scheme::receive_prelude::receive_prelude;
+use commitment_scheme::*;
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
@@ -77,15 +80,9 @@ pub async fn sync_with_peer<
     P: BulkProducer<Item = u8, Error = E>,
 >(
     options: &SyncOptions<CHALLENGE_LENGTH>,
-    consumer: C,
-    mut producer: P,
+    consumer: NbMutex<C>,
+    producer: NbMutex<P>,
 ) -> Result<(), WgpsError<E>> {
-    // Compute the commitment to our [nonce](https://willowprotocol.org/specs/sync/index.html#nonce); we send this
-    // commitment to the peer at the start (the *prelude*) of the sync session.
-    let our_commitment = CH::hash(&options.challenge_nonce);
-    
-    let mut consumer = consumer; // TODO turn into a SharedConsumer in an Arc here. See util::shared_encoder on the logical_channels branch (and ask Aljoscha about it).
-
     // This is set to `()` once our own prelude has been sent.
     let sent_own_prelude = AsyncCell::<()>::new();
     // This is set to the prelude received from the peer once it has arrived.
@@ -101,8 +98,17 @@ pub async fn sync_with_peer<
     // a type annotation on the return value; that's why the last two lines of each of the following
     // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
 
-    let do_send_prelude = async {
-        send_prelude(options.max_payload_power, &our_commitment, &mut consumer).await?;
+    let send_prelude = async {
+        let own_prelude = Prelude {
+            max_payload_power: options.max_payload_power,
+            commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
+        };
+
+        // Encode our prelude and transmit it.
+        let mut encoder = SharedEncoder::new(&consumer);
+        encoder.consume(own_prelude).await?;
+
+        // Notify other tasks that our prelude has been successfully sent.
         sent_own_prelude.set(());
 
         let ret: Result<(), WgpsError<E>> = Ok(());
@@ -110,7 +116,7 @@ pub async fn sync_with_peer<
     };
 
     let do_receive_prelude = async {
-        received_prelude.set(receive_prelude(&mut producer).await?);
+        received_prelude.set(receive_prelude(&mut producer).await?); // TODO rewrite to use Prelude::decode instead
 
         let ret: Result<(), WgpsError<E>> = Ok(());
         ret
@@ -118,7 +124,7 @@ pub async fn sync_with_peer<
 
     // Add each of the futures here. The macro polls them all to completion, until the first one hits
     // an error, in which case this function immediately returns with that first error.
-    let ((), ()) = try_join!(do_send_prelude, do_receive_prelude,)?;
+    let ((), ()) = try_join!(send_prelude, do_receive_prelude,)?;
     Ok(())
 }
 
