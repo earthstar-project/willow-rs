@@ -163,7 +163,7 @@ impl<T> AsMut<T> for Mutex<T> {
 
 impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut d = f.debug_tuple("RwLock");
+        let mut d = f.debug_tuple("Mutex");
         match self.try_read() {
             Some(guard) => {
                 d.field(&&*guard);

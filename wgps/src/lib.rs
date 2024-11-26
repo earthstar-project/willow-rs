@@ -1,12 +1,10 @@
-use std::{future::Future, hint::unreachable_unchecked, ops::DerefMut};
+use std::{future::Future, ops::DerefMut};
 
-use async_cell::unsync::AsyncCell;
-use either::Either::*;
 use futures::try_join;
 
 use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
-use util::{SharedDecoder, SharedEncoder};
-use wb_async_utils::Mutex;
+use util::SharedEncoder;
+use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
@@ -23,7 +21,7 @@ pub use messages::*;
 
 mod commitment_scheme;
 use commitment_scheme::*;
-use willow_encoding::{DecodeError, Encodable};
+use willow_encoding::{Decodable, DecodeError, Encodable};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
@@ -66,9 +64,9 @@ pub async fn sync_with_peer<
     producer: Mutex<P>,
 ) -> Result<(), WgpsError<E>> {
     // This is set to `()` once our own prelude has been sent.
-    let sent_own_prelude = AsyncCell::<()>::new();
+    let sent_own_prelude = OnceCell::<()>::new();
     // This is set to the prelude received from the peer once it has arrived.
-    let received_prelude = AsyncCell::<Prelude<CHALLENGE_HASH_LENGTH>>::new();
+    let received_prelude = OnceCell::<Prelude<CHALLENGE_HASH_LENGTH>>::new();
 
     // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
     // If one of these futures needs another unit of work to have been completed, this should be enforced by
@@ -91,17 +89,19 @@ pub async fn sync_with_peer<
         encoder.consume(own_prelude).await?;
 
         // Notify other tasks that our prelude has been successfully sent.
-        sent_own_prelude.set(());
+        let _ = sent_own_prelude.set(());
 
         let ret: Result<(), WgpsError<E>> = Ok(());
         ret
     };
 
     let do_receive_prelude = async {
-        let mut decoder = SharedDecoder::new(&producer);
-        match decoder.produce().await {
-            Ok(Left(prelude)) => received_prelude.set(prelude),
-            Ok(Right(_)) => unsafe { unreachable_unchecked() }, // Infallible
+        let mut p = producer.write().await;
+
+        match Prelude::decode_canonical(p.deref_mut()).await {
+            Ok(prelude) => {
+                let _ = received_prelude.set(prelude);
+            }
             Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
             Err(_) => return Err(WgpsError::PreludeInvalid),
         }
