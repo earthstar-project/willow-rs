@@ -1,5 +1,3 @@
-//! In implementing the WGPS, we want to write to the same underlying transport channel from several independent places in the codebase. This module provides a struct for enabling this: a shared reference to a `Consumer`, and anyone with such a reference can request exclusive access to that Consumer for any amount of time. If another entity accesses the consumer, then the request non-blocks until it becomes available.
-
 use std::{marker::PhantomData, ops::DerefMut};
 
 use ufotofu::local_nb::{BulkConsumer, Consumer};
