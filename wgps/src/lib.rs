@@ -70,8 +70,7 @@ pub async fn sync_with_peer<
 
     // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
     // If one of these futures needs another unit of work to have been completed, this should be enforced by
-    // calling `some_cell.get().await` for one of the cells defined above. Generally, these futures should *not* call
-    // `some_cell.take().await`, since that might mess with other futures depending on the same step to have completed.
+    // calling `some_cell.get().await` for one of the cells defined above.
     //
     // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
     // Since type annotations for async blocks are not possible in today's rust, we instead provide
@@ -95,7 +94,7 @@ pub async fn sync_with_peer<
         ret
     };
 
-    let do_receive_prelude = async {
+    let receive_prelude = async {
         let mut p = producer.write().await;
 
         match Prelude::decode_canonical(p.deref_mut()).await {
@@ -127,7 +126,7 @@ pub async fn sync_with_peer<
 
     // Add each of the futures here. The macro polls them all to completion, until the first one hits
     // an error, in which case this function immediately returns with that first error.
-    let ((), (), ()) = try_join!(send_prelude, do_receive_prelude, reveal_commitment)?;
+    let ((), (), ()) = try_join!(send_prelude, receive_prelude, reveal_commitment)?;
     Ok(())
 }
 
