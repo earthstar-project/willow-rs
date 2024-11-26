@@ -3,14 +3,11 @@ use willow_encoding::{Decodable, DecodeError, Encodable, RelationDecodable};
 
 use either::Either::*;
 
-// pub mod execute_prelude;
-pub mod receive_prelude;
-
 /// The first few bytes to send/receive in a WGPS session.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Prelude<const CHALLENGE_HASH_LENGTH: usize> {
     /// The base two logarithm of the maximum payload size that may be sent without being explicitly requested. Must be 64 or below.
-    /// 
+    ///
     /// `Encode` ignores the two most significant bits. `Decode` yields an error if the two most significant bits are not zeros.
     pub max_payload_power: u8,
     /// The challenge hash of a nonce.

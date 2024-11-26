@@ -1,11 +1,11 @@
-use std::future::Future;
+use std::{future::Future, hint::unreachable_unchecked, ops::DerefMut};
 
 use async_cell::unsync::AsyncCell;
+use either::Either::*;
 use futures::try_join;
 
-use receive_prelude::{ReceivePreludeError, ReceivedPrelude};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
-use util::SharedEncoder;
+use util::{SharedDecoder, SharedEncoder};
 use wb_async_utils::Mutex;
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -22,15 +22,13 @@ mod messages;
 pub use messages::*;
 
 mod commitment_scheme;
-use commitment_scheme::receive_prelude::receive_prelude;
 use commitment_scheme::*;
+use willow_encoding::{DecodeError, Encodable};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
-    /// The received max payload power was invalid, i.e. greater than 64.
-    PreludeMaxPayloadInvalid,
-    /// The transport stopped producing bytes before it could be deemed ready.
-    PreludeFinishedTooSoon,
+    /// The received payload was invalid.
+    PreludeInvalid,
     /// The underlying transport emitted an error.
     Transport(E),
 }
@@ -41,28 +39,11 @@ impl<E> From<E> for WgpsError<E> {
     }
 }
 
-impl<E> From<ReceivePreludeError<E>> for WgpsError<E> {
-    fn from(value: ReceivePreludeError<E>) -> Self {
-        match value {
-            ReceivePreludeError::Transport(err) => err.into(),
-            ReceivePreludeError::MaxPayloadInvalid => WgpsError::PreludeMaxPayloadInvalid,
-            ReceivePreludeError::FinishedTooSoon => WgpsError::PreludeFinishedTooSoon,
-        }
-    }
-}
-
 impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WgpsError::Transport(transport_error) => write!(f, "{}", transport_error),
-            WgpsError::PreludeMaxPayloadInvalid => write!(
-                f,
-                "The peer sent an invalid max payload power in their prelude."
-            ),
-            WgpsError::PreludeFinishedTooSoon => write!(
-                f,
-                "The peer terminated the connection before sending their full prelude."
-            ),
+            WgpsError::PreludeInvalid => write!(f, "The peer sent an invalid prelude."),
         }
     }
 }
@@ -87,7 +68,7 @@ pub async fn sync_with_peer<
     // This is set to `()` once our own prelude has been sent.
     let sent_own_prelude = AsyncCell::<()>::new();
     // This is set to the prelude received from the peer once it has arrived.
-    let received_prelude = AsyncCell::<ReceivedPrelude<CHALLENGE_HASH_LENGTH>>::new();
+    let received_prelude = AsyncCell::<Prelude<CHALLENGE_HASH_LENGTH>>::new();
 
     // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
     // If one of these futures needs another unit of work to have been completed, this should be enforced by
@@ -117,7 +98,28 @@ pub async fn sync_with_peer<
     };
 
     let do_receive_prelude = async {
-        received_prelude.set(receive_prelude(&mut producer).await?); // TODO rewrite to use Prelude::decode instead
+        let mut decoder = SharedDecoder::new(&producer);
+        match decoder.produce().await {
+            Ok(Left(prelude)) => received_prelude.set(prelude),
+            Ok(Right(_)) => unsafe { unreachable_unchecked() }, // Infallible
+            Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
+            Err(_) => return Err(WgpsError::PreludeInvalid),
+        }
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    let reveal_commitment = async {
+        // Before revealing our commitment, we must have both sent our own prelude and received our peer's prelude.
+        let _ = sent_own_prelude.get().await;
+        let _ = received_prelude.get().await;
+
+        let msg = CommitmentReveal {
+            nonce: &options.challenge_nonce,
+        };
+        let mut c = consumer.write().await;
+        msg.encode(c.deref_mut()).await?;
 
         let ret: Result<(), WgpsError<E>> = Ok(());
         ret
@@ -125,7 +127,7 @@ pub async fn sync_with_peer<
 
     // Add each of the futures here. The macro polls them all to completion, until the first one hits
     // an error, in which case this function immediately returns with that first error.
-    let ((), ()) = try_join!(send_prelude, do_receive_prelude,)?;
+    let ((), (), ()) = try_join!(send_prelude, do_receive_prelude, reveal_commitment)?;
     Ok(())
 }
 
