@@ -1,5 +1,5 @@
-mod rw;
-pub use rw::*;
+pub mod rw;
+pub use rw::RwLock;
 
-mod mutex;
-pub use mutex::*;
+pub mod mutex;
+pub use mutex::Mutex;
