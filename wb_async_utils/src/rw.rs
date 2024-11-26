@@ -38,12 +38,12 @@ impl<T> RwLock<T> {
     }
 
     /// Gives read access to the wrapped value, waiting if necessary.
-    pub async fn read<'lock>(&'lock self) -> ReadGuard<'lock, T> {
+    pub async fn read(&self) -> ReadGuard<T> {
         ReadFuture(self).await
     }
 
     /// Gives read access if doing so is possible without waiting, returns `None` otherwise.
-    pub fn try_read(&self) -> Option<ReadGuard<'_, T>> {
+    pub fn try_read(&self) -> Option<ReadGuard<T>> {
         let reader_count = self.readers.get()?;
         self.readers.set(Some(reader_count + 1));
 
@@ -51,12 +51,12 @@ impl<T> RwLock<T> {
     }
 
     /// Gives write access to the wrapped value, waiting if necessary.
-    pub async fn write<'lock>(&'lock self) -> WriteGuard<'lock, T> {
+    pub async fn write(&self) -> WriteGuard<T> {
         WriteFuture(self).await
     }
 
     /// Gives write access if doing so is possible without waiting, returns `None` otherwise.
-    pub fn try_write(&self) -> Option<WriteGuard<'_, T>> {
+    pub fn try_write(&self) -> Option<WriteGuard<T>> {
         match self.readers.get() {
             Some(0) => {
                 self.readers.set(None);
