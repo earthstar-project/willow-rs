@@ -1,6 +1,3 @@
-mod nb_mutex;
-pub(crate) use nb_mutex::*;
-
 mod shared_encoder;
 pub(crate) use shared_encoder::*;
 

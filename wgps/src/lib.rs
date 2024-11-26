@@ -1,11 +1,12 @@
-use std::{future::Future, rc::Rc};
+use std::future::Future;
 
 use async_cell::unsync::AsyncCell;
 use futures::try_join;
 
 use receive_prelude::{ReceivePreludeError, ReceivedPrelude};
 use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
-use util::{NbMutex, SharedEncoder};
+use util::SharedEncoder;
+use wb_async_utils::Mutex;
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
@@ -80,8 +81,8 @@ pub async fn sync_with_peer<
     P: BulkProducer<Item = u8, Error = E>,
 >(
     options: &SyncOptions<CHALLENGE_LENGTH>,
-    consumer: NbMutex<C>,
-    producer: NbMutex<P>,
+    consumer: Mutex<C>,
+    producer: Mutex<P>,
 ) -> Result<(), WgpsError<E>> {
     // This is set to `()` once our own prelude has been sent.
     let sent_own_prelude = AsyncCell::<()>::new();
