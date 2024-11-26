@@ -10,7 +10,8 @@ impl<'nonce, const CHALLENGE_LENGTH: usize> Encodable for CommitmentReveal<'nonc
     where
         Consumer: BulkConsumer<Item = u8>,
     {
-        consumer.consume(0x0).await?;
+        // Encoding defined at https://willowprotocol.org/spec/sync/index.html#enc_commitment_reveal
+        consumer.consume(0b1000_0000).await?;
         consumer
             .bulk_consume_full_slice(&self.nonce[..])
             .await
