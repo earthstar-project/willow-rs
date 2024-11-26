@@ -31,7 +31,7 @@ where
 {
     type Item = T;
 
-    type Final = C::Final;
+    type Final = ();
 
     type Error = C::Error;
 
