@@ -1,6 +1,10 @@
-use std::future::Future;
+use std::{future::Future, ops::DerefMut};
 
-use ufotofu::local_nb::Producer;
+use futures::try_join;
+
+use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
+use util::SharedEncoder;
+use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
@@ -10,6 +14,125 @@ use willow_data_model::{
 pub mod logical_channels;
 
 mod util;
+
+mod lcmux;
+
+mod parameters;
+pub use parameters::*;
+
+mod messages;
+pub use messages::*;
+
+mod commitment_scheme;
+use commitment_scheme::*;
+use willow_encoding::{Decodable, DecodeError, Encodable};
+
+/// An error which can occur during a WGPS synchronisation session.
+pub enum WgpsError<E> {
+    /// The received payload was invalid.
+    PreludeInvalid,
+    /// The underlying transport emitted an error.
+    Transport(E),
+}
+
+impl<E> From<E> for WgpsError<E> {
+    fn from(value: E) -> Self {
+        Self::Transport(value)
+    }
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WgpsError::Transport(transport_error) => write!(f, "{}", transport_error),
+            WgpsError::PreludeInvalid => write!(f, "The peer sent an invalid prelude."),
+        }
+    }
+}
+
+pub struct SyncOptions<const CHALLENGE_LENGTH: usize> {
+    max_payload_power: u8,
+    challenge_nonce: [u8; CHALLENGE_LENGTH],
+}
+
+pub async fn sync_with_peer<
+    const CHALLENGE_LENGTH: usize,
+    const CHALLENGE_HASH_LENGTH: usize,
+    CH: ChallengeHash<CHALLENGE_LENGTH, CHALLENGE_HASH_LENGTH>,
+    E,
+    C: BulkConsumer<Item = u8, Error = E>,
+    P: BulkProducer<Item = u8, Error = E>,
+>(
+    options: &SyncOptions<CHALLENGE_LENGTH>,
+    consumer: Mutex<C>,
+    producer: Mutex<P>,
+) -> Result<(), WgpsError<E>> {
+    // This is set to `()` once our own prelude has been sent.
+    let sent_own_prelude = OnceCell::<()>::new();
+    // This is set to the prelude received from the peer once it has arrived.
+    let received_prelude = OnceCell::<Prelude<CHALLENGE_HASH_LENGTH>>::new();
+
+    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    // If one of these futures needs another unit of work to have been completed, this should be enforced by
+    // calling `some_cell.get().await` for one of the cells defined above.
+    //
+    // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
+    // Since type annotations for async blocks are not possible in today's rust, we instead provide
+    // a type annotation on the return value; that's why the last two lines of each of the following
+    // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
+
+    let send_prelude = async {
+        let own_prelude = Prelude {
+            max_payload_power: options.max_payload_power,
+            commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
+        };
+
+        // Encode our prelude and transmit it.
+        let mut encoder = SharedEncoder::new(&consumer);
+        encoder.consume(own_prelude).await?;
+
+        // Notify other tasks that our prelude has been successfully sent.
+        let _ = sent_own_prelude.set(());
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    let receive_prelude = async {
+        let mut p = producer.write().await;
+
+        match Prelude::decode_canonical(p.deref_mut()).await {
+            Ok(prelude) => {
+                let _ = received_prelude.set(prelude);
+            }
+            Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
+            Err(_) => return Err(WgpsError::PreludeInvalid),
+        }
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    let reveal_commitment = async {
+        // Before revealing our commitment, we must have both sent our own prelude and received our peer's prelude.
+        let _ = sent_own_prelude.get().await;
+        let _ = received_prelude.get().await;
+
+        let msg = CommitmentReveal {
+            nonce: &options.challenge_nonce,
+        };
+        let mut c = consumer.write().await;
+        msg.encode(c.deref_mut()).await?;
+
+        let ret: Result<(), WgpsError<E>> = Ok(());
+        ret
+    };
+
+    // Add each of the futures here. The macro polls them all to completion, until the first one hits
+    // an error, in which case this function immediately returns with that first error.
+    let ((), (), ()) = try_join!(send_prelude, receive_prelude, reveal_commitment)?;
+    Ok(())
+}
 
 /// Options to specify how ranges should be partitioned.
 #[derive(Debug, Clone, Copy)]

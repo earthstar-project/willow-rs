@@ -51,8 +51,8 @@ impl<Q: Queue, F, E> Input<Q, F, E> {
     /// The error is only emitted there when trying to produce values
     /// via `produce` or `expose_items` (or any method calling one of these),
     /// but never when `slurp`ing or calling `consider_produced`.
-    /// 
-    /// Must not call any of the `Consumer`, `BufferedConsumer`, or `BulProducer` methods
+    ///
+    /// Must not call any of the `Consumer`, `BufferedConsumer`, or `BulkProducer` methods
     /// on this `Input` after calling this function.
     /// May call this function at most once per `Input`.
     pub fn cause_error(&mut self, err: E) {

@@ -27,7 +27,7 @@ use either::Either;
 
 use willow_encoding::EncodableExactSize;
 
-use crate::util::{AsyncShared, SharedEncoder};
+use crate::util::SharedEncoder;
 
 use super::LogicalChannel;
 
