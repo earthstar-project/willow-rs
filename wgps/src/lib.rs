@@ -13,6 +13,8 @@ use willow_data_model::{
 
 mod util;
 
+mod lcmux;
+
 mod parameters;
 pub use parameters::*;
 
