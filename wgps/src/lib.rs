@@ -15,7 +15,7 @@ pub mod logical_channels;
 
 mod util;
 
-mod lcmux;
+pub mod lcmux;
 
 mod parameters;
 pub use parameters::*;

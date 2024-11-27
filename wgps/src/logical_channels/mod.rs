@@ -2,7 +2,7 @@
 //!
 //! There is no implementation of optimistic sending, the client components fully respect the guarantees issued by the server side.
 
-pub mod client;
+// pub mod client;
 pub mod server;
 
 /// The different logical channels of the WGPS.
