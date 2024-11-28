@@ -150,19 +150,13 @@ where
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
     use willow_encoding::{DecodeError, U64BE};
 
-    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable};)]
     use willow_encoding::{Decodable, Encodable};
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable

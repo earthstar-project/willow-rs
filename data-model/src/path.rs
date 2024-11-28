@@ -780,21 +780,14 @@ impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for HeapEncoding<MAX_COMPONE
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable, RelationDecodable};)]
     use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
-    #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
     use willow_encoding::{decode_max_power, encode_max_power};
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {

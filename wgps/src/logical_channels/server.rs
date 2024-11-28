@@ -15,7 +15,7 @@ use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 use crate::util::mpmc_channel as mpmc; // TODO use a spsc channel instead (nested TODO: implement one (nested TODO: write an SPSCAsyncCell crate))
 use async_cell::unsync::AsyncCell;
 use either::Either::*;
-use ufotofu::local_nb::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
+use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
 use ufotofu_queues::Queue;
 
 pub struct SharedState {
@@ -286,12 +286,12 @@ impl<Q> BulkProducer for ReceivedData<Q> {
         &'a mut self,
     ) -> Result<either::Either<&'a [Self::Item], Self::Final>, Self::Error>
     where
-        Self::Item: 'a {
+        Self::Item: 'a,
+    {
         todo!()
     }
 
-    async fn consider_produced(&mut self, amount: usize)
-        -> Result<(), Self::Error> {
+    async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
         todo!()
     }
 }

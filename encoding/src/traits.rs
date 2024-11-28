@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use crate::error::DecodeError;
-use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+use ufotofu::{BulkConsumer, BulkProducer};
 
 /// A type which can be asynchronously encoded to bytes consumed by a [`ufotofu::local_nb::BulkConsumer`]
 ///

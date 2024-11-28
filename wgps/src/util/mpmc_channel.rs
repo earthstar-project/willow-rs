@@ -4,9 +4,7 @@
 use async_cell::unsync::AsyncCell;
 use either::Either::{self, *};
 use std::{cell::RefCell, convert::Infallible, rc::Rc};
-use ufotofu::local_nb::{
-    BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer,
-};
+use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use ufotofu_queues::Queue;
 
 /// Create an MPMC channel, in the form of an [`Input`] that implements [`BulkConsumer`]

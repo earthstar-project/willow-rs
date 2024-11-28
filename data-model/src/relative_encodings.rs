@@ -1,30 +1,18 @@
-use syncify::syncify;
-
-#[syncify(encoding_sync)]
 pub(super) mod encoding {
-    // TODO: Unclear why this is marked unused.
-    #[allow(unused_imports)]
-    use syncify::syncify_replace;
-
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
     use willow_encoding::{is_bitflagged, CompactWidth, DecodeError};
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable, RelationDecodable, RelativeRelationDecodable};)]
     use willow_encoding::{
         Decodable, Encodable, RelationDecodable, RelativeDecodable, RelativeEncodable,
         RelativeRelationDecodable,
     };
 
-    #[syncify_replace(use willow_encoding::sync::{decode_max_power, encode_max_power};)]
     use willow_encoding::{decode_max_power, encode_max_power};
 
-    #[syncify_replace(use willow_encoding::sync::{ decode_compact_width_be, decode_compact_width_be_relation,encode_compact_width_be};)]
     use willow_encoding::{
         decode_compact_width_be, decode_compact_width_be_relation, encode_compact_width_be,
     };
 
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
 
     use core::mem::size_of;

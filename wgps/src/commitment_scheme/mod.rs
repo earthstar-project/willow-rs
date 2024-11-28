@@ -1,4 +1,4 @@
-use ufotofu::nb::ConsumeFullSliceError;
+use ufotofu::ConsumeFullSliceError;
 use willow_encoding::{Decodable, DecodeError, Encodable, RelationDecodable};
 
 use either::Either::*;
@@ -17,7 +17,7 @@ pub(crate) struct Prelude<const CHALLENGE_HASH_LENGTH: usize> {
 impl<const CHALLENGE_HASH_LENGTH: usize> Encodable for Prelude<CHALLENGE_HASH_LENGTH> {
     async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
     where
-        Consumer: ufotofu::local_nb::BulkConsumer<Item = u8>,
+        Consumer: ufotofu::BulkConsumer<Item = u8>,
     {
         consumer.consume(self.max_payload_power).await?;
 
@@ -41,7 +41,7 @@ impl<const CHALLENGE_HASH_LENGTH: usize> Decodable for Prelude<CHALLENGE_HASH_LE
         producer: &mut Producer,
     ) -> Result<Self, DecodeError<Producer::Error>>
     where
-        Producer: ufotofu::local_nb::BulkProducer<Item = u8>,
+        Producer: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
         let max_payload_power = match producer

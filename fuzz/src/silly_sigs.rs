@@ -76,19 +76,14 @@ impl IsCommunal for SillyPublicKey {
 
 use syncify::{syncify, syncify_replace};
 
-#[syncify(encoding_sync)]
 pub mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
-    use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelationDecodable};)]
-    use willow_encoding::{Decodable, Encodable, RelationDecodable};
-
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
+    use willow_encoding::DecodeError;
+    use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
     impl Encodable for SillyPublicKey {
         async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>

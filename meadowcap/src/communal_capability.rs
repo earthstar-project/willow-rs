@@ -1,7 +1,6 @@
 use signature::{Signer, Verifier};
-use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
 use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
-use willow_encoding::sync::{Encodable, RelativeEncodable};
+use willow_encoding::{Encodable, RelativeEncodable};
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 
@@ -230,37 +229,38 @@ where
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
         new_user: &UserPublicKey,
     ) -> Box<[u8]> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with new Encoding trait that requires knowing the size upfront by computing the size of the handover first, allocating it as a boxed slice, and then using an ufotofu::into_slice encoder.");
+        // let mut consumer = IntoVec::<u8>::new();
 
-        if self.delegations.is_empty() {
-            let first_byte = match self.access_mode {
-                AccessMode::Read => 0x00,
-                AccessMode::Write => 0x01,
-            };
+        // if self.delegations.is_empty() {
+        //     let first_byte = match self.access_mode {
+        //         AccessMode::Read => 0x00,
+        //         AccessMode::Write => 0x01,
+        //     };
 
-            let prev_area =
-                Area::<MCL, MCC, MPL, UserPublicKey>::new_subspace(self.user_key.clone());
+        //     let prev_area =
+        //         Area::<MCL, MCC, MPL, UserPublicKey>::new_subspace(self.user_key.clone());
 
-            // We can safely unwrap all these encodings as IntoVec's error is the never type.
-            consumer.consume(first_byte).unwrap();
-            self.namespace_key.encode(&mut consumer).unwrap();
-            new_area.relative_encode(&prev_area, &mut consumer).unwrap();
-            new_user.encode(&mut consumer).unwrap();
+        //     // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        //     consumer.consume(first_byte).unwrap();
+        //     self.namespace_key.encode(&mut consumer).unwrap();
+        //     new_area.relative_encode(&prev_area, &mut consumer).unwrap();
+        //     new_user.encode(&mut consumer).unwrap();
 
-            return consumer.into_vec().into();
-        }
+        //     return consumer.into_vec().into();
+        // }
 
-        // We can unwrap here because we know that self.delegations is not empty.
-        let last_delegation = self.delegations.last().unwrap();
-        let prev_area = last_delegation.area();
-        let prev_signature = last_delegation.signature();
+        // // We can unwrap here because we know that self.delegations is not empty.
+        // let last_delegation = self.delegations.last().unwrap();
+        // let prev_area = last_delegation.area();
+        // let prev_signature = last_delegation.signature();
 
-        // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        new_area.relative_encode(prev_area, &mut consumer).unwrap();
-        prev_signature.encode(&mut consumer).unwrap();
-        new_user.encode(&mut consumer).unwrap();
+        // // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // new_area.relative_encode(prev_area, &mut consumer).unwrap();
+        // prev_signature.encode(&mut consumer).unwrap();
+        // new_user.encode(&mut consumer).unwrap();
 
-        consumer.into_vec().into()
+        // consumer.into_vec().into()
     }
 }
 

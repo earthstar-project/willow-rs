@@ -20,7 +20,7 @@
 
 use std::{cell::Cell, convert::Infallible, ops::DerefMut, rc::Rc};
 
-use ufotofu::local_nb::{BulkConsumer, Producer};
+use ufotofu::{BulkConsumer, Producer};
 
 use either::Either;
 
@@ -318,7 +318,8 @@ async fn encode_size<C: BulkConsumer<Item = u8>>(
     let as_bytes = size.to_be_bytes();
 
     consumer
-        .bulk_consume_full_slice(&as_bytes[8usize - (num_bytes as usize)..]).await
+        .bulk_consume_full_slice(&as_bytes[8usize - (num_bytes as usize)..])
+        .await
         .map_err(|err| err.reason)
 }
 

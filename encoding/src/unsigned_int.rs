@@ -66,17 +66,11 @@ impl From<U64BE> for u64 {
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use crate::sync::{Decodable, Encodable};)]
     use crate::{Decodable, Encodable};
 
     impl Encodable for U8BE {

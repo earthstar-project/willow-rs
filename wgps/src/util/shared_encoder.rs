@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::DerefMut};
 
-use ufotofu::local_nb::{BulkConsumer, Consumer};
+use ufotofu::{BulkConsumer, Consumer};
 
 use wb_async_utils::Mutex;
 use willow_encoding::Encodable;

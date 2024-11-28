@@ -1,0 +1,11 @@
+[package]
+name = "lcmux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wb_async_utils = { path = "../wb_async_utils", version = "0.1.0" }
+willow-encoding = { path = "../encoding", version = "0.1.0" }
+
+[lints]
+workspace = true

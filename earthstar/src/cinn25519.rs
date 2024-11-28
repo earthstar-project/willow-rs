@@ -95,17 +95,11 @@ impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Cinn25519PublicKey<MIN_LE
     // TODO: fn verify
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 pub(super) mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
     use willow_encoding::{Decodable, Encodable};
 
     impl<const MIN_LENGTH: usize, const MAX_LENGTH: usize> Encodable

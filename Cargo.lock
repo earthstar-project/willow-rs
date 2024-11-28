@@ -224,7 +224,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "either",
- "syncify",
  "ufotofu",
  "willow-data-model",
  "willow-encoding",
@@ -391,6 +390,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcmux"
+version = "0.1.0"
+dependencies = [
+ "wb_async_utils",
+ "willow-encoding",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.155"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,19 +421,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 
 [[package]]
-name = "maybe-std"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4958ec1997b05011d5c786bf4093cd48578bd9be2737350ab38659694083ddde"
-
-[[package]]
 name = "meadowcap"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
  "either",
  "signature",
- "syncify",
  "ufotofu",
  "willow-data-model",
  "willow-encoding",
@@ -487,6 +487,12 @@ dependencies = [
  "tracing",
  "windows-sys",
 ]
+
+[[package]]
+name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
 
 [[package]]
 name = "proc-macro2"
@@ -600,14 +606,13 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "ufotofu"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c773ca845a07603d8ebe7292a3cefa20bf41305ce91246332c7fc1e3029eecaa"
+checksum = "7696bdcb0fd961f5712fd94fba5325f74d19f50881067bd75c190d7bfa292215"
 dependencies = [
  "arbitrary",
  "either",
  "ufotofu_queues",
- "wrapper",
 ]
 
 [[package]]
@@ -649,7 +654,6 @@ dependencies = [
  "bytes",
  "either",
  "smol",
- "syncify",
  "ufotofu",
  "willow-encoding",
 ]
@@ -659,7 +663,7 @@ name = "willow-encoding"
 version = "0.1.0"
 dependencies = [
  "either",
- "syncify",
+ "pollster",
  "ufotofu",
 ]
 
@@ -751,12 +755,3 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "wrapper"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2bbc2d8fbd2f17a297df6d6492526a91b947c04ec80536c0877fd35df1c889d"
-dependencies = [
- "maybe-std",
-]

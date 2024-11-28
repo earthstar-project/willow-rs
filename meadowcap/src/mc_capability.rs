@@ -2,9 +2,8 @@
 use arbitrary::Arbitrary;
 use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::sync::consumer::IntoVec;
 use willow_data_model::{grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId};
-use willow_encoding::sync::Encodable;
+use willow_encoding::Encodable;
 
 use crate::{
     communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
@@ -235,15 +234,16 @@ where
         match self.access_mode() {
             AccessMode::Read => Err(NotAWriteCapabilityError),
             AccessMode::Write => {
-                let mut consumer = IntoVec::<u8>::new();
-                entry.encode(&mut consumer).unwrap();
+                todo!("Implement with a single allocation with known-size encoder trait.")
+                // let mut consumer = IntoVec::<u8>::new();
+                // entry.encode(&mut consumer).unwrap();
 
-                let signature = secret.sign(&consumer.into_vec());
+                // let signature = secret.sign(&consumer.into_vec());
 
-                Ok(McAuthorisationToken {
-                    capability: self.clone(),
-                    signature,
-                })
+                // Ok(McAuthorisationToken {
+                //     capability: self.clone(),
+                //     signature,
+                // })
             }
         }
     }
@@ -272,49 +272,38 @@ where
         match self.access_mode() {
             AccessMode::Read => Err(Either::Left(NotAWriteCapabilityError)),
             AccessMode::Write => {
-                let mut consumer = IntoVec::<u8>::new();
-                entry.encode(&mut consumer).unwrap();
+                todo!("Implement with a single allocation with known-size encoder trait.")
+                // let mut consumer = IntoVec::<u8>::new();
+                // entry.encode(&mut consumer).unwrap();
 
-                let message = consumer.into_vec();
+                // let message = consumer.into_vec();
 
-                let signature = secret.sign(&message);
+                // let signature = secret.sign(&message);
 
-                self.receiver()
-                    .verify(&message, &signature)
-                    .map_err(Either::Right)?;
+                // self.receiver()
+                //     .verify(&message, &signature)
+                //     .map_err(Either::Right)?;
 
-                Ok(McAuthorisationToken {
-                    capability: self.clone(),
-                    signature,
-                })
+                // Ok(McAuthorisationToken {
+                //     capability: self.clone(),
+                //     signature,
+                // })
             }
         }
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 pub(super) mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelativeDecodable, RelativeEncodable};)]
     use willow_encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
 
-    use willow_encoding::{
-        is_bitflagged, sync::Encodable as EncodableSync, CompactWidth, DecodeError,
-    };
+    use willow_encoding::{is_bitflagged, CompactWidth, DecodeError};
 
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
 
-    #[syncify_replace(
-        use willow_encoding::sync::{encode_compact_width_be, decode_compact_width_be};
-    )]
     use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
 
     impl<
@@ -337,10 +326,10 @@ pub(super) mod encoding {
         >
     where
         NamespacePublicKey:
-            NamespaceId + EncodableSync + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-        UserPublicKey: SubspaceId + EncodableSync + Encodable + Verifier<UserSignature>,
-        NamespaceSignature: EncodableSync + Encodable + Clone,
-        UserSignature: EncodableSync + Encodable + Clone,
+            NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+        UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+        NamespaceSignature: Encodable + Encodable + Clone,
+        UserSignature: Encodable + Encodable + Clone,
     {
         async fn relative_encode<Consumer>(
             &self,
@@ -433,10 +422,10 @@ pub(super) mod encoding {
         >
     where
         NamespacePublicKey:
-            NamespaceId + EncodableSync + Decodable + Verifier<NamespaceSignature> + IsCommunal,
-        UserPublicKey: SubspaceId + EncodableSync + Decodable + Verifier<UserSignature>,
-        NamespaceSignature: EncodableSync + Decodable + Clone,
-        UserSignature: EncodableSync + Decodable + Clone,
+            NamespaceId + Encodable + Decodable + Verifier<NamespaceSignature> + IsCommunal,
+        UserPublicKey: SubspaceId + Encodable + Decodable + Verifier<UserSignature>,
+        NamespaceSignature: Encodable + Decodable + Clone,
+        UserSignature: Encodable + Decodable + Clone,
     {
         async fn relative_decode_canonical<Producer>(
             out: &Area<MCL, MCC, MPL, UserPublicKey>,

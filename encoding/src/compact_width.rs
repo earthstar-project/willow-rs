@@ -3,7 +3,7 @@ use crate::error::DecodeError;
 /// A minimum width of bytes needed to represent a unsigned integer.
 ///
 /// [Definition](https://willowprotocol.org/specs/encodings/index.html#compact_width)
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum CompactWidth {
     /// The byte-width required to represent numbers up to 256 (i.e. a 8-bit number).
     One,
@@ -118,19 +118,13 @@ impl CompactWidth {
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 pub mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
     use crate::unsigned_int::{U16BE, U32BE, U64BE, U8BE};
 
-    #[syncify_replace(use crate::sync::{Decodable};)]
     use crate::Decodable;
 
     /// Encodes a `u64` integer as a `compact_width(value)`-byte big-endian integer, and consume that with a [`BulkConsumer`].
@@ -189,9 +183,11 @@ pub mod encoding {
 
 #[cfg(test)]
 mod tests {
-    use encoding_sync::{decode_compact_width_be, encode_compact_width_be};
-    use ufotofu::local_nb::consumer::IntoVec;
-    use ufotofu::local_nb::producer::FromBoxedSlice;
+    use encoding::{decode_compact_width_be, encode_compact_width_be};
+    use ufotofu::{
+        consumer::TestConsumerBuilder,
+        producer::{TestProducer, TestProducerBuilder},
+    };
 
     use super::*;
 
@@ -264,22 +260,27 @@ mod tests {
         ];
 
         for (compact_width, value) in values {
-            let mut consumer = IntoVec::<u8>::new();
+            pollster::block_on(async {
+                let mut consumer =
+                    TestConsumerBuilder::new((), compact_width.width()).build::<u8, ()>();
 
-            encode_compact_width_be(value, &mut consumer).unwrap();
+                encode_compact_width_be(value, &mut consumer).await.unwrap();
 
-            let encode_result = consumer.into_vec();
+                let encode_result = consumer.into_consumed().0;
 
-            let decoded_compact_width = CompactWidth::new(encode_result.len() as u8).unwrap();
+                let decoded_compact_width = CompactWidth::new(encode_result.len() as u8).unwrap();
 
-            assert_eq!(decoded_compact_width, compact_width);
+                assert_eq!(decoded_compact_width, compact_width);
 
-            let mut producer = FromBoxedSlice::from_vec(encode_result);
+                let mut producer: TestProducer<u8, (), _> =
+                    TestProducerBuilder::new(encode_result.into_boxed_slice(), Err(())).build();
 
-            let decode_result =
-                decode_compact_width_be(decoded_compact_width, &mut producer).unwrap();
+                let decode_result = decode_compact_width_be(decoded_compact_width, &mut producer)
+                    .await
+                    .unwrap();
 
-            assert_eq!(decode_result, value);
+                assert_eq!(decode_result, value);
+            });
         }
     }
 }

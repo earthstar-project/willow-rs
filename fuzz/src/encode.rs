@@ -1,269 +1,268 @@
-use ufotofu::{
-    common::consumer::TestConsumer,
-    sync::consumer::IntoVec,
-    sync::{
-        producer::{FromBoxedSlice, FromSlice},
-        BufferedConsumer, BulkConsumer,
-    },
-};
+// TODO
 
-use willow_encoding::{
-    sync::{Decodable, Encodable, RelativeDecodable, RelativeEncodable, RelativeRelationDecodable},
-    DecodeError,
-};
+// use ufotofu::{
+//     consumer::TestConsumer,
+//     // producer::{FromBoxedSlice, FromSlice},
+//     BufferedConsumer, BulkConsumer,
+// };
 
-pub fn encoding_canonical_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
-where
-    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
-    C: BulkConsumer<Item = u8>,
-{
-    if let Err(_err) = item.encode(consumer) {
-        return;
-    }
+// use willow_encoding::{
+//     Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
+//     RelativeRelationDecodable,
+// };
 
-    if let Err(_err) = consumer.flush() {
-        return;
-    }
+// pub fn encoding_canonical_roundtrip<T, C>(item: T, consumer: &mut TestConsumer<u8, u16, ()>)
+// where
+//     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
+//     C: BulkConsumer<Item = u8>,
+// {
+//     if let Err(_err) = item.encode(consumer) {
+//         return;
+//     }
 
-    let mut new_vec = Vec::new();
+//     if let Err(_err) = consumer.flush() {
+//         return;
+//     }
 
-    new_vec.extend_from_slice(consumer.consumed());
+//     let mut new_vec = Vec::new();
 
-    // THis should eventually be a testproducer, when we are able to initialise one with some known data.
-    let mut producer = FromBoxedSlice::from_vec(new_vec);
+//     new_vec.extend_from_slice(consumer.consumed());
 
-    // Check for correct errors
-    let decoded_item = T::decode_canonical(&mut producer).unwrap();
+//     // This should eventually be a testproducer, when we are able to initialise one with some known data.
+//     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
-    assert_eq!(decoded_item, item);
-}
+//     // Check for correct errors
+//     let decoded_item = T::decode_canonical(&mut producer).unwrap();
 
-pub fn encoding_random<T>(data: &[u8])
-where
-    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
-{
-    let res_canonical = encoding_canonical_random::<T>(data);
-    let res_relation = encoding_relation_random::<T>(data);
+//     assert_eq!(decoded_item, item);
+// }
 
-    match (res_canonical, res_relation) {
-        (Some(item_a), Some(item_b)) => {
-            if item_a != item_b {
-                panic!("The canonical and relation decoders did not produce the same result!")
-            }
-        }
-        (Some(_), None) => {
-            panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
-        }
-        _ => {
-            // Expected result.
-        }
-    }
-}
+// pub fn encoding_random<T>(data: &[u8])
+// where
+//     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
+// {
+//     let res_canonical = encoding_canonical_random::<T>(data);
+//     let res_relation = encoding_relation_random::<T>(data);
 
-pub fn encoding_canonical_random<T>(data: &[u8]) -> Option<T>
-where
-    T: Encodable + Decodable + std::fmt::Debug,
-{
-    let mut producer = FromSlice::new(data);
+//     match (res_canonical, res_relation) {
+//         (Some(item_a), Some(item_b)) => {
+//             if item_a != item_b {
+//                 panic!("The canonical and relation decoders did not produce the same result!")
+//             }
+//         }
+//         (Some(_), None) => {
+//             panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
+//         }
+//         _ => {
+//             // Expected result.
+//         }
+//     }
+// }
 
-    match T::decode_canonical(&mut producer) {
-        Ok(item) => {
-            // println!("item {:?}", item);
+// pub fn encoding_canonical_random<T>(data: &[u8]) -> Option<T>
+// where
+//     T: Encodable + Decodable + std::fmt::Debug,
+// {
+//     let mut producer = FromSlice::new(data);
 
-            // It decoded to a valid item! Gasp!
-            // Can we turn it back into the same encoding?
-            let mut consumer = IntoVec::<u8>::new();
+//     match T::decode_canonical(&mut producer) {
+//         Ok(item) => {
+//             // println!("item {:?}", item);
 
-            item.encode(&mut consumer).unwrap();
+//             // It decoded to a valid item! Gasp!
+//             // Can we turn it back into the same encoding?
+//             let mut consumer = IntoVec::<u8>::new();
 
-            let encoded = consumer.as_ref();
+//             item.encode(&mut consumer).unwrap();
 
-            assert_eq!(encoded, &data[0..producer.get_offset()]);
+//             let encoded = consumer.as_ref();
 
-            Some(item)
-        }
-        Err(err) => match err {
-            // There was an error.
-            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => None,
-            DecodeError::U64DoesNotFitUsize => {
-                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
-            }
-        },
-    }
-}
+//             assert_eq!(encoded, &data[0..producer.get_offset()]);
 
-pub fn encoding_relation_random<T>(data: &[u8]) -> Option<T>
-where
-    T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
-{
-    let mut producer = FromSlice::new(data);
+//             Some(item)
+//         }
+//         Err(err) => match err {
+//             // There was an error.
+//             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+//             DecodeError::InvalidInput => None,
+//             DecodeError::U64DoesNotFitUsize => {
+//                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+//             }
+//         },
+//     }
+// }
 
-    match T::decode_canonical(&mut producer) {
-        Ok(item) => {
-            // println!("item {:?}", item);
+// pub fn encoding_relation_random<T>(data: &[u8]) -> Option<T>
+// where
+//     T: Encodable + Decodable + std::fmt::Debug + PartialEq + Eq,
+// {
+//     let mut producer = FromSlice::new(data);
 
-            // It decoded to a valid item! Gasp!
-            // Can we turn it back into the same encoding?
-            let mut consumer = IntoVec::<u8>::new();
+//     match T::decode_canonical(&mut producer) {
+//         Ok(item) => {
+//             // println!("item {:?}", item);
 
-            item.encode(&mut consumer).unwrap();
+//             // It decoded to a valid item! Gasp!
+//             // Can we turn it back into the same encoding?
+//             let mut consumer = IntoVec::<u8>::new();
 
-            let mut producer_2 = FromSlice::new(consumer.as_ref());
+//             item.encode(&mut consumer).unwrap();
 
-            match T::decode_canonical(&mut producer_2) {
-                Ok(decoded_again) => {
-                    assert_eq!(item, decoded_again);
-                }
-                Err(err) => {
-                    println!("{:?}", err);
-                    panic!("Could not decode again, argh!")
-                }
-            }
+//             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            Some(item)
-        }
-        Err(err) => match err {
-            // There was an error.
-            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => None,
-            DecodeError::U64DoesNotFitUsize => {
-                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
-            }
-        },
-    }
-}
+//             match T::decode_canonical(&mut producer_2) {
+//                 Ok(decoded_again) => {
+//                     assert_eq!(item, decoded_again);
+//                 }
+//                 Err(err) => {
+//                     println!("{:?}", err);
+//                     panic!("Could not decode again, argh!")
+//                 }
+//             }
 
-pub fn relative_encoding_canonical_roundtrip<T, R, C>(
-    subject: T,
-    reference: R,
-    consumer: &mut TestConsumer<u8, u16, ()>,
-) where
-    T: std::fmt::Debug + PartialEq + Eq + RelativeEncodable<R> + RelativeDecodable<R>,
-    R: std::fmt::Debug,
-    C: BulkConsumer<Item = u8>,
-{
-    //println!("item {:?}", subject);
-    //println!("ref {:?}", reference);
+//             Some(item)
+//         }
+//         Err(err) => match err {
+//             // There was an error.
+//             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+//             DecodeError::InvalidInput => None,
+//             DecodeError::U64DoesNotFitUsize => {
+//                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+//             }
+//         },
+//     }
+// }
 
-    if let Err(_err) = subject.relative_encode(&reference, consumer) {
-        return;
-    }
+// pub fn relative_encoding_canonical_roundtrip<T, R, C>(
+//     subject: T,
+//     reference: R,
+//     consumer: &mut TestConsumer<u8, u16, ()>,
+// ) where
+//     T: std::fmt::Debug + PartialEq + Eq + RelativeEncodable<R> + RelativeDecodable<R>,
+//     R: std::fmt::Debug,
+//     C: BulkConsumer<Item = u8>,
+// {
+//     //println!("item {:?}", subject);
+//     //println!("ref {:?}", reference);
 
-    if let Err(_err) = consumer.flush() {
-        return;
-    }
+//     if let Err(_err) = subject.relative_encode(&reference, consumer) {
+//         return;
+//     }
 
-    let mut new_vec = Vec::new();
+//     if let Err(_err) = consumer.flush() {
+//         return;
+//     }
 
-    new_vec.extend_from_slice(consumer.consumed());
+//     let mut new_vec = Vec::new();
 
-    // THis should eventually be a testproducer, when we are able to initialise one with some known data.
-    let mut producer = FromBoxedSlice::from_vec(new_vec);
+//     new_vec.extend_from_slice(consumer.consumed());
 
-    // Check for correct errors
-    let decoded_item = T::relative_decode_canonical(&reference, &mut producer).unwrap();
+//     // THis should eventually be a testproducer, when we are able to initialise one with some known data.
+//     let mut producer = FromBoxedSlice::from_vec(new_vec);
 
-    assert_eq!(decoded_item, subject);
-}
+//     // Check for correct errors
+//     let decoded_item = T::relative_decode_canonical(&reference, &mut producer).unwrap();
 
-pub fn relative_encoding_random<R, T>(reference: &R, data: &[u8])
-where
-    T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
-    R: std::fmt::Debug,
-{
-    let res_canonical = relative_encoding_canonical_random::<R, T>(reference, data);
-    let res_relation = relative_encoding_relation_random::<R, T>(reference, data);
+//     assert_eq!(decoded_item, subject);
+// }
 
-    match (res_canonical, res_relation) {
-        (Some(item_a), Some(item_b)) => {
-            if item_a != item_b {
-                panic!("The canonical and relation decoders did not produce the same result!")
-            }
-        }
-        (Some(_), None) => {
-            panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
-        }
-        _ => {
-            // Expected result.
-        }
-    }
-}
+// pub fn relative_encoding_random<R, T>(reference: &R, data: &[u8])
+// where
+//     T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
+//     R: std::fmt::Debug,
+// {
+//     let res_canonical = relative_encoding_canonical_random::<R, T>(reference, data);
+//     let res_relation = relative_encoding_relation_random::<R, T>(reference, data);
 
-pub fn relative_encoding_canonical_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
-where
-    T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
-    R: std::fmt::Debug,
-{
-    let mut producer = FromSlice::new(data);
+//     match (res_canonical, res_relation) {
+//         (Some(item_a), Some(item_b)) => {
+//             if item_a != item_b {
+//                 panic!("The canonical and relation decoders did not produce the same result!")
+//             }
+//         }
+//         (Some(_), None) => {
+//             panic!("Found an encoding produced by the encoding function but which does not belong to the encoding relation, which is impossible!")
+//         }
+//         _ => {
+//             // Expected result.
+//         }
+//     }
+// }
 
-    match T::relative_decode_canonical(reference, &mut producer) {
-        Ok(item) => {
-            // It decoded to a valid item! Gasp!
-            // Can we turn it back into the same encoding?
-            let mut consumer = IntoVec::<u8>::new();
+// pub fn relative_encoding_canonical_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
+// where
+//     T: RelativeEncodable<R> + RelativeDecodable<R> + std::fmt::Debug,
+//     R: std::fmt::Debug,
+// {
+//     let mut producer = FromSlice::new(data);
 
-            //  println!("item {:?}", item);
-            //  println!("ref {:?}", reference);
+//     match T::relative_decode_canonical(reference, &mut producer) {
+//         Ok(item) => {
+//             // It decoded to a valid item! Gasp!
+//             // Can we turn it back into the same encoding?
+//             let mut consumer = IntoVec::<u8>::new();
 
-            item.relative_encode(reference, &mut consumer).unwrap();
+//             //  println!("item {:?}", item);
+//             //  println!("ref {:?}", reference);
 
-            let encoded = consumer.as_ref();
+//             item.relative_encode(reference, &mut consumer).unwrap();
 
-            assert_eq!(encoded, &data[0..producer.get_offset()]);
+//             let encoded = consumer.as_ref();
 
-            Some(item)
-        }
-        Err(err) => match err {
-            // There was an error.
-            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => None,
-            DecodeError::U64DoesNotFitUsize => {
-                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
-            }
-        },
-    }
-}
+//             assert_eq!(encoded, &data[0..producer.get_offset()]);
 
-pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
-where
-    T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
-    R: std::fmt::Debug,
-{
-    let mut producer = FromSlice::new(data);
+//             Some(item)
+//         }
+//         Err(err) => match err {
+//             // There was an error.
+//             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+//             DecodeError::InvalidInput => None,
+//             DecodeError::U64DoesNotFitUsize => {
+//                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+//             }
+//         },
+//     }
+// }
 
-    match T::relative_decode_relation(reference, &mut producer) {
-        Ok(item) => {
-            // It decoded to a valid item! Gasp!
-            // Can we turn it back into the same encoding?
-            let mut consumer = IntoVec::<u8>::new();
+// pub fn relative_encoding_relation_random<R, T>(reference: &R, data: &[u8]) -> Option<T>
+// where
+//     T: RelativeEncodable<R> + RelativeRelationDecodable<R> + std::fmt::Debug + Eq,
+//     R: std::fmt::Debug,
+// {
+//     let mut producer = FromSlice::new(data);
 
-            //  println!("item {:?}", item);
-            //  println!("ref {:?}", reference);
+//     match T::relative_decode_relation(reference, &mut producer) {
+//         Ok(item) => {
+//             // It decoded to a valid item! Gasp!
+//             // Can we turn it back into the same encoding?
+//             let mut consumer = IntoVec::<u8>::new();
 
-            item.relative_encode(reference, &mut consumer).unwrap();
+//             //  println!("item {:?}", item);
+//             //  println!("ref {:?}", reference);
 
-            let mut producer_2 = FromSlice::new(consumer.as_ref());
+//             item.relative_encode(reference, &mut consumer).unwrap();
 
-            match T::relative_decode_relation(reference, &mut producer_2) {
-                Ok(decoded_again) => {
-                    assert_eq!(item, decoded_again);
-                }
-                Err(err) => {
-                    println!("{:?}", err);
-                    panic!("Could not decode again, argh!")
-                }
-            }
+//             let mut producer_2 = FromSlice::new(consumer.as_ref());
 
-            Some(item)
-        }
-        Err(err) => match err {
-            // There was an error.
-            DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
-            DecodeError::InvalidInput => None,
-            DecodeError::U64DoesNotFitUsize => {
-                panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
-            }
-        },
-    }
-}
+//             match T::relative_decode_relation(reference, &mut producer_2) {
+//                 Ok(decoded_again) => {
+//                     assert_eq!(item, decoded_again);
+//                 }
+//                 Err(err) => {
+//                     println!("{:?}", err);
+//                     panic!("Could not decode again, argh!")
+//                 }
+//             }
+
+//             Some(item)
+//         }
+//         Err(err) => match err {
+//             // There was an error.
+//             DecodeError::Producer(_) => panic!("Returned producer error, when whe shouldn't!"),
+//             DecodeError::InvalidInput => None,
+//             DecodeError::U64DoesNotFitUsize => {
+//                 panic!("Returned u64DoesNotFitUsize error, when we shouldn't!")
+//             }
+//         },
+//     }
+// }

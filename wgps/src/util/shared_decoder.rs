@@ -1,7 +1,7 @@
 use std::{convert::Infallible, marker::PhantomData, ops::DerefMut};
 
 use either::Either::*;
-use ufotofu::local_nb::{BulkProducer, Producer};
+use ufotofu::{BulkProducer, Producer};
 
 use wb_async_utils::Mutex;
 use willow_encoding::{Decodable, DecodeError};

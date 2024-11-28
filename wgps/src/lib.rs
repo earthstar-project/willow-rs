@@ -2,7 +2,7 @@ use std::{future::Future, ops::DerefMut};
 
 use futures::try_join;
 
-use ufotofu::local_nb::{BulkConsumer, BulkProducer, Consumer, Producer};
+use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 use util::SharedEncoder;
 use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{

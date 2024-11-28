@@ -1,10 +1,10 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
+use ufotofu::Consumer;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     NamespaceId, Path, SubspaceId,
 };
-use willow_encoding::sync::{Encodable, RelativeEncodable};
+use willow_encoding::{Encodable, RelativeEncodable};
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 
@@ -102,31 +102,33 @@ where
             ));
         }
 
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
 
-        let access_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
-        };
+        // let mut consumer = IntoVec::<u8>::new();
 
-        consumer.consume(access_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
+        // let access_byte = match access_mode {
+        //     AccessMode::Read => 0x02,
+        //     AccessMode::Write => 0x03,
+        // };
 
-        let message = consumer.into_vec();
+        // consumer.consume(access_byte).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
 
-        let initial_authorisation = namespace_secret.sign(&message);
+        // let message = consumer.into_vec();
 
-        namespace_key
-            .verify(&message, &initial_authorisation)
-            .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
+        // let initial_authorisation = namespace_secret.sign(&message);
 
-        Ok(Self {
-            access_mode,
-            namespace_key,
-            initial_authorisation,
-            user_key,
-            delegations: Vec::new(),
-        })
+        // namespace_key
+        //     .verify(&message, &initial_authorisation)
+        //     .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
+
+        // Ok(Self {
+        //     access_mode,
+        //     namespace_key,
+        //     initial_authorisation,
+        //     user_key,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Creates an [`OwnedCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
@@ -136,30 +138,31 @@ where
         initial_authorisation: NamespaceSignature,
         access_mode: AccessMode,
     ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        let access_mode_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
-        };
+        // let access_mode_byte = match access_mode {
+        //     AccessMode::Read => 0x02,
+        //     AccessMode::Write => 0x03,
+        // };
 
-        // We can safely unwrap as IntoVec's error type is ! (never).
-        consumer.consume(access_mode_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
+        // // We can safely unwrap as IntoVec's error type is ! (never).
+        // consumer.consume(access_mode_byte).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
 
-        let message = consumer.into_vec();
+        // let message = consumer.into_vec();
 
-        namespace_key
-            .verify(&message, &initial_authorisation)
-            .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
+        // namespace_key
+        //     .verify(&message, &initial_authorisation)
+        //     .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
 
-        Ok(Self {
-            access_mode,
-            namespace_key,
-            user_key,
-            initial_authorisation,
-            delegations: Vec::new(),
-        })
+        // Ok(Self {
+        //     access_mode,
+        //     namespace_key,
+        //     user_key,
+        //     initial_authorisation,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Delegates this capability to a new `UserPublicKey` for a given [`willow_data_model::grouping::Area`].
@@ -341,30 +344,31 @@ where
         new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
         new_user: &UserPublicKey,
     ) -> Box<[u8]> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        if self.delegations.is_empty() {
-            let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
+        // if self.delegations.is_empty() {
+        //     let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
 
-            // We can safely unwrap all these encodings as IntoVec's error is the never type.
-            new_area.relative_encode(&prev_area, &mut consumer).unwrap();
-            self.initial_authorisation.encode(&mut consumer).unwrap();
-            new_user.encode(&mut consumer).unwrap();
+        //     // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        //     new_area.relative_encode(&prev_area, &mut consumer).unwrap();
+        //     self.initial_authorisation.encode(&mut consumer).unwrap();
+        //     new_user.encode(&mut consumer).unwrap();
 
-            return consumer.into_vec().into();
-        }
+        //     return consumer.into_vec().into();
+        // }
 
-        // We can unwrap here because we know that self.delegations is not empty.
-        let last_delegation = self.delegations.last().unwrap();
-        let prev_area = last_delegation.area();
-        let prev_signature = last_delegation.signature();
+        // // We can unwrap here because we know that self.delegations is not empty.
+        // let last_delegation = self.delegations.last().unwrap();
+        // let prev_area = last_delegation.area();
+        // let prev_signature = last_delegation.signature();
 
-        // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        new_area.relative_encode(prev_area, &mut consumer).unwrap();
-        prev_signature.encode(&mut consumer).unwrap();
-        new_user.encode(&mut consumer).unwrap();
+        // // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // new_area.relative_encode(prev_area, &mut consumer).unwrap();
+        // prev_signature.encode(&mut consumer).unwrap();
+        // new_user.encode(&mut consumer).unwrap();
 
-        consumer.into_vec().into()
+        // consumer.into_vec().into()
     }
 }
 
@@ -406,28 +410,30 @@ where
         let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
 
-        let access_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
-        };
+        // let mut consumer = IntoVec::<u8>::new();
 
-        consumer.consume(access_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
+        // let access_byte = match access_mode {
+        //     AccessMode::Read => 0x02,
+        //     AccessMode::Write => 0x03,
+        // };
 
-        let message = consumer.into_vec();
+        // consumer.consume(access_byte).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
 
-        namespace_key
-            .verify(&message, &initial_authorisation)
-            .map_err(|_| ArbitraryError::IncorrectFormat)?;
+        // let message = consumer.into_vec();
 
-        Ok(Self {
-            access_mode,
-            initial_authorisation,
-            namespace_key,
-            user_key,
-            delegations: Vec::new(),
-        })
+        // namespace_key
+        //     .verify(&message, &initial_authorisation)
+        //     .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+        // Ok(Self {
+        //     access_mode,
+        //     initial_authorisation,
+        //     namespace_key,
+        //     user_key,
+        //     delegations: Vec::new(),
+        // })
     }
 }

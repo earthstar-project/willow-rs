@@ -2,9 +2,9 @@ mod client_logic;
 use client_logic::*;
 
 mod frames;
-use frames::*:
+use frames::*;
 
-use ufotofu::local_nb::{BulkProducer, Producer};
+use ufotofu::{BulkProducer, Producer};
 
 use std::marker::PhantomData;
 
@@ -73,7 +73,8 @@ pub struct ControlMessageProducer<'state, const NUM_CHANNELS: usize, P, C, CMess
 
 impl<'state, const NUM_CHANNELS: usize, P, C, CMessage> Producer
     for ControlMessageProducer<'state, NUM_CHANNELS, P, C, CMessage>
-    where P: BulkProducer<Item = u8>
+where
+    P: BulkProducer<Item = u8>,
 {
     type Item = CMessage;
 
@@ -81,9 +82,7 @@ impl<'state, const NUM_CHANNELS: usize, P, C, CMessage> Producer
 
     type Error = i16;
 
-    async fn produce(
-        &mut self,
-    ) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
+    async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
         // Decode LCMUX frames
         todo!() // interact with self.state and stuff
     }

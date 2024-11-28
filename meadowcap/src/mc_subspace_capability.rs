@@ -1,8 +1,8 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::sync::{consumer::IntoVec, Consumer};
+use ufotofu::Consumer;
 use willow_data_model::NamespaceId;
 use willow_data_model::SubspaceId;
-use willow_encoding::sync::Encodable;
+use willow_encoding::Encodable;
 
 use crate::IsCommunal;
 
@@ -80,23 +80,24 @@ where
     where
         NamespaceSecret: Signer<NamespaceSignature>,
     {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        let signature = namespace_secret.sign(&message);
+        // let signature = namespace_secret.sign(&message);
 
-        namespace_key.verify(&message, &signature)?;
+        // namespace_key.verify(&message, &signature)?;
 
-        Ok(McSubspaceCapability {
-            namespace_key: namespace_key.clone(),
-            user_key,
-            initial_authorisation: signature,
-            delegations: Vec::new(),
-        })
+        // Ok(McSubspaceCapability {
+        //     namespace_key: namespace_key.clone(),
+        //     user_key,
+        //     initial_authorisation: signature,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Creates an [`McSubspaceCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
@@ -105,21 +106,22 @@ where
         user_key: UserPublicKey,
         initial_authorisation: NamespaceSignature,
     ) -> Result<Self, SignatureError> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        namespace_key.verify(&message, &initial_authorisation)?;
+        // namespace_key.verify(&message, &initial_authorisation)?;
 
-        Ok(Self {
-            namespace_key,
-            user_key,
-            initial_authorisation,
-            delegations: Vec::new(),
-        })
+        // Ok(Self {
+        //     namespace_key,
+        //     user_key,
+        //     initial_authorisation,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Returns the public key of the user to whom this capability grants access.
@@ -201,50 +203,41 @@ where
     ///
     /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_handover)
     fn handover(&self, new_user: &UserPublicKey) -> Box<[u8]> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        if self.delegations.is_empty() {
-            // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // if self.delegations.is_empty() {
+        //     // We can safely unwrap all these encodings as IntoVec's error is the never type.
 
-            self.initial_authorisation.encode(&mut consumer).unwrap();
-            new_user.encode(&mut consumer).unwrap();
+        //     self.initial_authorisation.encode(&mut consumer).unwrap();
+        //     new_user.encode(&mut consumer).unwrap();
 
-            return consumer.into_vec().into();
-        }
+        //     return consumer.into_vec().into();
+        // }
 
-        // We can unwrap here because we know that self.delegations is not empty.
-        let last_delegation = self.delegations.last().unwrap();
+        // // We can unwrap here because we know that self.delegations is not empty.
+        // let last_delegation = self.delegations.last().unwrap();
 
-        let prev_signature = &last_delegation.signature();
-        // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        prev_signature.encode(&mut consumer).unwrap();
-        new_user.encode(&mut consumer).unwrap();
+        // let prev_signature = &last_delegation.signature();
+        // // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // prev_signature.encode(&mut consumer).unwrap();
+        // new_user.encode(&mut consumer).unwrap();
 
-        consumer.into_vec().into()
+        // consumer.into_vec().into()
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 pub(super) mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
 
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
     use willow_encoding::{Decodable, Encodable};
 
-    use willow_encoding::{sync::Encodable as EncodableSync, CompactWidth, DecodeError};
+    use willow_encoding::{CompactWidth, DecodeError};
 
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
     use willow_encoding::produce_byte;
 
-    #[syncify_replace(
-      use willow_encoding::sync::{encode_compact_width_be, decode_compact_width_be};
-  )]
     use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
 
     impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
@@ -256,10 +249,10 @@ pub(super) mod encoding {
         >
     where
         NamespacePublicKey:
-            NamespaceId + EncodableSync + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-        NamespaceSignature: EncodableSync + Encodable + Clone,
-        UserPublicKey: SubspaceId + EncodableSync + Encodable + Verifier<UserSignature>,
-        UserSignature: EncodableSync + Encodable + Clone,
+            NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+        NamespaceSignature: Encodable + Encodable + Clone,
+        UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+        UserSignature: Encodable + Encodable + Clone,
     {
         async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
         where
@@ -309,10 +302,10 @@ pub(super) mod encoding {
         >
     where
         NamespacePublicKey:
-            NamespaceId + EncodableSync + Decodable + Verifier<NamespaceSignature> + IsCommunal,
-        NamespaceSignature: EncodableSync + Decodable + Clone,
-        UserPublicKey: SubspaceId + EncodableSync + Decodable + Verifier<UserSignature>,
-        UserSignature: EncodableSync + Decodable + Clone,
+            NamespaceId + Encodable + Decodable + Verifier<NamespaceSignature> + IsCommunal,
+        NamespaceSignature: Encodable + Decodable + Clone,
+        UserPublicKey: SubspaceId + Encodable + Decodable + Verifier<UserSignature>,
+        UserSignature: Encodable + Decodable + Clone,
     {
         async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
         where
@@ -383,22 +376,24 @@ where
         let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
         let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
 
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // let mut consumer = IntoVec::<u8>::new();
 
-        namespace_key
-            .verify(&message, &initial_authorisation)
-            .map_err(|_| ArbitraryError::IncorrectFormat)?;
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        Ok(Self {
-            namespace_key,
-            user_key,
-            initial_authorisation,
-            delegations: Vec::new(),
-        })
+        // namespace_key
+        //     .verify(&message, &initial_authorisation)
+        //     .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+        // Ok(Self {
+        //     namespace_key,
+        //     user_key,
+        //     initial_authorisation,
+        //     delegations: Vec::new(),
+        // })
     }
 }

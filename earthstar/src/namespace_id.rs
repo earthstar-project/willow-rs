@@ -16,17 +16,11 @@ impl Default for NamespaceIdentifier {
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
 pub(super) mod encoding {
     use super::*;
 
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
+    use ufotofu::{BulkConsumer, BulkProducer};
     use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelationDecodable};)]
     use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
     impl Encodable for NamespaceIdentifier {
