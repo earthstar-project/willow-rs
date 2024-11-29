@@ -1,0 +1,26 @@
+[package]
+name = "ufotofu_codec"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+
+default = ["std"]
+
+# Provide functionality that relies on the std library. Enabled by default.
+std = ["alloc"]
+
+# Provide functionality that relies on dynamic memory allocation.
+alloc = []
+
+[dependencies]
+ufotofu = "0.5.0"
+either = "1.10.0"
+
+[lints]
+workspace = true
+
+# docs.rs-specific configuration
+[package.metadata.docs.rs]
+# document all features
+all-features = true

@@ -616,6 +616,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ufotofu_codec"
+version = "0.1.0"
+dependencies = [
+ "either",
+ "ufotofu",
+]
+
+[[package]]
 name = "ufotofu_queues"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
