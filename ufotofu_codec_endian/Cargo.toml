@@ -1,0 +1,22 @@
+[package]
+name = "ufotofu_codec_endian"
+version = "0.1.0"
+edition = "2021"
+
+default = ["std"]
+
+# Provide functionality that relies on the std library. Enabled by default.
+std = []
+
+[dependencies]
+ufotofu = "0.5.1"
+either = "1.10.0"
+ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
+
+[lints]
+workspace = true
+
+# docs.rs-specific configuration
+[package.metadata.docs.rs]
+# document all features
+all-features = true

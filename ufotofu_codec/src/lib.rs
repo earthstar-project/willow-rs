@@ -46,6 +46,7 @@ extern crate std;
 #[cfg(feature = "dev")]
 pub mod proptest;
 
+use core::convert::Infallible;
 use core::fmt::Display;
 use core::fmt::Formatter;
 use core::future::Future;
@@ -66,7 +67,7 @@ use ufotofu::{
 /// A generic error type to use as a [`Decodable::Error`] when more detailed error reporting is not necessary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<ProducerError> {
-    /// The producer of the bytes to be decoded errored somehow.
+    /// The producer of the bytes to be decoded emitted an error.
     Producer(ProducerError),
     /// The bytes produced by the producer are not a valid encoding. A common subcase is when the producer emits its final item too soon.
     InvalidInput,
@@ -91,20 +92,6 @@ impl<ProducerError> From<ProducerError> for DecodeError<ProducerError> {
     }
 }
 
-#[cfg(feature = "std")]
-impl<E> Error for DecodeError<E>
-where
-    E: 'static + Error,
-{
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            DecodeError::Producer(err) => Some(err),
-            DecodeError::InvalidInput => None,
-            DecodeError::Irrepresentable => None,
-        }
-    }
-}
-
 impl<E: Display> Display for DecodeError<E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -124,6 +111,20 @@ impl<E: Display> Display for DecodeError<E> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<E> Error for DecodeError<E>
+where
+    E: 'static + Error,
+{
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            DecodeError::Producer(err) => Some(err),
+            DecodeError::InvalidInput => None,
+            DecodeError::Irrepresentable => None,
+        }
+    }
+}
+
 /// Methods for decoding a value that belongs to an *encoding relation*.
 ///
 /// API contracts:
@@ -134,7 +135,7 @@ pub trait Decodable: Sized {
     /// The type for reporting that the bytestring to decode was not a valid encoding of any value of type `Self`.
     ///
     /// The [`DecodeError`] type is a recommended choice for this type parameter when it is not important to trace in detail why exactly decoding went wrong.
-    type Error;
+    type Error<ProducerError>;
 
     /// The type of values relative to which we decode. Set to `()` for absolute encodings.
     type DecodeRelativeTo;
@@ -143,13 +144,13 @@ pub trait Decodable: Sized {
     fn relative_decode<P>(
         producer: &mut P,
         r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error>>
+    ) -> impl Future<Output = Result<Self, Self::Error<P::Error>>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized;
 
     /// Decodes the bytes produced by the given producer into a `Self`, or yields an error if the producer does not produce a valid encoding.
-    fn decode<P>(producer: &mut P) -> impl Future<Output = Result<Self, Self::Error>>
+    fn decode<P>(producer: &mut P) -> impl Future<Output = Result<Self, Self::Error<P::Error>>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -162,12 +163,12 @@ pub trait Decodable: Sized {
     fn relative_decode_from_slice(
         enc: &[u8],
         r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error>> {
+    ) -> impl Future<Output = Result<Self, Self::Error<Infallible>>> {
         async { Self::relative_decode(&mut FromSlice::new(enc), r).await }
     }
 
     /// Decodes from a slice instead of a producer.
-    fn decode_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error>>
+    fn decode_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error<Infallible>>>
     where
         Self: Decodable<DecodeRelativeTo = ()>,
     {
@@ -283,19 +284,21 @@ pub trait DecodableCanonic: Decodable {
     /// The type for reporting that the bytestring to decode was not a valid canonic encoding of any value of type `Self`.
     ///
     /// Typically contains at least as much information as [`Self::Error`](Decodable::Error). If the encoding relation implemented by [`Decodable`] is already canonic, then [`ErrorCanonic`](DecodableCanonic::ErrorCanonic) should be equal to [`Self::Error`](Decodable::Error).
-    type ErrorCanonic: From<Self::Error>;
+    type ErrorCanonic<ProducerError>: From<Self::Error<ProducerError>>;
 
     /// Decodes the bytes produced by the given producer into a `Self`, and errors if the input encoding is not the canonical one.
     fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error>>
+    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<P::Error>>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized;
 
     ///Absolutely decodes the bytes produced by the given producer into a `Self`, and errors if the input encoding is not the canonical one.
-    fn decode_canonic<P>(producer: &mut P) -> impl Future<Output = Result<Self, Self::Error>>
+    fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<P::Error>>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -308,12 +311,14 @@ pub trait DecodableCanonic: Decodable {
     fn relative_decode_canonic_from_slice(
         enc: &[u8],
         r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error>> {
+    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<Infallible>>> {
         async { Self::relative_decode_canonic(&mut FromSlice::new(enc), r).await }
     }
 
     /// Absolutely decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn decode_canonic_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error>>
+    fn decode_canonic_from_slice(
+        enc: &[u8],
+    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<Infallible>>>
     where
         Self: Decodable<DecodeRelativeTo = ()>,
     {
@@ -327,12 +332,12 @@ pub trait DecodableSync: Decodable {
     fn sync_relative_decode_from_slice(
         enc: &[u8],
         r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, Self::Error<Infallible>> {
         pollster::block_on(Self::relative_decode_from_slice(enc, r))
     }
 
     /// Synchronously and absolutely decodes from a slice instead of a producer.
-    fn sync_decode_from_slice(enc: &[u8]) -> Result<Self, Self::Error>
+    fn sync_decode_from_slice(enc: &[u8]) -> Result<Self, Self::Error<Infallible>>
     where
         Self: Decodable<DecodeRelativeTo = ()>,
     {
@@ -343,7 +348,7 @@ pub trait DecodableSync: Decodable {
     fn sync_relative_decode_canonic_from_slice(
         enc: &[u8],
         r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::Error>
+    ) -> Result<Self, Self::ErrorCanonic<Infallible>>
     where
         Self: DecodableCanonic,
     {
@@ -351,7 +356,7 @@ pub trait DecodableSync: Decodable {
     }
 
     /// Synchronously and absolutely decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn sync_decode_canonic_from_slice(enc: &[u8]) -> Result<Self, Self::Error>
+    fn sync_decode_canonic_from_slice(enc: &[u8]) -> Result<Self, Self::ErrorCanonic<Infallible>>
     where
         Self: DecodableCanonic,
         Self: Decodable<DecodeRelativeTo = ()>,
@@ -399,3 +404,5 @@ pub trait EncodableSync: Encodable {
 }
 
 // TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
+
+// TODO proptest stuff
