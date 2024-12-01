@@ -252,9 +252,9 @@ where
         let size = message.encoded_size() as u64;
 
         // Compute how many bytes to encode the length in.
-        let floored_base64_log_of_size = (size.ilog2() / 8) as u8;
+        let floored_base256_log_of_size = (size.ilog2() / 8) as u8;
         // Shift to the 2nd to 2th most significant bits to form the first four bits of the header byte.
-        let mut first_byte = floored_base64_log_of_size << 3;
+        let mut first_byte = floored_base256_log_of_size << 3;
         first_byte |= channel_id_to_four_header_bits(self.channel);
 
         if let Err(()) = self.guarantees.wait_for_guarantees(size).await {

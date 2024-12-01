@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "compact_u64",
     "data-model",
     "earthstar",
     "encoding",
