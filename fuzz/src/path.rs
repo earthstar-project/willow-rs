@@ -5,7 +5,7 @@ use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstruc
 use willow_data_model::{Component, InvalidPathError, Path};
 
 /*
-* A known-good, simple implementation of paths. Used in testing to compare the behaviour of the optimised imlpementation against it.
+* A known-good, simple implementation of paths. Used in testing to compare the behaviour of the optimised implementation against it.
 */
 
 #[derive(Debug)]

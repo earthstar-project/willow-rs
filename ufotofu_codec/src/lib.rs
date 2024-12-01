@@ -21,11 +21,16 @@
 //! - [`EncodableCanonic`] and [`DecodableCanonic`] allow working with canonic subsets of an encoding relation, i.e., encodings where there is a one-to-one correspondence between values and codes.
 //! - [`EncodableSync`] and [`DecodableSync`] are marker traits that signal that all asynchrony in encoding/decoding stems from the consumer/producer, but all further computations are synchronous. When using a consumer/producer that never blocks either, this allows for synchronous encoding/decoding.
 //! - [`EncodableKnownSize`] describes how to compute the size of an encoding without actually performing the encoding. Useful when the size needs to be known in advance (length-prefixing, or encoding into a slice).
+//!
+//! When the `dev` feature is enabled, the [`proptest`] module provides helpers for writing property tests for checking the invariants that implementations of the traits of this crate must uphold.
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
+
+#[cfg(feature = "dev")]
+pub mod proptest;
 
 use core::fmt::Display;
 use core::fmt::Formatter;
@@ -40,7 +45,9 @@ use std::{boxed::Box, collections::Vec};
 use std::error::Error;
 
 use either::Either::*;
-use ufotofu::{BulkConsumer, BulkProducer, OverwriteFullSliceError};
+use ufotofu::{
+    consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, OverwriteFullSliceError,
+};
 
 /// A generic error type to use as a [`Decodable::Error`] when more detailed error reporting is not necessary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +110,12 @@ impl<E: Display> Display for DecodeError<E> {
     }
 }
 
-/// Methods for decoding a value that belongs to an *encoding relation* (see the module-level docs for the exact definition).
+/// Methods for decoding a value that belongs to an *encoding relation*.
+///
+/// API contracts:
+///
+/// - The result of decoding must depend only on the decoded bytes, not on details of the producer such as when it yields or how many items it exposes at a time.
+/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
 pub trait Decodable: Sized {
     type Error;
 
@@ -115,11 +127,18 @@ pub trait Decodable: Sized {
 
     /// Decodes from a slice instead of a producer.
     fn decode_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error>> {
-        async { unimplemented!() }
+        async { Self::decode(&mut FromSlice::new(enc)).await }
     }
 }
 
-/// Methods for encoding a value that belongs to an *encoding relation* (see the module-level docs for the exact definition).
+/// Methods for encoding a value that belongs to an *encoding relation*.
+///
+/// API contracts:
+///
+/// - The encoding must not depend on details of the consumer such as when it yields or how many item slots it exposes at a time.
+/// - Nonequal values must result in nonequal encodings.
+/// - No encoding must be a prefix of a different encoding.
+/// - For types that also implement `Decodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
 pub trait Encodable {
     /// Writes an encoding of `&self` into the given consumer.
     fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
@@ -129,11 +148,20 @@ pub trait Encodable {
     #[cfg(feature = "alloc")]
     /// Encodes into a Vec instead of a given consumer.
     fn encode_into_vec(&self) -> impl Future<Output = Vec<u8>> {
-        async { unimplemented!() }
+        async {
+            let mut c = IntoVec::new();
+
+            match self.encode(&mut c).await {
+                Ok(()) => c.into_vec(),
+                Err(_) => unreachable!(),
+            }
+        }
     }
 }
 
 /// Encodables that can (efficiently and synchronously) precompute the length of their encoding.
+///
+/// API contract: `self.encode(c)` must write exactly `self.len_of_encoding()` many bytes into `c`.
 pub trait EncodableKnownSize: Encodable {
     /// Computes the size of the encoding in bytes. Calling [`encode`](Encodable::encode) must feed exactly that many bytes into the consumer.
     fn len_of_encoding(&self) -> usize;
@@ -141,13 +169,24 @@ pub trait EncodableKnownSize: Encodable {
     #[cfg(feature = "alloc")]
     /// Encodes into a boxed slice instead of a given consumer.
     fn encode_into_boxed_slice(&self) -> impl Future<Output = Box<[u8]>> {
-        async { unimplemented!() }
+        async {
+            let mut c = IntoVec::with_capacity(self.len_of_encoding());
+
+            match self.encode(&mut c).await {
+                Ok(()) => c.into_vec().into_boxed_slice(),
+                Err(_) => unreachable!(),
+            }
+        }
     }
 }
 
 /// Decoding for an *encoding relation* with a one-to-one mapping between values and their codes (i.e., the relation is a [bijection](https://en.wikipedia.org/wiki/Bijection)).
 ///
 /// This may specialise an arbitrary encoding relation to implement a canonic subset.
+///
+/// API contract: Two nonequal codes must not decode to the same value with `decode_canonic`.
+///
+/// There is no corresponding `EncodableCanonic` trait, because `Encodable` already fulfils the dual requirement of two nonequal values yielding nonequal codes.
 pub trait DecodableCanonic: Decodable {
     type ErrorCanonic: From<Self::Error>;
 
@@ -158,48 +197,18 @@ pub trait DecodableCanonic: Decodable {
         Self: Sized;
 
     /// Decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
+    ///
+    /// This method must not [`close`](ufotofu::Consumer::close) the consumer.
     fn decode_canonic_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error>> {
-        async { unimplemented!() }
+        async { Self::decode_canonic(&mut FromSlice::new(enc)).await }
     }
 }
 
-/// Encoding for an *encoding relation* with a one-to-one mapping between values and their codes (i.e., the relation is a [bijection](https://en.wikipedia.org/wiki/Bijection)).
-///
-/// This may specialise an arbitrary encoding relation to implement a canonic subset.
-///
-/// The default implementation simply calls [`self.encode`](Encodable::encode), since usually that function is deterministic and produces the canonic encoding already.
-pub trait EncodableCanonic: Encodable {
-    /// Writes the canonic encoding of `&self` into the given consumer.
-    fn encode_canonic<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
-    where
-        C: BulkConsumer<Item = u8>,
-    {
-        self.encode(consumer)
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Encodes the canonic encoding of `&self` into a Vec instead of a given consumer.
-    fn encode_canonic_into_vec(&self) -> impl Future<Output = Vec<u8>> {
-        async { unimplemented!() }
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Encodes the canonic encoding of `&self` into a boxed slice instead of a given consumer.
-    fn encode_canonic_into_boxed_slice(&self) -> impl Future<Output = Box<[u8]>>
-    where
-        Self: EncodableKnownSize,
-    {
-        async { unimplemented!() }
-    }
-}
-
-/// A decodable that introduces no asynchrony beyond that of `.await`ing the producer.
-///
-/// If the producer is known to not block either, this enables synchronous decoding.
+/// A decodable that introduces no asynchrony beyond that of `.await`ing the producer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous decoding via producers that are known to never block.
 pub trait DecodableSync: Decodable {
     /// Synchronously decodes from a slice instead of a producer.
     fn sync_decode_from_slice(enc: &[u8]) -> Result<Self, Self::Error> {
-        unimplemented!()
+        pollster::block_on(Self::decode_from_slice(enc))
     }
 
     /// Asynchronously decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
@@ -207,7 +216,7 @@ pub trait DecodableSync: Decodable {
     where
         Self: DecodableCanonic,
     {
-        unimplemented!()
+        pollster::block_on(Self::decode_canonic_from_slice(enc))
     }
 }
 
@@ -217,36 +226,24 @@ pub trait DecodableSync: Decodable {
 pub trait EncodableSync: Encodable {
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a Vec instead of a given consumer.
+    ///
+    /// This method must not [`close`](ufotofu::Consumer::close) the consumer.
     fn sync_encode_into_vec(&self) -> Vec<u8> {
-        unimplemented!()
+        pollster::block_on(self.encode_into_vec())
     }
 
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a boxed slice instead of a given consumer.
+    ///
+    /// This method must not [`close`](ufotofu::Consumer::close) the consumer.
     fn sync_encode_into_boxed_slice(&self) -> Box<[u8]>
     where
         Self: EncodableKnownSize,
     {
-        unimplemented!()
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Synchronously encodes the canonic encoding of `&self` into a Vec instead of a given consumer.
-    fn sync_encode_canonic_into_vec(&self) -> Vec<u8>
-    where
-        Self: EncodableCanonic,
-    {
-        unimplemented!()
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Synchronously encodes the canonic encoding of `&self` into a boxed slice instead of a given consumer.
-    fn sync_encode_canonic_into_boxed_slice(&self) -> Box<[u8]>
-    where
-        Self: EncodableKnownSize + EncodableCanonic,
-    {
-        unimplemented!()
+        pollster::block_on(self.encode_into_boxed_slice())
     }
 }
 
 // TODO Relativity
+
+// TODO Encoder, EncoderCanonic, Decoder, DecoderCanonic, relative variants?

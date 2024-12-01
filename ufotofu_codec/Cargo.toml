@@ -9,13 +9,16 @@ default = ["std"]
 
 # Provide functionality that relies on the std library. Enabled by default.
 std = ["alloc"]
-
 # Provide functionality that relies on dynamic memory allocation.
 alloc = []
+# Provide test helpers.
+dev = ["std"]
 
 [dependencies]
-ufotofu = "0.5.0"
+ufotofu = "0.5.1"
 either = "1.10.0"
+pollster = "0.4.0"
+# arbitrary = { version = "1.0.2", optional = true }
 
 [lints]
 workspace = true

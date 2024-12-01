@@ -606,13 +606,12 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "ufotofu"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7696bdcb0fd961f5712fd94fba5325f74d19f50881067bd75c190d7bfa292215"
+checksum = "d5b5133772b5db1ce2ad8411867d02d933d4d8410af5e71147020817e4891a98"
 dependencies = [
  "arbitrary",
  "either",
- "ufotofu_queues",
 ]
 
 [[package]]
@@ -620,6 +619,7 @@ name = "ufotofu_codec"
 version = "0.1.0"
 dependencies = [
  "either",
+ "pollster",
  "ufotofu",
 ]
 
