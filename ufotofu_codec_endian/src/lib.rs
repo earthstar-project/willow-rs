@@ -4,8 +4,7 @@
 //!
 //! [TODO] write documentation.
 
-use core::fmt::Display;
-use core::fmt::Formatter;
+use core::convert::Infallible;
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -13,65 +12,14 @@ extern crate std;
 #[cfg(feature = "std")]
 use std::error::Error;
 
-use either::Either::*;
 use ufotofu::{BulkConsumer, BulkProducer};
-use ufotofu_codec::RelativeDecodable;
+use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
-use ufotofu_codec::RelativeDecodableSync;
+use ufotofu_codec::DecodableSync;
 use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
 use ufotofu_codec::EncodableSync;
-
-/// The possible error conditions why decoding a fixed-width integer might fail.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodeFixedWidthError<ProducerError> {
-    /// The producer of the bytes to be decoded emitted an error.
-    Producer(ProducerError),
-    /// The producer emitted its final item before decoding could be completed.
-    UnexpectedEndOfInput,
-}
-
-impl<E> From<DecodeFixedWidthError<E>> for DecodeError<E> {
-    fn from(value: DecodeFixedWidthError<E>) -> DecodeError<E> {
-        match value {
-            DecodeFixedWidthError::Producer(err) => DecodeError::Producer(err),
-            DecodeFixedWidthError::UnexpectedEndOfInput => DecodeError::InvalidInput,
-        }
-    }
-}
-
-impl<E> From<E> for DecodeFixedWidthError<E> {
-    fn from(err: E) -> Self {
-        DecodeFixedWidthError::Producer(err)
-    }
-}
-
-impl<E: Display> Display for DecodeFixedWidthError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self {
-            DecodeFixedWidthError::Producer(err) => {
-                write!(f, "The underlying producer encountered an error: {}", err,)
-            }
-            DecodeFixedWidthError::UnexpectedEndOfInput => {
-                write!(f, "The input ended too soon.",)
-            }
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl<E> Error for DecodeFixedWidthError<E>
-where
-    E: 'static + Error,
-{
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            DecodeFixedWidthError::Producer(err) => Some(err),
-            DecodeFixedWidthError::UnexpectedEndOfInput => None,
-        }
-    }
-}
 
 macro_rules! endian_wrapper {
     (name $wrapper_name:ident; integer $int:ident; doc_array $arr:expr; from_bytes $from_bytes:ident; to_bytes $to_bytes:ident; word $word:ident) => {
@@ -104,12 +52,9 @@ assert_eq!(
         }
 
         impl Encodable for $wrapper_name {
-            type EncodeRelativeTo = ();
-
-            async fn relative_encode<C>(
+            async fn encode<C>(
                 &self,
                 consumer: &mut C,
-                _r: &Self::EncodeRelativeTo,
             ) -> Result<(), C::Error>
             where
                 C: BulkConsumer<Item = u8>,
@@ -117,13 +62,13 @@ assert_eq!(
                 let bytes = self.0.$to_bytes();
                 consumer
                     .bulk_consume_full_slice(&bytes[..])
-                    .await
-                    .map_err(|err| err.into_reason())
+                    .await.map_err(|err| err.into_reason())?;
+                Ok(())
             }
         }
 
         impl EncodableKnownSize for $wrapper_name {
-            fn relative_len_of_encoding(&self, _r: &Self::EncodeRelativeTo) -> usize {
+            fn len_of_encoding(&self) -> usize {
                 ($int::BITS / 8) as usize
             }
         }
@@ -131,43 +76,30 @@ assert_eq!(
         impl EncodableSync for $wrapper_name {}
 
         impl Decodable for $wrapper_name {
-            type Error<ProducerError> = DecodeFixedWidthError<ProducerError>;
+            type ErrorReason = Infallible;
 
-            type DecodeRelativeTo = ();
-
-            async fn relative_decode<P>(
+            async fn decode<P>(
                 producer: &mut P,
-                _r: &Self::DecodeRelativeTo,
-            ) -> Result<Self, Self::Error<P::Error>>
+            ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
             where
                 P: BulkProducer<Item = u8>,
-                Self: Sized,
             {
                 let mut bytes = [0u8; ($int::BITS / 8) as usize];
-                match producer
-                    .bulk_overwrite_full_slice(&mut bytes[..])
-                    .await
-                    .map_err(|err| err.into_reason())
-                {
-                    Ok(()) => Ok($wrapper_name($int::$from_bytes(bytes))),
-                    Err(Left(_fin)) => Err(DecodeFixedWidthError::UnexpectedEndOfInput),
-                    Err(Right(err)) => Err(DecodeFixedWidthError::Producer(err)),
-                }
+                producer.bulk_overwrite_full_slice(&mut bytes[..]).await?;
+                Ok($wrapper_name($int::$from_bytes(bytes)))
             }
         }
 
         impl DecodableCanonic for $wrapper_name {
-            type ErrorCanonic<ProducerError> = Self::Error<ProducerError>;
+            type ErrorCanonic = Self::ErrorReason;
 
-            async fn relative_decode_canonic<P>(
+            async fn decode_canonic<P>(
                 producer: &mut P,
-                r: &Self::DecodeRelativeTo,
-            ) -> Result<Self, Self::ErrorCanonic<P::Error>>
+            ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
             where
                 P: BulkProducer<Item = u8>,
-                Self: Sized,
             {
-                Self::relative_decode(producer, r).await
+                Self::decode(producer).await
             }
         }
 
@@ -206,12 +138,9 @@ assert_eq!(
         }
 
         impl Encodable for $wrapper_name {
-            type EncodeRelativeTo = ();
-
-            async fn relative_encode<C>(
+            async fn encode<C>(
                 &self,
                 consumer: &mut C,
-                _r: &Self::EncodeRelativeTo,
             ) -> Result<(), C::Error>
             where
                 C: BulkConsumer<Item = u8>,
@@ -225,7 +154,7 @@ assert_eq!(
         }
 
         impl EncodableKnownSize for $wrapper_name {
-            fn relative_len_of_encoding(&self, _r: &Self::EncodeRelativeTo) -> usize {
+            fn len_of_encoding(&self) -> usize {
                 ($int::BITS / 8) as usize
             }
         }
@@ -233,43 +162,32 @@ assert_eq!(
         impl EncodableSync for $wrapper_name {}
 
         impl Decodable for $wrapper_name {
-            type Error<ProducerError> = DecodeFixedWidthError<ProducerError>;
+            type ErrorReason = Infallible;
 
-            type DecodeRelativeTo = ();
-
-            async fn relative_decode<P>(
+            async fn decode<P>(
                 producer: &mut P,
-                _r: &Self::DecodeRelativeTo,
-            ) -> Result<Self, Self::Error<P::Error>>
+            ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
             where
                 P: BulkProducer<Item = u8>,
-                Self: Sized,
             {
                 let mut bytes = [0u8; ($int::BITS / 8) as usize];
-                match producer
+                producer
                     .bulk_overwrite_full_slice(&mut bytes[..])
-                    .await
-                    .map_err(|err| err.into_reason())
-                {
-                    Ok(()) => Ok($wrapper_name($int::from_be_bytes(bytes))),
-                    Err(Left(_fin)) => Err(DecodeFixedWidthError::UnexpectedEndOfInput),
-                    Err(Right(err)) => Err(DecodeFixedWidthError::Producer(err)),
-                }
+                    .await?;
+                Ok($wrapper_name($int::from_be_bytes(bytes)))
             }
         }
 
         impl DecodableCanonic for $wrapper_name {
-            type ErrorCanonic<ProducerError> = Self::Error<ProducerError>;
+            type ErrorCanonic = Self::ErrorReason;
 
-            async fn relative_decode_canonic<P>(
+            async fn decode_canonic<P>(
                 producer: &mut P,
-                r: &Self::DecodeRelativeTo,
-            ) -> Result<Self, Self::ErrorCanonic<P::Error>>
+            ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
             where
                 P: BulkProducer<Item = u8>,
-                Self: Sized,
             {
-                Self::relative_decode(producer, r).await
+                Self::decode(producer).await
             }
         }
 
