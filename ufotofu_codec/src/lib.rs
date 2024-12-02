@@ -45,23 +45,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use core::convert::Infallible;
-use core::fmt::{Debug, Display, Formatter};
-use core::future::Future;
-
-#[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
-#[cfg(all(feature = "std", not(feature = "alloc")))]
-use std::{boxed::Box, collections::Vec};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-use either::Either::*;
-use ufotofu::{
-    consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, OverwriteFullSliceError,
-};
-
 #[cfg(feature = "dev")]
 pub mod proptest;
 
@@ -80,6 +63,6 @@ pub use encode::*;
 mod relative_encode;
 pub use relative_encode::*;
 
-// // TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
+// TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
 
-// // TODO proptest stuff
+// TODO proptest stuff
