@@ -98,13 +98,13 @@ where
 pub trait RelativeEncodableSync<RelativeTo>: RelativeEncodable<RelativeTo> {
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a Vec instead of a given consumer.
-    fn relative_sync_encode_into_vec(&self, r: &RelativeTo) -> Vec<u8> {
+    fn sync_relative_encode_into_vec(&self, r: &RelativeTo) -> Vec<u8> {
         pollster::block_on(self.relative_encode_into_vec(r))
     }
 
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a boxed slice instead of a given consumer.
-    fn relative_sync_encode_into_boxed_slice(&self, r: &RelativeTo) -> Box<[u8]>
+    fn sync_relative_encode_into_boxed_slice(&self, r: &RelativeTo) -> Box<[u8]>
     where
         Self: RelativeEncodableKnownSize<RelativeTo>,
     {

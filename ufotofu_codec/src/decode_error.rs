@@ -18,6 +18,20 @@ pub enum DecodeError<F, E, Other> {
     Other(Other),
 }
 
+impl<F, E, OtherB> DecodeError<F, E, OtherB> {
+    /// Map from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouhced but mapping other errors via a `From` implementation.
+    pub fn map_other<OtherA>(err: DecodeError<F, E, OtherA>) -> Self
+    where
+        OtherB: From<OtherA>,
+    {
+        match err {
+            DecodeError::Producer(err) => DecodeError::Producer(err),
+            DecodeError::UnexpectedEndOfInput(fin) => DecodeError::UnexpectedEndOfInput(fin),
+            DecodeError::Other(noncanonic_err) => DecodeError::Other(noncanonic_err.into()),
+        }
+    }
+}
+
 impl<F, E, Other> From<E> for DecodeError<F, E, Other> {
     fn from(err: E) -> Self {
         DecodeError::Producer(err)
