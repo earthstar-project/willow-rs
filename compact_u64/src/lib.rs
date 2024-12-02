@@ -25,9 +25,9 @@ use std::error::Error;
 
 use either::Either::*;
 use ufotofu::{BulkConsumer, BulkProducer};
-use ufotofu_codec::Decodable;
+use ufotofu_codec::RelativeDecodable;
 use ufotofu_codec::DecodableCanonic;
-use ufotofu_codec::DecodableSync;
+use ufotofu_codec::RelativeDecodableSync;
 use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
@@ -299,7 +299,7 @@ impl EncodableKnownSize for CompactU64 {
 
 impl EncodableSync for CompactU64 {}
 
-impl Decodable for CompactU64 {
+impl RelativeDecodable for CompactU64 {
     type Error<ProducerError> = i16;
 
     type DecodeRelativeTo = i16;
@@ -331,4 +331,4 @@ impl DecodableCanonic for CompactU64 {
     }
 }
 
-impl DecodableSync for CompactU64 {}
+impl RelativeDecodableSync for CompactU64 {}

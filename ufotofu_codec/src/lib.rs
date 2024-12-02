@@ -37,18 +37,16 @@
 //! ## Property Testing
 //!
 //! When the `dev` feature is enabled, the [`proptest`] module provides helpers for writing property tests for checking the invariants that implementations of the traits of this crate must uphold.
+//!
+//! [TODO] check all docs, update to the most recent refactorings...
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(feature = "dev")]
-pub mod proptest;
-
 use core::convert::Infallible;
-use core::fmt::Display;
-use core::fmt::Formatter;
+use core::fmt::{Debug, Display, Formatter};
 use core::future::Future;
 
 #[cfg(feature = "alloc")]
@@ -64,345 +62,159 @@ use ufotofu::{
     consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, OverwriteFullSliceError,
 };
 
-/// A generic error type to use as a [`Decodable::Error`] when more detailed error reporting is not necessary.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodeError<ProducerError> {
-    /// The producer of the bytes to be decoded emitted an error.
-    Producer(ProducerError),
-    /// The bytes produced by the producer are not a valid encoding. A common subcase is when the producer emits its final item too soon.
-    InvalidInput,
-    /// The producer produced a (valid prefix) of an encoding, but we cannot represent the decoded value. A typical example would be decoding a number that does not fit into a `usize`, another typical case is running out of memory.
-    Irrepresentable,
-}
+#[cfg(feature = "dev")]
+pub mod proptest;
 
-/// Turn an `OverwriteFullSliceError` into an appropriate `DecodeError`: [`DecodeError::InvalidInput`] if the final item was emitted too early, and [`DecodeError::Producer`] if the producer emitted an error.
-impl<F, E> From<OverwriteFullSliceError<F, E>> for DecodeError<E> {
-    /// Turn an `OverwriteFullSliceError` into an appropriate `DecodeError`: [`DecodeError::InvalidInput`] if the final item was emitted too early, and [`DecodeError::Producer`] if the producer emitted an error.
-    fn from(value: OverwriteFullSliceError<F, E>) -> Self {
-        match value.reason {
-            Left(_) => DecodeError::InvalidInput,
-            Right(err) => DecodeError::Producer(err),
-        }
-    }
-}
+mod decode_error;
+pub use decode_error::DecodeError;
 
-impl<ProducerError> From<ProducerError> for DecodeError<ProducerError> {
-    fn from(err: ProducerError) -> Self {
-        DecodeError::Producer(err)
-    }
-}
+mod decode;
+pub use decode::*;
 
-impl<E: Display> Display for DecodeError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self {
-            DecodeError::Producer(err) => {
-                write!(f, "The underlying producer encountered an error: {}", err,)
-            }
-            DecodeError::InvalidInput => {
-                write!(
-                    f,
-                    "Decoding failed due to receiving invalid input, i.e., not a valid encoding.",
-                )
-            }
-            DecodeError::Irrepresentable => {
-                write!(f, "Decoded a prefix of a valid encoding such that the resulting value cannot be represented.",)
-            }
-        }
-    }
-}
+mod relative_decode;
+pub use relative_decode::*;
 
-#[cfg(feature = "std")]
-impl<E> Error for DecodeError<E>
-where
-    E: 'static + Error,
-{
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            DecodeError::Producer(err) => Some(err),
-            DecodeError::InvalidInput => None,
-            DecodeError::Irrepresentable => None,
-        }
-    }
-}
+mod encode;
+pub use encode::*;
 
-/// Methods for decoding a value that belongs to an *encoding relation*.
-///
-/// API contracts:
-///
-/// - The result of decoding must depend only on the decoded bytes, not on details of the producer such as when it yields or how many items it exposes at a time.
-/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
-pub trait Decodable: Sized {
-    /// The type for reporting that the bytestring to decode was not a valid encoding of any value of type `Self`.
-    ///
-    /// The [`DecodeError`] type is a recommended choice for this type parameter when it is not important to trace in detail why exactly decoding went wrong.
-    type Error<ProducerError>;
+mod relative_encode;
+pub use relative_encode::*;
 
-    /// The type of values relative to which we decode. Set to `()` for absolute encodings.
-    type DecodeRelativeTo;
+// /// Methods for encoding a value that belongs to an *encoding relation*.
+// ///
+// /// API contracts:
+// ///
+// /// - The encoding must not depend on details of the consumer such as when it yields or how many item slots it exposes at a time.
+// /// - Nonequal values must result in nonequal encodings.
+// /// - No encoding must be a prefix of a different encoding.
+// /// - For types that also implement `Decodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
+// pub trait Encodable {
+//     /// The type of values relative to which we encode. Set to `()` for absolute encodings.
+//     type EncodeRelativeTo;
 
-    /// Decodes the bytes produced by the given producer into a `Self`, or yields an error if the producer does not produce a valid encoding.
-    fn relative_decode<P>(
-        producer: &mut P,
-        r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error<P::Error>>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized;
+//     /// Writes an encoding of `&self` into the given consumer.
+//     fn relative_encode<C>(
+//         &self,
+//         consumer: &mut C,
+//         r: &Self::EncodeRelativeTo,
+//     ) -> impl Future<Output = Result<(), C::Error>>
+//     where
+//         C: BulkConsumer<Item = u8>;
 
-    /// Decodes the bytes produced by the given producer into a `Self`, or yields an error if the producer does not produce a valid encoding.
-    fn decode<P>(producer: &mut P) -> impl Future<Output = Result<Self, Self::Error<P::Error>>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized,
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        Self::relative_decode(producer, &())
-    }
+//     /// Writes an absolute encoding of `&self` into the given consumer.
+//     fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
+//     where
+//         C: BulkConsumer<Item = u8>,
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         self.relative_encode(consumer, &())
+//     }
 
-    /// Decodes from a slice instead of a producer.
-    fn relative_decode_from_slice(
-        enc: &[u8],
-        r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::Error<Infallible>>> {
-        async { Self::relative_decode(&mut FromSlice::new(enc), r).await }
-    }
+//     #[cfg(feature = "alloc")]
+//     /// Encodes into a Vec instead of a given consumer.
+//     fn relative_encode_into_vec(
+//         &self,
+//         r: &Self::EncodeRelativeTo,
+//     ) -> impl Future<Output = Vec<u8>> {
+//         async {
+//             let mut c = IntoVec::new();
 
-    /// Decodes from a slice instead of a producer.
-    fn decode_from_slice(enc: &[u8]) -> impl Future<Output = Result<Self, Self::Error<Infallible>>>
-    where
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        Self::relative_decode_from_slice(enc, &())
-    }
-}
+//             match self.relative_encode(&mut c, r).await {
+//                 Ok(()) => c.into_vec(),
+//                 Err(_) => unreachable!(),
+//             }
+//         }
+//     }
 
-/// Methods for encoding a value that belongs to an *encoding relation*.
-///
-/// API contracts:
-///
-/// - The encoding must not depend on details of the consumer such as when it yields or how many item slots it exposes at a time.
-/// - Nonequal values must result in nonequal encodings.
-/// - No encoding must be a prefix of a different encoding.
-/// - For types that also implement `Decodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
-pub trait Encodable {
-    /// The type of values relative to which we encode. Set to `()` for absolute encodings.
-    type EncodeRelativeTo;
+//     #[cfg(feature = "alloc")]
+//     /// Absolutely encodes into a Vec instead of a given consumer.
+//     fn encode_into_vec(&self) -> impl Future<Output = Vec<u8>>
+//     where
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         self.relative_encode_into_vec(&())
+//     }
+// }
 
-    /// Writes an encoding of `&self` into the given consumer.
-    fn relative_encode<C>(
-        &self,
-        consumer: &mut C,
-        r: &Self::EncodeRelativeTo,
-    ) -> impl Future<Output = Result<(), C::Error>>
-    where
-        C: BulkConsumer<Item = u8>;
+// /// Encodables that can (efficiently and synchronously) precompute the length of their encoding.
+// ///
+// /// API contract: `self.encode(c)` must write exactly `self.len_of_encoding()` many bytes into `c`.
+// pub trait EncodableKnownSize: Encodable {
+//     /// Computes the size of the encoding in bytes. Calling [`relative_encode`](Encodable::relative_encode) must feed exactly that many bytes into the consumer.
+//     fn relative_len_of_encoding(&self, r: &Self::EncodeRelativeTo) -> usize;
 
-    /// Writes an absolute encoding of `&self` into the given consumer.
-    fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
-    where
-        C: BulkConsumer<Item = u8>,
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        self.relative_encode(consumer, &())
-    }
+//     /// Computes the size of the absolute encoding in bytes. Calling [`encode`](Encodable::encode) must feed exactly that many bytes into the consumer.
+//     fn len_of_encoding(&self) -> usize
+//     where
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         self.relative_len_of_encoding(&())
+//     }
 
-    #[cfg(feature = "alloc")]
-    /// Encodes into a Vec instead of a given consumer.
-    fn relative_encode_into_vec(
-        &self,
-        r: &Self::EncodeRelativeTo,
-    ) -> impl Future<Output = Vec<u8>> {
-        async {
-            let mut c = IntoVec::new();
+//     #[cfg(feature = "alloc")]
+//     /// Encodes into a boxed slice instead of a given consumer.
+//     fn relative_encode_into_boxed_slice(
+//         &self,
+//         r: &Self::EncodeRelativeTo,
+//     ) -> impl Future<Output = Box<[u8]>> {
+//         async {
+//             let mut c = IntoVec::with_capacity(self.relative_len_of_encoding(r));
 
-            match self.relative_encode(&mut c, r).await {
-                Ok(()) => c.into_vec(),
-                Err(_) => unreachable!(),
-            }
-        }
-    }
+//             match self.relative_encode(&mut c, r).await {
+//                 Ok(()) => c.into_vec().into_boxed_slice(),
+//                 Err(_) => unreachable!(),
+//             }
+//         }
+//     }
 
-    #[cfg(feature = "alloc")]
-    /// Absolutely encodes into a Vec instead of a given consumer.
-    fn encode_into_vec(&self) -> impl Future<Output = Vec<u8>>
-    where
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        self.relative_encode_into_vec(&())
-    }
-}
+//     #[cfg(feature = "alloc")]
+//     /// Absolutely encodes into a boxed slice instead of a given consumer.
+//     fn encode_into_boxed_slice(&self) -> impl Future<Output = Box<[u8]>>
+//     where
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         self.relative_encode_into_boxed_slice(&())
+//     }
+// }
 
-/// Encodables that can (efficiently and synchronously) precompute the length of their encoding.
-///
-/// API contract: `self.encode(c)` must write exactly `self.len_of_encoding()` many bytes into `c`.
-pub trait EncodableKnownSize: Encodable {
-    /// Computes the size of the encoding in bytes. Calling [`relative_encode`](Encodable::relative_encode) must feed exactly that many bytes into the consumer.
-    fn relative_len_of_encoding(&self, r: &Self::EncodeRelativeTo) -> usize;
+// /// An encodable that introduces no asynchrony beyond that of `.await`ing the consumer.
+// ///
+// /// If the consumer is known to not block either, this enables synchronous encoding.
+// pub trait EncodableSync: Encodable {
+//     #[cfg(feature = "alloc")]
+//     /// Synchronously encodes into a Vec instead of a given consumer.
+//     fn sync_relative_encode_into_vec(&self, r: &Self::EncodeRelativeTo) -> Vec<u8> {
+//         pollster::block_on(self.relative_encode_into_vec(r))
+//     }
 
-    /// Computes the size of the absolute encoding in bytes. Calling [`encode`](Encodable::encode) must feed exactly that many bytes into the consumer.
-    fn len_of_encoding(&self) -> usize
-    where
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        self.relative_len_of_encoding(&())
-    }
+//     /// Synchronously and absolutely encodes into a Vec instead of a given consumer.
+//     fn sync_encode_into_vec(&self) -> Vec<u8>
+//     where
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         pollster::block_on(self.encode_into_vec())
+//     }
 
-    #[cfg(feature = "alloc")]
-    /// Encodes into a boxed slice instead of a given consumer.
-    fn relative_encode_into_boxed_slice(
-        &self,
-        r: &Self::EncodeRelativeTo,
-    ) -> impl Future<Output = Box<[u8]>> {
-        async {
-            let mut c = IntoVec::with_capacity(self.relative_len_of_encoding(r));
+//     #[cfg(feature = "alloc")]
+//     /// Synchronously encodes into a boxed slice instead of a given consumer.
+//     fn sync_relative_encode_into_boxed_slice(&self, r: &Self::EncodeRelativeTo) -> Box<[u8]>
+//     where
+//         Self: EncodableKnownSize,
+//     {
+//         pollster::block_on(self.relative_encode_into_boxed_slice(r))
+//     }
 
-            match self.relative_encode(&mut c, r).await {
-                Ok(()) => c.into_vec().into_boxed_slice(),
-                Err(_) => unreachable!(),
-            }
-        }
-    }
+//     #[cfg(feature = "alloc")]
+//     /// Synchronously and absolutely encodes into a boxed slice instead of a given consumer.
+//     fn sync_encode_into_boxed_slice(&self) -> Box<[u8]>
+//     where
+//         Self: EncodableKnownSize,
+//         Self: Encodable<EncodeRelativeTo = ()>,
+//     {
+//         pollster::block_on(self.encode_into_boxed_slice())
+//     }
+// }
 
-    #[cfg(feature = "alloc")]
-    /// Absolutely encodes into a boxed slice instead of a given consumer.
-    fn encode_into_boxed_slice(&self) -> impl Future<Output = Box<[u8]>>
-    where
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        self.relative_encode_into_boxed_slice(&())
-    }
-}
+// // TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
 
-/// Decoding for an *encoding relation* with a one-to-one mapping between values and their codes (i.e., the relation is a [bijection](https://en.wikipedia.org/wiki/Bijection)).
-///
-/// This may specialise an arbitrary encoding relation to implement a canonic subset.
-///
-/// API contract: Two nonequal codes must not decode to the same value with `decode_canonic`.
-///
-/// There is no corresponding `EncodableCanonic` trait, because `Encodable` already fulfils the dual requirement of two nonequal values yielding nonequal codes.
-pub trait DecodableCanonic: Decodable {
-    /// The type for reporting that the bytestring to decode was not a valid canonic encoding of any value of type `Self`.
-    ///
-    /// Typically contains at least as much information as [`Self::Error`](Decodable::Error). If the encoding relation implemented by [`Decodable`] is already canonic, then [`ErrorCanonic`](DecodableCanonic::ErrorCanonic) should be equal to [`Self::Error`](Decodable::Error).
-    type ErrorCanonic<ProducerError>: From<Self::Error<ProducerError>>;
-
-    /// Decodes the bytes produced by the given producer into a `Self`, and errors if the input encoding is not the canonical one.
-    fn relative_decode_canonic<P>(
-        producer: &mut P,
-        r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<P::Error>>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized;
-
-    ///Absolutely decodes the bytes produced by the given producer into a `Self`, and errors if the input encoding is not the canonical one.
-    fn decode_canonic<P>(
-        producer: &mut P,
-    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<P::Error>>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized,
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        Self::relative_decode_canonic(producer, &())
-    }
-
-    /// Decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn relative_decode_canonic_from_slice(
-        enc: &[u8],
-        r: &Self::DecodeRelativeTo,
-    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<Infallible>>> {
-        async { Self::relative_decode_canonic(&mut FromSlice::new(enc), r).await }
-    }
-
-    /// Absolutely decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn decode_canonic_from_slice(
-        enc: &[u8],
-    ) -> impl Future<Output = Result<Self, Self::ErrorCanonic<Infallible>>>
-    where
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        Self::relative_decode_canonic_from_slice(enc, &())
-    }
-}
-
-/// A decodable that introduces no asynchrony beyond that of `.await`ing the producer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous decoding via producers that are known to never block.
-pub trait DecodableSync: Decodable {
-    /// Synchronously decodes from a slice instead of a producer.
-    fn sync_relative_decode_from_slice(
-        enc: &[u8],
-        r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::Error<Infallible>> {
-        pollster::block_on(Self::relative_decode_from_slice(enc, r))
-    }
-
-    /// Synchronously and absolutely decodes from a slice instead of a producer.
-    fn sync_decode_from_slice(enc: &[u8]) -> Result<Self, Self::Error<Infallible>>
-    where
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        pollster::block_on(Self::decode_from_slice(enc))
-    }
-
-    /// Synchronously decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn sync_relative_decode_canonic_from_slice(
-        enc: &[u8],
-        r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::ErrorCanonic<Infallible>>
-    where
-        Self: DecodableCanonic,
-    {
-        pollster::block_on(Self::relative_decode_canonic_from_slice(enc, r))
-    }
-
-    /// Synchronously and absolutely decodes from a slice instead of a producer, and errors if the input encoding is not the canonical one.
-    fn sync_decode_canonic_from_slice(enc: &[u8]) -> Result<Self, Self::ErrorCanonic<Infallible>>
-    where
-        Self: DecodableCanonic,
-        Self: Decodable<DecodeRelativeTo = ()>,
-    {
-        pollster::block_on(Self::decode_canonic_from_slice(enc))
-    }
-}
-
-/// An encodable that introduces no asynchrony beyond that of `.await`ing the consumer.
-///
-/// If the consumer is known to not block either, this enables synchronous encoding.
-pub trait EncodableSync: Encodable {
-    #[cfg(feature = "alloc")]
-    /// Synchronously encodes into a Vec instead of a given consumer.
-    fn sync_relative_encode_into_vec(&self, r: &Self::EncodeRelativeTo) -> Vec<u8> {
-        pollster::block_on(self.relative_encode_into_vec(r))
-    }
-
-    /// Synchronously and absolutely encodes into a Vec instead of a given consumer.
-    fn sync_encode_into_vec(&self) -> Vec<u8>
-    where
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        pollster::block_on(self.encode_into_vec())
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Synchronously encodes into a boxed slice instead of a given consumer.
-    fn sync_relative_encode_into_boxed_slice(&self, r: &Self::EncodeRelativeTo) -> Box<[u8]>
-    where
-        Self: EncodableKnownSize,
-    {
-        pollster::block_on(self.relative_encode_into_boxed_slice(r))
-    }
-
-    #[cfg(feature = "alloc")]
-    /// Synchronously and absolutely encodes into a boxed slice instead of a given consumer.
-    fn sync_encode_into_boxed_slice(&self) -> Box<[u8]>
-    where
-        Self: EncodableKnownSize,
-        Self: Encodable<EncodeRelativeTo = ()>,
-    {
-        pollster::block_on(self.encode_into_boxed_slice())
-    }
-}
-
-// TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
-
-// TODO proptest stuff
+// // TODO proptest stuff
