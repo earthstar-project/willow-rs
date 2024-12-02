@@ -25,16 +25,144 @@ use std::error::Error;
 
 use either::Either::*;
 use ufotofu::{BulkConsumer, BulkProducer};
-use ufotofu_codec::RelativeDecodable;
 use ufotofu_codec::DecodableCanonic;
-use ufotofu_codec::RelativeDecodableSync;
 use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
 use ufotofu_codec::EncodableSync;
+use ufotofu_codec::RelativeDecodable;
+use ufotofu_codec::RelativeDecodableSync;
 
-/// How many tag bits are available to indicate the width of a compact u64 encoding. Must be between two and eight inclusive.
-pub type TagWidth = usize;
+/// An opaque representation of one of the possible tag widths: 2, 3, 4, 5, 6, 7, or 8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TagWidth(u8);
+
+impl TagWidth {
+    /// Contructs an [`TagWidth`] from a given [`u8`], returing `None` if the argument is not between two and eight inclusive.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::from_u8(4).unwrap();
+    /// assert_eq!(4, width.as_u8());
+    ///
+    /// assert_eq!(None, TagWidth::from_u8(9));
+    /// ```
+    pub const fn from_u8(num: u8) -> Option<Self> {
+        match num {
+            2 | 3 | 4 | 5 | 6 | 7 | 8 => Some(Self(num)),
+            _ => None,
+        }
+    }
+
+    /// Returns an [`TagWidth`] representing two.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::two();
+    /// assert_eq!(2, width.as_u8());
+    /// ```
+    pub const fn two() -> Self {
+        TagWidth(2)
+    }
+
+    /// Returns an [`TagWidth`] representing three.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::three();
+    /// assert_eq!(3, width.as_u8());
+    /// ```
+    pub const fn three() -> Self {
+        TagWidth(3)
+    }
+
+    /// Returns an [`TagWidth`] representing four.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::four();
+    /// assert_eq!(4, width.as_u8());
+    /// ```
+    pub const fn four() -> Self {
+        TagWidth(4)
+    }
+
+    /// Returns an [`TagWidth`] representing five.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::five();
+    /// assert_eq!(5, width.as_u8());
+    /// ```
+    pub const fn five() -> Self {
+        TagWidth(5)
+    }
+
+    /// Returns an [`TagWidth`] representing six.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::six();
+    /// assert_eq!(6, width.as_u8());
+    /// ```
+    pub const fn six() -> Self {
+        TagWidth(6)
+    }
+
+    /// Returns an [`TagWidth`] representing seven.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::seven();
+    /// assert_eq!(7, width.as_u8());
+    /// ```
+    pub const fn seven() -> Self {
+        TagWidth(7)
+    }
+
+    /// Returns an [`TagWidth`] representing eight.
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::eight();
+    /// assert_eq!(8, width.as_u8());
+    /// ```
+    pub const fn eight() -> Self {
+        TagWidth(8)
+    }
+
+    /// Retrieves the tag width as a [`u8`].
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::three();
+    /// assert_eq!(3, width.as_u8());
+    /// ```
+    pub const fn as_u8(&self) -> u8 {
+        self.0
+    }
+
+    /// Retrieves the tag width as a [`usize`].
+    ///
+    /// ```
+    /// use compact_u64::*;
+    ///
+    /// let width = TagWidth::three();
+    /// assert_eq!(3, width.as_usize());
+    /// ```
+    pub const fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// Returns the tag of a given tag-width for encoding a [`u64`] in the least number of bytes. Small tags are stored in the least significant bits of the return value.
 ///
@@ -52,7 +180,7 @@ pub type TagWidth = usize;
 /// assert_eq!(15, min_tag(18446744073709551615, 4));
 /// ```
 pub const fn min_tag(n: u64, tag_width: TagWidth) -> u8 {
-    debug_assert!(tag_width >= 2 && tag_width <= 8);
+    let tag_width = tag_width.as_u8();
     let max_inline = (1 << tag_width) - 4;
 
     if n < max_inline {
@@ -72,7 +200,7 @@ pub const fn min_tag(n: u64, tag_width: TagWidth) -> u8 {
     }
 }
 
-/// An opaque reprensentation of the possible width of a compact u64 encoding: zero, one, two, four, or eight bytes.
+/// An opaque representation of the possible width of a compact u64 encoding: zero, one, two, four, or eight bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EncodingWidth(u8);
 
@@ -194,7 +322,7 @@ impl EncodingWidth {
     /// assert_eq!(8u8, EncodingWidth::min_width(18446744073709551615, 4).into());
     /// ```
     pub const fn min_width(n: u64, tag_width: TagWidth) -> EncodingWidth {
-        debug_assert!(tag_width >= 2 && tag_width <= 8);
+        let tag_width = tag_width.as_u8();
         let max_inline = (1 << tag_width) - 4;
 
         if n < max_inline {
@@ -212,12 +340,12 @@ impl EncodingWidth {
         }
     }
 
-    /// Returns the tag of a given tag-width that indicates how to encode a given u64 in a given [`EncodingWidth`].
-    ///
-    /// Does not check whether the [`EncodingWidth`] is legal for the given u64 at the given tag_width.
-    pub const fn corresponding_tag(&self, n: u64, tag_width: TagWidth) -> u8 {
-        todo!()
-    }
+    // /// Returns the tag of a given tag-width that indicates how to encode a given u64 in a given [`EncodingWidth`].
+    // ///
+    // /// Does not check whether the [`EncodingWidth`] is legal for the given u64 at the given tag_width.
+    // pub const fn corresponding_tag(&self, n: u64, tag_width: TagWidth) -> u8 {
+    //     todo!()
+    // }
 }
 
 impl From<EncodingWidth> for u8 {
@@ -276,59 +404,59 @@ impl From<CompactU64> for u64 {
     }
 }
 
-impl Encodable for CompactU64 {
-    type EncodeRelativeTo = EncodingWidth;
+// impl Encodable for CompactU64 {
+//     type EncodeRelativeTo = EncodingWidth;
 
-    async fn relative_encode<C>(
-        &self,
-        consumer: &mut C,
-        r: &Self::EncodeRelativeTo,
-    ) -> Result<(), C::Error>
-    where
-        C: BulkConsumer<Item = u8>,
-    {
-        todo!()
-    }
-}
+//     async fn relative_encode<C>(
+//         &self,
+//         consumer: &mut C,
+//         r: &Self::EncodeRelativeTo,
+//     ) -> Result<(), C::Error>
+//     where
+//         C: BulkConsumer<Item = u8>,
+//     {
+//         todo!()
+//     }
+// }
 
-impl EncodableKnownSize for CompactU64 {
-    fn relative_len_of_encoding(&self, r: &Self::EncodeRelativeTo) -> usize {
-        todo!()
-    }
-}
+// impl EncodableKnownSize for CompactU64 {
+//     fn relative_len_of_encoding(&self, r: &Self::EncodeRelativeTo) -> usize {
+//         todo!()
+//     }
+// }
 
-impl EncodableSync for CompactU64 {}
+// impl EncodableSync for CompactU64 {}
 
-impl RelativeDecodable for CompactU64 {
-    type Error<ProducerError> = i16;
+// impl RelativeDecodable for CompactU64 {
+//     type Error<ProducerError> = i16;
 
-    type DecodeRelativeTo = i16;
+//     type DecodeRelativeTo = i16;
 
-    async fn relative_decode<P>(
-        producer: &mut P,
-        r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::Error<P::Error>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        todo!()
-    }
-}
+//     async fn relative_decode<P>(
+//         producer: &mut P,
+//         r: &Self::DecodeRelativeTo,
+//     ) -> Result<Self, Self::Error<P::Error>>
+//     where
+//         P: BulkProducer<Item = u8>,
+//         Self: Sized,
+//     {
+//         todo!()
+//     }
+// }
 
-impl DecodableCanonic for CompactU64 {
-    type ErrorCanonic<ProducerError> = i16;
+// impl DecodableCanonic for CompactU64 {
+//     type ErrorCanonic<ProducerError> = i16;
 
-    async fn relative_decode_canonic<P>(
-        producer: &mut P,
-        r: &Self::DecodeRelativeTo,
-    ) -> Result<Self, Self::ErrorCanonic<P::Error>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        todo!()
-    }
-}
+//     async fn relative_decode_canonic<P>(
+//         producer: &mut P,
+//         r: &Self::DecodeRelativeTo,
+//     ) -> Result<Self, Self::ErrorCanonic<P::Error>>
+//     where
+//         P: BulkProducer<Item = u8>,
+//         Self: Sized,
+//     {
+//         todo!()
+//     }
+// }
 
-impl RelativeDecodableSync for CompactU64 {}
+// impl RelativeDecodableSync for CompactU64 {}
