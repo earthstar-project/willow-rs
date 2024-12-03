@@ -44,7 +44,8 @@ pub trait Decodable: Sized {
 /// API contracts:
 ///
 /// - Two nonequal codes must not decode to the same value with `decode_canonic`.
-/// - Any code that decodes via `decode_canonic` must also decode via `decode`.
+/// - Any code that decodes via `decode_canonic` must also decode via `decode` to the same value.
+/// - For types that also implement `Encodable` and `Eq`, if canonically decoding a bytestring suceedes, then reencoding the resulting value must result in the original bytestring.
 ///
 /// There is no corresponding `EncodableCanonic` trait, because `Encodable` already fulfils the dual requirement of two nonequal values yielding nonequal codes.
 pub trait DecodableCanonic: Decodable {
