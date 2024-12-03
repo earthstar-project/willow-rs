@@ -680,9 +680,11 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bytes",
+ "compact_u64",
  "either",
  "smol",
  "ufotofu",
+ "ufotofu_codec",
  "willow-encoding",
 ]
 

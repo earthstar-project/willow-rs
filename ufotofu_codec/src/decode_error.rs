@@ -3,13 +3,30 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use core::fmt::{Debug, Display, Formatter};
+use core::{
+    convert::Infallible,
+    fmt::{Debug, Display, Formatter},
+};
 
 #[cfg(feature = "std")]
 use std::error::Error;
 
 use either::Either::*;
 use ufotofu::OverwriteFullSliceError;
+
+/// [todo]
+pub enum DecodingWentWrong {
+    /// The encoding was simply not what was expected, at all.
+    InvalidEncoding,
+    /// We either cannot or choose not to decode this.
+    Irrepresentable,
+}
+
+impl From<Infallible> for DecodingWentWrong {
+    fn from(_value: Infallible) -> Self {
+        unreachable!("It's impossible to call this function!")
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<F, E, Other> {

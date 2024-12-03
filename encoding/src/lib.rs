@@ -1,20 +1,11 @@
 //! Utilities for implementing Willow's various [encodings](https://willowprotocol.org/specs/encodings/index.html#encodings).
 
 mod bytes;
-mod compact_width;
+
 mod error;
 mod max_power;
-mod unsigned_int;
-
-pub use compact_width::encoding::*;
-pub use compact_width::CompactWidth;
 
 pub use error::*;
-
-mod traits;
-pub use traits::*;
-
-pub use unsigned_int::*;
 
 pub use max_power::{decode_max_power, encode_max_power, max_power};
 

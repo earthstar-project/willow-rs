@@ -785,25 +785,70 @@ mod encoding {
 
     use ufotofu::{BulkConsumer, BulkProducer};
 
-    use willow_encoding::DecodeError;
-    use willow_encoding::{Decodable, Encodable, RelationDecodable};
+    /*
+        use willow_encoding::DecodeError;
+        use willow_encoding::{Decodable, Encodable, RelationDecodable};
 
+    */
     use willow_encoding::{decode_max_power, encode_max_power};
+
+    use ufotofu_codec::{
+        Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+        EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeEncodable,
+    };
+
+    use compact_u64::*;
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize> Encodable for Path<MCL, MCC, MPL> {
         async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
         where
             C: BulkConsumer<Item = u8>,
         {
-            encode_max_power(self.component_count(), MCC, consumer).await?;
+            // First byte
+            // total number of bytes - 4 bit tag
+            // total number of components - 4 bit tag
 
-            for component in self.components() {
-                encode_max_power(component.len(), MCL, consumer).await?;
+            let path_length_tag = Tag::min_tag(self.path_length() as u64, TagWidth::four());
+            let component_count_tag = Tag::min_tag(self.component_count() as u64, TagWidth::four());
 
+            let first_byte = (path_length_tag.data() << 4) + component_count_tag.data(); // TODO: Have compact_u64 provide nice methods for doing this.
+
+            consumer.consume(first_byte).await?;
+
+            // then total number of bytes in compact bytes
+
+            let total_bytes_bytes = CompactU64(self.path_length() as u64);
+            total_bytes_bytes
+                .relative_encode(consumer, &path_length_tag.tag_width())
+                .await?;
+
+            // then total number of components in compact bytes
+
+            let component_count_bytes = CompactU64(self.component_count() as u64);
+            component_count_bytes
+                .relative_encode(consumer, &component_count_tag.tag_width())
+                .await?;
+
+            // then
+            // for each component SAVE THE LAST ONE...,
+            for (i, component) in self.components().enumerate() {
+                // We do not encode the length for the final component as the decoder will be able to infer its length from the total length.
+                if i != self.component_count() - 1 {
+                    // Encode component length as C8U64
+                    let component_length_tag =
+                        Tag::min_tag(component.len() as u64, TagWidth::eight());
+                    consumer.consume(component_length_tag.data()).await?;
+                    let component_length_bytes = CompactU64(component.len() as u64);
+                    component_length_bytes
+                        .relative_encode(consumer, &component_length_tag.tag_width())
+                        .await?;
+                }
+
+                //      followed by component itself
                 consumer
                     .bulk_consume_full_slice(component.as_ref())
                     .await
-                    .map_err(|f| f.reason)?;
+                    .map_err(|err| err.into_reason())?;
             }
 
             Ok(())
@@ -811,13 +856,39 @@ mod encoding {
     }
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize> Decodable for Path<MCL, MCC, MPL> {
-        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+        type ErrorReason = DecodingWentWrong;
+
+        async fn decode<P>(
+            producer: &mut P,
+        ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
         where
             P: BulkProducer<Item = u8>,
+            Self: Sized,
         {
-            let component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
+            // Decode the first byte - the two compact width tags for the path length and component count.
+            let first_byte = producer.produce().await?;
+
+            match first_byte {
+                either::Either::Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
+                either::Either::Left(first_byte) => {
+                    let path_length_tag = Tag::from_raw(first_byte, TagWidth::four(), 0);
+                    let component_count_tag = Tag::from_raw(first_byte, TagWidth::four(), 4);
+
+                    let path_length = CompactU64::relative_decode(producer, &path_length_tag)
+                        .await
+                        .map_err(DecodeError::map_other)?;
+                    let component_count =
+                        CompactU64::relative_decode(producer, &component_count_tag)
+                            .await
+                            .map_err(DecodeError::map_other)?;
+
+                    todo!();
+                }
+            }
+
+            /* let component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
             if component_count > MCC {
-                return Err(DecodeError::InvalidInput);
+                return Err(DecodeError::Other(DecodingWentWrong::InvalidEncoding));
             }
 
             let mut buf = ScratchSpacePathDecoding::<MCC, MPL>::new();
@@ -826,12 +897,12 @@ mod encoding {
             for i in 0..component_count {
                 let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
                 if component_len > MCL {
-                    return Err(DecodeError::InvalidInput);
+                    return Err(DecodeError::Other(DecodingWentWrong::InvalidEncoding));
                 }
 
                 accumulated_component_length += component_len;
                 if accumulated_component_length > MPL {
-                    return Err(DecodeError::InvalidInput);
+                    return Err(DecodeError::Other(DecodingWentWrong::InvalidEncoding));
                 }
 
                 buf.set_component_accumulated_length(accumulated_component_length, i);
@@ -845,14 +916,36 @@ mod encoding {
                     .await?;
             }
 
-            Ok(unsafe { buf.to_path(component_count) })
+            Ok(unsafe { buf.to_path(component_count) }) */
         }
     }
 
-    impl<const MCL: usize, const MCC: usize, const MPL: usize> RelationDecodable
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> DecodableCanonic
         for Path<MCL, MCC, MPL>
     {
+        type ErrorCanonic = DecodingWentWrong;
+
+        async fn decode_canonic<P>(
+            producer: &mut P,
+        ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+        where
+            P: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            Self::decode(producer).await
+        }
     }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableKnownSize
+        for Path<MCL, MCC, MPL>
+    {
+        fn len_of_encoding(&self) -> usize {
+            todo!()
+        }
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableSync for Path<MCL, MCC, MPL> {}
+    impl<const MCL: usize, const MCC: usize, const MPL: usize> DecodableSync for Path<MCL, MCC, MPL> {}
 }
 
 #[cfg(feature = "dev")]
