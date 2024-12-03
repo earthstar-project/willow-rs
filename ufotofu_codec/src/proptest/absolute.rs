@@ -128,7 +128,7 @@ where
                 Err(DecodeError::UnexpectedEndOfInput(())) => {
                     // This is what should happen.
                 }
-                res => panic!("Removing the final byte of a valid encoding and trying to encode again did not yield an UnexpectedEndOfInput error!\n\nThe Valid Encoding: {:?}\n\nWhat It Decoded To: {:?}\n\nThe Result After Decoding From One Less Byte: {:?}", enc, t, res),
+                res => panic!("Removing the final byte of a valid encoding and trying to decode again did not yield an UnexpectedEndOfInput error!\n\nThe Valid Encoding: {:?}\n\nWhat It Decoded To: {:?}\n\nThe Result After Decoding From One Less Byte: {:?}", enc, t, res),
             }
         }
     }
@@ -251,7 +251,7 @@ where
                 }
             }
             Err(err) => {
-                panic!("Canonic decoding suceeded but generla decoding failed.\n\nThe Encoding: {:?}\n\nCanonically Decoded: {:?}\n\nGenerally Decoded Error: {:?}", potential_encoding, t_canonic, err);
+                panic!("Canonic decoding suceeded but general decoding failed.\n\nThe Encoding: {:?}\n\nCanonically Decoded: {:?}\n\nGenerally Decoded Error: {:?}", potential_encoding, t_canonic, err);
             }
         }
     }
