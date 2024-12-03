@@ -637,6 +637,7 @@ dependencies = [
 name = "ufotofu_codec_endian"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "either",
  "ufotofu",
  "ufotofu_codec",

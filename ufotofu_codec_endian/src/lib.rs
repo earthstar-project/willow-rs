@@ -10,7 +10,7 @@ use core::convert::Infallible;
 extern crate std;
 
 #[cfg(feature = "std")]
-use std::error::Error;
+use arbitrary::Arbitrary;
 
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::Decodable;
@@ -37,6 +37,8 @@ assert_eq!(
     ", stringify!($wrapper_name), "::sync_decode_from_slice(&", stringify!($arr), ").unwrap().0
 );
 ```")]
+        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+        #[cfg_attr(feature = "std", derive(Arbitrary))]
         pub struct $wrapper_name(pub $int);
 
         impl From<$int> for $wrapper_name {
