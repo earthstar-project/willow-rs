@@ -10,8 +10,8 @@ use crate::{Decodable, DecodeError, Encodable};
 /// Irrespective of the blocking/yielding and sizes of exposed slots of a consumer, encoding always produces the same encoding.
 async fn assert_encoding_does_not_care_about_consumer_details<T>(
     t: &T,
-    mut c1: TestConsumer<u8, Infallible, ()>,
-    mut c2: TestConsumer<u8, Infallible, ()>,
+    mut c1: TestConsumer<u8, (), ()>,
+    mut c2: TestConsumer<u8, ()), ()>,
 ) where
     T: Debug + Eq + Encodable,
 {
@@ -148,8 +148,8 @@ where
 pub async fn assert_basic_invariants<T>(
     t1: &T,
     t2: &T,
-    c1: TestConsumer<u8, Infallible, ()>,
-    c2: TestConsumer<u8, Infallible, ()>,
+    c1: TestConsumer<u8, (), ()>,
+    c2: TestConsumer<u8, (), ()>,
     potential_encoding: Vec<u8>,
     exposed_items_sizes1: Box<[NonZeroUsize]>,
     exposed_items_sizes2: Box<[NonZeroUsize]>,

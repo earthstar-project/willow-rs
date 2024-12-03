@@ -707,6 +707,7 @@ dependencies = [
  "smol",
  "syncify",
  "ufotofu",
+ "ufotofu_codec_endian",
  "willow-data-model",
  "willow-encoding",
 ]
