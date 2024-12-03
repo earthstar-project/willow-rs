@@ -15,8 +15,8 @@ use crate::DecodeError;
 /// API contracts:
 ///
 /// - The result of decoding must depend only on the decoded bytes, not on details of the producer such as when it yields or how many items it exposes at a time.
-/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
 /// - `decode` must not read any bytes beyond the end of the encoding.
+/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
 pub trait Decodable: Sized {
     /// Reason why decoding can fail (beyond an unexpected end of input or a producer error).
     type ErrorReason;
