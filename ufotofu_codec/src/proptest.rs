@@ -1,8 +1,15 @@
 mod absolute;
 pub use absolute::*;
 
+mod relative;
+pub use relative::*;
+
+//----------//
+// Absolute //
+//----------//
+
 /// A macro for running fuzz tests that check the invariants of all absolute codec traits. Usage:
-/// 
+///
 /// ```rust
 /// #![no_main]
 ///
@@ -10,9 +17,10 @@ pub use absolute::*;
 ///
 /// fuzz_absolute_all!(path::to_some::TypeToTest);
 /// ```
-/// 
+///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
-#[macro_export] macro_rules! fuzz_absolute_all {
+#[macro_export]
+macro_rules! fuzz_absolute_all {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -48,7 +56,7 @@ pub use absolute::*;
                 yield_pattern1,
                 yield_pattern2,
             ) = data;
-        
+
             pollster::block_on(async {
                 assert_basic_invariants(
                     &t1,
@@ -62,9 +70,9 @@ pub use absolute::*;
                     yield_pattern2,
                 )
                 .await;
-        
+
                 assert_known_length_invariants(&t1).await;
-        
+
                 assert_canonic_invariants::<$t>(&potential_encoding1, &potential_encoding2).await;
             });
         });
@@ -72,17 +80,18 @@ pub use absolute::*;
 }
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`Decodable`], and [`DecodableCanonic`] traits. Usage:
-/// 
+///
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_absolute_all;
+/// use ufotofu_codec::fuzz_absolute_canonic;
 ///
-/// fuzz_absolute_all!(path::to_some::TypeToTest);
+/// fuzz_absolute_canonic!(path::to_some::TypeToTest);
 /// ```
-/// 
+///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
-#[macro_export] macro_rules! fuzz_absolute_canonic {
+#[macro_export]
+macro_rules! fuzz_absolute_canonic {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -118,7 +127,7 @@ pub use absolute::*;
                 yield_pattern1,
                 yield_pattern2,
             ) = data;
-        
+
             pollster::block_on(async {
                 assert_basic_invariants(
                     &t1,
@@ -132,7 +141,7 @@ pub use absolute::*;
                     yield_pattern2,
                 )
                 .await;
-        
+
                 assert_canonic_invariants::<$t>(&potential_encoding1, &potential_encoding2).await;
             });
         });
@@ -140,17 +149,18 @@ pub use absolute::*;
 }
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`EncodableKnownSize`], and [`Decodable`] traits. Usage:
-/// 
+///
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_absolute_all;
+/// use ufotofu_codec::fuzz_absolute_known_length;
 ///
-/// fuzz_absolute_all!(path::to_some::TypeToTest);
+/// fuzz_absolute_known_length!(path::to_some::TypeToTest);
 /// ```
-/// 
+///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
-#[macro_export] macro_rules! fuzz_absolute_known_length {
+#[macro_export]
+macro_rules! fuzz_absolute_known_length {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -168,7 +178,6 @@ pub use absolute::*;
             TestConsumer<u8, (), ()>,
             TestConsumer<u8, (), ()>,
             Box<[u8]>,
-            Box<[u8]>,
             Box<[NonZeroUsize]>,
             Box<[NonZeroUsize]>,
             Box<[bool]>,
@@ -180,13 +189,12 @@ pub use absolute::*;
                 c1,
                 c2,
                 potential_encoding1,
-                potential_encoding2,
                 exposed_items_sizes1,
                 exposed_items_sizes2,
                 yield_pattern1,
                 yield_pattern2,
             ) = data;
-        
+
             pollster::block_on(async {
                 assert_basic_invariants(
                     &t1,
@@ -200,7 +208,7 @@ pub use absolute::*;
                     yield_pattern2,
                 )
                 .await;
-        
+
                 assert_known_length_invariants(&t1).await;
             });
         });
@@ -208,17 +216,18 @@ pub use absolute::*;
 }
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`] and [`Decodable`] traits. Usage:
-/// 
+///
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_absolute_all;
+/// use ufotofu_codec::fuzz_absolute_basic;
 ///
-/// fuzz_absolute_all!(path::to_some::TypeToTest);
+/// fuzz_absolute_basic!(path::to_some::TypeToTest);
 /// ```
-/// 
+///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
-#[macro_export] macro_rules! fuzz_absolute_basic {
+#[macro_export]
+macro_rules! fuzz_absolute_basic {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -236,7 +245,6 @@ pub use absolute::*;
             TestConsumer<u8, (), ()>,
             TestConsumer<u8, (), ()>,
             Box<[u8]>,
-            Box<[u8]>,
             Box<[NonZeroUsize]>,
             Box<[NonZeroUsize]>,
             Box<[bool]>,
@@ -248,16 +256,309 @@ pub use absolute::*;
                 c1,
                 c2,
                 potential_encoding1,
+                exposed_items_sizes1,
+                exposed_items_sizes2,
+                yield_pattern1,
+                yield_pattern2,
+            ) = data;
+
+            pollster::block_on(async {
+                assert_basic_invariants(
+                    &t1,
+                    &t2,
+                    c1,
+                    c2,
+                    &potential_encoding1,
+                    exposed_items_sizes1,
+                    exposed_items_sizes2,
+                    yield_pattern1,
+                    yield_pattern2,
+                )
+                .await;
+            });
+        });
+    };
+}
+
+//----------//
+// Relative //
+//----------//
+
+/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+///
+/// ```rust
+/// #![no_main]
+///
+/// use ufotofu_codec::fuzz_relative_all;
+///
+/// fuzz_relative_all!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic);
+/// ```
+///
+/// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
+#[macro_export]
+macro_rules! fuzz_relative_all {
+    ($t:ty; $r:ty; $errR:ty; $errC:ty) => {
+        use libfuzzer_sys::fuzz_target;
+
+        use core::num::NonZeroUsize;
+
+        use ufotofu::consumer::TestConsumer;
+
+        use ufotofu_codec::proptest::{
+            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+        };
+
+        fuzz_target!(|data: (
+            $r,
+            $t,
+            $t,
+            TestConsumer<u8, (), ()>,
+            TestConsumer<u8, (), ()>,
+            Box<[u8]>,
+            Box<[u8]>,
+            Box<[NonZeroUsize]>,
+            Box<[NonZeroUsize]>,
+            Box<[bool]>,
+            Box<[bool]>,
+        )| {
+            let (
+                r,
+                t1,
+                t2,
+                c1,
+                c2,
+                potential_encoding1,
                 potential_encoding2,
                 exposed_items_sizes1,
                 exposed_items_sizes2,
                 yield_pattern1,
                 yield_pattern2,
             ) = data;
-        
+
             pollster::block_on(async {
-                assert_basic_invariants(
-                    &t1,
+                assert_relative_basic_invariants::<$t, $r, $errR>(
+                    &r & t1,
+                    &t2,
+                    c1,
+                    c2,
+                    &potential_encoding1,
+                    exposed_items_sizes1,
+                    exposed_items_sizes2,
+                    yield_pattern1,
+                    yield_pattern2,
+                )
+                .await;
+
+                assert_known_length_invariants(&r, &t1).await;
+
+                assert_canonic_invariants::<$t, $errR, $errC>(
+                    &r,
+                    &potential_encoding1,
+                    &potential_encoding2,
+                )
+                .await;
+            });
+        });
+    };
+}
+
+/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+///
+/// ```rust
+/// #![no_main]
+///
+/// use ufotofu_codec::fuzz_relative_canonic;
+///
+/// fuzz_relative_canonic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic);
+/// ```
+///
+/// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
+#[macro_export]
+macro_rules! fuzz_relative_canonic {
+    ($t:ty; $r:ty; $errR:ty; $errC:ty) => {
+        use libfuzzer_sys::fuzz_target;
+
+        use core::num::NonZeroUsize;
+
+        use ufotofu::consumer::TestConsumer;
+
+        use ufotofu_codec::proptest::{
+            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+        };
+
+        fuzz_target!(|data: (
+            $r,
+            $t,
+            $t,
+            TestConsumer<u8, (), ()>,
+            TestConsumer<u8, (), ()>,
+            Box<[u8]>,
+            Box<[u8]>,
+            Box<[NonZeroUsize]>,
+            Box<[NonZeroUsize]>,
+            Box<[bool]>,
+            Box<[bool]>,
+        )| {
+            let (
+                r,
+                t1,
+                t2,
+                c1,
+                c2,
+                potential_encoding1,
+                potential_encoding2,
+                exposed_items_sizes1,
+                exposed_items_sizes2,
+                yield_pattern1,
+                yield_pattern2,
+            ) = data;
+
+            pollster::block_on(async {
+                assert_relative_basic_invariants::<$t, $r, $errR>(
+                    &r & t1,
+                    &t2,
+                    c1,
+                    c2,
+                    &potential_encoding1,
+                    exposed_items_sizes1,
+                    exposed_items_sizes2,
+                    yield_pattern1,
+                    yield_pattern2,
+                )
+                .await;
+
+                assert_canonic_invariants::<$t, $errR, $errC>(
+                    &r,
+                    &potential_encoding1,
+                    &potential_encoding2,
+                )
+                .await;
+            });
+        });
+    };
+}
+
+/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+///
+/// ```rust
+/// #![no_main]
+///
+/// use ufotofu_codec::fuzz_relative_known_length;
+///
+/// fuzz_relative_known_length!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// ```
+///
+/// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
+#[macro_export]
+macro_rules! fuzz_relative_known_length {
+    ($t:ty; $r:ty; $errR:ty) => {
+        use libfuzzer_sys::fuzz_target;
+
+        use core::num::NonZeroUsize;
+
+        use ufotofu::consumer::TestConsumer;
+
+        use ufotofu_codec::proptest::{
+            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+        };
+
+        fuzz_target!(|data: (
+            $r,
+            $t,
+            $t,
+            TestConsumer<u8, (), ()>,
+            TestConsumer<u8, (), ()>,
+            Box<[u8]>,
+            Box<[NonZeroUsize]>,
+            Box<[NonZeroUsize]>,
+            Box<[bool]>,
+            Box<[bool]>,
+        )| {
+            let (
+                r,
+                t1,
+                t2,
+                c1,
+                c2,
+                potential_encoding1,
+                exposed_items_sizes1,
+                exposed_items_sizes2,
+                yield_pattern1,
+                yield_pattern2,
+            ) = data;
+
+            pollster::block_on(async {
+                assert_relative_basic_invariants::<$t, $r, $errR>(
+                    &r & t1,
+                    &t2,
+                    c1,
+                    c2,
+                    &potential_encoding1,
+                    exposed_items_sizes1,
+                    exposed_items_sizes2,
+                    yield_pattern1,
+                    yield_pattern2,
+                )
+                .await;
+
+                assert_known_length_invariants(&r, &t1).await;
+            });
+        });
+    };
+}
+
+/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+///
+/// ```rust
+/// #![no_main]
+///
+/// use ufotofu_codec::fuzz_relative_basic;
+///
+/// fuzz_relative_basic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// ```
+///
+/// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
+#[macro_export]
+macro_rules! fuzz_relative_basic {
+    ($t:ty; $r:ty; $errR:ty) => {
+        use libfuzzer_sys::fuzz_target;
+
+        use core::num::NonZeroUsize;
+
+        use ufotofu::consumer::TestConsumer;
+
+        use ufotofu_codec::proptest::{
+            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+        };
+
+        fuzz_target!(|data: (
+            $r,
+            $t,
+            $t,
+            TestConsumer<u8, (), ()>,
+            TestConsumer<u8, (), ()>,
+            Box<[u8]>,
+            Box<[NonZeroUsize]>,
+            Box<[NonZeroUsize]>,
+            Box<[bool]>,
+            Box<[bool]>,
+        )| {
+            let (
+                r,
+                t1,
+                t2,
+                c1,
+                c2,
+                potential_encoding1,
+                exposed_items_sizes1,
+                exposed_items_sizes2,
+                yield_pattern1,
+                yield_pattern2,
+            ) = data;
+
+            pollster::block_on(async {
+                assert_relative_basic_invariants::<$t, $r, $errR>(
+                    &r & t1,
                     &t2,
                     c1,
                     c2,
