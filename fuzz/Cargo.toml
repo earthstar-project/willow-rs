@@ -119,43 +119,22 @@ doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding"
-path = "fuzz_targets/path_encoding.rs"
+name = "enc_abs_path"
+path = "fuzz_targets/enc_abs_path.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding2"
-path = "fuzz_targets/path_encoding2.rs"
+name = "enc_abs_path2"
+path = "fuzz_targets/enc_abs_path2.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding3"
-path = "fuzz_targets/path_encoding3.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random"
-path = "fuzz_targets/path_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random2"
-path = "fuzz_targets/path_encoding_random2.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random3"
-path = "fuzz_targets/path_encoding_random3.rs"
+name = "enc_abs_path3"
+path = "fuzz_targets/enc_abs_path3.rs"
 test = false
 doc = false
 bench = false
