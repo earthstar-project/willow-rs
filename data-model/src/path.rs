@@ -882,7 +882,71 @@ mod encoding {
                             .await
                             .map_err(DecodeError::map_other)?;
 
-                    todo!();
+                    // Now we know how many components to expect.
+
+                    // Let's keep track of how many total path bytes we've consumed thus far.
+                    // We'll use this at the end to figure out the length of the final component.
+                    let mut produced_path_bytes = 0;
+
+                    let mut path: Path<MCL, MCC, MPL> = Path::new_empty();
+
+                    // Now for each component we expect,
+                    for i in 0..component_count.0 - 1 {
+                        let component_length = if i != component_count.0 - 1 {
+                            // Get the length from C8U64
+                            let component_length_tag_byte = producer.produce().await?;
+
+                            match component_length_tag_byte {
+                                either::Either::Right(fin) => {
+                                    return Err(DecodeError::UnexpectedEndOfInput(fin))
+                                }
+                                either::Either::Left(tag_byte) => {
+                                    let component_length_tag =
+                                        Tag::from_raw(tag_byte, TagWidth::eight(), 0);
+
+                                    let component_length = CompactU64::relative_decode(
+                                        producer,
+                                        &component_length_tag,
+                                    )
+                                    .await
+                                    .map_err(DecodeError::map_other)?;
+
+                                    component_length.0
+                                }
+                            }
+                        } else {
+                            // Infer it from how many path bytes we're expecting,
+                            // Minus the number of path bytes we already produced
+                            path_length.0 - produced_path_bytes
+                        };
+
+                        // And then produce that many bytes
+                        let mut component_vec: Vec<u8> =
+                            Vec::with_capacity(component_length as usize); // TODO: Raise an error if we can't actually represent this here.
+
+                        producer
+                            .bulk_overwrite_full_slice(component_vec.as_mut_slice())
+                            .await?;
+
+                        produced_path_bytes += component_length;
+                        // and pop them into our path!
+
+                        match Component::<MCL>::new(component_vec.as_slice()) {
+                            Some(component) => match path.append(component) {
+                                Ok(new_path) => path = new_path,
+                                Err(_) => {
+                                    return Err(DecodeError::Other(
+                                        DecodingWentWrong::InvalidEncoding,
+                                    ))
+                                }
+                            },
+                            None => {
+                                return Err(DecodeError::Other(DecodingWentWrong::InvalidEncoding))
+                            }
+                        }
+                    }
+
+                    Ok(path)
                 }
             }
 
