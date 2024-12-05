@@ -20,6 +20,7 @@ syncify = "0.1.0"
 willow-encoding = { path = "../encoding" }
 ufotofu_codec = { path = "../ufotofu_codec", features = [ "std", "dev" ] }
 ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = [ "std" ] }
+compact_u64 = { path = "../compact_u64", features = [ "std", "dev" ] }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -31,6 +32,17 @@ features = ["dev"]
 
 [dependencies.earthstar]
 path = "../earthstar"
+
+################
+# compact_u64 #
+###############
+
+[[bin]]
+name = "compact_u64_relative"
+path = "fuzz_targets/compact_u64_relative.rs"
+test = false
+doc = false
+bench = false
 
 ########################
 # ufotofu_codec_endian #

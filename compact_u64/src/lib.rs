@@ -21,6 +21,7 @@
 extern crate std;
 
 use core::convert::Infallible;
+use core::fmt::Display;
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -40,8 +41,12 @@ use ufotofu_codec::RelativeEncodableKnownSize;
 use ufotofu_codec::RelativeEncodableSync;
 use ufotofu_codec_endian::{U16BE, U32BE, U64BE, U8BE};
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 /// An opaque representation of one of the possible tag widths: 2, 3, 4, 5, 6, 7, or 8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct TagWidth(u8);
 
 impl TagWidth {
@@ -326,6 +331,7 @@ impl From<EncodingWidth> for usize {
 
 /// A tag as used for compact encoding. Combines a `Tagwidth` with a `u8` that stores the tag in its least significant bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct Tag {
     width: TagWidth,
     data: u8,
@@ -448,6 +454,7 @@ impl Tag {
 /// );
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct CompactU64(pub u64);
 
 impl From<u64> for CompactU64 {
@@ -463,12 +470,12 @@ impl From<CompactU64> for u64 {
 }
 
 /// Produces the shortest possible encodings for a given `TagWidth`. **Careful: Does not encode the tag itself. Use [`Tag::min_tag`] to obtain the corresponding tag.**
-impl RelativeEncodable<TagWidth> for CompactU64 {
-    async fn relative_encode<C>(&self, consumer: &mut C, r: &TagWidth) -> Result<(), C::Error>
+impl RelativeEncodable<Tag> for CompactU64 {
+    async fn relative_encode<C>(&self, consumer: &mut C, r: &Tag) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        let min_width = EncodingWidth::min_width(self.0, *r);
+        let min_width = r.encoding_width();
 
         match min_width.as_u8() {
             0 => Ok(()),
@@ -481,13 +488,13 @@ impl RelativeEncodable<TagWidth> for CompactU64 {
     }
 }
 
-impl RelativeEncodableKnownSize<TagWidth> for CompactU64 {
-    fn relative_len_of_encoding(&self, r: &TagWidth) -> usize {
-        EncodingWidth::min_width(self.0, *r).as_usize()
+impl RelativeEncodableKnownSize<Tag> for CompactU64 {
+    fn relative_len_of_encoding(&self, r: &Tag) -> usize {
+        EncodingWidth::min_width(self.0, r.tag_width()).as_usize()
     }
 }
 
-impl RelativeEncodableSync<TagWidth> for CompactU64 {}
+impl RelativeEncodableSync<Tag> for CompactU64 {}
 
 impl RelativeDecodable<Tag, Infallible> for CompactU64 {
     async fn relative_decode<P>(
@@ -510,7 +517,17 @@ impl RelativeDecodable<Tag, Infallible> for CompactU64 {
 }
 
 /// Marker unit struct to indicate that a compact u64 encoding was not minimal, as would be required for canonic decoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotMinimal;
+
+impl Display for NotMinimal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "A compact u64 decoding was not minimal.")
+    }
+}
+
+#[cfg(std)]
+impl std::error::Error for NotMinimal {}
 
 impl From<Infallible> for NotMinimal {
     fn from(_value: Infallible) -> Self {

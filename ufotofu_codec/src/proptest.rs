@@ -305,7 +305,7 @@ macro_rules! fuzz_relative_all {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -337,7 +337,8 @@ macro_rules! fuzz_relative_all {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -349,9 +350,9 @@ macro_rules! fuzz_relative_all {
                 )
                 .await;
 
-                assert_known_length_invariants(&r, &t1).await;
+                assert_relative_known_length_invariants(&r, &t1).await;
 
-                assert_canonic_invariants::<$t, $errR, $errC>(
+                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                     &r,
                     &potential_encoding1,
                     &potential_encoding2,
@@ -383,7 +384,7 @@ macro_rules! fuzz_relative_canonic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -415,7 +416,8 @@ macro_rules! fuzz_relative_canonic {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -427,7 +429,7 @@ macro_rules! fuzz_relative_canonic {
                 )
                 .await;
 
-                assert_canonic_invariants::<$t, $errR, $errC>(
+                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                     &r,
                     &potential_encoding1,
                     &potential_encoding2,
@@ -459,7 +461,7 @@ macro_rules! fuzz_relative_known_length {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -489,7 +491,8 @@ macro_rules! fuzz_relative_known_length {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -501,7 +504,7 @@ macro_rules! fuzz_relative_known_length {
                 )
                 .await;
 
-                assert_known_length_invariants(&r, &t1).await;
+                assert_relative_known_length_invariants(&r, &t1).await;
             });
         });
     };
@@ -528,7 +531,7 @@ macro_rules! fuzz_relative_basic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -558,7 +561,8 @@ macro_rules! fuzz_relative_basic {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
