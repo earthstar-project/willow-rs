@@ -46,7 +46,6 @@ use arbitrary::Arbitrary;
 
 /// An opaque representation of one of the possible tag widths: 2, 3, 4, 5, 6, 7, or 8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct TagWidth(u8);
 
 impl TagWidth {
@@ -173,6 +172,17 @@ impl TagWidth {
     /// ```
     pub const fn as_usize(&self) -> usize {
         self.0 as usize
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for TagWidth {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> Result<Self, arbitrary::Error> {
+        let raw = u8::arbitrary(u)?;
+        match TagWidth::from_u8(raw % 8) {
+            None => Ok(TagWidth::eight()),
+            Some(tw) => Ok(tw),
+        }
     }
 }
 
@@ -331,7 +341,6 @@ impl From<EncodingWidth> for usize {
 
 /// A tag as used for compact encoding. Combines a `Tagwidth` with a `u8` that stores the tag in its least significant bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct Tag {
     width: TagWidth,
     data: u8,
@@ -422,6 +431,18 @@ impl Tag {
     }
 }
 
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for Tag {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> Result<Self, arbitrary::Error> {
+        let width = TagWidth::arbitrary(u)?;
+        let mask = ((1_u16 << width.as_u8()) - 1) as u8;
+        let raw = u8::arbitrary(u)?;
+        let data = raw & mask;
+
+        Ok(Tag { width, data })
+    }
+}
+
 /// A thin wrapper around `u64` that allows for minimal encoding relative to arbitrary [`TagWidth`]s, and for decoding relative to arbitrary [`EncodingWidth`]s.
 ///
 /// The implementation of [`DecodableCanonic`] first decodes a value and then checks whether a lesser tag could have also been used to encode the decoded value. If so, it reports an error.
@@ -469,13 +490,13 @@ impl From<CompactU64> for u64 {
     }
 }
 
-/// Produces the shortest possible encodings for a given `TagWidth`. **Careful: Does not encode the tag itself. Use [`Tag::min_tag`] to obtain the corresponding tag.**
-impl RelativeEncodable<Tag> for CompactU64 {
-    async fn relative_encode<C>(&self, consumer: &mut C, r: &Tag) -> Result<(), C::Error>
+/// Produces the shortest possible encodings relative to a given `TagWidth`. **Careful: Does not encode the tag itself. Use [`Tag::min_tag`] to obtain the corresponding tag.**
+impl RelativeEncodable<TagWidth> for CompactU64 {
+    async fn relative_encode<C>(&self, consumer: &mut C, r: &TagWidth) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        let min_width = r.encoding_width();
+        let min_width = EncodingWidth::min_width(self.0, *r);
 
         match min_width.as_u8() {
             0 => Ok(()),
@@ -488,13 +509,13 @@ impl RelativeEncodable<Tag> for CompactU64 {
     }
 }
 
-impl RelativeEncodableKnownSize<Tag> for CompactU64 {
-    fn relative_len_of_encoding(&self, r: &Tag) -> usize {
-        EncodingWidth::min_width(self.0, r.tag_width()).as_usize()
+impl RelativeEncodableKnownSize<TagWidth> for CompactU64 {
+    fn relative_len_of_encoding(&self, r: &TagWidth) -> usize {
+        EncodingWidth::min_width(self.0, *r).as_usize()
     }
 }
 
-impl RelativeEncodableSync<Tag> for CompactU64 {}
+impl RelativeEncodableSync<TagWidth> for CompactU64 {}
 
 impl RelativeDecodable<Tag, Infallible> for CompactU64 {
     async fn relative_decode<P>(
