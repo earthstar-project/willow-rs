@@ -31,7 +31,7 @@ macro_rules! fuzz_absolute_all {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -73,7 +73,7 @@ macro_rules! fuzz_absolute_all {
                 )
                 .await;
 
-                assert_known_length_invariants(&t1).await;
+                assert_known_size_invariants(&t1).await;
 
                 assert_canonic_invariants::<$t>(&potential_encoding1, &potential_encoding2).await;
             });
@@ -102,7 +102,7 @@ macro_rules! fuzz_absolute_canonic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -155,14 +155,14 @@ macro_rules! fuzz_absolute_canonic {
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_absolute_known_length;
+/// use ufotofu_codec::fuzz_absolute_known_size;
 ///
-/// fuzz_absolute_known_length!(path::to_some::TypeToTest);
+/// fuzz_absolute_known_size!(path::to_some::TypeToTest);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
-macro_rules! fuzz_absolute_known_length {
+macro_rules! fuzz_absolute_known_size {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -171,7 +171,7 @@ macro_rules! fuzz_absolute_known_length {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -211,7 +211,7 @@ macro_rules! fuzz_absolute_known_length {
                 )
                 .await;
 
-                assert_known_length_invariants(&t1).await;
+                assert_known_size_invariants(&t1).await;
             });
         });
     };
@@ -238,7 +238,7 @@ macro_rules! fuzz_absolute_basic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -308,7 +308,7 @@ macro_rules! fuzz_relative_all {
 
         use ufotofu_codec::proptest::{
             assert_relative_basic_invariants, assert_relative_canonic_invariants,
-            assert_relative_known_length_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -353,7 +353,7 @@ macro_rules! fuzz_relative_all {
                 )
                 .await;
 
-                assert_relative_known_length_invariants(&r, &t1).await;
+                assert_relative_known_size_invariants(&r, &t1).await;
 
                 assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                     &r,
@@ -388,7 +388,7 @@ macro_rules! fuzz_relative_canonic {
 
         use ufotofu_codec::proptest::{
             assert_relative_basic_invariants, assert_relative_canonic_invariants,
-            assert_relative_known_length_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -449,14 +449,14 @@ macro_rules! fuzz_relative_canonic {
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_relative_known_length;
+/// use ufotofu_codec::fuzz_relative_known_size;
 ///
-/// fuzz_relative_known_length!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// fuzz_relative_known_size!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
-macro_rules! fuzz_relative_known_length {
+macro_rules! fuzz_relative_known_size {
     ($t:ty; $r:ty; $errR:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -466,7 +466,7 @@ macro_rules! fuzz_relative_known_length {
 
         use ufotofu_codec::proptest::{
             assert_relative_basic_invariants, assert_relative_canonic_invariants,
-            assert_relative_known_length_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -509,7 +509,7 @@ macro_rules! fuzz_relative_known_length {
                 )
                 .await;
 
-                assert_relative_known_length_invariants(&r, &t1).await;
+                assert_relative_known_size_invariants(&r, &t1).await;
             });
         });
     };
@@ -537,7 +537,7 @@ macro_rules! fuzz_relative_basic {
 
         use ufotofu_codec::proptest::{
             assert_relative_basic_invariants, assert_relative_canonic_invariants,
-            assert_relative_known_length_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
