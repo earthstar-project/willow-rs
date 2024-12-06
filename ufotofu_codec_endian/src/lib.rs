@@ -2,7 +2,7 @@
 
 //! # UFOTOFU Codec Endian
 //!
-//! [TODO] write documentation.
+//! Wrappers around fixed-width integer types for big-endian and little-endian encoding and decoding with [`ufotofu_codec`].
 
 use core::convert::Infallible;
 
