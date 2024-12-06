@@ -119,22 +119,22 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_abs_path"
-path = "fuzz_targets/enc_abs_path.rs"
+name = "enc_path_abs"
+path = "fuzz_targets/enc_path_abs.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "enc_abs_path2"
-path = "fuzz_targets/enc_abs_path2.rs"
+name = "enc_path2_abs"
+path = "fuzz_targets/enc_path2_abs.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
 name = "enc_abs_path3"
-path = "fuzz_targets/enc_abs_path3.rs"
+path = "fuzz_targets/enc_path3_abs.rs"
 test = false
 doc = false
 bench = false
