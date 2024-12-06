@@ -1,4 +1,4 @@
-// Entry <> Area
+// Entry <> Range3d
 
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
