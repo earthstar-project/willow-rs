@@ -2,7 +2,8 @@ pub(super) mod encoding {
     use ufotofu::{BulkConsumer, BulkProducer};
 
     use ufotofu_codec::{
-        DecodeError, DecodingWentWrong, RelativeDecodable, RelativeDecodableCanonic,
+        Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+        EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
         RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize,
         RelativeEncodableSync,
     };
@@ -19,12 +20,6 @@ pub(super) mod encoding {
 
     // Path <> Path
 
-    // RelativeEncodable
-    // RelativeDecodable
-    // RelativeDecodableCanonic
-    // RelativeEncodableKnownSize
-    // Sync variants
-
     impl<const MCL: usize, const MCC: usize, const MPL: usize>
         RelativeEncodable<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
     {
@@ -39,6 +34,26 @@ pub(super) mod encoding {
         where
             Consumer: BulkConsumer<Item = u8>,
         {
+            /*
+            let lcp = self.longest_common_prefix(reference);
+            let lcp_component_count = lcp.component_count();
+            encode_max_power(lcp_component_count, MCC, consumer).await?;
+
+            let suffix_component_count = self.component_count() - lcp_component_count;
+            encode_max_power(suffix_component_count, MCC, consumer).await?;
+
+            for component in self.suffix_components(lcp_component_count) {
+                encode_max_power(component.len(), MCL, consumer).await?;
+
+                consumer
+                    .bulk_consume_full_slice(component.as_ref())
+                    .await
+                    .map_err(|f| f.reason)?;
+            }
+
+            Ok(())
+            */
+
             todo!();
         }
     }
@@ -57,6 +72,67 @@ pub(super) mod encoding {
             P: BulkProducer<Item = u8>,
             Self: Sized,
         {
+            /*
+                        let lcp_component_count: usize = decode_max_power(MCC, producer).await?.try_into()?;
+
+                        if lcp_component_count == 0 {
+                            let decoded = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
+
+                            // === Necessary to produce canonic encodings. ===
+                            if lcp_component_count != decoded.longest_common_prefix(reference).component_count()
+                            {
+                                return Err(DecodeError::InvalidInput);
+                            }
+                            // ===============================================
+
+                            return Ok(decoded);
+                        }
+
+                        let prefix = reference
+                            .create_prefix(lcp_component_count as usize)
+                            .ok_or(DecodeError::InvalidInput)?;
+
+                        let mut buf = ScratchSpacePathDecoding::<MCC, MPL>::new();
+
+                        // Copy the accumulated component lengths of the prefix into the scratch buffer.
+                        let raw_prefix_acc_component_lengths = &prefix.raw_buf()
+                            [size_of::<usize>()..size_of::<usize>() * (lcp_component_count + 1)];
+                        unsafe {
+                            // Safe because len is less than size_of::<usize>() times the MCC, because `p
+                            refix` respects the MCC.
+                            buf.set_many_component_accumulated_lengths_from_ne(
+                                raw_prefix_acc_component_lengths,
+                            );
+
+                            let mut accumulated_component_length: usize = prefix.path_length(); // Always holds the acc length of all components we copied so far.
+                                    for i in lcp_component_count..total_component_count {
+                                        let component_len: usize = decode_max_power(MCL, producer).await?.try_into()?;
+                                        if component_len > MCL {
+                                            return Err(DecodeError::InvalidInput);
+                            }
+
+                                        accumulated_component_length += component_len;
+                                        if accumulated_component_length > MPL {
+                                            return Err(DecodeError::InvalidInput);
+                                        }
+
+                                        buf.set_component_accumulated_length(accumulated_component_length, i);
+
+                                        // Decode the component itself into the scratch buffer.
+                                        producer
+                                            .bulk_overwrite_full_slice(unsafe {
+                                                // Safe because we called set_component_Accumulated_length for all j <= i
+                                                buf.path_data_as_mut(i)
+                                            })
+                                            .await?;
+                        let decoded = unsafe { buf.to_path(total_component_count) };
+
+                        // === Necessary to produce canonic encodings. ===
+                        if lcp_component_count != decoded.longest_common_prefix(reference).component_count() {
+                            return Err(DecodeError::InvalidInput);
+
+                        Ok(decoded)
+            */
             todo!()
         }
     }
@@ -109,13 +185,13 @@ pub(super) mod encoding {
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
         async fn relative_encode<Consumer>(
             &self,
-            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
             consumer: &mut Consumer,
+            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
         ) -> Result<(), Consumer::Error>
         where
             Consumer: BulkConsumer<Item = u8>,
         {
-            let time_diff = self.timestamp().abs_diff(reference.timestamp());
+            /*  let time_diff = self.timestamp().abs_diff(reference.timestamp());
 
             let mut header: u8 = 0b0000_0000;
 
@@ -155,30 +231,112 @@ pub(super) mod encoding {
 
             self.payload_digest().encode(consumer).await?;
 
-            Ok(())
+            Ok(()) */
+
+            todo!()
         }
     }
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+        RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>, DecodingWentWrong>
+        for Entry<MCL, MCC, MPL, N, S, PD>
     where
         N: NamespaceId + Decodable + std::fmt::Debug,
         S: SubspaceId + Decodable + std::fmt::Debug,
         PD: PayloadDigest + Decodable,
+    {
+        async fn relative_decode<P>(
+            producer: &mut P,
+            r: &Entry<MCL, MCC, MPL, N, S, PD>,
+        ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+        where
+            P: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            /*
+            let header = produce_byte(producer).await?;
+
+            let is_namespace_encoded = is_bitflagged(header, 0);
+            let is_subspace_encoded = is_bitflagged(header, 1);
+            let add_or_subtract_time_diff = is_bitflagged(header, 2);
+            let compact_width_time_diff = CompactWidth::decode_fixed_width_bitmask(header, 4);
+            let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
+
+            let namespace_id = if is_namespace_encoded {
+                N::decode_relation(producer).await?
+            } else {
+                reference.namespace_id().clone()
+            };
+
+            let subspace_id = if is_subspace_encoded {
+                S::decode_relation(producer).await?
+            } else {
+                reference.subspace_id().clone()
+            };
+
+            let path = Path::<MCL, MCC, MPL>::relative_decode_canonical(reference.path(), producer)
+                .await?;
+
+            let time_diff =
+                decode_compact_width_be_relation(compact_width_time_diff, producer).await?;
+
+            // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
+            let timestamp = if add_or_subtract_time_diff {
+                reference
+                    .timestamp()
+                    .checked_add(time_diff)
+                    .ok_or(DecodeError::InvalidInput)?
+            } else {
+                reference
+                    .timestamp()
+                    .checked_sub(time_diff)
+                    .ok_or(DecodeError::InvalidInput)?
+            };
+
+            let payload_length =
+                decode_compact_width_be_relation(compact_width_payload_length, producer).await?;
+
+            let payload_digest = PD::decode_relation(producer).await?;
+
+            Ok(Entry::new(
+                namespace_id,
+                subspace_id,
+                path,
+                timestamp,
+                payload_length,
+                payload_digest,
+            ))
+            */
+
+            todo!()
+        }
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeDecodableCanonic<
+            Entry<MCL, MCC, MPL, N, S, PD>,
+            DecodingWentWrong,
+            DecodingWentWrong,
+        > for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + DecodableCanonic + std::fmt::Debug,
+        S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+        PD: PayloadDigest + DecodableCanonic,
     {
         /// Decodes an [`Entry`] relative to the given reference [`Entry`].
         ///
         /// Will return an error if the encoding has not been produced by the corresponding encoding function.
         ///
         /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
-        async fn relative_decode_canonical<Producer>(
-            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
-            producer: &mut Producer,
-        ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
+        async fn relative_decode_canonic<P>(
+            producer: &mut P,
+            r: &Entry<MCL, MCC, MPL, N, S, PD>,
+        ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
         where
-            Producer: BulkProducer<Item = u8>,
+            P: BulkProducer<Item = u8>,
             Self: Sized,
         {
+            /*
             let header = produce_byte(producer).await?;
 
             // Verify that bit 3 is 0 as specified.
@@ -253,81 +411,45 @@ pub(super) mod encoding {
                 payload_length,
                 payload_digest,
             ))
+            */
+
+            todo!()
         }
     }
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-        RelativeRelationDecodable<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+        RelativeEncodableKnownSize<Entry<MCL, MCC, MPL, N, S, PD>>
+        for Entry<MCL, MCC, MPL, N, S, PD>
     where
-        N: NamespaceId + RelationDecodable + std::fmt::Debug,
-        S: SubspaceId + RelationDecodable + std::fmt::Debug,
-        PD: PayloadDigest + RelationDecodable,
+        N: NamespaceId + EncodableKnownSize,
+        S: SubspaceId + EncodableKnownSize,
+        PD: PayloadDigest + EncodableKnownSize,
     {
-        /// Decodes an [`Entry`] relative to the given reference [`Entry`].
-        ///
-        /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_etry_relative_entry).
-        async fn relative_decode_relation<Producer>(
-            reference: &Entry<MCL, MCC, MPL, N, S, PD>,
-            producer: &mut Producer,
-        ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-            Self: Sized,
-        {
-            let header = produce_byte(producer).await?;
-
-            let is_namespace_encoded = is_bitflagged(header, 0);
-            let is_subspace_encoded = is_bitflagged(header, 1);
-            let add_or_subtract_time_diff = is_bitflagged(header, 2);
-            let compact_width_time_diff = CompactWidth::decode_fixed_width_bitmask(header, 4);
-            let compact_width_payload_length = CompactWidth::decode_fixed_width_bitmask(header, 6);
-
-            let namespace_id = if is_namespace_encoded {
-                N::decode_relation(producer).await?
-            } else {
-                reference.namespace_id().clone()
-            };
-
-            let subspace_id = if is_subspace_encoded {
-                S::decode_relation(producer).await?
-            } else {
-                reference.subspace_id().clone()
-            };
-
-            let path = Path::<MCL, MCC, MPL>::relative_decode_canonical(reference.path(), producer)
-                .await?;
-
-            let time_diff =
-                decode_compact_width_be_relation(compact_width_time_diff, producer).await?;
-
-            // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
-            let timestamp = if add_or_subtract_time_diff {
-                reference
-                    .timestamp()
-                    .checked_add(time_diff)
-                    .ok_or(DecodeError::InvalidInput)?
-            } else {
-                reference
-                    .timestamp()
-                    .checked_sub(time_diff)
-                    .ok_or(DecodeError::InvalidInput)?
-            };
-
-            let payload_length =
-                decode_compact_width_be_relation(compact_width_payload_length, producer).await?;
-
-            let payload_digest = PD::decode_relation(producer).await?;
-
-            Ok(Entry::new(
-                namespace_id,
-                subspace_id,
-                path,
-                timestamp,
-                payload_length,
-                payload_digest,
-            ))
+        fn relative_len_of_encoding(&self, r: &Entry<MCL, MCC, MPL, N, S, PD>) -> usize {
+            todo!()
         }
     }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeEncodableSync<Entry<MCL, MCC, MPL, N, S, PD>> for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + EncodableSync,
+        S: SubspaceId + EncodableSync,
+        PD: PayloadDigest + EncodableSync,
+    {
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+        RelativeDecodableSync<Entry<MCL, MCC, MPL, N, S, PD>, DecodingWentWrong>
+        for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + DecodableSync + std::fmt::Debug,
+        S: SubspaceId + DecodableSync + std::fmt::Debug,
+        PD: PayloadDigest + DecodableSync + std::fmt::Debug,
+    {
+    }
+
+    // Entry <> Area
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
         RelativeEncodable<(N, Area<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>

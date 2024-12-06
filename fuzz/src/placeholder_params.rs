@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use ufotofu::{BulkConsumer, BulkProducer};
+use ufotofu_codec::{Decodable, DecodableCanonic, DecodeError, Encodable, RelationDecodable};
 use willow_data_model::PayloadDigest;
-use willow_encoding::{Decodable, DecodeError, Encodable, RelationDecodable};
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct FakePayloadDigest([u8; 32]);
@@ -21,9 +21,14 @@ impl Encodable for FakePayloadDigest {
 }
 
 impl Decodable for FakePayloadDigest {
-    async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    type ErrorReason = DecodingWentWrong;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
     where
         P: BulkProducer<Item = u8>,
+        Self: Sized,
     {
         let mut slice = [0u8; 32];
 
@@ -33,6 +38,15 @@ impl Decodable for FakePayloadDigest {
     }
 }
 
-impl RelationDecodable for FakePayloadDigest {}
+impl DecodableCanonic for FakePayloadDigest {
+    type ErrorCanonic = DecodingWentWrong;
+
+    async fn decode_canonic<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
+    where
+        P: BulkProducer<Item = u8>,
+    {
+        Self::decode(producer);
+    }
+}
 
 impl PayloadDigest for FakePayloadDigest {}

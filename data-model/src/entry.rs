@@ -155,9 +155,10 @@ mod encoding {
 
     use ufotofu::{BulkConsumer, BulkProducer};
 
-    use willow_encoding::{DecodeError, U64BE};
-
-    use willow_encoding::{Decodable, Encodable};
+    use ufotofu_codec::{
+        Decodable, DecodableCanonic, DecodableSync, DecodingWentWrong, Encodable,
+        EncodableKnownSize, EncodableSync,
+    };
 
     impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
         for Entry<MCL, MCC, MPL, N, S, PD>
@@ -170,6 +171,7 @@ mod encoding {
         where
             C: BulkConsumer<Item = u8>,
         {
+            /*
             self.namespace_id.encode(consumer).await?;
             self.subspace_id.encode(consumer).await?;
             self.path.encode(consumer).await?;
@@ -180,6 +182,9 @@ mod encoding {
             self.payload_digest.encode(consumer).await?;
 
             Ok(())
+            */
+
+            todo!()
         }
     }
 
@@ -190,12 +195,16 @@ mod encoding {
         S: SubspaceId + Decodable,
         PD: PayloadDigest + Decodable,
     {
-        async fn decode_canonical<Prod>(
-            producer: &mut Prod,
-        ) -> Result<Self, DecodeError<Prod::Error>>
+        type ErrorReason = DecodingWentWrong;
+
+        async fn decode<P>(
+            producer: &mut P,
+        ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
         where
-            Prod: BulkProducer<Item = u8>,
+            P: BulkProducer<Item = u8>,
+            Self: Sized,
         {
+            /*
             let namespace_id = N::decode_canonical(producer).await?;
             let subspace_id = S::decode_canonical(producer).await?;
             let path = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
@@ -211,7 +220,59 @@ mod encoding {
                 payload_length,
                 payload_digest,
             })
+            */
+            todo!()
         }
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableKnownSize
+        for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + Encodable,
+        S: SubspaceId + Encodable,
+        PD: PayloadDigest + Encodable,
+    {
+        fn len_of_encoding(&self) -> usize {
+            todo!()
+        }
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableCanonic
+        for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + Decodable,
+        S: SubspaceId + Decodable,
+        PD: PayloadDigest + Decodable,
+    {
+        type ErrorCanonic = DecodingWentWrong;
+
+        async fn decode_canonic<P>(
+            producer: &mut P,
+        ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+        where
+            P: BulkProducer<Item = u8>,
+            Self: Sized,
+        {
+            todo!()
+        }
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableSync
+        for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + EncodableSync,
+        S: SubspaceId + EncodableSync,
+        PD: PayloadDigest + EncodableSync,
+    {
+    }
+
+    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableSync
+        for Entry<MCL, MCC, MPL, N, S, PD>
+    where
+        N: NamespaceId + DecodableSync,
+        S: SubspaceId + DecodableSync,
+        PD: PayloadDigest + DecodableSync,
+    {
     }
 }
 
