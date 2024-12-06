@@ -11,11 +11,13 @@
 //! - Each u64 that fits into one byte can be encoded by setting the tag to the fourth-greatest possible number and then encoding the u64 as an one-byte big-endian integer.
 //! - If the tag has more than two bits, then each u64 that is less than the fourth-greatest tag can be encoded in the tag directly, followed by no further bytes.
 //!
-//! The [`min_tag`] function computes the tag (stored in the least significant bits of the returned `u8`) for any given tag width and u64 that allows for the most compact encoding.
+//! [`TagWidth`] is the type of possible tag widths (integers between two and eight inclusive). [`EncodingWidth`] is the type of the possible numbers of bytes that are needed for encoding a compact u64 beyond its tag: zero, one, two, four, or eight. [`EncodingWidth::min_width`] takes a `u64` and a [`TagWidth`], and returns the minimal [`EncodingWidth`] for compactly encoding the given number with a tag of the given width.
 //!
-//! The opaque [`EncodingWidth`] type represents the possible number of bytes that a u64 can be encoded in. [`EncodingWidth::min_width`] computes the width for the most compact encoding for any given tag width and u64.
+//! The [`Tag`] type represents a tag: its width, together with the actual tag data. Its [`Tag::from_raw`] method can be used to create [`Tag`]s from single bytes when decoding compact u64s.
 //!
-//! [`CompactU64`] is a thin wrapper around `u64` that implements the `ufotofu_codec` traits, encoding and decoding relative to arbitrary [`EncodingWidth`]s.
+//! Finally, the [`CompactU64`] type is the central type of the crate, a wrapper around `u64` that allows for encoding and decoding. It implements [`Encodable`] for emitting a minimal eight-bit tag followed by the minimal number of bytes for encoding the u64. The [`Decodable`] implementation conversely reads a single byte as an eight-bit tag, and then reads further bytes according to the tag to obtain the u64. There is also a [`DecodableCanonic`] implementation wihch errors if the decoded bytes are not the shortest possible encoding of the u64.
+//!
+//! Further, [`CompactU64`] implements [`RelativeEncodable`] for encoding only the number (but *not* the tag) relative to any given [`EncodingWidth`], and [`RelativeDecodable`] for decoding the number (but *not* a tag) relative to any given [`Tag`]. The corresponding [`RelativeDecodableCanonic`] implementation again enforces minimal encodings.
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -42,7 +44,7 @@ use ufotofu_codec_endian::{U16BE, U32BE, U64BE, U8BE};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
-/// An opaque representation of one of the possible tag widths: 2, 3, 4, 5, 6, 7, or 8.
+/// An opaque representation of one of the possible tag widths: 2, 3, 4, 5, 6, 7, or 8 bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TagWidth(u8);
 
@@ -64,7 +66,7 @@ impl TagWidth {
         }
     }
 
-    /// Returns an [`TagWidth`] representing two.
+    /// Returns a [`TagWidth`] representing two.
     ///
     /// ```
     /// use compact_u64::*;
@@ -76,7 +78,7 @@ impl TagWidth {
         TagWidth(2)
     }
 
-    /// Returns an [`TagWidth`] representing three.
+    /// Returns a [`TagWidth`] representing three.
     ///
     /// ```
     /// use compact_u64::*;
@@ -88,7 +90,7 @@ impl TagWidth {
         TagWidth(3)
     }
 
-    /// Returns an [`TagWidth`] representing four.
+    /// Returns a [`TagWidth`] representing four.
     ///
     /// ```
     /// use compact_u64::*;
@@ -100,7 +102,7 @@ impl TagWidth {
         TagWidth(4)
     }
 
-    /// Returns an [`TagWidth`] representing five.
+    /// Returns a [`TagWidth`] representing five.
     ///
     /// ```
     /// use compact_u64::*;
@@ -112,7 +114,7 @@ impl TagWidth {
         TagWidth(5)
     }
 
-    /// Returns an [`TagWidth`] representing six.
+    /// Returns a [`TagWidth`] representing six.
     ///
     /// ```
     /// use compact_u64::*;
@@ -124,7 +126,7 @@ impl TagWidth {
         TagWidth(6)
     }
 
-    /// Returns an [`TagWidth`] representing seven.
+    /// Returns a [`TagWidth`] representing seven.
     ///
     /// ```
     /// use compact_u64::*;
@@ -136,7 +138,7 @@ impl TagWidth {
         TagWidth(7)
     }
 
-    /// Returns an [`TagWidth`] representing eight.
+    /// Returns a [`TagWidth`] representing eight.
     ///
     /// ```
     /// use compact_u64::*;
@@ -184,7 +186,7 @@ impl<'a> Arbitrary<'a> for TagWidth {
     }
 }
 
-/// An opaque representation of the possible width of a compact u64 encoding: zero, one, two, four, or eight bytes.
+/// An opaque representation of the possible width of a compact u64 encoding (excluding the tag): zero, one, two, four, or eight bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EncodingWidth(u8);
 
@@ -337,7 +339,7 @@ impl From<EncodingWidth> for usize {
     }
 }
 
-/// A tag as used for compact encoding. Combines a `Tagwidth` with a `u8` that stores the tag in its least significant bits.
+/// A tag used for compact encoding. Combines a `Tagwidth` with a `u8` that stores the tag (in its least significant bits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tag {
     width: TagWidth,
@@ -345,7 +347,7 @@ pub struct Tag {
 }
 
 impl Tag {
-    /// Returns the tag of a given tag-width for encoding a [`u64`] in the least number of bytes. Small tags are stored in the least significant bits of the return value.
+    /// Returns the tag of a given tag-width for encoding a [`u64`] in the least number of bytes.
     ///
     /// ```
     /// use compact_u64::*;
@@ -385,7 +387,7 @@ impl Tag {
         }
     }
 
-    /// Creates a `Tag` from a `u8` of data, a `TagWidth`, and an offset where in the `u8` the tag begins. An offset of `0` indicates the most significant bit, an offset of `6` indicates the second-to-least significant bit. If the sum of width and offset is greater than eight, the function panics.
+    /// Creates a [`Tag`] from a `u8` of data, a [`TagWidth`], and an offset where in the `u8` the tag begins. An offset of `0` indicates the most significant bit, an offset of `7` indicates the least significant bit. If the sum of width and offset is greater than eight, the function panics.
     ///
     /// ```
     /// use compact_u64::*;
@@ -405,12 +407,12 @@ impl Tag {
         }
     }
 
-    /// Returns the width of this `Tag`.
+    /// Returns the width of this [`Tag`].
     pub fn tag_width(&self) -> TagWidth {
         self.width
     }
 
-    /// Returns the data of this `Tag`, stored in the `self.width()` many least significant bits.
+    /// Returns the data of this [`Tag`], stored in the `self.width()` many least significant bits.
     pub fn data(&self) -> u8 {
         self.data
     }
@@ -441,7 +443,7 @@ impl<'a> Arbitrary<'a> for Tag {
     }
 }
 
-/// A thin wrapper around `u64` that allows for minimal encoding relative to arbitrary [`TagWidth`]s, and for decoding relative to arbitrary [`EncodingWidth`]s.
+/// A thin wrapper around `u64` that allows for minimal encoding relative to arbitrary [`EncodingWidth`]s, and for decoding relative to arbitrary [`Tag`]s.
 ///
 /// The implementation of [`DecodableCanonic`] first decodes a value and then checks whether a lesser tag could have also been used to encode the decoded value. If so, it reports an error.
 ///
@@ -453,7 +455,7 @@ impl<'a> Arbitrary<'a> for Tag {
 ///
 /// assert_eq!(
 ///     &[123],
-///     &CompactU64(123).sync_relative_encode_into_boxed_slice(&TagWidth::two())[..],
+///     &CompactU64(123).sync_relative_encode_into_boxed_slice(&EncodingWidth::one())[..],
 /// );
 ///
 /// assert_eq!(
@@ -486,7 +488,10 @@ impl<'a> Arbitrary<'a> for Tag {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
-pub struct CompactU64(pub u64);
+pub struct CompactU64(
+    /// The wrapped `u64`.
+    pub u64
+);
 
 impl From<u64> for CompactU64 {
     fn from(value: u64) -> Self {
@@ -545,6 +550,7 @@ impl RelativeDecodable<Tag, Infallible> for CompactU64 {
     }
 }
 
+/// Writes an eight-bit tag before the big-endian number.
 impl Encodable for CompactU64 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
@@ -565,6 +571,7 @@ impl EncodableKnownSize for CompactU64 {
 
 impl EncodableSync for CompactU64 {}
 
+/// Expects an eight-bit tag before the big-endian number.
 impl Decodable for CompactU64 {
     type ErrorReason = Infallible;
 
