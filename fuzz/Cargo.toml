@@ -383,3 +383,24 @@ path = "fuzz_targets/mc_subspace_capability_encoding_random.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_path_rel_path"
+path = "fuzz_targets/enc_path_rel_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_path2_rel_path2"
+path = "fuzz_targets/enc_path2_rel_path2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_path3_rel_path3"
+path = "fuzz_targets/enc_path3_rel_path3.rs"
+test = false
+doc = false
+bench = false
