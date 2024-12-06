@@ -22,13 +22,11 @@ extern crate std;
 
 use core::convert::Infallible;
 use core::fmt::Display;
-#[cfg(feature = "std")]
-use std::error::Error;
 
-use either::Either::*;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
+use ufotofu_codec::DecodableSync;
 use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
@@ -447,6 +445,8 @@ impl<'a> Arbitrary<'a> for Tag {
 ///
 /// The implementation of [`DecodableCanonic`] first decodes a value and then checks whether a lesser tag could have also been used to encode the decoded value. If so, it reports an error.
 ///
+/// Also implements absolute encoding and decoding by prefixing the number with its eight-bit tag.
+///
 /// ```
 /// use compact_u64::*;
 /// use ufotofu_codec::*;
@@ -473,6 +473,16 @@ impl<'a> Arbitrary<'a> for Tag {
 /// assert!(
 ///     CompactU64::sync_relative_decode_canonic_from_slice(&[0, 123], &Tag::from_raw(253, TagWidth::eight(), 0)).is_err(),
 /// );
+///
+/// assert_eq!(
+///     &[123],
+///     &CompactU64(123).sync_encode_into_boxed_slice()[..],
+/// );
+///
+/// assert_eq!(
+///     123,
+///     CompactU64::sync_decode_from_slice(&[123]).unwrap().0,
+/// );
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
@@ -490,15 +500,13 @@ impl From<CompactU64> for u64 {
     }
 }
 
-/// Produces the shortest possible encodings relative to a given `TagWidth`. **Careful: Does not encode the tag itself. Use [`Tag::min_tag`] to obtain the corresponding tag.**
-impl RelativeEncodable<TagWidth> for CompactU64 {
-    async fn relative_encode<C>(&self, consumer: &mut C, r: &TagWidth) -> Result<(), C::Error>
+/// Produces the shortest possible encodings relative to a given `EncodingWidth`. **Careful: Does not encode any tag itself. Use [`Tag::min_tag`] to obtain the corresponding tag.**
+impl RelativeEncodable<EncodingWidth> for CompactU64 {
+    async fn relative_encode<C>(&self, consumer: &mut C, r: &EncodingWidth) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        let min_width = EncodingWidth::min_width(self.0, *r);
-
-        match min_width.as_u8() {
+        match r.as_u8() {
             0 => Ok(()),
             1 => U8BE(self.0 as u8).encode(consumer).await,
             2 => U16BE(self.0 as u16).encode(consumer).await,
@@ -509,13 +517,13 @@ impl RelativeEncodable<TagWidth> for CompactU64 {
     }
 }
 
-impl RelativeEncodableKnownSize<TagWidth> for CompactU64 {
-    fn relative_len_of_encoding(&self, r: &TagWidth) -> usize {
-        EncodingWidth::min_width(self.0, *r).as_usize()
+impl RelativeEncodableKnownSize<EncodingWidth> for CompactU64 {
+    fn relative_len_of_encoding(&self, r: &EncodingWidth) -> usize {
+        r.as_usize()
     }
 }
 
-impl RelativeEncodableSync<TagWidth> for CompactU64 {}
+impl RelativeEncodableSync<EncodingWidth> for CompactU64 {}
 
 impl RelativeDecodable<Tag, Infallible> for CompactU64 {
     async fn relative_decode<P>(
@@ -536,6 +544,60 @@ impl RelativeDecodable<Tag, Infallible> for CompactU64 {
         }
     }
 }
+
+impl Encodable for CompactU64 {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        let tag = Tag::min_tag(self.0, TagWidth::eight());
+        consumer.consume(tag.data()).await?;
+        self.relative_encode(consumer, &tag.encoding_width()).await
+    }
+}
+
+impl EncodableKnownSize for CompactU64 {
+    fn len_of_encoding(&self) -> usize {
+        let tag = Tag::min_tag(self.0, TagWidth::eight());
+        1 + self.relative_len_of_encoding(&tag.encoding_width())
+    }
+}
+
+impl EncodableSync for CompactU64 {}
+
+impl Decodable for CompactU64 {
+    type ErrorReason = Infallible;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let tag_byte = producer.produce_item().await?;
+        let tag = Tag::from_raw(tag_byte, TagWidth::eight(), 0);
+        CompactU64::relative_decode(producer, &tag).await
+    }
+}
+
+impl DecodableCanonic for CompactU64 {
+    type ErrorCanonic = NotMinimal;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let tag_byte = producer.produce_item().await?;
+        let tag = Tag::from_raw(tag_byte, TagWidth::eight(), 0);
+        CompactU64::relative_decode_canonic(producer, &tag).await
+    }
+}
+
+impl DecodableSync for CompactU64 {}
 
 /// Marker unit struct to indicate that a compact u64 encoding was not minimal, as would be required for canonic decoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
