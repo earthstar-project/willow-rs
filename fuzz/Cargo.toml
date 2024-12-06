@@ -49,8 +49,113 @@ bench = false
 ########################
 
 [[bin]]
-name = "endian_u64"
-path = "fuzz_targets/endian_u64.rs"
+name = "endian_u8_be"
+path = "fuzz_targets/endian_u8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_be"
+path = "fuzz_targets/endian_u16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_be"
+path = "fuzz_targets/endian_u32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_be"
+path = "fuzz_targets/endian_u64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u8_le"
+path = "fuzz_targets/endian_u8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_le"
+path = "fuzz_targets/endian_u16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_le"
+path = "fuzz_targets/endian_u32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_le"
+path = "fuzz_targets/endian_u64_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_be"
+path = "fuzz_targets/endian_i8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_be"
+path = "fuzz_targets/endian_i16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_be"
+path = "fuzz_targets/endian_i32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_be"
+path = "fuzz_targets/endian_i64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_le"
+path = "fuzz_targets/endian_i8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_le"
+path = "fuzz_targets/endian_i16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_le"
+path = "fuzz_targets/endian_i32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_le"
+path = "fuzz_targets/endian_i64_le.rs"
 test = false
 doc = false
 bench = false
