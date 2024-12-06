@@ -996,7 +996,7 @@ mod encoding {
             P: BulkProducer<Item = u8>,
             Self: Sized,
         {
-            Self::decode(producer).await
+            todo!()
         }
     }
 
