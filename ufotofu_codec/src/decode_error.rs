@@ -11,6 +11,9 @@ use std::error::Error;
 use either::Either::*;
 use ufotofu::ProduceAtLeastError;
 
+/// The reasons why decoding can fail: the producer might emit its final item too early, it might emit an error, or the received bytes might be problematic.
+/// 
+/// `F` is the type of the final item of the producer, `E` is the error type of the producer, and `Other` can describe in arbitrary detail why the decoded bytes were invalid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<F, E, Other> {
     UnexpectedEndOfInput(F),
@@ -19,7 +22,7 @@ pub enum DecodeError<F, E, Other> {
 }
 
 impl<F, E, OtherB> DecodeError<F, E, OtherB> {
-    /// Map from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouhced but mapping other errors via a `From` implementation.
+    /// Map from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouched but mapping other errors via a `From` implementation.
     pub fn map_other<OtherA>(err: DecodeError<F, E, OtherA>) -> Self
     where
         OtherB: From<OtherA>,

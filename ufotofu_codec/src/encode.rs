@@ -19,7 +19,7 @@ use ufotofu::{consumer::IntoVec, BulkConsumer};
 /// - The encoding must not depend on details of the consumer such as when it yields or how many item slots it exposes at a time.
 /// - Nonequal values must result in nonequal encodings.
 /// - No encoding must be a prefix of a different encoding.
-/// - For types that also implement `Decodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
+/// - For types that also implement [`Decodable`](crate::Decodable) and [`Eq`], encoding a value and then decoding it must yield a value equal to the original.
 pub trait Encodable {
     /// Writes an encoding of `&self` into the given consumer.
     fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
@@ -27,7 +27,7 @@ pub trait Encodable {
         C: BulkConsumer<Item = u8>;
 
     #[cfg(feature = "alloc")]
-    /// Encodes into a Vec instead of a given consumer.
+    /// Encodes into a [Vec] instead of a given consumer.
     fn encode_into_vec(&self) -> impl Future<Output = Vec<u8>> {
         async {
             let mut c = IntoVec::new();
@@ -61,9 +61,7 @@ pub trait EncodableKnownSize: Encodable {
     }
 }
 
-/// An encodable that introduces no asynchrony beyond that of `.await`ing the consumer.
-///
-/// If the consumer is known to not block either, this enables synchronous encoding.
+/// An encodable that introduces no asynchrony beyond that of `.await`ing the consumer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous encoding by internally using consumers that are known to never block.
 pub trait EncodableSync: Encodable {
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a Vec instead of a given consumer.

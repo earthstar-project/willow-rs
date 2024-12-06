@@ -16,7 +16,7 @@ use crate::DecodeError;
 ///
 /// - The result of decoding must depend only on the decoded bytes, not on details of the producer such as when it yields or how many items it exposes at a time.
 /// - `decode` must not read any bytes beyond the end of the encoding.
-/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
+/// - For types that also implement [`Encodable`](crate::Encodable) and [`Eq`], encoding a value and then decoding it must yield a value equal to the original.
 pub trait Decodable: Sized {
     /// Reason why decoding can fail (beyond an unexpected end of input or a producer error).
     type ErrorReason;
@@ -45,13 +45,13 @@ pub trait Decodable: Sized {
 ///
 /// - Two nonequal codes must not decode to the same value with `decode_canonic`.
 /// - Any code that decodes via `decode_canonic` must also decode via `decode` to the same value.
-/// - For types that also implement `Encodable` and `Eq`, if canonically decoding a bytestring suceedes, then reencoding the resulting value must result in the original bytestring.
+/// - For types that also implement [`Encodable`](crate::Encodable) and [`Eq`], if canonically decoding a bytestring suceedes, then reencoding the resulting value must result in the original bytestring.
 ///
 /// There is no corresponding `EncodableCanonic` trait, because `Encodable` already fulfils the dual requirement of two nonequal values yielding nonequal codes.
 pub trait DecodableCanonic: Decodable {
     /// The type for reporting that the bytestring to decode was not a valid canonic encoding of any value of type `Self`.
     ///
-    /// Typically contains at least as much information as [`Self::Error`](Decodable::Error). If the encoding relation implemented by [`Decodable`] is already canonic, then [`ErrorCanonic`](DecodableCanonic::ErrorCanonic) should be equal to [`Self::Error`](Decodable::Error).
+    /// Typically contains at least as much information as [`Self::ErrorReason`](Decodable::ErrorReason). If the encoding relation implemented by [`Decodable`] is already canonic, then [`ErrorCanonic`](DecodableCanonic::ErrorCanonic) should be equal to [`Self::ErrorReason`](Decodable::ErrorReason).
     type ErrorCanonic: From<Self::ErrorReason>;
 
     /// Decodes the bytes produced by the given producer into a `Self`, and errors if the input encoding is not the canonical one.
@@ -70,7 +70,7 @@ pub trait DecodableCanonic: Decodable {
     }
 }
 
-/// A decodable that introduces no asynchrony beyond that of `.await`ing the producer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous decoding via producers that are known to never block.
+/// A decodable that introduces no asynchrony beyond that of `.await`ing the producer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous decoding by internally using producers that are known to never block.
 pub trait DecodableSync: Decodable {
     /// Synchronously decodes from a slice instead of a producer.
     fn sync_decode_from_slice(

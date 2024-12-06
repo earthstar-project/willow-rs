@@ -1,3 +1,5 @@
+//! Assertion functions that panic when their arguments certify a violation of the contract of a codec trait. Used by the fuzz macros, but also exposed here so that they can be used in non-fuzz-based property testing settings.
+
 mod absolute;
 pub use absolute::*;
 
@@ -79,7 +81,7 @@ macro_rules! fuzz_absolute_all {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`Decodable`], and [`DecodableCanonic`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`Decodable`](crate::Decodable), and [`DecodableCanonic`](crate::DecodableCanonic) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -148,7 +150,7 @@ macro_rules! fuzz_absolute_canonic {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`EncodableKnownSize`], and [`Decodable`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`EncodableKnownSize`](crate::EncodableKnownSize), and [`Decodable`](crate::Decodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -215,7 +217,7 @@ macro_rules! fuzz_absolute_known_length {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`] and [`Decodable`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable) and [`Decodable`](crate::Decodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -305,7 +307,8 @@ macro_rules! fuzz_relative_all {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -363,7 +366,7 @@ macro_rules! fuzz_relative_all {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeDecodable`](crate::RelativeDecodable), and [`RelativeDecodableCanonic`](crate::RelativeDecodableCanonic) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -384,7 +387,8 @@ macro_rules! fuzz_relative_canonic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -440,7 +444,7 @@ macro_rules! fuzz_relative_canonic {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeEncodableKnownSize`](crate::RelativeEncodableKnownSize), and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -461,7 +465,8 @@ macro_rules! fuzz_relative_known_length {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
@@ -510,7 +515,7 @@ macro_rules! fuzz_relative_known_length {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable) and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -531,7 +536,8 @@ macro_rules! fuzz_relative_basic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_relative_basic_invariants, assert_relative_canonic_invariants, assert_relative_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_length_invariants,
         };
 
         fuzz_target!(|data: (
