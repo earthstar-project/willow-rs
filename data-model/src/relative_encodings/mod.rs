@@ -6,3 +6,6 @@ pub use entry_entry::*;
 
 mod entry_area;
 pub use entry_area::*;
+
+mod entry_range3d;
+pub use entry_range3d::*;
