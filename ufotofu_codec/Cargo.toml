@@ -15,7 +15,7 @@ alloc = []
 dev = ["std"]
 
 [dependencies]
-ufotofu = "0.5.1"
+ufotofu = "0.6.0"
 either = "1.10.0"
 pollster = "0.4.0"
 # arbitrary = { version = "1.0.2", optional = true }

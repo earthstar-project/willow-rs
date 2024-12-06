@@ -7,7 +7,7 @@ edition = "2021"
 wb_async_utils = { path = "../wb_async_utils", version = "0.1.0" }
 willow-data-model = { path = "../data-model", version = "0.1.0" }
 willow-encoding = { path = "../encoding", version = "0.1.0" }
-ufotofu = { version = "0.5.0", features = ["std"] }
+ufotofu = { version = "0.6.0", features = ["std"] }
 ufotofu_queues = { version = "0.5.0", features = ["std"] }
 futures = { version = "0.3.31" }
 either = "1.10.0"

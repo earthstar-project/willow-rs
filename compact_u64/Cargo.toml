@@ -13,7 +13,7 @@ dev = ["std", "arbitrary"]
 std = []
 
 [dependencies]
-ufotofu = "0.5.1"
+ufotofu = "0.6.0"
 either = "1.10.0"
 ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
 ufotofu_codec_endian = { path = "../ufotofu_codec_endian", version = "0.1.0" }

@@ -9,7 +9,7 @@ use core::fmt::{Debug, Display, Formatter};
 use std::error::Error;
 
 use either::Either::*;
-use ufotofu::OverwriteFullSliceError;
+use ufotofu::ProduceAtLeastError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<F, E, Other> {
@@ -38,8 +38,8 @@ impl<F, E, Other> From<E> for DecodeError<F, E, Other> {
     }
 }
 
-impl<F, E, Other> From<OverwriteFullSliceError<F, E>> for DecodeError<F, E, Other> {
-    fn from(err: OverwriteFullSliceError<F, E>) -> Self {
+impl<F, E, Other> From<ProduceAtLeastError<F, E>> for DecodeError<F, E, Other> {
+    fn from(err: ProduceAtLeastError<F, E>) -> Self {
         match err.reason {
             Left(fin) => DecodeError::UnexpectedEndOfInput(fin),
             Right(err) => DecodeError::Producer(err),
