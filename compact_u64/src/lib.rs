@@ -417,6 +417,14 @@ impl Tag {
         self.data
     }
 
+    /// Returns the data of this [`Tag`], stored `self.width()` many bits starting at the given offset. An offset of zero denotes the most significant bit, an offset of seven the least significant bit.
+    /// 
+    /// Panics if the sum of `offset` and the width of the tag is strictly greater than eight.
+    pub fn data_at_offset(&self, offset: u8) -> u8 {
+        debug_assert!(offset.saturating_add(self.tag_width().as_u8()) <= 8);
+        return self.data() << (8 - (self.tag_width().as_u8() + offset));
+    }
+
     /// Returns the width of the integer encoding indicated by this tag.
     pub fn encoding_width(&self) -> EncodingWidth {
         let max_tag: u8 = ((1_u16 << self.tag_width().as_u8()) as u8).wrapping_sub(1);

@@ -785,13 +785,6 @@ mod encoding {
 
     use ufotofu::{BulkConsumer, BulkProducer};
 
-    /*
-        use willow_encoding::DecodeError;
-        use willow_encoding::{Decodable, Encodable, RelationDecodable};
-
-    */
-    use willow_encoding::{decode_max_power, encode_max_power};
-
     use ufotofu_codec::{
         Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
         EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeEncodable,
@@ -811,8 +804,8 @@ mod encoding {
             let path_length_tag = Tag::min_tag(self.path_length() as u64, TagWidth::four());
             let component_count_tag = Tag::min_tag(self.component_count() as u64, TagWidth::four());
 
-            let first_byte = (path_length_tag.data() << 4) + component_count_tag.data(); // TODO: Have compact_u64 provide nice methods for doing this.
-
+            let first_byte =
+                path_length_tag.data_at_offset(0) + component_count_tag.data_at_offset(5);
             consumer.consume(first_byte).await?;
 
             // then total number of bytes in compact bytes
@@ -834,14 +827,8 @@ mod encoding {
             for (i, component) in self.components().enumerate() {
                 // We do not encode the length for the final component as the decoder will be able to infer its length from the total length.
                 if i != self.component_count() - 1 {
-                    // Encode component length as C8U64
-                    let component_length_tag =
-                        Tag::min_tag(component.len() as u64, TagWidth::eight());
-                    consumer.consume(component_length_tag.data()).await?;
-                    let component_length_bytes = CompactU64(component.len() as u64);
-                    component_length_bytes
-                        .relative_encode(consumer, &component_length_tag.encoding_width())
-                        .await?;
+                    // Encode component length with 8-bit tag
+                    CompactU64(component.len() as u64).encode(consumer).await?;
                 }
 
                 //      followed by component itself
