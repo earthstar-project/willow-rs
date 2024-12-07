@@ -61,7 +61,7 @@ where
 
 /// Turns a [BulkProducer] of bytes into a [BufferedProducer] of `T`s that errors if an encoding it decodes is not canonic.
 ///
-/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`Decoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
+/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`CanonicDecoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
 pub struct CanonicDecoder<P, T> {
     inner: P,
     phantom: PhantomData<T>,

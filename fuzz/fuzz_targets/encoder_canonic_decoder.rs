@@ -6,7 +6,7 @@ use either::Either::*;
 
 use ufotofu::{consumer::IntoVec, pipe, producer::FromSlice, Producer};
 
-use ufotofu_codec::{DecodeError, CanonicDecoder, Encoder};
+use ufotofu_codec::{CanonicDecoder, DecodeError, Encoder};
 use ufotofu_codec_endian::U16BE;
 
 // Generate a sequence of u16s. Encode them into a vec, then take a prefix of the resulting bytestring, produce that prefix, and decode it. The result should be the corresponding prefix of the original sequence of u16s, either yielding `()` or an unexpected end of input decoding error depending on the parity of the bytestring prefix.

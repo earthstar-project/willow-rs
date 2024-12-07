@@ -490,7 +490,7 @@ impl<'a> Arbitrary<'a> for Tag {
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct CompactU64(
     /// The wrapped `u64`.
-    pub u64
+    pub u64,
 );
 
 impl From<u64> for CompactU64 {

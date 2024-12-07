@@ -12,7 +12,7 @@ use either::Either::*;
 use ufotofu::ProduceAtLeastError;
 
 /// The reasons why decoding can fail: the producer might emit its final item too early, it might emit an error, or the received bytes might be problematic.
-/// 
+///
 /// `F` is the type of the final item of the producer, `E` is the error type of the producer, and `Other` can describe in arbitrary detail why the decoded bytes were invalid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError<F, E, Other> {

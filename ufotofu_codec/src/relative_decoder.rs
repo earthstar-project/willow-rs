@@ -8,7 +8,7 @@ use crate::{DecodeError, RelativeDecodable, RelativeDecodableCanonic};
 
 /// Turns a [BulkProducer] of bytes into a [BufferedProducer] of `T`s that decodes relative to some value of type `RelativeTo`.
 ///
-/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`Decoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
+/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`RelativeDecoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
 pub struct RelativeDecoder<P, T, R, RelativeTo, ErrorReason> {
     inner: P,
     relative_to: R,
@@ -16,7 +16,7 @@ pub struct RelativeDecoder<P, T, R, RelativeTo, ErrorReason> {
 }
 
 impl<P, T, R, RelativeTo, ErrorReason> RelativeDecoder<P, T, R, RelativeTo, ErrorReason> {
-    /// Creates a new [`Decoder`], decoding from the given `producer`. Decodes relative to `relative_to.borrow()`.
+    /// Creates a new [`RelativeDecoder`], decoding from the given `producer`. Decodes relative to `relative_to.borrow()`.
     pub fn new(producer: P, relative_to: R) -> Self {
         Self {
             inner: producer,
@@ -74,7 +74,7 @@ where
 
 /// Turns a [BulkProducer] of bytes into a [BufferedProducer] of `T`s that canonically decodes relative to some value of type `RelativeTo`.
 ///
-/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`Decoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
+/// Emits the underlying `Final` item when the underlying producer emits it before the first byte of an encoding. When the underlying producer emits its `Final` item in the middle of an encoding, the [`RelativeCanonicDecoder`] yields a [`DecodeError::UnexpectedEndOfInput`].
 pub struct RelativeCanonicDecoder<P, T, R, RelativeTo, ErrorReason, ErrorCanonic> {
     inner: P,
     relative_to: R,
@@ -84,7 +84,7 @@ pub struct RelativeCanonicDecoder<P, T, R, RelativeTo, ErrorReason, ErrorCanonic
 impl<P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
     RelativeCanonicDecoder<P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
 {
-    /// Creates a new [`Decoder`], canonically decoding from the given `producer`. Decodes relative to `relative_to.borrow()`.
+    /// Creates a new [`RelativeCanonicDecoder`], canonically decoding from the given `producer`. Decodes relative to `relative_to.borrow()`.
     pub fn new(producer: P, relative_to: R) -> Self {
         Self {
             inner: producer,

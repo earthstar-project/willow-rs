@@ -12,7 +12,7 @@ pub struct RelativeEncoder<C, T, R, RelativeTo> {
 }
 
 impl<C, T, R, RelativeTo> RelativeEncoder<C, T, R, RelativeTo> {
-    /// Creates a new [`Encoder`], relatively encoding into the given `consumer`. Encodes relative to `relative_to.borrow()`.
+    /// Creates a new [`RelativeEncoder`], relatively encoding into the given `consumer`. Encodes relative to `relative_to.borrow()`.
     pub fn new(consumer: C, relative_to: R) -> Self {
         Self {
             inner: consumer,

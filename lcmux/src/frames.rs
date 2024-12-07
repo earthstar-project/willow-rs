@@ -46,7 +46,7 @@ pub struct SendControlHeader {
 }
 
 /// An incoming LCMUX fragment header: all information, except for the message bytes in case of a `SendToChannel` or `SendControl` fragment.
-/// 
+///
 /// Implements [`Decodable`] because we use this to figure out with incoming data. Does not implement [`Encodable`], however, since we already know which kind of header we are encoding.
 pub enum IncomingFragmentHeader {
     IssueGuarantee(IssueGuarantee),
