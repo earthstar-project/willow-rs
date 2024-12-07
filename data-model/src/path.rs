@@ -819,14 +819,14 @@ mod encoding {
 
             let total_bytes_bytes = CompactU64(self.path_length() as u64);
             total_bytes_bytes
-                .relative_encode(consumer, &path_length_tag.tag_width())
+                .relative_encode(consumer, &path_length_tag.encoding_width())
                 .await?;
 
             // then total number of components in compact bytes
 
             let component_count_bytes = CompactU64(self.component_count() as u64);
             component_count_bytes
-                .relative_encode(consumer, &component_count_tag.tag_width())
+                .relative_encode(consumer, &component_count_tag.encoding_width())
                 .await?;
 
             // then
@@ -840,7 +840,7 @@ mod encoding {
                     consumer.consume(component_length_tag.data()).await?;
                     let component_length_bytes = CompactU64(component.len() as u64);
                     component_length_bytes
-                        .relative_encode(consumer, &component_length_tag.tag_width())
+                        .relative_encode(consumer, &component_length_tag.encoding_width())
                         .await?;
                 }
 
