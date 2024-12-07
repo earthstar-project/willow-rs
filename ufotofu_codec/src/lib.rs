@@ -25,14 +25,14 @@
 //! - [`EncodableSync`] and [`DecodableSync`] are marker traits that signal that all asynchrony in encoding/decoding stems from the consumer/producer, but all further computations are synchronous. When using a consumer/producer that never blocks either, this allows for synchronous encoding/decoding.
 //!
 //! ## Relativity
-//! 
+//!
 //! For each of these traits exists also a *relative* variant that allows for encoding and decoding relative to some known reference value: [`RelativeEncodable`], [`RelativeDecodable`], [`RelativeDecodableCanonic`], [`RelativeEncodableKnownSize`], [`RelativeEncodableSync`], and [`RelativeDecodableSync`].
 //!
 //! Formally, each possible reference value defines an encoding relation that is independent from the relations defined by any other reference values. All API contracts that are stated in the documentation must hold only when using the same reference value. As an example, consider an encoding for integers that encodes relative to a reference value by encoding the difference between the value to encode and the reference value. Then, when encoding any two distinct values relative to the reference value `5`, the resulting encodings must be different. But when encoding some value `x` relative to `5` and another value `y` relative to `17`, then it is perfectly fine for both encodings to be the same bytestring.
 //!
 //! ## Encoders and Decoders
 //!
-//! [TODO]
+//! The [`Encoder`] wrapper takes a [`BulkConsumer`](ufotofu::BulkConsumer) of bytes and turns it into a [`BufferedConsumer`](ufotofu::BufferedConsumer) of encodable values. Conversely, the [`Decoder`] wrapper takes a [`BulkProducer`](ufotofu::BulkProducer) of bytes and turns it into a [`BufferedProducer`](ufotofu::BufferedProducer) of decodables. [`RelativeEncoder`] and [`RelativeDecoder`] provide relative versions by encoding and decoding respectively relative to some value (which can be freely changed over time).
 //!
 //! ## Property Testing
 //!
@@ -61,6 +61,8 @@ pub use encode::*;
 mod relative_encode;
 pub use relative_encode::*;
 
-// TODO Encoder, Decoder, DecoderCanonic; absolute and relative; (owned and borrowed for the relative ones?)
+mod encoder;
+pub use encoder::*;
 
-// TODO proptest stuff
+mod decoder;
+pub use decoder::*;
