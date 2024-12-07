@@ -21,6 +21,7 @@ willow-encoding = { path = "../encoding" }
 ufotofu_codec = { path = "../ufotofu_codec", features = [ "std", "dev" ] }
 ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = [ "std" ] }
 compact_u64 = { path = "../compact_u64", features = [ "std", "dev" ] }
+either = "1.10.0"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -156,6 +157,38 @@ bench = false
 [[bin]]
 name = "endian_i64_le"
 path = "fuzz_targets/endian_i64_le.rs"
+test = false
+doc = false
+bench = false
+
+#################
+# ufotofu_codec #
+#################
+
+[[bin]]
+name = "encoder_decoder"
+path = "fuzz_targets/encoder_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_canonic_decoder"
+path = "fuzz_targets/encoder_canonic_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_decoder_relative"
+path = "fuzz_targets/encoder_decoder_relative.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_canonic_decoder_relative"
+path = "fuzz_targets/encoder_canonic_decoder_relative.rs"
 test = false
 doc = false
 bench = false

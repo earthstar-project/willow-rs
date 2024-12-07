@@ -703,6 +703,7 @@ dependencies = [
  "arbitrary",
  "compact_u64",
  "earthstar",
+ "either",
  "libfuzzer-sys",
  "meadowcap",
  "pollster",
