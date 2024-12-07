@@ -11,7 +11,7 @@ default = ["std"]
 std = ["arbitrary"]
 
 [dependencies]
-ufotofu = "0.5.1"
+ufotofu = "0.6.0"
 either = "1.10.0"
 arbitrary = { version = "1.0.2", optional = true, features = ["derive"] }
 ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }

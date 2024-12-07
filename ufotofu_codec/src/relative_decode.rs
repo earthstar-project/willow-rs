@@ -10,12 +10,7 @@ use ufotofu::{producer::FromSlice, BulkProducer};
 
 use crate::*;
 
-/// Methods for decoding relative to some known value of type `RelativeTo`.
-///
-/// API contracts:
-///
-/// - The result of decoding must depend only on the decoded bytes, not on details of the producer such as when it yields or how many items it exposes at a time.
-/// - For types that also implement `Encodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
+/// Like [`Decodable`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeDecodable<RelativeTo, ErrorReason>: Sized {
     /// Decodes the bytes produced by the given producer into a `Self`, or yields an error if the producer does not produce a valid encoding.
     fn relative_decode<P>(
@@ -51,13 +46,7 @@ where
     }
 }
 
-/// Relative decoding for an *encoding relation* with a one-to-one mapping between values and their codes (i.e., the relation is a [bijection](https://en.wikipedia.org/wiki/Bijection)).
-///
-/// This may specialise an arbitrary encoding relation to implement a canonic subset. `ErrorCanonic` is the type for reporting that the bytestring to decode was not a valid canonic encoding of any value of type `Self`. It typically contains at least as much information as [`Self::Error`](Decodable::Error). If the encoding relation implemented by [`Decodable`] is already canonic, then [`ErrorCanonic`] should be equal to [`ErrorReason`].
-///
-/// API contract: Two nonequal codes must not decode to the same value with `decode_canonic`.
-///
-/// There is no corresponding `EncodableCanonic` trait, because `Encodable` already fulfils the dual requirement of two nonequal values yielding nonequal codes.
+/// Like [`DecodableCanonic`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeDecodableCanonic<RelativeTo, ErrorReason, ErrorCanonic>:
     RelativeDecodable<RelativeTo, ErrorReason>
 where
@@ -102,7 +91,7 @@ where
     }
 }
 
-/// A relative decodable that introduces no asynchrony beyond that of `.await`ing the producer. This is essentially a marker trait by which to tell other programmers about this property. As a practical benefit, the default methods of this trait allow for convenient synchronous decoding via producers that are known to never block.
+/// Like [`DecodableSync`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeDecodableSync<RelativeTo, ErrorReason>:
     RelativeDecodable<RelativeTo, ErrorReason>
 {

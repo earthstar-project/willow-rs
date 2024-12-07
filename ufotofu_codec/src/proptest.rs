@@ -1,3 +1,5 @@
+//! Assertion functions that panic when their arguments certify a violation of the contract of a codec trait. Used by the fuzz macros, but also exposed here so that they can be used in non-fuzz-based property testing settings.
+
 mod absolute;
 pub use absolute::*;
 
@@ -29,7 +31,7 @@ macro_rules! fuzz_absolute_all {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -71,7 +73,7 @@ macro_rules! fuzz_absolute_all {
                 )
                 .await;
 
-                assert_known_length_invariants(&t1).await;
+                assert_known_size_invariants(&t1).await;
 
                 assert_canonic_invariants::<$t>(&potential_encoding1, &potential_encoding2).await;
             });
@@ -79,7 +81,7 @@ macro_rules! fuzz_absolute_all {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`Decodable`], and [`DecodableCanonic`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`Decodable`](crate::Decodable), and [`DecodableCanonic`](crate::DecodableCanonic) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -100,7 +102,7 @@ macro_rules! fuzz_absolute_canonic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -148,19 +150,19 @@ macro_rules! fuzz_absolute_canonic {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`], [`EncodableKnownSize`], and [`Decodable`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`EncodableKnownSize`](crate::EncodableKnownSize), and [`Decodable`](crate::Decodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_absolute_known_length;
+/// use ufotofu_codec::fuzz_absolute_known_size;
 ///
-/// fuzz_absolute_known_length!(path::to_some::TypeToTest);
+/// fuzz_absolute_known_size!(path::to_some::TypeToTest);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
-macro_rules! fuzz_absolute_known_length {
+macro_rules! fuzz_absolute_known_size {
     ($t:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -169,7 +171,7 @@ macro_rules! fuzz_absolute_known_length {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -209,13 +211,13 @@ macro_rules! fuzz_absolute_known_length {
                 )
                 .await;
 
-                assert_known_length_invariants(&t1).await;
+                assert_known_size_invariants(&t1).await;
             });
         });
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of the [`Encodable`] and [`Decodable`] traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable) and [`Decodable`](crate::Decodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -236,7 +238,7 @@ macro_rules! fuzz_absolute_basic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_basic_invariants, assert_canonic_invariants, assert_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -305,7 +307,8 @@ macro_rules! fuzz_relative_all {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -337,7 +340,8 @@ macro_rules! fuzz_relative_all {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -349,9 +353,9 @@ macro_rules! fuzz_relative_all {
                 )
                 .await;
 
-                assert_known_length_invariants(&r, &t1).await;
+                assert_relative_known_size_invariants(&r, &t1).await;
 
-                assert_canonic_invariants::<$t, $errR, $errC>(
+                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                     &r,
                     &potential_encoding1,
                     &potential_encoding2,
@@ -362,7 +366,7 @@ macro_rules! fuzz_relative_all {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeDecodable`](crate::RelativeDecodable), and [`RelativeDecodableCanonic`](crate::RelativeDecodableCanonic) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -383,7 +387,8 @@ macro_rules! fuzz_relative_canonic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -415,7 +420,8 @@ macro_rules! fuzz_relative_canonic {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -427,7 +433,7 @@ macro_rules! fuzz_relative_canonic {
                 )
                 .await;
 
-                assert_canonic_invariants::<$t, $errR, $errC>(
+                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                     &r,
                     &potential_encoding1,
                     &potential_encoding2,
@@ -438,19 +444,19 @@ macro_rules! fuzz_relative_canonic {
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeEncodableKnownSize`](crate::RelativeEncodableKnownSize), and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
 ///
-/// use ufotofu_codec::fuzz_relative_known_length;
+/// use ufotofu_codec::fuzz_relative_known_size;
 ///
-/// fuzz_relative_known_length!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// fuzz_relative_known_size!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
-macro_rules! fuzz_relative_known_length {
+macro_rules! fuzz_relative_known_size {
     ($t:ty; $r:ty; $errR:ty) => {
         use libfuzzer_sys::fuzz_target;
 
@@ -459,7 +465,8 @@ macro_rules! fuzz_relative_known_length {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -489,7 +496,8 @@ macro_rules! fuzz_relative_known_length {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,
@@ -501,13 +509,13 @@ macro_rules! fuzz_relative_known_length {
                 )
                 .await;
 
-                assert_known_length_invariants(&r, &t1).await;
+                assert_relative_known_size_invariants(&r, &t1).await;
             });
         });
     };
 }
 
-/// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
+/// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable) and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
 /// ```rust
 /// #![no_main]
@@ -528,7 +536,8 @@ macro_rules! fuzz_relative_basic {
         use ufotofu::consumer::TestConsumer;
 
         use ufotofu_codec::proptest::{
-            assert_basic_invariants, assert_canonic_invariants, assert_known_length_invariants,
+            assert_relative_basic_invariants, assert_relative_canonic_invariants,
+            assert_relative_known_size_invariants,
         };
 
         fuzz_target!(|data: (
@@ -558,7 +567,8 @@ macro_rules! fuzz_relative_basic {
 
             pollster::block_on(async {
                 assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r & t1,
+                    &r,
+                    &t1,
                     &t2,
                     c1,
                     c2,

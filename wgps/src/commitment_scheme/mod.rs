@@ -1,4 +1,4 @@
-use ufotofu::ConsumeFullSliceError;
+use ufotofu::ConsumeAtLeastError;
 use willow_encoding::{Decodable, DecodeError, Encodable, RelationDecodable};
 
 use either::Either::*;
@@ -21,7 +21,7 @@ impl<const CHALLENGE_HASH_LENGTH: usize> Encodable for Prelude<CHALLENGE_HASH_LE
     {
         consumer.consume(self.max_payload_power).await?;
 
-        if let Err(ConsumeFullSliceError { reason, .. }) =
+        if let Err(ConsumeAtLeastError { reason, .. }) =
             consumer.bulk_consume_full_slice(&self.commitment[..]).await
         {
             return Err(reason);

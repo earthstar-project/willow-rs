@@ -163,7 +163,7 @@ where
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`Encode`] or [`Decode`] trait.
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`RelativeEncodable`] or [`RelativeDecodable`] trait.
 pub async fn assert_relative_basic_invariants<T, R, ErrR>(
     r: &R,
     t1: &T,
@@ -211,8 +211,8 @@ where
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`EncodeKnownLength`] trait.
-pub async fn assert_relative_known_length_invariants<T, R>(r: &R, t1: &T)
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`RelativeEncodableKnownSize`] trait.
+pub async fn assert_relative_known_size_invariants<T, R>(r: &R, t1: &T)
 where
     T: RelativeEncodableKnownSize<R> + Debug,
     R: Debug,
@@ -292,7 +292,7 @@ async fn assert_relative_canonic_decoding_specialises_regular_decoding<T, R, Err
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`Encode`] or [`Decode`] trait, or of the [`DecodeCanonic`] trait.
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`RelativeDecodableCanonic`] trait.
 pub async fn assert_relative_canonic_invariants<T, R, ErrR, ErrC>(
     r: &R,
     potential_encoding1: &[u8],

@@ -2,7 +2,7 @@
 
 //! # UFOTOFU Codec Endian
 //!
-//! [TODO] write documentation.
+//! Wrappers around fixed-width integer types for big-endian and little-endian encoding and decoding with [`ufotofu_codec`].
 
 use core::convert::Infallible;
 
@@ -125,6 +125,8 @@ assert_eq!(
     ", stringify!($wrapper_name), "::sync_decode_from_slice(&[0x12]).unwrap().0
 );
 ```")]
+        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+        #[cfg_attr(feature = "std", derive(Arbitrary))]
         pub struct $wrapper_name(pub $int);
 
         impl From<$int> for $wrapper_name {

@@ -14,14 +14,7 @@ use ufotofu::{consumer::IntoVec, BulkConsumer};
 
 use crate::*;
 
-/// Methods for encoding a value that belongs to an *encoding relation*.
-///
-/// API contracts:
-///
-/// - The encoding must not depend on details of the consumer such as when it yields or how many item slots it exposes at a time.
-/// - Nonequal values must result in nonequal encodings.
-/// - No encoding must be a prefix of a different encoding.
-/// - For types that also implement `Decodable` and `Eq`, encoding a value and then decoding it must yield a value equal to the original.
+/// Like [`Encodable`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeEncodable<RelativeTo> {
     /// Writes an encoding of `&self` into the given consumer.
     fn relative_encode<C>(
@@ -62,9 +55,7 @@ where
     }
 }
 
-/// Encodables that can (efficiently and synchronously) precompute the length of their encoding.
-///
-/// API contract: `self.encode(c)` must write exactly `self.len_of_encoding()` many bytes into `c`.
+/// Like [`EncodableKnownSize`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeEncodableKnownSize<RelativeTo>: RelativeEncodable<RelativeTo> {
     /// Computes the size of the encoding in bytes. Calling [`encode`](Encodable::encode) must feed exactly that many bytes into the consumer.
     fn relative_len_of_encoding(&self, r: &RelativeTo) -> usize;
@@ -92,9 +83,7 @@ where
     }
 }
 
-/// An encodable that introduces no asynchrony beyond that of `.await`ing the consumer.
-///
-/// If the consumer is known to not block either, this enables synchronous encoding.
+/// Like [`EncodableSync`], but relative to some known value of type `RelativeTo`.
 pub trait RelativeEncodableSync<RelativeTo>: RelativeEncodable<RelativeTo> {
     #[cfg(feature = "alloc")]
     /// Synchronously encodes into a Vec instead of a given consumer.

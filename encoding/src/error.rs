@@ -1,7 +1,7 @@
 use core::{fmt::Display, fmt::Formatter, num::TryFromIntError};
 use either::Either;
 use std::error::Error;
-use ufotofu::OverwriteFullSliceError;
+use ufotofu::ProduceAtLeastError;
 
 /// Everything that can go wrong when decoding a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,8 +14,8 @@ pub enum DecodeError<ProducerError> {
     U64DoesNotFitUsize,
 }
 
-impl<F, E> From<OverwriteFullSliceError<F, E>> for DecodeError<E> {
-    fn from(value: OverwriteFullSliceError<F, E>) -> Self {
+impl<F, E> From<ProduceAtLeastError<F, E>> for DecodeError<E> {
+    fn from(value: ProduceAtLeastError<F, E>) -> Self {
         match value.reason {
             Either::Left(_) => DecodeError::InvalidInput,
             Either::Right(err) => DecodeError::Producer(err),

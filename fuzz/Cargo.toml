@@ -11,7 +11,7 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.5.0", features = ["std", "dev"] }
+ufotofu = { version = "0.6.0", features = ["std", "dev"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
@@ -20,6 +20,8 @@ syncify = "0.1.0"
 willow-encoding = { path = "../encoding" }
 ufotofu_codec = { path = "../ufotofu_codec", features = [ "std", "dev" ] }
 ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = [ "std" ] }
+compact_u64 = { path = "../compact_u64", features = [ "std", "dev" ] }
+either = "1.10.0"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -32,13 +34,161 @@ features = ["dev"]
 [dependencies.earthstar]
 path = "../earthstar"
 
+################
+# compact_u64 #
+###############
+
+[[bin]]
+name = "compact_u64_codec"
+path = "fuzz_targets/compact_u64_codec.rs"
+test = false
+doc = false
+bench = false
+
 ########################
 # ufotofu_codec_endian #
 ########################
 
 [[bin]]
-name = "endian_u64"
-path = "fuzz_targets/endian_u64.rs"
+name = "endian_u8_be"
+path = "fuzz_targets/endian_u8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_be"
+path = "fuzz_targets/endian_u16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_be"
+path = "fuzz_targets/endian_u32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_be"
+path = "fuzz_targets/endian_u64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u8_le"
+path = "fuzz_targets/endian_u8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_le"
+path = "fuzz_targets/endian_u16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_le"
+path = "fuzz_targets/endian_u32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_le"
+path = "fuzz_targets/endian_u64_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_be"
+path = "fuzz_targets/endian_i8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_be"
+path = "fuzz_targets/endian_i16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_be"
+path = "fuzz_targets/endian_i32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_be"
+path = "fuzz_targets/endian_i64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_le"
+path = "fuzz_targets/endian_i8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_le"
+path = "fuzz_targets/endian_i16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_le"
+path = "fuzz_targets/endian_i32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_le"
+path = "fuzz_targets/endian_i64_le.rs"
+test = false
+doc = false
+bench = false
+
+#################
+# ufotofu_codec #
+#################
+
+[[bin]]
+name = "encoder_decoder"
+path = "fuzz_targets/encoder_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_canonic_decoder"
+path = "fuzz_targets/encoder_canonic_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_decoder_relative"
+path = "fuzz_targets/encoder_decoder_relative.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_canonic_decoder_relative"
+path = "fuzz_targets/encoder_canonic_decoder_relative.rs"
 test = false
 doc = false
 bench = false

@@ -196,6 +196,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "compact_u64"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "either",
  "ufotofu",
  "ufotofu_codec",
@@ -616,9 +617,9 @@ checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 
 [[package]]
 name = "ufotofu"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5b5133772b5db1ce2ad8411867d02d933d4d8410af5e71147020817e4891a98"
+checksum = "48cbfe3042f0626ef4f7ef42e31bad3e0bd4015704499cc6c50bc5d9aad2fd7f"
 dependencies = [
  "arbitrary",
  "either",
@@ -702,7 +703,9 @@ name = "willow-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
+ "compact_u64",
  "earthstar",
+ "either",
  "libfuzzer-sys",
  "meadowcap",
  "pollster",
