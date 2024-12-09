@@ -3,7 +3,6 @@ use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
     EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeEncodable,
-    RelativeEncodableKnownSize,
 };
 
 use compact_u64::*;
@@ -181,15 +180,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableKnownSize
     fn len_of_encoding(&self) -> usize {
         let mut total_enc_len = 1; // First byte for the two four-bit tags at the start of the encoding.
 
-        let path_len_encoding_width =
-            EncodingWidth::min_width(self.path_length() as u64, TagWidth::four());
-        total_enc_len += CompactU64(self.path_length() as u64)
-            .relative_len_of_encoding(&path_len_encoding_width);
-
-        let component_count_encoding_width =
-            EncodingWidth::min_width(self.component_count() as u64, TagWidth::four());
-        total_enc_len += CompactU64(self.component_count() as u64)
-            .relative_len_of_encoding(&component_count_encoding_width);
+        total_enc_len +=
+            EncodingWidth::min_width(self.path_length() as u64, TagWidth::four()).as_usize();
+        total_enc_len +=
+            EncodingWidth::min_width(self.component_count() as u64, TagWidth::four()).as_usize();
 
         for (i, comp) in self.components().enumerate() {
             if i + 1 < self.component_count() {
