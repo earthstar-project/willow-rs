@@ -14,21 +14,6 @@ use std::error::Error;
 use either::Either::*;
 use ufotofu::ProduceAtLeastError;
 
-/// An error for minimalistic decoding error handling: only tracks whether decoding failed because of invalid input or because of limitations of the decoding implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Blame {
-    /// Received an incorrect encoding.
-    TheirFault,
-    /// Received a valid encoding which we couldn't handle. Typical reasons are values that do not fit into a `usize` or running out of memory.
-    OurFault,
-}
-
-impl From<Infallible> for Blame {
-    fn from(_value: Infallible) -> Self {
-        unreachable!("It's impossible to call this function!")
-    }
-}
-
 /// The reasons why decoding can fail: the producer might emit its final item too early, it might emit an error, or the received bytes might be problematic.
 ///
 /// `F` is the type of the final item of the producer, `E` is the error type of the producer, and `Other` can describe in arbitrary detail why the decoded bytes were invalid.
@@ -116,3 +101,66 @@ where
         }
     }
 }
+
+/// An error reason for minimalistic decoding error handling: only tracks whether decoding failed because of invalid input or because of limitations of the decoding implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Blame {
+    /// Received an incorrect encoding.
+    TheirFault,
+    /// Received a valid encoding which we couldn't handle. Typical reasons are values that do not fit into a `usize` or running out of memory.
+    OurFault,
+}
+
+impl Blame {
+    /// Converts from a `u64` to a `usize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `usize`.
+    pub fn u64_to_usize<F, E>(n: u64) -> Result<usize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+
+    /// Converts from a `u32` to a `usize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `usize`.
+    pub fn u32_to_usize<F, E>(n: u32) -> Result<usize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+
+    /// Converts from a `u16` to a `usize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `usize`.
+    pub fn u16_to_usize<F, E>(n: u16) -> Result<usize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+
+    /// Converts from an `i64` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
+    pub fn i64_to_usize<F, E>(n: i64) -> Result<isize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+
+    /// Converts from an `i32` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
+    pub fn i32_to_usize<F, E>(n: i32) -> Result<isize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+
+    /// Converts from an `i16` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
+    pub fn i16_to_usize<F, E>(n: i16) -> Result<isize, DecodeError<F, E, Blame>> {
+        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+    }
+}
+
+impl From<Infallible> for Blame {
+    fn from(_value: Infallible) -> Self {
+        unreachable!("It's impossible to call this function!")
+    }
+}
+
+impl Display for Blame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Blame::TheirFault => {
+                write!(f, "Received an incorrect encoding.")
+            }
+            Blame::OurFault => {
+                write!(f, "Received an encoding we could not process.")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl Error for Blame {}
