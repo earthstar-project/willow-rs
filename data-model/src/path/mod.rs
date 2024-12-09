@@ -208,7 +208,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn path_length(&self) -> usize {
-        Representation::total_length(&self.data)
+        Representation::total_length(&self.data, self.component_count())
     }
 
     /// Returns the `i`-th [`Component`] of this path.

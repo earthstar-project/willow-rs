@@ -128,15 +128,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     ///
     /// Panics if the number of components or the total length does not match what was claimed in [`PathBuilder::new`].
     pub fn build(self) -> Path<MCL, MCC, MPL> {
-        assert_eq!(
-            self.target_length,
-            Representation::total_length(&self.bytes)
-        );
-
         // Check whether we appended the correct number of components.
         assert_eq!(
             self.initialised_components,
             Representation::component_count(self.bytes.as_ref())
+        );
+
+        assert_eq!(
+            self.target_length,
+            Representation::total_length(&self.bytes, self.initialised_components),
+            "Expected a target length of {}, but got an actual total_length of {}\nRaw representation:{:?}",
+            self.target_length,
+            Representation::total_length(&self.bytes, self.initialised_components),
+            self.bytes
         );
 
         Path {
