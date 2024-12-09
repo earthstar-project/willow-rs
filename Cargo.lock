@@ -632,6 +632,7 @@ dependencies = [
  "either",
  "pollster",
  "ufotofu",
+ "wb_async_utils",
 ]
 
 [[package]]

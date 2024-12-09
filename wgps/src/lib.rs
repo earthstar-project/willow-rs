@@ -13,7 +13,7 @@
 
 // pub mod logical_channels;
 
-// mod util;
+mod util;
 
 // pub mod lcmux;
 
