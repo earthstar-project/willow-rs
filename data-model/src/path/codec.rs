@@ -142,7 +142,7 @@ where
                 return Err(DecodeError::Other(Blame::TheirFault));
             } else {
                 // Increase the accumulated length, accounting for errors.
-                accumulated_component_length += accumulated_component_length
+                accumulated_component_length = accumulated_component_length
                     .checked_add(component_len)
                     .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
@@ -157,6 +157,7 @@ where
         let final_component_length = expected_total_length
             .checked_sub(accumulated_component_length)
             .ok_or(DecodeError::Other(Blame::TheirFault))?;
+
         if final_component_length > MCL {
             // Decoded path must respect the MCL.
             return Err(DecodeError::Other(Blame::TheirFault));
