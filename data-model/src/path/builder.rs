@@ -48,6 +48,30 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
         })
     }
 
+    /// Creates a builder for a path of known total length and component count, efficiently prefilled with the first `prefix_component_count` components of a given `reference` path. Panics if there are not enough components in the `reference`.
+    /// The missing component data must be filled in before building.
+    pub fn new_from_prefix(
+        target_total_length: usize,
+        target_component_count: usize,
+        reference: &Path<MCL, MCC, MPL>,
+        prefix_component_count: usize,
+    ) -> Result<Self, InvalidPathError> {
+        let mut builder = Self::new(target_total_length, target_component_count)?;
+
+        // The following is logically equivalent to appending the first `prefix_component_count` coponents of `reference` to the builder, but more efficient in terms of `memcpy` calls.
+        // TODO replace the naive code below with a more efficient implementation that directly copies bytes from the internal `Representation`s.
+
+        for comp in reference
+            .create_prefix(prefix_component_count)
+            .expect("`prefix_component_count` must be less than the number of components in `reference`")
+            .components()
+        {
+            builder.append_component(comp);
+        }
+
+        Ok(builder)
+    }
+
     /// Appends data for a component of known length by reading data from a [`BulkProducer`] of bytes. Panics if `component_length > MCL`.
     pub async fn append_component_from_bulk_producer<P>(
         &mut self,

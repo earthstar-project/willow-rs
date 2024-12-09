@@ -166,12 +166,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
             total_length += comp.len();
         }
 
-        let mut builder =
-            PathBuilder::new(total_length, self.component_count() + components.len())?;
-
-        for component in self.components() {
-            builder.append_component(component);
-        }
+        let mut builder = PathBuilder::new_from_prefix(
+            total_length,
+            self.component_count() + components.len(),
+            self,
+            self.component_count(),
+        )?;
 
         for additional_component in components {
             builder.append_component(*additional_component);

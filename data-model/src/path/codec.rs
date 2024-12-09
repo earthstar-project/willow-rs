@@ -339,12 +339,13 @@ where
         .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
     // Preallocate all storage for the path. Error if the total length or component_count are greater than MPL and MCC respectively allow.
-    let mut builder = PathBuilder::<MCL, MCC, MPL>::new(total_length, total_component_count)
-        .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
-
-    for prefix_comp in prefix.components() {
-        builder.append_component(prefix_comp);
-    }
+    let builder = PathBuilder::new_from_prefix(
+        total_length,
+        total_component_count,
+        &prefix,
+        prefix.component_count(),
+    )
+    .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
 
     // Decode the remaining components, add them to the builder, then build.
     let decoded = decode_components_maybe_canonic::<CANONIC, MCL, MCC, MPL, _>(
