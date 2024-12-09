@@ -129,17 +129,17 @@ impl Blame {
 
     /// Converts from an `i64` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
     pub fn i64_to_usize<F, E>(n: i64) -> Result<isize, DecodeError<F, E, Blame>> {
-        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+        isize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
     }
 
     /// Converts from an `i32` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
     pub fn i32_to_usize<F, E>(n: i32) -> Result<isize, DecodeError<F, E, Blame>> {
-        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+        isize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
     }
 
     /// Converts from an `i16` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
     pub fn i16_to_usize<F, E>(n: i16) -> Result<isize, DecodeError<F, E, Blame>> {
-        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+        isize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
     }
 }
 
