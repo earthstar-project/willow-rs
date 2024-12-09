@@ -77,8 +77,8 @@ where
         relative_decode_cu64::<CANONIC, _>(producer, &component_count_tag).await?;
 
     // Convert them from u64 to usize, error if usize cannot represent the number.
-    let total_length = u64_to_usize(total_length)?;
-    let component_count = u64_to_usize(component_count)?;
+    let total_length = Blame::u64_to_usize(total_length)?;
+    let component_count = Blame::u64_to_usize(component_count)?;
 
     // Preallocate all storage for the path. Error if the total length or component_count are greater than MPL and MCC respectively allow.
     let mut builder = PathBuilder::new(total_length, component_count)
@@ -102,7 +102,7 @@ where
 
         // Decode all but the final one (because the final one is encoded without its lenght and hence requires dedicated logic to decode).
         for _ in 1..component_count {
-            let component_len = u64_to_usize(decode_cu64::<CANONIC, _>(producer).await?)?;
+            let component_len = Blame::u64_to_usize(decode_cu64::<CANONIC, _>(producer).await?)?;
 
             if component_len > MCL {
                 // Decoded path must respect the MCL.
@@ -201,11 +201,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableSync for Pat
 impl<const MCL: usize, const MCC: usize, const MPL: usize> DecodableSync for Path<MCL, MCC, MPL> {}
 
 // TODO move stuff below to more appropriate files/crates
-
-/// Convert from a `u64` to a `usize`, reporting an error if the value does not fit into a `usize`.
-pub fn u64_to_usize<F, E>(n: u64) -> Result<usize, DecodeError<F, E, Blame>> {
-    usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
-}
 
 /// Decodes a `CompactU64` relative to a `Tag`, generic over whether the encoding must be canonic or not.
 pub async fn relative_decode_cu64<const CANONIC: bool, P>(
