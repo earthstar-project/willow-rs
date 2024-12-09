@@ -1,3 +1,5 @@
+#![no_main]
+
 use ufotofu_codec::{fuzz_relative_all, Blame};
 use willow_data_model::Path;
 

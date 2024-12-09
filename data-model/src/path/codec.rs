@@ -2,7 +2,8 @@ use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeEncodable,
+    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync,
+    RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
 
 use compact_u64::*;
@@ -199,6 +200,153 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableKnownSize
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> EncodableSync for Path<MCL, MCC, MPL> {}
 impl<const MCL: usize, const MCC: usize, const MPL: usize> DecodableSync for Path<MCL, MCC, MPL> {}
+
+// Relative encoding path <> path
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Path<MCL, MCC, MPL>>
+    for Path<MCL, MCC, MPL>
+{
+    /// Encodes this [`Path`] relative to a reference [`Path`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
+    async fn relative_encode<Consumer>(
+        &self,
+        consumer: &mut Consumer,
+        reference: &Path<MCL, MCC, MPL>,
+    ) -> Result<(), Consumer::Error>
+    where
+        Consumer: BulkConsumer<Item = u8>,
+    {
+        let lcp = self.longest_common_prefix(reference);
+        let lcp_component_count = lcp.component_count();
+
+        CompactU64(lcp_component_count as u64)
+            .encode(consumer)
+            .await?;
+
+        let suffix_length = self.component_count() - lcp_component_count;
+
+        // TODO: Better implementation which does not rely on a transient path which is immediately dropped.
+        let suffix_path = Path::<MCL, MCC, MPL>::new_from_iter(
+            suffix_length,
+            &mut self.suffix_components(lcp_component_count),
+        )
+        .unwrap(); // Can never error, because every suffix of a valid path is itself valid
+
+        suffix_path.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    RelativeDecodable<Path<MCL, MCC, MPL>, Blame> for Path<MCL, MCC, MPL>
+{
+    /// Decodes a [`Path`] relative to a reference [`Path`].
+    ///
+    /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_path_relative)
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &Path<MCL, MCC, MPL>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let lcp = CompactU64::decode(producer)
+            .await
+            .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let suffix_path = Path::<MCL, MCC, MPL>::decode(producer)
+            .await
+            .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let usize_lcp =
+            usize::try_from(lcp.0).map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        match r.create_prefix(usize_lcp) {
+            Some(prefix) => {
+                // TODO: Make this more efficient using path builder
+                let suffix_components: Vec<Component<MCL>> = suffix_path.components().collect();
+
+                let joined = prefix.append_slice(&suffix_components).unwrap();
+
+                Ok(joined)
+            }
+            None => Ok(suffix_path),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    RelativeDecodableCanonic<Path<MCL, MCC, MPL>, Blame, Blame> for Path<MCL, MCC, MPL>
+{
+    async fn relative_decode_canonic<P>(
+        producer: &mut P,
+        r: &Path<MCL, MCC, MPL>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let lcp = CompactU64::decode_canonic(producer)
+            .await
+            .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let suffix_path = Path::<MCL, MCC, MPL>::decode_canonic(producer)
+            .await
+            .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let usize_lcp =
+            usize::try_from(lcp.0).map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        match r.create_prefix(usize_lcp) {
+            Some(prefix) => {
+                // TODO: Make this more efficient using path builder
+                let suffix_components: Vec<Component<MCL>> = suffix_path.components().collect();
+
+                let joined = prefix.append_slice(&suffix_components).unwrap();
+
+                Ok(joined)
+            }
+            None => Ok(suffix_path),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    RelativeEncodableKnownSize<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
+{
+    fn relative_len_of_encoding(&self, r: &Path<MCL, MCC, MPL>) -> usize {
+        let lcp = self.longest_common_prefix(r);
+        let lcp_component_count = lcp.component_count();
+
+        let lcp_byte_len = CompactU64(lcp_component_count as u64).len_of_encoding();
+
+        let suffix_length = self.component_count() - lcp_component_count;
+
+        // TODO: Better implementation which does not rely on a transient path which is immediately dropped.
+        let suffix_path = Path::<MCL, MCC, MPL>::new_from_iter(
+            suffix_length,
+            &mut self.suffix_components(lcp_component_count),
+        )
+        .unwrap(); // Can never error, because every suffix of a valid path is itself valid
+
+        let suffix_len = suffix_path.len_of_encoding();
+
+        lcp_byte_len + suffix_len
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    RelativeEncodableSync<Path<MCL, MCC, MPL>> for Path<MCL, MCC, MPL>
+{
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize>
+    RelativeDecodableSync<Path<MCL, MCC, MPL>, Blame> for Path<MCL, MCC, MPL>
+{
+}
 
 // TODO move stuff below to more appropriate files/crates
 

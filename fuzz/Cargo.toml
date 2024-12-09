@@ -283,7 +283,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_abs_path3"
+name = "enc_path3_abs"
 path = "fuzz_targets/enc_path3_abs.rs"
 test = false
 doc = false
