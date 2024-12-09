@@ -224,7 +224,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Pat
             .encode(consumer)
             .await?;
 
-        let suffix_length = self.component_count() - lcp_component_count;
+        let suffix_length = self.path_length() - lcp.path_length();
 
         // TODO: Better implementation which does not rely on a transient path which is immediately dropped.
         let suffix_path = Path::<MCL, MCC, MPL>::new_from_iter(
