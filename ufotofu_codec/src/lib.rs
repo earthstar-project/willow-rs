@@ -32,9 +32,7 @@
 //!
 //! ## Encoders and Decoders
 //! 
-//! The [`adaptors`] module provide structs that turn consumers of bytes into consumers of encodables, and producers of bytes into producers of decodables.
-//!
-//! The [`Encoder`] wrapper takes a [`BulkConsumer`](ufotofu::BulkConsumer) of bytes and turns it into a [`BufferedConsumer`](ufotofu::BufferedConsumer) of encodable values. Conversely, the [`Decoder`] wrapper takes a [`BulkProducer`](ufotofu::BulkProducer) of bytes and turns it into a [`BufferedProducer`](ufotofu::BufferedProducer) of decodables; the [`CanonicDecoder`] further enforces canonicity. [`RelativeEncoder`], [`RelativeDecoder`], and [`RelativeCanonicDecoder`] encode and decode respectively relative to some value (which can be freely changed over time).
+//! The [`adaptors`] module provide structs which turn consumers of bytes into consumers of encodables, and producers of bytes into producers of decodables.
 //!
 //! ## Property Testing
 //!
