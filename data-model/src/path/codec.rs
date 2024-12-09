@@ -321,12 +321,7 @@ async fn relative_decode_maybe_canonic<
 where
     P: BulkProducer<Item = u8>,
 {
-    let prefix_component_count = Blame::u64_to_usize(
-        CompactU64::decode(producer)
-            .await
-            .map_err(|_| DecodeError::Other(Blame::TheirFault))?
-            .0,
-    )?;
+    let prefix_component_count = Blame::u64_to_usize(decode_cu64::<CANONIC, _>(producer).await?)?;
 
     let (suffix_length, suffix_component_count) =
         decode_total_length_and_component_count_maybe_canonic::<CANONIC, _>(producer).await?;
@@ -440,23 +435,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
             component_count_of_suffix,
             self.suffix_components(lcp.component_count()),
         );
-
-        // // First byte for the two four-bit tags at the start of the encoding of the suffix.
-        // total_enc_len += 1;
-
-        // // Path_len and coponent count of the suffix.
-        // total_enc_len +=
-        //     EncodingWidth::min_width(path_len_of_suffix as u64, TagWidth::four()).as_usize();
-        // total_enc_len +=
-        //     EncodingWidth::min_width(component_count_of_suffix as u64, TagWidth::four()).as_usize();
-
-        // for (i, comp) in self.suffix_components(lcp.component_count()).enumerate() {
-        //     if lcp.component_count() + i + 1 < self.component_count() {
-        //         total_enc_len += CompactU64(comp.len() as u64).len_of_encoding();
-        //     }
-
-        //     total_enc_len += comp.len();
-        // }
 
         total_enc_len
     }
