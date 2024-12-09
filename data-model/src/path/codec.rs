@@ -142,12 +142,9 @@ where
                 return Err(DecodeError::Other(Blame::TheirFault));
             } else {
                 // Increase the accumulated length, accounting for errors.
-                match accumulated_component_length.checked_add(component_len) {
-                    None => return Err(DecodeError::Other(Blame::TheirFault)),
-                    Some(new_accumulated_length) => {
-                        accumulated_component_length = new_accumulated_length;
-                    }
-                }
+                accumulated_component_length += accumulated_component_length
+                    .checked_add(component_len)
+                    .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
                 // Copy the component bytes into the Path.
                 builder
@@ -157,22 +154,20 @@ where
         }
 
         // For the final component, compute its length. If the computation result would be negative, then the encoding was invalid.
-        match expected_total_length.checked_sub(accumulated_component_length) {
-            None => return Err(DecodeError::Other(Blame::TheirFault)),
-            Some(final_component_length) => {
-                if final_component_length > MCL {
-                    // Decoded path must respect the MCL.
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                } else {
-                    // Copy the final component bytes into the Path.
-                    builder
-                        .append_component_from_bulk_producer(final_component_length, producer)
-                        .await?;
+        let final_component_length = expected_total_length
+            .checked_sub(accumulated_component_length)
+            .ok_or(DecodeError::Other(Blame::TheirFault))?;
+        if final_component_length > MCL {
+            // Decoded path must respect the MCL.
+            return Err(DecodeError::Other(Blame::TheirFault));
+        } else {
+            // Copy the final component bytes into the Path.
+            builder
+                .append_component_from_bulk_producer(final_component_length, producer)
+                .await?;
 
-                    // What a journey. We are done!
-                    Ok(builder.build())
-                }
-            }
+            // What a journey. We are done!
+            Ok(builder.build())
         }
     }
 }
