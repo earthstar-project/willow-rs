@@ -2,7 +2,7 @@
 
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    DecodeError, DecodingWentWrong, RelativeDecodable, RelativeDecodableCanonic,
+    DecodeError, Blame, RelativeDecodable, RelativeDecodableCanonic,
     RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
 
@@ -47,7 +47,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> RelativeEncodable<Pat
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize>
-    RelativeDecodable<Path<MCL, MCC, MPL>, DecodingWentWrong> for Path<MCL, MCC, MPL>
+    RelativeDecodable<Path<MCL, MCC, MPL>, Blame> for Path<MCL, MCC, MPL>
 {
     /// Decodes a [`Path`] relative to a reference [`Path`].
     ///
@@ -55,7 +55,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
     async fn relative_decode<P>(
         producer: &mut P,
         r: &Path<MCL, MCC, MPL>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -126,13 +126,13 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize>
-    RelativeDecodableCanonic<Path<MCL, MCC, MPL>, DecodingWentWrong, DecodingWentWrong>
+    RelativeDecodableCanonic<Path<MCL, MCC, MPL>, Blame, Blame>
     for Path<MCL, MCC, MPL>
 {
     async fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &Path<MCL, MCC, MPL>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -147,7 +147,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize>
-    RelativeDecodableSync<Path<MCL, MCC, MPL>, DecodingWentWrong> for Path<MCL, MCC, MPL>
+    RelativeDecodableSync<Path<MCL, MCC, MPL>, Blame> for Path<MCL, MCC, MPL>
 {
 }
 

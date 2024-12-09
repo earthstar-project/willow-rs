@@ -173,6 +173,11 @@ impl TagWidth {
     pub const fn as_usize(&self) -> usize {
         self.0 as usize
     }
+
+    /// Returns the maximal tag of the given width as a u8, i.e., a bunch of one bits in the least significant positions.
+    const fn maximal_tag(&self) -> u8 {
+        ((1_u16 << self.as_u8()) as u8).wrapping_sub(1)
+    }
 }
 
 #[cfg(feature = "dev")]
@@ -368,7 +373,7 @@ impl Tag {
         let data = if n < max_inline {
             n as u8
         } else {
-            let max_tag: u8 = ((1_u16 << tag_width.as_u8()) as u8).wrapping_sub(1);
+            let max_tag = tag_width.maximal_tag();
 
             if n < 256 {
                 max_tag - 3
@@ -400,10 +405,14 @@ impl Tag {
     pub fn from_raw(raw: u8, width: TagWidth, offset: usize) -> Tag {
         match 8_usize.checked_sub(offset + width.as_usize()) {
             None => panic!("Invalid tag offset: {}", offset),
-            Some(shift_by) => Tag {
-                width,
-                data: raw >> shift_by,
-            },
+            Some(shift_by) => {
+                let max_tag: u8 = width.maximal_tag();
+
+                Tag {
+                    width,
+                    data: (raw >> shift_by) & max_tag,
+                }
+            }
         }
     }
 
@@ -418,7 +427,7 @@ impl Tag {
     }
 
     /// Returns the data of this [`Tag`], stored `self.width()` many bits starting at the given offset. An offset of zero denotes the most significant bit, an offset of seven the least significant bit.
-    /// 
+    ///
     /// Panics if the sum of `offset` and the width of the tag is strictly greater than eight.
     pub fn data_at_offset(&self, offset: u8) -> u8 {
         debug_assert!(offset.saturating_add(self.tag_width().as_u8()) <= 8);
@@ -427,9 +436,7 @@ impl Tag {
 
     /// Returns the width of the integer encoding indicated by this tag.
     pub fn encoding_width(&self) -> EncodingWidth {
-        let max_tag: u8 = ((1_u16 << self.tag_width().as_u8()) as u8).wrapping_sub(1);
-
-        match max_tag - self.data {
+        match self.tag_width().maximal_tag() - self.data {
             0 => EncodingWidth::eight(),
             1 => EncodingWidth::four(),
             2 => EncodingWidth::two(),
@@ -443,7 +450,7 @@ impl Tag {
 impl<'a> Arbitrary<'a> for Tag {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> Result<Self, arbitrary::Error> {
         let width = TagWidth::arbitrary(u)?;
-        let mask = ((1_u16 << width.as_u8()) - 1) as u8;
+        let mask = width.maximal_tag();
         let raw = u8::arbitrary(u)?;
         let data = raw & mask;
 
@@ -644,7 +651,7 @@ impl RelativeDecodableCanonic<Tag, Infallible, NotMinimal> for CompactU64 {
     {
         let decoded = Self::relative_decode(producer, r)
             .await
-            .map_err(DecodeError::map_other)?;
+            .map_err(DecodeError::map_other_from)?;
 
         if r == &Tag::min_tag(decoded.0, r.tag_width()) {
             Ok(decoded)

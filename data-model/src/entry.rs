@@ -156,7 +156,7 @@ mod encoding {
     use ufotofu::{BulkConsumer, BulkProducer};
 
     use ufotofu_codec::{
-        Decodable, DecodableCanonic, DecodableSync, DecodingWentWrong, Encodable,
+        Decodable, DecodableCanonic, DecodableSync, Blame, Encodable,
         EncodableKnownSize, EncodableSync,
     };
 
@@ -195,7 +195,7 @@ mod encoding {
         S: SubspaceId + Decodable,
         PD: PayloadDigest + Decodable,
     {
-        type ErrorReason = DecodingWentWrong;
+        type ErrorReason = Blame;
 
         async fn decode<P>(
             producer: &mut P,
@@ -244,7 +244,7 @@ mod encoding {
         S: SubspaceId + Decodable,
         PD: PayloadDigest + Decodable,
     {
-        type ErrorCanonic = DecodingWentWrong;
+        type ErrorCanonic = Blame;
 
         async fn decode_canonic<P>(
             producer: &mut P,

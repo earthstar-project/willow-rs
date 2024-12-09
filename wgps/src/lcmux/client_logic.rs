@@ -25,7 +25,7 @@ use ufotofu::{BulkConsumer, Producer};
 use either::Either;
 
 use wb_async_utils::{Mutex, TakeCell};
-use willow_encoding::{Encodable, EncodableExactSize, U16BE, U32BE, U64BE};
+// use willow_encoding::{Encodable, EncodableExactSize, U16BE, U32BE, U64BE};
 
 #[derive(Debug)]
 pub struct SharedState {

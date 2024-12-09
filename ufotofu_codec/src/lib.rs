@@ -47,7 +47,7 @@ extern crate std;
 pub mod proptest;
 
 mod decode_error;
-pub use decode_error::{DecodeError, DecodingWentWrong};
+pub use decode_error::{DecodeError, Blame};
 
 mod decode;
 pub use decode::*;

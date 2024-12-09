@@ -1,6 +1,6 @@
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+    Decodable, DecodableCanonic, DecodableSync, DecodeError, Blame, Encodable,
     EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
     RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
@@ -92,7 +92,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodable<Area<MCL, MCC, MPL, S>, DecodingWentWrong> for Area<MCL, MCC, MPL, S>
+    RelativeDecodable<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
     S: SubspaceId + Decodable,
 {
@@ -104,7 +104,7 @@ where
     async fn relative_decode<P>(
         producer: &mut P,
         r: &Area<MCL, MCC, MPL, S>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -222,7 +222,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodableCanonic<Area<MCL, MCC, MPL, S>, DecodingWentWrong, DecodingWentWrong>
+    RelativeDecodableCanonic<Area<MCL, MCC, MPL, S>, Blame, Blame>
     for Area<MCL, MCC, MPL, S>
 where
     S: SubspaceId + DecodableCanonic,
@@ -230,7 +230,7 @@ where
     async fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &Area<MCL, MCC, MPL, S>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -409,7 +409,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodableSync<Area<MCL, MCC, MPL, S>, DecodingWentWrong> for Area<MCL, MCC, MPL, S>
+    RelativeDecodableSync<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
     S: SubspaceId + DecodableSync,
 {

@@ -14,15 +14,16 @@ use std::error::Error;
 use either::Either::*;
 use ufotofu::ProduceAtLeastError;
 
-/// [todo]
-pub enum DecodingWentWrong {
-    /// The encoding was simply not what was expected, at all.
-    InvalidEncoding,
-    /// We either cannot or choose not to decode this.
-    Irrepresentable,
+/// An error for minimalistic decoding error handling: only tracks whether decoding failed because of invalid input or because of limitations of the decoding implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Blame {
+    /// Received an incorrect encoding.
+    TheirFault,
+    /// Received a valid encoding which we couldn't handle. Typical reasons are values that do not fit into a `usize` or running out of memory.
+    OurFault,
 }
 
-impl From<Infallible> for DecodingWentWrong {
+impl From<Infallible> for Blame {
     fn from(_value: Infallible) -> Self {
         unreachable!("It's impossible to call this function!")
     }
@@ -40,8 +41,8 @@ pub enum DecodeError<F, E, Other> {
 }
 
 impl<F, E, OtherB> DecodeError<F, E, OtherB> {
-    /// Map from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouched but mapping other errors via a `From` implementation.
-    pub fn map_other<OtherA>(err: DecodeError<F, E, OtherA>) -> Self
+    /// Maps from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouched but mapping other errors via a `From` implementation.
+    pub fn map_other_from<OtherA>(err: DecodeError<F, E, OtherA>) -> Self
     where
         OtherB: From<OtherA>,
     {
@@ -49,6 +50,18 @@ impl<F, E, OtherB> DecodeError<F, E, OtherB> {
             DecodeError::Producer(err) => DecodeError::Producer(err),
             DecodeError::UnexpectedEndOfInput(fin) => DecodeError::UnexpectedEndOfInput(fin),
             DecodeError::Other(noncanonic_err) => DecodeError::Other(noncanonic_err.into()),
+        }
+    }
+
+    /// Maps from one `DecodeError` to another `DecodeError` by leaving producer errors and unexpected ends of input untouched but mapping other errors via the given function.
+    pub fn map_other<OtherA, Fun>(err: DecodeError<F, E, OtherA>, fun: Fun) -> Self
+    where
+        Fun: FnOnce(OtherA) -> OtherB,
+    {
+        match err {
+            DecodeError::Producer(err) => DecodeError::Producer(err),
+            DecodeError::UnexpectedEndOfInput(fin) => DecodeError::UnexpectedEndOfInput(fin),
+            DecodeError::Other(noncanonic_err) => DecodeError::Other(fun(noncanonic_err)),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+    Decodable, DecodableCanonic, DecodableSync, DecodeError, Blame, Encodable,
     EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
     RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
@@ -115,7 +115,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodable<(N, Range3d<MCL, MCC, MPL, S>), DecodingWentWrong>
+    RelativeDecodable<(N, Range3d<MCL, MCC, MPL, S>), Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Decodable,
@@ -130,7 +130,7 @@ where
     async fn relative_decode<P>(
         producer: &mut P,
         r: &(N, Range3d<MCL, MCC, MPL, S>),
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -216,7 +216,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableCanonic<(N, Range3d<MCL, MCC, MPL, S>), DecodingWentWrong, DecodingWentWrong>
+    RelativeDecodableCanonic<(N, Range3d<MCL, MCC, MPL, S>), Blame, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic,
@@ -226,7 +226,7 @@ where
     async fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &(N, Range3d<MCL, MCC, MPL, S>),
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -380,7 +380,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableSync<(N, Range3d<MCL, MCC, MPL, S>), DecodingWentWrong>
+    RelativeDecodableSync<(N, Range3d<MCL, MCC, MPL, S>), Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableSync,

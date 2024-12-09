@@ -3,7 +3,7 @@ use crate::{grouping::Range3d, SubspaceId};
 use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
-    Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+    Decodable, DecodableCanonic, DecodableSync, DecodeError, Blame, Encodable,
     EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
     RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
@@ -207,7 +207,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodable<Range3d<MCL, MCC, MPL, S>, DecodingWentWrong> for Range3d<MCL, MCC, MPL, S>
+    RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame> for Range3d<MCL, MCC, MPL, S>
 where
     S: SubspaceId + Decodable + std::fmt::Debug,
 {
@@ -219,7 +219,7 @@ where
     async fn relative_decode<P>(
         producer: &mut P,
         r: &Range3d<MCL, MCC, MPL, S>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -371,7 +371,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodableCanonic<Range3d<MCL, MCC, MPL, S>, DecodingWentWrong, DecodingWentWrong>
+    RelativeDecodableCanonic<Range3d<MCL, MCC, MPL, S>, Blame, Blame>
     for Range3d<MCL, MCC, MPL, S>
 where
     S: SubspaceId + DecodableCanonic + std::fmt::Debug,
@@ -379,7 +379,7 @@ where
     async fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &Range3d<MCL, MCC, MPL, S>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -689,7 +689,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodableSync<Range3d<MCL, MCC, MPL, S>, DecodingWentWrong>
+    RelativeDecodableSync<Range3d<MCL, MCC, MPL, S>, Blame>
     for Range3d<MCL, MCC, MPL, S>
 where
     S: SubspaceId + DecodableSync + std::fmt::Debug,

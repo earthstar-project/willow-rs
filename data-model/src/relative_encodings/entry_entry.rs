@@ -2,7 +2,7 @@
 
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Decodable, DecodableCanonic, DecodableSync, DecodeError, DecodingWentWrong, Encodable,
+    Decodable, DecodableCanonic, DecodableSync, DecodeError, Blame, Encodable,
     EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
     RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
@@ -74,7 +74,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>, DecodingWentWrong>
+    RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Decodable + std::fmt::Debug,
@@ -84,7 +84,7 @@ where
     async fn relative_decode<P>(
         producer: &mut P,
         r: &Entry<MCL, MCC, MPL, N, S, PD>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -149,7 +149,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableCanonic<Entry<MCL, MCC, MPL, N, S, PD>, DecodingWentWrong, DecodingWentWrong>
+    RelativeDecodableCanonic<Entry<MCL, MCC, MPL, N, S, PD>, Blame, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic + std::fmt::Debug,
@@ -164,7 +164,7 @@ where
     async fn relative_decode_canonic<P>(
         producer: &mut P,
         r: &Entry<MCL, MCC, MPL, N, S, PD>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, DecodingWentWrong>>
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
         Self: Sized,
@@ -272,7 +272,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableSync<Entry<MCL, MCC, MPL, N, S, PD>, DecodingWentWrong>
+    RelativeDecodableSync<Entry<MCL, MCC, MPL, N, S, PD>, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableSync + std::fmt::Debug,

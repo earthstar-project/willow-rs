@@ -669,10 +669,10 @@ dependencies = [
  "futures",
  "smol",
  "ufotofu",
+ "ufotofu_codec",
  "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
- "willow-encoding",
 ]
 
 [[package]]
