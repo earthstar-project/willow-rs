@@ -123,7 +123,7 @@ where
 
     // Handle decoding of the empty path with dedicated logic to prevent underflows in loop counters =S
     if remaining_component_count == 0 {
-        if expected_total_length > 0 {
+        if expected_total_length > accumulated_component_length {
             // Claimed length is incorrect
             return Err(DecodeError::Other(Blame::TheirFault));
         } else {
