@@ -1,6 +1,6 @@
 use signature::{Signer, Verifier};
+use ufotofu_codec::Encodable;
 use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
-use willow_encoding::{Encodable, RelativeEncodable};
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 

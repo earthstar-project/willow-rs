@@ -2,8 +2,11 @@
 use arbitrary::Arbitrary;
 use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
+use ufotofu_codec::{
+    Blame, DecodableCanonic, Encodable, RelativeDecodable, RelativeDecodableCanonic,
+    RelativeEncodable,
+};
 use willow_data_model::{grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId};
-use willow_encoding::Encodable;
 
 use crate::{
     communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
@@ -293,217 +296,249 @@ where
     }
 }
 
-pub(super) mod encoding {
-    use super::*;
-
-    use ufotofu::{BulkConsumer, BulkProducer};
-
-    use willow_encoding::{Decodable, Encodable, RelativeDecodable, RelativeEncodable};
-
-    use willow_encoding::{is_bitflagged, CompactWidth, DecodeError};
-
-    use willow_encoding::produce_byte;
-
-    use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
-
-    impl<
-            const MCL: usize,
-            const MCC: usize,
-            const MPL: usize,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        > RelativeEncodable<Area<MCL, MCC, MPL, UserPublicKey>>
-        for McCapability<
-            MCL,
-            MCC,
-            MPL,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        >
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeEncodable<Area<MCL, MCC, MPL, UserPublicKey>>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &Area<MCL, MCC, MPL, UserPublicKey>,
+    ) -> Result<(), C::Error>
     where
-        NamespacePublicKey:
-            NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-        UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
-        NamespaceSignature: Encodable + Encodable + Clone,
-        UserSignature: Encodable + Encodable + Clone,
+        C: ufotofu::BulkConsumer<Item = u8>,
     {
-        async fn relative_encode<Consumer>(
-            &self,
-            out: &Area<MCL, MCC, MPL, UserPublicKey>,
-            consumer: &mut Consumer,
-        ) -> Result<(), Consumer::Error>
-        where
-            Consumer: BulkConsumer<Item = u8>,
-        {
-            let mut header: u8 = 0;
+        /*
+        let mut header: u8 = 0;
 
-            match self {
-                McCapability::Communal(_) => {
-                    if self.access_mode() == AccessMode::Write {
-                        header |= 0b0100_0000;
-                    }
-                }
-                McCapability::Owned(_) => {
-                    if self.access_mode() == AccessMode::Read {
-                        header |= 0b1000_0000;
-                    } else {
-                        header |= 0b1100_0000;
-                    }
+        match self {
+            McCapability::Communal(_) => {
+                if self.access_mode() == AccessMode::Write {
+                    header |= 0b0100_0000;
                 }
             }
-
-            let delegations_count = self.delegations_len() as u64;
-
-            if delegations_count >= 4294967296 {
-                header |= 0b0011_1111;
-            } else if delegations_count >= 65536 {
-                header |= 0b0011_1110;
-            } else if delegations_count >= 256 {
-                header |= 0b0011_1101;
-            } else if delegations_count >= 60 {
-                header |= 0b0011_1100;
-            } else {
-                header |= delegations_count as u8;
-            }
-
-            consumer.consume(header).await?;
-
-            Encodable::encode(self.granted_namespace(), consumer).await?;
-            Encodable::encode(self.progenitor(), consumer).await?;
-
-            match self {
-                McCapability::Communal(_) => {}
-                McCapability::Owned(cap) => {
-                    Encodable::encode(cap.initial_authorisation(), consumer).await?;
+            McCapability::Owned(_) => {
+                if self.access_mode() == AccessMode::Read {
+                    header |= 0b1000_0000;
+                } else {
+                    header |= 0b1100_0000;
                 }
-            };
-
-            if delegations_count >= 60 {
-                encode_compact_width_be(delegations_count, consumer).await?;
             }
-
-            let mut prev_area = out.clone();
-
-            for delegation in self.delegations() {
-                delegation
-                    .area
-                    .relative_encode(&prev_area, consumer)
-                    .await?;
-                prev_area = delegation.area.clone();
-                Encodable::encode(&delegation.user, consumer).await?;
-                Encodable::encode(&delegation.signature, consumer).await?;
-            }
-
-            Ok(())
         }
+
+        let delegations_count = self.delegations_len() as u64;
+
+        if delegations_count >= 4294967296 {
+            header |= 0b0011_1111;
+        } else if delegations_count >= 65536 {
+            header |= 0b0011_1110;
+        } else if delegations_count >= 256 {
+            header |= 0b0011_1101;
+        } else if delegations_count >= 60 {
+            header |= 0b0011_1100;
+        } else {
+            header |= delegations_count as u8;
+        }
+
+        consumer.consume(header).await?;
+
+        Encodable::encode(self.granted_namespace(), consumer).await?;
+        Encodable::encode(self.progenitor(), consumer).await?;
+
+        match self {
+            McCapability::Communal(_) => {}
+            McCapability::Owned(cap) => {
+                Encodable::encode(cap.initial_authorisation(), consumer).await?;
+            }
+        };
+
+        if delegations_count >= 60 {
+            encode_compact_width_be(delegations_count, consumer).await?;
+        }
+
+        let mut prev_area = out.clone();
+
+        for delegation in self.delegations() {
+            delegation
+                .area
+                .relative_encode(&prev_area, consumer)
+                .await?;
+            prev_area = delegation.area.clone();
+            Encodable::encode(&delegation.user, consumer).await?;
+            Encodable::encode(&delegation.signature, consumer).await?;
+        }
+
+        Ok(())
+        */
+        todo!()
     }
+}
 
-    impl<
-            const MCL: usize,
-            const MCC: usize,
-            const MPL: usize,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        > RelativeDecodable<Area<MCL, MCC, MPL, UserPublicKey>>
-        for McCapability<
-            MCL,
-            MCC,
-            MPL,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        >
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeDecodable<Area<MCL, MCC, MPL, UserPublicKey>, Blame>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + DecodableCanonic + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + DecodableCanonic + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + DecodableCanonic + Clone,
+    UserSignature: Encodable + DecodableCanonic + Clone,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &Area<MCL, MCC, MPL, UserPublicKey>,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
     where
-        NamespacePublicKey:
-            NamespaceId + Encodable + Decodable + Verifier<NamespaceSignature> + IsCommunal,
-        UserPublicKey: SubspaceId + Encodable + Decodable + Verifier<UserSignature>,
-        NamespaceSignature: Encodable + Decodable + Clone,
-        UserSignature: Encodable + Decodable + Clone,
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
     {
-        async fn relative_decode_canonical<Producer>(
-            out: &Area<MCL, MCC, MPL, UserPublicKey>,
-            producer: &mut Producer,
-        ) -> Result<Self, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-            Self: Sized,
-        {
-            let header = produce_byte(producer).await?;
+        // we don't actually need this...
 
-            let is_owned = is_bitflagged(header, 0);
-            let access_mode = if is_bitflagged(header, 1) {
-                AccessMode::Write
-            } else {
-                AccessMode::Read
-            };
+        todo!()
+    }
+}
 
-            let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
-            let user_key = UserPublicKey::decode_canonical(producer).await?;
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeDecodableCanonic<Area<MCL, MCC, MPL, UserPublicKey>, Blame, Blame>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + DecodableCanonic + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + DecodableCanonic + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + DecodableCanonic + Clone,
+    UserSignature: Encodable + DecodableCanonic + Clone,
+{
+    async fn relative_decode_canonic<P>(
+        producer: &mut P,
+        r: &Area<MCL, MCC, MPL, UserPublicKey>,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        /*
+        let header = produce_byte(producer).await?;
 
-            let mut base_cap = if is_owned {
-                let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
+        let is_owned = is_bitflagged(header, 0);
+        let access_mode = if is_bitflagged(header, 1) {
+            AccessMode::Write
+        } else {
+            AccessMode::Read
+        };
 
-                let cap = OwnedCapability::from_existing(
-                    namespace_key,
-                    user_key,
-                    initial_authorisation,
-                    access_mode,
-                )
+        let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
+        let user_key = UserPublicKey::decode_canonical(producer).await?;
+
+        let mut base_cap = if is_owned {
+            let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
+
+            let cap = OwnedCapability::from_existing(
+                namespace_key,
+                user_key,
+                initial_authorisation,
+                access_mode,
+            )
+            .map_err(|_| DecodeError::InvalidInput)?;
+
+            Self::Owned(cap)
+        } else {
+            let cap = CommunalCapability::new(namespace_key, user_key, access_mode)
                 .map_err(|_| DecodeError::InvalidInput)?;
 
-                Self::Owned(cap)
-            } else {
-                let cap = CommunalCapability::new(namespace_key, user_key, access_mode)
-                    .map_err(|_| DecodeError::InvalidInput)?;
+            Self::Communal(cap)
+        };
 
-                Self::Communal(cap)
-            };
+        let delegations_to_decode = if header & 0b0011_1111 == 0b0011_1111 {
+            decode_compact_width_be(CompactWidth::Eight, producer).await?
+        } else if header & 0b0011_1110 == 0b0011_1110 {
+            decode_compact_width_be(CompactWidth::Four, producer).await?
+        } else if header & 0b0011_1101 == 0b0011_1101 {
+            decode_compact_width_be(CompactWidth::Two, producer).await?
+        } else if header & 0b0011_1100 == 0b0011_1100 {
+            decode_compact_width_be(CompactWidth::One, producer).await?
+        } else {
+            (header & 0b0011_1111) as u64
+        };
 
-            let delegations_to_decode = if header & 0b0011_1111 == 0b0011_1111 {
-                decode_compact_width_be(CompactWidth::Eight, producer).await?
-            } else if header & 0b0011_1110 == 0b0011_1110 {
-                decode_compact_width_be(CompactWidth::Four, producer).await?
-            } else if header & 0b0011_1101 == 0b0011_1101 {
-                decode_compact_width_be(CompactWidth::Two, producer).await?
-            } else if header & 0b0011_1100 == 0b0011_1100 {
-                decode_compact_width_be(CompactWidth::One, producer).await?
-            } else {
-                (header & 0b0011_1111) as u64
-            };
-
-            if header & 0b0011_1100 == 0b0011_1100 && delegations_to_decode < 60 {
-                // The delegation count should have been encoded directly in the header.
-                return Err(DecodeError::InvalidInput);
-            }
-
-            let mut prev_area = out.clone();
-
-            for _ in 0..delegations_to_decode {
-                let area = Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode_canonical(
-                    &prev_area, producer,
-                )
-                .await?;
-                prev_area = area.clone();
-                let user = UserPublicKey::decode_canonical(producer).await?;
-                let signature = UserSignature::decode_canonical(producer).await?;
-
-                base_cap
-                    .append_existing_delegation(Delegation {
-                        area,
-                        user,
-                        signature,
-                    })
-                    .map_err(|_| DecodeError::InvalidInput)?;
-            }
-
-            Ok(base_cap)
+        if header & 0b0011_1100 == 0b0011_1100 && delegations_to_decode < 60 {
+            // The delegation count should have been encoded directly in the header.
+            return Err(DecodeError::InvalidInput);
         }
+
+        let mut prev_area = out.clone();
+
+        for _ in 0..delegations_to_decode {
+            let area = Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode_canonical(
+                &prev_area, producer,
+            )
+            .await?;
+            prev_area = area.clone();
+            let user = UserPublicKey::decode_canonical(producer).await?;
+            let signature = UserSignature::decode_canonical(producer).await?;
+
+            base_cap
+                .append_existing_delegation(Delegation {
+                    area,
+                    user,
+                    signature,
+                })
+                .map_err(|_| DecodeError::InvalidInput)?;
+        }
+
+        Ok(base_cap)
+        */
+
+        todo!()
     }
 }

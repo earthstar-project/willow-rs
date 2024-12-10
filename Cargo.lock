@@ -439,6 +439,7 @@ dependencies = [
  "either",
  "signature",
  "ufotofu",
+ "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
 ]
