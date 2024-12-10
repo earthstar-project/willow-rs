@@ -3,7 +3,16 @@ name = "wb_async_utils"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+
+# enables ufotofu-related functionality
+channels = ["ufotofu", "ufotofu_queues", "either", "async_cell"]
+
 [dependencies]
+ufotofu = { version = "0.6.0", features = ["std"], optional = true }
+ufotofu_queues = { version = "0.5.0", features = ["std"], optional = true }
+either = { version = "1.10.0", optional = true }
+async_cell = { version = "0.2.2", optional = true }                         # TODO refactor channels to not use this anymore
 
 [lints]
 workspace = true
