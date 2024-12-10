@@ -147,7 +147,7 @@ where
             }
         }
         Err(err) => {
-            panic!("Encoding then decoding a value resulted in failure to decode.\n\nOriginal: {:?}\n\nEncoding: {:?}\n\n Decodeing Error: {:?}", t, &enc[..], err);
+            panic!("Encoding then decoding a value resulted in failure to decode.\n\nOriginal: {:?}\n\nEncoding: {:?}\n\nDecoding Error: {:?}", t, &enc[..], err);
         }
     }
 }
