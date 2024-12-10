@@ -1,87 +1,132 @@
+use std::{marker::PhantomData, ops::DerefMut};
+
+use either::Either::{self, *};
+
 use ufotofu::{BulkProducer, Producer};
 
-use std::marker::PhantomData;
-
+use ufotofu_codec::{Blame, Decodable, DecodeError};
+use ufotofu_queues::Fixed;
 use wb_async_utils::Mutex;
 
-use crate::client::{
-    new_logical_channel_client_state, AbsolutionsToGrant, Input, LogicalChannelClientEndpoint,
+use crate::{
+    client::{
+        self, new_logical_channel_client_state, AbsolutionsToGrant, ClientHandle,
+        LogicalChannelClientEndpoint,
+    },
+    frames::{Absolve, IncomingFrameHeader, IssueGuarantee},
+    server_logic::{self, new_logical_channel_server_logic_state},
 };
 
 /// Given a producer and consumer of bytes that represent an ordered, bidirectional, byte-oriented, reliable communication channel with a peer,
 /// provide multiplexing and demultiplexing based on LCMUX.
 ///
-/// - `'state` is the lifetime of the opaque [`LcmuxState`] value that the seperate components of the returned [`Lcmux`] struct use to communicate and coordinate.
-/// - `'transport` is the lifetime of the producer and consumer that represent the communication channel with the peer; these must outlive the state.
 /// - `P` and `C` are the specific producer and consumer types of the communication channel.
-/// - `CMessage` is the type of all messages that can be received via [`SendControl`](https://willowprotocol.org/specs/resource-control/index.html#SendControl) messages.
-pub fn new_lcmux<'state, 'transport: 'state, const NUM_CHANNELS: usize, P, C, CMessage>(
-    state: &'state LcmuxState<'transport, NUM_CHANNELS, P, C, CMessage>,
-) -> Lcmux<'state, NUM_CHANNELS, P, C, CMessage> {
-    let control_message_producer = ControlMessageProducer { state };
+/// - `CMessage` is the type of all messages that can be received via [`SendControl`](https://willowprotocol.org/specs/resource-control/index.html#SendControl) frames.
+/// - `Q` is the type of queues that should be used to buffer the message bytes received on a logical channel.
+///
+/// `NUM_CHANNELS` denotes how many of the channels are actively used, their channel ids range from zero to `NUM_CHANNELS - 1`. Receiving any frame for a channel of id `NUM_CHANNEL` or greater is reported as a fatal error.
+///
+/// - `max_queue_capacity` must be greater than zero.
+/// - `watermark` must be less than or equal to `max_queue_capacity`.
+pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
+    producer: &'transport Mutex<P>,
+    consumer: &'transport Mutex<C>,
+    max_queue_capacity: usize,
+    watermark: usize,
+) -> Lcmux<'transport, NUM_CHANNELS, P, C, CMessage> {
+    let client_handles: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
+        new_logical_channel_client_state(consumer, channel_id as u64)
+    });
+    let server_handles: [_; NUM_CHANNELS] = core::array::from_fn(|_| {
+        new_logical_channel_server_logic_state(
+            max_queue_capacity,
+            watermark,
+            Fixed::<u8>::new(max_queue_capacity),
+        )
+    });
+
+    let mut client_inputs: [client::Input; NUM_CHANNELS] = todo!(); // TODO adapt https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305 (Thanks, Frando!)
+    let mut server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS] = todo!();
+
+    let control_message_producer = ControlMessageProducer {
+        producer,
+        consumer,
+        client_inputs,
+        server_inputs,
+        phantom: PhantomData,
+    };
 
     Lcmux {
         control_message_producer,
         how_to_send_messages_to_a_logical_channel: todo!(),
-        tmp: (PhantomData, PhantomData),
-    }
-}
-
-/// The shared state between the several components of an LCMUX session. This is fully opaque, simply initialise it (via [`LxmucState::new`]) and supply a reference to [`new_lcmux`].
-pub struct LcmuxState<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
-    producer: &'transport Mutex<P>,
-    consumer: &'transport Mutex<C>,
-    client_stuff: [(
-        Input,
-        LogicalChannelClientEndpoint<'transport, C>,
-        AbsolutionsToGrant,
-    ); NUM_CHANNELS],
-    phantom: PhantomData<CMessage>, // TODO remove this once the `CMessage` type parameter is actually used
-}
-
-impl<'transport, const NUM_CHANNELS: usize, P, C, CMessage>
-    LcmuxState<'transport, NUM_CHANNELS, P, C, CMessage>
-{
-    pub fn new(producer: &'transport Mutex<P>, consumer: &'transport Mutex<C>) -> Self {
-        LcmuxState {
-            producer,
-            consumer,
-            client_stuff: core::array::from_fn(|channel_id| {
-                new_logical_channel_client_state(consumer, channel_id as u64)
-            }),
-            phantom: PhantomData,
-        }
+        tmp: PhantomData,
     }
 }
 
 /// All components for interacting with an LCMUX session.
-pub struct Lcmux<'state, const NUM_CHANNELS: usize, P, C, CMessage> {
-    pub control_message_producer: ControlMessageProducer<'state, NUM_CHANNELS, P, C, CMessage>,
+pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
+    pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, C, CMessage>,
     // control_message_consumer TODO
     pub how_to_send_messages_to_a_logical_channel:
-        [LogicalChannelClientEndpoint<'state, C>; NUM_CHANNELS],
+        [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
     // how_to_Receive_messages_from_a_logical_channel TODO
-    tmp: (PhantomData<P>, PhantomData<CMessage>),
+    tmp: PhantomData<(P, CMessage)>,
 }
 
 /// A `Producer` of incoming control messages. Reading data from this producer is what drives processing of *all* incoming messages. If you stop reading from this, no more arriving bytes will be processed, even for non-control messages.
-pub struct ControlMessageProducer<'state, const NUM_CHANNELS: usize, P, C, CMessage> {
-    state: &'state LcmuxState<'state, NUM_CHANNELS, P, C, CMessage>,
+pub struct ControlMessageProducer<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
+    producer: &'transport Mutex<P>,
+    consumer: &'transport Mutex<C>,
+    client_inputs: [client::Input; NUM_CHANNELS],
+    server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS],
+    phantom: PhantomData<CMessage>,
 }
 
-// impl<'state, const NUM_CHANNELS: usize, P, C, CMessage> Producer
-//     for ControlMessageProducer<'state, NUM_CHANNELS, P, C, CMessage>
-// where
-//     P: BulkProducer<Item = u8>,
-// {
-//     type Item = CMessage;
+impl<'transport, const NUM_CHANNELS: usize, P, C, CMessage> Producer
+    for ControlMessageProducer<'transport, NUM_CHANNELS, P, C, CMessage>
+where
+    P: BulkProducer<Item = u8>,
+    CMessage: Decodable,
+    Blame: From<CMessage::ErrorReason>,
+{
+    type Item = CMessage;
 
-//     type Final = P::Final;
+    type Final = P::Final;
 
-//     type Error = i16;
+    type Error = DecodeError<P::Final, P::Error, Blame>;
 
-//     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-//         // Decode LCMUX frames
-//         todo!() // interact with self.state and stuff
-//     }
-// }
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        // Decode LCMUX frames until finding a control message.
+        // For all non-control messages, update the appropriate client states or server states.
+        loop {
+            let mut p = self.producer.write().await;
+
+            match IncomingFrameHeader::decode(p.deref_mut()).await? {
+                // Forward incoming IssueGuarantee frames to the corresponding client input.
+                IncomingFrameHeader::IssueGuarantee(IssueGuarantee { channel, amount }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.client_inputs[channel as usize]
+                            .receive_guarantees(amount)
+                            .or(Err(DecodeError::Other(Blame::TheirFault)))?;
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                IncomingFrameHeader::Absolve(Absolve { channel, amount }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_inputs[channel as usize]
+                            .receive_absolve(amount)
+                            .or(Err(DecodeError::Other(Blame::TheirFault)))?;
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                _ => todo!(),
+            }
+        }
+    }
+}

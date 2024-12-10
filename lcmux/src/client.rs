@@ -7,9 +7,8 @@ use ufotofu_codec::{Encodable, EncodableKnownSize};
 use ufotofu_codec_endian::{U16BE, U32BE, U64BE};
 use wb_async_utils::Mutex;
 
-pub use crate::client_logic::{AbsolutionsToGrant, Input};
 use crate::client_logic::{new_logical_channel_client_logic_state, WaitForGuarantees};
-
+pub use crate::client_logic::{AbsolutionsToGrant, Input};
 
 /// A consumer that respects the guarantees available on a logical channel.
 pub struct LogicalChannelClientEndpoint<'transport, C> {
@@ -120,11 +119,7 @@ async fn encode_size<C: BulkConsumer<Item = u8>>(
 pub fn new_logical_channel_client_state<'transport, C>(
     consumer: &'transport Mutex<C>,
     channel: u64,
-) -> (
-    Input,
-    LogicalChannelClientEndpoint<'transport, C>,
-    AbsolutionsToGrant,
-) {
+) -> ClientHandle<'transport, C> {
     let (input, wfg, atg) = new_logical_channel_client_logic_state();
     let lccc = LogicalChannelClientEndpoint {
         channel,
@@ -132,5 +127,15 @@ pub fn new_logical_channel_client_state<'transport, C>(
         consumer,
     };
 
-    return (input, lccc, atg);
+    ClientHandle {
+        input,
+        logical_consumer: lccc,
+        absolutions: atg,
+    }
+}
+
+pub struct ClientHandle<'transport, C> {
+    pub input: Input,
+    pub logical_consumer: LogicalChannelClientEndpoint<'transport, C>,
+    pub absolutions: AbsolutionsToGrant,
 }

@@ -9,6 +9,9 @@ use std::{cell::RefCell, convert::Infallible, rc::Rc};
 use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use ufotofu_queues::Queue;
 
+// TODO use fin and error...
+// TODO also, unify them into a single last: Result<F, E>?
+
 /// Create a SPSC channel, in the form of an [`Input`] that implements [`BulkConsumer`]
 /// and an [`Output`] that implements [`BulkProducer`].
 pub fn new_spsc<Q, F, E>(queue: Q) -> (Input<Q, F, E>, Output<Q, F, E>) {
@@ -59,6 +62,19 @@ impl<Q: Queue, F, E> Input<Q, F, E> {
         *self.state.err.borrow_mut() = Some(err);
         self.state.notify.set(());
     }
+
+    /// Same as calling [`Consumer::close`], but sync.
+    pub fn close_sync(&mut self, fin: F) -> Result<(), E> {
+        // Store the final value for later access by the Output.
+        *self.state.fin.borrow_mut() = Some(fin);
+
+        // If the queue is empty, we need to notify the waiting Output (if any) of the final value.
+        if self.state.queue.borrow().is_empty() {
+            self.state.notify.set(());
+        }
+
+        Ok(())
+    }
 }
 
 impl<Q: Queue, F, E> Consumer for Input<Q, F, E> {
@@ -66,7 +82,7 @@ impl<Q: Queue, F, E> Consumer for Input<Q, F, E> {
 
     type Final = F;
 
-    type Error = Infallible;
+    type Error = E;
 
     /// Write the item into the buffer queue, waiting for buffer space to
     /// become available (by reading items from the corresponding [`Output`]) if necessary.
@@ -87,15 +103,7 @@ impl<Q: Queue, F, E> Consumer for Input<Q, F, E> {
     }
 
     async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-        // Store the final value for later access by the Output.
-        *self.state.fin.borrow_mut() = Some(fin);
-
-        // If the queue is empty, we need to notify the waiting Output (if any) of the final value.
-        if self.state.queue.borrow().is_empty() {
-            self.state.notify.set(());
-        }
-
-        Ok(())
+        self.close_sync(fin)
     }
 }
 
