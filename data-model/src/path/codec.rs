@@ -370,7 +370,7 @@ where
             // We check whether the next-longer prefix of `r` could have also been used for encoding. If so, error.
             // To efficiently check, we check whether the next component of `r` is equal to its counterpart in what we decoded.
             // Both next components exist, otherwise we would have been in an earlier branch of the `if` expression.
-            if prefix.component(prefix.component_count()).unwrap()
+            if r.component(prefix.component_count()).unwrap()
                 == decoded.component(prefix.component_count()).unwrap()
             {
                 // Could have used a longer prefix for decoding. Not canonic!
