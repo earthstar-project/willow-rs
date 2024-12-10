@@ -26,6 +26,7 @@ use core::convert::Infallible;
 use core::fmt::Display;
 
 use ufotofu::{BulkConsumer, BulkProducer};
+use ufotofu_codec::Blame;
 use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
 use ufotofu_codec::DecodableSync;
@@ -628,6 +629,12 @@ pub struct NotMinimal;
 impl Display for NotMinimal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "A compact u64 decoding was not minimal.")
+    }
+}
+
+impl From<NotMinimal> for Blame {
+    fn from(_value: NotMinimal) -> Self {
+        Blame::TheirFault
     }
 }
 
