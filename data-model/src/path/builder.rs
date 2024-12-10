@@ -58,16 +58,50 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     ) -> Result<Self, InvalidPathError> {
         let mut builder = Self::new(target_total_length, target_component_count)?;
 
-        // The following is logically equivalent to appending the first `prefix_component_count` coponents of `reference` to the builder, but more efficient in terms of `memcpy` calls.
-        // TODO replace the naive code below with a more efficient implementation that directly copies bytes from the internal `Representation`s.
+        assert!(reference.component_count() >= prefix_component_count);
 
-        for comp in reference
-            .create_prefix(prefix_component_count)
-            .expect("`prefix_component_count` must be less than the number of components in `reference`")
-            .components()
-        {
-            builder.append_component(comp);
+        // The following is logically equivalent to successively appending the first `prefix_component_count` components of `reference` to the builder, but more efficient in terms of `memcpy` calls.
+        match prefix_component_count.checked_sub(1) {
+            None => return Ok(builder),
+            Some(index_of_final_component) => {
+                // Overwrite the dummy accumulated component lengths for the first `prefix_component_count` components with the actual values.
+                let accumulated_component_lengths_start =
+                    Representation::start_offset_of_sum_of_lengths_for_component(0);
+                let accumulated_component_lengths_end =
+                    Representation::start_offset_of_sum_of_lengths_for_component(
+                        index_of_final_component + 1,
+                    );
+                builder.bytes.as_mut()
+                    [accumulated_component_lengths_start..accumulated_component_lengths_end]
+                    .copy_from_slice(
+                        &reference.data[accumulated_component_lengths_start
+                            ..accumulated_component_lengths_end],
+                    );
+
+                let components_start_in_prefix =
+                    Representation::start_offset_of_component(&reference.data, 0);
+                let components_end_in_prefix = Representation::end_offset_of_component(
+                    &reference.data,
+                    index_of_final_component,
+                );
+                builder.bytes.extend_from_slice(
+                    &reference.data[components_start_in_prefix..components_end_in_prefix],
+                );
+
+                // Record that we added the components.
+                builder.initialised_components = prefix_component_count;
+            }
         }
+
+        // For reference, here is a naive implementation of the same functionality:
+
+        // for comp in reference
+        //     .create_prefix(prefix_component_count)
+        //     .expect("`prefix_component_count` must be less than the number of components in `reference`")
+        //     .components()
+        // {
+        //     builder.append_component(comp);
+        // }
 
         Ok(builder)
     }

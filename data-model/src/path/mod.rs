@@ -208,7 +208,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn path_length(&self) -> usize {
-        Representation::total_length(&self.data, self.component_count())
+        self.path_length_of_prefix(self.component_count())
     }
 
     /// Returns the `i`-th [`Component`] of this path.
@@ -303,36 +303,47 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         })
     }
 
-    /// Creates a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    /// Creates a new path that consists of the first `component_count` components. More efficient than creating a new [`Path`] from scratch.
     ///
-    /// Returns `None` if `length` is greater than `self.get_component_count()`.
+    /// Returns `None` if `component_count` is greater than `self.get_component_count()`.
     ///
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn create_prefix(&self, length: usize) -> Option<Self> {
-        if length > self.component_count() {
+    pub fn create_prefix(&self, component_count: usize) -> Option<Self> {
+        if component_count > self.component_count() {
             None
         } else {
-            Some(unsafe { self.create_prefix_unchecked(length) })
+            Some(unsafe { self.create_prefix_unchecked(component_count) })
         }
     }
 
-    /// Creates a new path that consists of the first `length` components. More efficient than creating a new [`Path`] from scratch.
+    /// Creates a new path that consists of the first `component_count` components. More efficient than creating a new [`Path`] from scratch.
     ///
     /// #### Safety
     ///
-    /// Undefined behaviour if `length` is greater than `self.component_count()`. May manifest directly, or at any later
+    /// Undefined behaviour if `component_count` is greater than `self.component_count()`. May manifest directly, or at any later
     /// function invocation that operates on the resulting [`Path`].
     ///
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub unsafe fn create_prefix_unchecked(&self, length: usize) -> Self {
+    pub unsafe fn create_prefix_unchecked(&self, component_count: usize) -> Self {
         Self {
             data: self.data.clone(),
-            component_count: length,
+            component_count,
         }
+    }
+
+    /// Returns the sum of the lengths of the first `component_count` components in this path. More efficient than `path.create_prefix(component_count).path_length()`.
+    ///
+    /// Guaranteed to be at most `MCC`.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(1)`, performs no allocations.
+    pub fn path_length_of_prefix(&self, component_count: usize) -> usize {
+        Representation::total_length(&self.data, component_count)
     }
 
     /// Creates an iterator over all prefixes of this path (including th empty path and the path itself).
