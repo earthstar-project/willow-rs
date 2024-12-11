@@ -327,12 +327,13 @@ where
     let (suffix_length, suffix_component_count) =
         decode_total_length_and_component_count_maybe_canonic::<CANONIC, _>(producer).await?;
 
-    let prefix = r
-        .create_prefix(prefix_component_count)
-        .ok_or(DecodeError::Other(Blame::TheirFault))?;
+    if prefix_component_count > r.component_count() {
+        return Err(DecodeError::Other(Blame::TheirFault));
+    }
 
-    let total_length = prefix
-        .path_length()
+    let prefix_path_length = r.path_length_of_prefix(prefix_component_count);
+
+    let total_length = prefix_path_length
         .checked_add(suffix_length)
         .ok_or(DecodeError::Other(Blame::TheirFault))?;
     let total_component_count = prefix_component_count
@@ -343,8 +344,8 @@ where
     let builder = PathBuilder::new_from_prefix(
         total_length,
         total_component_count,
-        &prefix,
-        prefix.component_count(),
+        &r,
+        prefix_component_count,
     )
     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
 
@@ -352,7 +353,7 @@ where
     let decoded = decode_components_maybe_canonic::<CANONIC, MCL, MCC, MPL, _>(
         producer,
         builder,
-        prefix.path_length(),
+        prefix_path_length,
         suffix_component_count,
         total_length,
     )
@@ -360,18 +361,18 @@ where
 
     if CANONIC {
         // Did the encoding use the *longest* common prefix?
-        if prefix.component_count() == r.component_count() {
+        if prefix_component_count == r.component_count() {
             // Could not have taken a longer prefix of `r`, i.e., the prefix was maximal.
             Ok(decoded)
-        } else if prefix.component_count() == decoded.component_count() {
+        } else if prefix_component_count == decoded.component_count() {
             // The prefix was the full path to decode, so it clearly was chosen maximally.
             Ok(decoded)
         } else {
             // We check whether the next-longer prefix of `r` could have also been used for encoding. If so, error.
             // To efficiently check, we check whether the next component of `r` is equal to its counterpart in what we decoded.
             // Both next components exist, otherwise we would have been in an earlier branch of the `if` expression.
-            if r.component(prefix.component_count()).unwrap()
-                == decoded.component(prefix.component_count()).unwrap()
+            if r.component(prefix_component_count).unwrap()
+                == decoded.component(prefix_component_count).unwrap()
             {
                 // Could have used a longer prefix for decoding. Not canonic!
                 Err(DecodeError::Other(Blame::TheirFault))

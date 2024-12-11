@@ -62,7 +62,7 @@ impl Representation {
         total_length + ((component_count + 1) * size_of::<usize>())
     }
 
-    /// Gets the offset in bytes where the accumulated sum of lengths of the first `i` components is stored. Panics if `i` is outside the slice.
+    /// Gets the offset in bytes where the accumulated sum of lengths of the first `i` components is stored.
     pub fn start_offset_of_sum_of_lengths_for_component(i: usize) -> usize {
         // First usize is the number of components, then the i usizes storing the lengths; hence at i + 1.
         size_of::<usize>() * (i + 1)
