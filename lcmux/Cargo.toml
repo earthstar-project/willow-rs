@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 wb_async_utils = { path = "../wb_async_utils", version = "0.1.0" }
 willow-encoding = { path = "../encoding", version = "0.1.0" }
+ufotofu = { version = "0.6.0", features = ["std"] }
+ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0"}
+ufotofu_codec_endian = { path = "../ufotofu_codec_endian", version = "0.1.0" }
 
 [lints]
 workspace = true

@@ -404,6 +404,9 @@ dependencies = [
 name = "lcmux"
 version = "0.1.0"
 dependencies = [
+ "ufotofu",
+ "ufotofu_codec",
+ "ufotofu_codec_endian",
  "wb_async_utils",
  "willow-encoding",
 ]
