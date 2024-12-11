@@ -157,7 +157,7 @@ impl<T> Mutex<T> {
 
 impl<T> AsMut<T> for Mutex<T> {
     fn as_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.value.get() } // Safe because a `&mut RwLock` can never live at the same time as a `ReadGuard`, `WriteGuard` or another `&mut RwLock`
+        unsafe { &mut *self.value.get() } // Safe because a `&mut Mutex` can never live at the same time as a `ReadGuard`, `WriteGuard` or another `&mut Mutex`
     }
 }
 
@@ -176,7 +176,7 @@ impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
     }
 }
 
-/// Read-only access to the value stored in a [`RwLock`].
+/// Read-only access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref`.
 pub struct ReadGuard<'mutex, T> {
@@ -194,11 +194,11 @@ impl<'mutex, T> Deref for ReadGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.value.get() } // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut RwLock`
+        unsafe { &*self.mutex.value.get() } // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`
     }
 }
 
-/// Read and write access access to the value stored in a [`RwLock`].
+/// Read and write access access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref` and `DerefMut`.
 pub struct WriteGuard<'mutex, T> {
@@ -216,13 +216,13 @@ impl<'mutex, T> Deref for WriteGuard<'mutex, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.value.get() } // Safe because a `&WriteGuard` can never live at the same time as a `&mut WriteGuard` or a `&mut RwLock`
+        unsafe { &*self.mutex.value.get() } // Safe because a `&WriteGuard` can never live at the same time as a `&mut WriteGuard` or a `&mut Mutex`
     }
 }
 
 impl<'mutex, T> DerefMut for WriteGuard<'mutex, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut RwLock`
+        unsafe { &mut *self.mutex.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut Mutex`
     }
 }
 

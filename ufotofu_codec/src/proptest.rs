@@ -12,7 +12,7 @@ pub use relative::*;
 
 /// A macro for running fuzz tests that check the invariants of all absolute codec traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_absolute_all;
@@ -83,7 +83,7 @@ macro_rules! fuzz_absolute_all {
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`Decodable`](crate::Decodable), and [`DecodableCanonic`](crate::DecodableCanonic) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_absolute_canonic;
@@ -152,7 +152,7 @@ macro_rules! fuzz_absolute_canonic {
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable), [`EncodableKnownSize`](crate::EncodableKnownSize), and [`Decodable`](crate::Decodable) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_absolute_known_size;
@@ -219,7 +219,7 @@ macro_rules! fuzz_absolute_known_size {
 
 /// A macro for running fuzz tests that check the invariants of the [`Encodable`](crate::Encodable) and [`Decodable`](crate::Decodable) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_absolute_basic;
@@ -288,7 +288,7 @@ macro_rules! fuzz_absolute_basic {
 
 /// A macro for running fuzz tests that check the invariants of all relative codec traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_relative_all;
@@ -368,7 +368,7 @@ macro_rules! fuzz_relative_all {
 
 /// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeDecodable`](crate::RelativeDecodable), and [`RelativeDecodableCanonic`](crate::RelativeDecodableCanonic) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_relative_canonic;
@@ -446,7 +446,7 @@ macro_rules! fuzz_relative_canonic {
 
 /// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable), [`RelativeEncodableKnownSize`](crate::RelativeEncodableKnownSize), and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_relative_known_size;
@@ -517,7 +517,7 @@ macro_rules! fuzz_relative_known_size {
 
 /// A macro for running fuzz tests that check the invariants of the [`RelativeEncodable`](crate::RelativeEncodable) and [`RelativeDecodable`](crate::RelativeDecodable) traits. Usage:
 ///
-/// ```rust
+/// ```ignore
 /// #![no_main]
 ///
 /// use ufotofu_codec::fuzz_relative_basic;
