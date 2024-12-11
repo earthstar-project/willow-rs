@@ -6,7 +6,7 @@ description = "Utilities for implementing encoders and decoders of Willow types 
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-ufotofu = { version = "0.5.0", features = [
+ufotofu = { version = "0.6.0", features = [
     "std",
     "dev",
 ] } # Cargo does not support enabling a feature (`"dev"`) only during testing =(

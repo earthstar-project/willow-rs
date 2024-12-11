@@ -4,7 +4,7 @@ use either::Either::*;
 use ufotofu::{BulkProducer, Producer};
 
 use wb_async_utils::Mutex;
-use willow_encoding::{Decodable, DecodeError};
+use ufotofu_codec::{Decodable, DecodeError};
 
 /// A `Producer` that decodes values of type `T` which were produced by a `BulkProducer` of `u8`s. The inner `BulkProducer` may be shared between several parts of the codebase via a `Mutex`, this type guarantees uninterrupted access to all bytes which encode a single value. Intended to be used with `T` being the type of some message of the WGPS.
 pub(crate) struct SharedDecoder<'m, T, C> {

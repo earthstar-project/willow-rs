@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 #[cfg(feature = "dev")]
 use arbitrary::{size_hint::and_all, Arbitrary};
+use compact_u64::CompactU64;
 
 use crate::{
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
@@ -150,70 +151,173 @@ where
     }
 }
 
-mod encoding {
-    use super::*;
+use ufotofu::{BulkConsumer, BulkProducer};
 
-    use ufotofu::{BulkConsumer, BulkProducer};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
+    EncodableSync,
+};
 
-    use willow_encoding::{DecodeError, U64BE};
-
-    use willow_encoding::{Decodable, Encodable};
-
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
-        for Entry<MCL, MCC, MPL, N, S, PD>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Encodable,
+    S: SubspaceId + Encodable,
+    PD: PayloadDigest + Encodable,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
     where
-        N: NamespaceId + Encodable,
-        S: SubspaceId + Encodable,
-        PD: PayloadDigest + Encodable,
+        C: BulkConsumer<Item = u8>,
     {
-        async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
-        where
-            C: BulkConsumer<Item = u8>,
-        {
-            self.namespace_id.encode(consumer).await?;
-            self.subspace_id.encode(consumer).await?;
-            self.path.encode(consumer).await?;
+        self.namespace_id.encode(consumer).await?;
+        self.subspace_id.encode(consumer).await?;
+        self.path.encode(consumer).await?;
 
-            U64BE::from(self.timestamp).encode(consumer).await?;
-            U64BE::from(self.payload_length).encode(consumer).await?;
+        CompactU64(self.timestamp).encode(consumer).await?;
+        CompactU64(self.payload_length).encode(consumer).await?;
 
-            self.payload_digest.encode(consumer).await?;
+        self.payload_digest.encode(consumer).await?;
 
-            Ok(())
-        }
-    }
-
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
-        for Entry<MCL, MCC, MPL, N, S, PD>
-    where
-        N: NamespaceId + Decodable,
-        S: SubspaceId + Decodable,
-        PD: PayloadDigest + Decodable,
-    {
-        async fn decode_canonical<Prod>(
-            producer: &mut Prod,
-        ) -> Result<Self, DecodeError<Prod::Error>>
-        where
-            Prod: BulkProducer<Item = u8>,
-        {
-            let namespace_id = N::decode_canonical(producer).await?;
-            let subspace_id = S::decode_canonical(producer).await?;
-            let path = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
-            let timestamp = U64BE::decode_canonical(producer).await?.into();
-            let payload_length = U64BE::decode_canonical(producer).await?.into();
-            let payload_digest = PD::decode_canonical(producer).await?;
-
-            Ok(Entry {
-                namespace_id,
-                subspace_id,
-                path,
-                timestamp,
-                payload_length,
-                payload_digest,
-            })
-        }
+        Ok(())
     }
 }
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + Decodable,
+    S: SubspaceId + Decodable,
+    PD: PayloadDigest + Decodable,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let namespace_id = N::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let subspace_id = S::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
+        let timestamp = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_length = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_digest = PD::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableCanonic
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
+    PD: PayloadDigest + DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
+{
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let namespace_id = N::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let subspace_id = S::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let path = Path::<MCL, MCC, MPL>::decode_canonic(producer).await?;
+        let timestamp = CompactU64::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_length = CompactU64::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_digest = PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableKnownSize
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + EncodableKnownSize,
+    S: SubspaceId + EncodableKnownSize,
+    PD: PayloadDigest + EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        self.namespace_id.len_of_encoding()
+            + self.subspace_id.len_of_encoding()
+            + self.path.len_of_encoding()
+            + CompactU64(self.timestamp).len_of_encoding()
+            + CompactU64(self.payload_length).len_of_encoding()
+            + self.payload_digest.len_of_encoding()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableSync
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + EncodableSync,
+    S: SubspaceId + EncodableSync,
+    PD: PayloadDigest + EncodableSync,
+{
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableSync
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: NamespaceId + DecodableSync,
+    S: SubspaceId + DecodableSync,
+    PD: PayloadDigest + DecodableSync,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+{
+}
+
+// Entry relative to entry encoding
 
 #[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Arbitrary<'a>

@@ -1,5 +1,5 @@
 use ufotofu::BulkConsumer;
-use willow_encoding::Encodable;
+use ufotofu_codec::Encodable;
 
 pub struct CommitmentReveal<'nonce, const CHALLENGE_LENGTH: usize> {
     pub nonce: &'nonce [u8; CHALLENGE_LENGTH],

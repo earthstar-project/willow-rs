@@ -3,7 +3,7 @@ use std::{marker::PhantomData, ops::DerefMut};
 use ufotofu::{BulkConsumer, Consumer};
 
 use wb_async_utils::Mutex;
-use willow_encoding::Encodable;
+use ufotofu_codec::Encodable;
 
 /// A `Consumer` that encodes the values of type `T` which it consumes into a `BulkConsumer` of `u8`s. The inner `BulkConsumer` may be shared between several parts of the codebase via an `Mutex`, this type guarantees that all bytes for a single consumed item will be consecutively fed into the underlying BulkConsumer. Intended to be used with `T` being the type of some message of the WGPS.
 pub(crate) struct SharedEncoder<'m, T, C> {

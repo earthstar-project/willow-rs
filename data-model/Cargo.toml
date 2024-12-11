@@ -12,11 +12,19 @@ dev = ["dep:arbitrary"]
 [dependencies]
 either = "1.10.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
-ufotofu = { version = "0.5.0", features = ["std"] }
+ufotofu = { version = "0.6.0", features = ["std"] }
 bytes = "1.6.0"
 
 [dependencies.willow-encoding]
 path = "../encoding"
+version = "0.1.0"
+
+[dependencies.ufotofu_codec]
+path = "../ufotofu_codec"
+version = "0.1.0"
+
+[dependencies.compact_u64]
+path = "../compact_u64"
 version = "0.1.0"
 
 [dev-dependencies]

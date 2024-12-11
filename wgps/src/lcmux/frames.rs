@@ -1,4 +1,4 @@
-use willow_encoding::Encodable;
+// use willow_encoding::Encodable;
 
 pub struct SendToChannel<M> {
     channel: u64,

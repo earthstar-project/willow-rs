@@ -147,12 +147,12 @@ where
             }
         }
         Err(err) => {
-            panic!("Encoding then decoding a value resulted in failure to decode.\n\nOriginal: {:?}\n\nEncoding: {:?}\n\n Decodeing Error: {:?}", t, &enc[..], err);
+            panic!("Encoding then decoding a value resulted in failure to decode.\n\nOriginal: {:?}\n\nEncoding: {:?}\n\nDecoding Error: {:?}", t, &enc[..], err);
         }
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`Encode`] or [`Decode`] trait.
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`Encodable`] or [`Decodable`] trait.
 pub async fn assert_basic_invariants<T>(
     t1: &T,
     t2: &T,
@@ -195,8 +195,8 @@ where
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`EncodeKnownLength`] trait.
-pub async fn assert_known_length_invariants<T>(t1: &T)
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`EncodableKnownSize`] trait.
+pub async fn assert_known_size_invariants<T>(t1: &T)
 where
     T: EncodableKnownSize + Debug,
 {
@@ -257,7 +257,7 @@ where
     }
 }
 
-/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`Encode`] or [`Decode`] trait, or of the [`DecodeCanonic`] trait.
+/// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`DecodableCanonic`] trait.
 pub async fn assert_canonic_invariants<T>(potential_encoding1: &[u8], potential_encoding2: &[u8])
 where
     T: Debug + DecodableCanonic + Encodable + Eq,
