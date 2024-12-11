@@ -77,6 +77,15 @@ pub struct SendControlHeader {
     pub encoding_nibble: SendControlNibble,
 }
 
+impl Encodable for SendControlHeader {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
 /// An incoming LCMUX frame header: all information, except for the message bytes in case of a `SendToChannel` or `SendControl` frame.
 ///
 /// Implements [`Decodable`] because we use this to figure out with incoming data. Does not implement [`Encodable`], however, since we already know which kind of header we are encoding.

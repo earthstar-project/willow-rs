@@ -3,9 +3,11 @@ use std::{convert::Infallible, marker::PhantomData, ops::DerefMut};
 use either::Either::{self, *};
 use futures::try_join;
 
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{Blame, Decodable, DecodeError, Encodable, RelativeDecodable};
+use ufotofu_codec::{
+    Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
+};
 use ufotofu_queues::Fixed;
 use wb_async_utils::Mutex;
 
@@ -57,8 +59,14 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
         phantom: PhantomData,
     };
 
+    let control_message_consumer = ControlMessageConsumer {
+        consumer,
+        phantom: PhantomData,
+    };
+
     Lcmux {
         control_message_producer,
+        control_message_consumer,
         channel_bookkeeping: bookkeepings,
         how_to_send_messages_to_a_logical_channel: todo!(),
     }
@@ -66,8 +74,10 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
 
 /// All components for interacting with an LCMUX session.
 pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
-    /// A producer of incoming control pessages. You *must* read from this *constantly*, as it also drives internal processing of all other LCMUX frames. When it emits its final item or an error, then the full LCMUX session is done.
+    /// A producer of incoming control messages. You *must* read from this *constantly*, as it also drives internal processing of all other LCMUX frames. When it emits its final item or an error, then the full LCMUX session is done.
     pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>,
+    /// A consumer of outgoing control messages. These are automatically framed, encoded, and transmitted.
+    pub control_message_consumer: ControlMessageConsumer<'transport, C, CMessage>,
     /// For each logical channel an opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer for the channel.
     pub channel_bookkeeping: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS],
     // control_message_consumer TODO
@@ -204,6 +214,45 @@ where
             }
         }
     }
+}
+
+/// A consumer of control messages to send to the other peer.
+pub struct ControlMessageConsumer<'transport, C, CMessage> {
+    consumer: &'transport Mutex<C>,
+    phantom: PhantomData<CMessage>,
+}
+
+impl<'transport, C, CMessage> Consumer for ControlMessageConsumer<'transport, C, CMessage>
+where
+    C: BulkConsumer<Item = u8>,
+    CMessage: RelativeEncodable<SendControlNibble> + GetControlNibble,
+{
+    type Item = CMessage;
+
+    type Final = C::Final;
+
+    type Error = C::Error;
+
+    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
+        let mut c = self.consumer.write().await;
+
+        let nibble = item.control_nibble();
+        let header = SendControlHeader {
+            encoding_nibble: nibble,
+        };
+        header.encode(c.deref_mut()).await?;
+
+        item.relative_encode(c.deref_mut(), &nibble).await
+    }
+
+    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
+        self.consumer.write().await.deref_mut().close(fin).await
+    }
+}
+
+/// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
+pub trait GetControlNibble {
+    fn control_nibble(&self) -> SendControlNibble;
 }
 
 /// An opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer.
