@@ -4,6 +4,7 @@ use ufotofu_codec::Blame;
 use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
 use ufotofu_codec::Encodable;
+use ufotofu_codec::EncodableKnownSize;
 use willow_data_model::NamespaceId;
 use willow_data_model::SubspaceId;
 
@@ -409,5 +410,19 @@ where
         //     initial_authorisation,
         //     delegations: Vec::new(),
         // })
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    fn len_of_encoding(&self) -> usize {
+        todo!()
     }
 }

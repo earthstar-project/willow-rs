@@ -395,20 +395,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mc_subspace_capability_encoding"
-path = "fuzz_targets/mc_subspace_capability_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_subspace_capability_encoding_random"
-path = "fuzz_targets/mc_subspace_capability_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "enc_path_rel_path"
 path = "fuzz_targets/enc_path_rel_path.rs"
 test = false
@@ -477,3 +463,11 @@ path = "fuzz_targets/enc_mccapability_rel_area.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_mcsubspacecapability_abs"
+path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+test = false
+doc = false
+bench = false
+
