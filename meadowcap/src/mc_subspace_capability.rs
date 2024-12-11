@@ -1,6 +1,7 @@
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu::Consumer;
 use ufotofu_codec::Blame;
+use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
 use ufotofu_codec::Encodable;
 use willow_data_model::NamespaceId;
@@ -278,6 +279,28 @@ where
         */
 
         todo!()
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Decodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + Decodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Decodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Decodable + Clone,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!("We don't actually need this...")
     }
 }
 
