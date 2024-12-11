@@ -1,4 +1,4 @@
-use std::{convert::Infallible, marker::PhantomData, ops::DerefMut};
+use std::{convert::Infallible, marker::PhantomData, mem::MaybeUninit, ops::DerefMut};
 
 use either::Either::{self, *};
 use futures::try_join;
@@ -12,12 +12,9 @@ use ufotofu_queues::Fixed;
 use wb_async_utils::Mutex;
 
 use crate::{
-    client::{
-        self, new_logical_channel_client_state, AbsolutionsToGrant, ClientHandle,
-        LogicalChannelClientEndpoint,
-    },
+    client::{self, new_logical_channel_client_state, LogicalChannelClientEndpoint},
     frames::*,
-    server_logic::{self, new_logical_channel_server_logic_state, ReceivedData},
+    server_logic::{self, new_logical_channel_server_logic_state},
 };
 
 /// Given a producer and consumer of bytes that represent an ordered, bidirectional, byte-oriented, reliable communication channel with a peer,
@@ -48,12 +45,42 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
         )
     });
 
-    let mut client_inputs: [client::Input; NUM_CHANNELS] = todo!(); // TODO adapt https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305 (Thanks, Frando!)
-    let mut server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS] = todo!();
-    let mut bookkeepings: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS] = todo!();
-    let mut how_to_send_messages_to_a_logical_channel = todo!();
-    let mut receive_data_from_logical_channel: [server_logic::ReceivedData<Fixed<u8>>;
-        NUM_CHANNELS] = todo!();
+    // Conversion from arrays of structs to arrays of individual fields adapted from https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305
+    // Thank you, Frando!
+    let mut client_inputs: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
+    let mut server_inputs: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
+    let mut bookkeepings: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
+    let mut how_to_send_messages_to_a_logical_channel: [_; NUM_CHANNELS] =
+        std::array::from_fn(|_| MaybeUninit::uninit());
+    let mut receive_data_from_logical_channel: [_; NUM_CHANNELS] =
+        std::array::from_fn(|_| MaybeUninit::uninit());
+
+    for (i, (client_handle, server_handle)) in client_handles
+        .into_iter()
+        .zip(server_handles.into_iter())
+        .enumerate()
+    {
+        client_inputs[i].write(client_handle.input);
+        server_inputs[i].write(server_handle.input);
+        bookkeepings[i].write(ChannelBookkeeping {
+            channel_id: i as u64,
+            consumer,
+            absolutions_to_grant: client_handle.absolutions,
+            guarantees_to_give: server_handle.guarantees_to_give,
+            droppings_to_announce: server_handle.droppings_to_announce,
+        });
+        how_to_send_messages_to_a_logical_channel[i].write(client_handle.logical_consumer);
+        receive_data_from_logical_channel[i].write(server_handle.received_data);
+    }
+
+    // SAFETY: As N is constant, we know that all elements are initialized.
+    let client_inputs = client_inputs.map(|x| unsafe { x.assume_init() });
+    let server_inputs = server_inputs.map(|x| unsafe { x.assume_init() });
+    let bookkeepings = bookkeepings.map(|x| unsafe { x.assume_init() });
+    let how_to_send_messages_to_a_logical_channel =
+        how_to_send_messages_to_a_logical_channel.map(|x| unsafe { x.assume_init() });
+    let receive_data_from_logical_channel =
+        receive_data_from_logical_channel.map(|x| unsafe { x.assume_init() });
 
     let control_message_producer = ControlMessageProducer {
         producer,
