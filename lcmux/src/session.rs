@@ -50,7 +50,6 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
 
     let control_message_producer = ControlMessageProducer {
         producer,
-        consumer,
         client_inputs,
         server_inputs,
         phantom: PhantomData,
@@ -65,25 +64,24 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
 
 /// All components for interacting with an LCMUX session.
 pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
-    pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, C, CMessage>,
+    pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>,
     // control_message_consumer TODO
     pub how_to_send_messages_to_a_logical_channel:
         [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
     // how_to_Receive_messages_from_a_logical_channel TODO
-    tmp: PhantomData<(P, CMessage)>,
+    tmp: PhantomData<C>,
 }
 
 /// A `Producer` of incoming control messages. Reading data from this producer is what drives processing of *all* incoming messages. If you stop reading from this, no more arriving bytes will be processed, even for non-control messages.
-pub struct ControlMessageProducer<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
+pub struct ControlMessageProducer<'transport, const NUM_CHANNELS: usize, P, CMessage> {
     producer: &'transport Mutex<P>,
-    consumer: &'transport Mutex<C>,
     client_inputs: [client::Input; NUM_CHANNELS],
     server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS],
     phantom: PhantomData<CMessage>,
 }
 
-impl<'transport, const NUM_CHANNELS: usize, P, C, CMessage> Producer
-    for ControlMessageProducer<'transport, NUM_CHANNELS, P, C, CMessage>
+impl<'transport, const NUM_CHANNELS: usize, P, CMessage> Producer
+    for ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>
 where
     P: BulkProducer<Item = u8>,
     CMessage: RelativeDecodable<SendControlNibble, Blame>,
