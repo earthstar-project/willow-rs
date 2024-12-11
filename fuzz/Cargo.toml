@@ -360,20 +360,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "entry_rel_namespace_range_encoding"
-path = "fuzz_targets/entry_rel_namespace_range_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_range_encoding_random"
-path = "fuzz_targets/entry_rel_namespace_range_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "area_rel_area_encoding"
 path = "fuzz_targets/area_rel_area_encoding.rs"
 test = false
@@ -502,6 +488,13 @@ bench = false
 [[bin]]
 name = "enc_entry_rel_area"
 path = "fuzz_targets/enc_entry_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_range3d"
+path = "fuzz_targets/enc_entry_rel_range3d.rs"
 test = false
 doc = false
 bench = false
