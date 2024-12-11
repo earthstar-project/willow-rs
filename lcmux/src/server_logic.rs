@@ -141,6 +141,7 @@ pub struct Input<Q> {
 }
 
 impl<Q: Queue<Item = u8>> Input<Q> {
+    /// Reads the next `length` bytes from the given producer, modifying internal state and erroring as appropriate.
     pub async fn receive_data<P: BulkProducer<Item = u8>>(
         &mut self,
         length: u64,

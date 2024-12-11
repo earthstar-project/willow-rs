@@ -139,7 +139,7 @@ impl Input {
     /// Updates the client state after receiving a [`ControlLimitReceiving`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceiving) message with a given [`bound`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceivingBound) value.
     ///
     /// Silently ignores invalid bounds (i.e., bounds that are less tight than a previously communicated bound), and keeps using the older, tighter bound.
-    pub fn receive_bound(&mut self, bound: u64) {
+    pub fn receive_limit_receiving(&mut self, bound: u64) {
         let new_bound = match self.state.guarantees_bound.get() {
             None => {
                 self.state.guarantees_bound.set(Some(bound));

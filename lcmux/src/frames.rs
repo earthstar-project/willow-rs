@@ -41,10 +41,13 @@ pub struct SendToChannelHeader {
     pub length: u64,
 }
 
+/// A byte whose most significant four bits are zero, and whose least significant four bits contain encoding information for a SendControl frame.
+pub type SendControlNibble = u8;
+
 /// Does not include the actual message bytes.
 pub struct SendControlHeader {
     /// Information stored in the four least significant bits.
-    pub encoding_nibble: u8,
+    pub encoding_nibble: SendControlNibble,
 }
 
 /// An incoming LCMUX frame header: all information, except for the message bytes in case of a `SendToChannel` or `SendControl` frame.

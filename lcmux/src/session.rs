@@ -4,7 +4,7 @@ use either::Either::{self, *};
 
 use ufotofu::{BulkProducer, Producer};
 
-use ufotofu_codec::{Blame, Decodable, DecodeError};
+use ufotofu_codec::{Blame, Decodable, DecodeError, RelativeDecodable};
 use ufotofu_queues::Fixed;
 use wb_async_utils::Mutex;
 
@@ -13,7 +13,7 @@ use crate::{
         self, new_logical_channel_client_state, AbsolutionsToGrant, ClientHandle,
         LogicalChannelClientEndpoint,
     },
-    frames::{Absolve, IncomingFrameHeader, IssueGuarantee},
+    frames::*,
     server_logic::{self, new_logical_channel_server_logic_state},
 };
 
@@ -86,8 +86,7 @@ impl<'transport, const NUM_CHANNELS: usize, P, C, CMessage> Producer
     for ControlMessageProducer<'transport, NUM_CHANNELS, P, C, CMessage>
 where
     P: BulkProducer<Item = u8>,
-    CMessage: Decodable,
-    Blame: From<CMessage::ErrorReason>,
+    CMessage: RelativeDecodable<SendControlNibble, Blame>,
 {
     type Item = CMessage;
 
@@ -101,8 +100,10 @@ where
         loop {
             let mut p = self.producer.write().await;
 
+            // The `continue` statements below don't actually skip anything, they just emphasise that the next step is continuing to loop.
+
             match IncomingFrameHeader::decode(p.deref_mut()).await? {
-                // Forward incoming IssueGuarantee frames to the corresponding client input.
+                // Forward incoming IssueGuarantee frames to the indicated client input.
                 IncomingFrameHeader::IssueGuarantee(IssueGuarantee { channel, amount }) => {
                     if channel < (NUM_CHANNELS as u64) {
                         self.client_inputs[channel as usize]
@@ -114,6 +115,7 @@ where
                     }
                 }
 
+                // Forward incoming Absolve frames to the indicated server input.
                 IncomingFrameHeader::Absolve(Absolve { channel, amount }) => {
                     if channel < (NUM_CHANNELS as u64) {
                         self.server_inputs[channel as usize]
@@ -125,7 +127,78 @@ where
                     }
                 }
 
-                _ => todo!(),
+                // Forward incoming Plead frames to the indicated client input.
+                IncomingFrameHeader::Plead(Plead { channel, target }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.client_inputs[channel as usize].receive_plead(target);
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                // Forward incoming LimitSending frames to the indicated server input.
+                IncomingFrameHeader::LimitSending(LimitSending { channel, bound }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_inputs[channel as usize].receive_limit_sending(bound);
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                // Forward incoming LimitReceiving frames to the indicated client input.
+                IncomingFrameHeader::LimitReceiving(LimitReceiving { channel, bound }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.client_inputs[channel as usize].receive_limit_receiving(bound);
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                // AnnounceDropping frames should never arrive, because we do not send optimistically.
+                IncomingFrameHeader::AnnounceDropping(AnnounceDropping { channel: _ }) => {
+                    return Err(DecodeError::Other(Blame::TheirFault));
+                }
+
+                // Forward incoming Apologise frames to the indicated server input.
+                IncomingFrameHeader::Apologise(Apologise { channel }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_inputs[channel as usize].receive_apology();
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                // When receiving a SendToChannel frame header, forward the indicated amount of bytes into the corresponding buffer.
+                IncomingFrameHeader::SendToChannelHeader(SendToChannelHeader {
+                    channel,
+                    length,
+                }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_inputs[channel as usize]
+                            .receive_data(length, p.deref_mut())
+                            .await
+                            .or(Err(DecodeError::Other(Blame::TheirFault)))?;
+                        continue;
+                    } else {
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
+                }
+
+                // When receiving a SendControl frame header, we can actually produce an item! Yay!
+                IncomingFrameHeader::SendControlHeader(SendControlHeader { encoding_nibble }) => {
+                    match p.deref_mut().expose_items().await? {
+                        Left(_) => {} // no-op
+                        Right(fin) => return Ok(Right(fin)),
+                    }
+
+                    return Ok(Left(
+                        CMessage::relative_decode(p.deref_mut(), &encoding_nibble).await?,
+                    ));
+                }
             }
         }
     }
