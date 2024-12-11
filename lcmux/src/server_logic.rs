@@ -267,9 +267,6 @@ pub struct ReceivedData<Q> {
     buffer_out: spsc::Output<Q, (), ()>,
 }
 // This is a wrapper around SharedState.buffer_out that also calls `increase_guarantees_to_give` for every produced byte.
-// this is a producer of data taken from SharedState.buffer_out,
-// and whenever we produce data we check whether we want to send more guarantees.
-
 impl<Q> Producer for ReceivedData<Q>
 where
     Q: Queue<Item = u8>,

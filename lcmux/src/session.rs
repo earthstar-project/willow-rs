@@ -17,7 +17,7 @@ use crate::{
         LogicalChannelClientEndpoint,
     },
     frames::*,
-    server_logic::{self, new_logical_channel_server_logic_state},
+    server_logic::{self, new_logical_channel_server_logic_state, ReceivedData},
 };
 
 /// Given a producer and consumer of bytes that represent an ordered, bidirectional, byte-oriented, reliable communication channel with a peer,
@@ -51,6 +51,9 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
     let mut client_inputs: [client::Input; NUM_CHANNELS] = todo!(); // TODO adapt https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305 (Thanks, Frando!)
     let mut server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS] = todo!();
     let mut bookkeepings: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS] = todo!();
+    let mut how_to_send_messages_to_a_logical_channel = todo!();
+    let mut receive_data_from_logical_channel: [server_logic::ReceivedData<Fixed<u8>>;
+        NUM_CHANNELS] = todo!();
 
     let control_message_producer = ControlMessageProducer {
         producer,
@@ -68,7 +71,8 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
         control_message_producer,
         control_message_consumer,
         channel_bookkeeping: bookkeepings,
-        how_to_send_messages_to_a_logical_channel: todo!(),
+        how_to_send_messages_to_a_logical_channel,
+        receive_data_from_logical_channel,
     }
 }
 
@@ -80,10 +84,11 @@ pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
     pub control_message_consumer: ControlMessageConsumer<'transport, C, CMessage>,
     /// For each logical channel an opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer for the channel.
     pub channel_bookkeeping: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS],
-    // control_message_consumer TODO
+    /// Structs that allow for sending messages to a logical channel, one struct per channel.
     pub how_to_send_messages_to_a_logical_channel:
         [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
-    // how_to_Receive_messages_from_a_logical_channel TODO
+    // Producers of data received on a logical channel, one producer per channel.
+    pub receive_data_from_logical_channel: [server_logic::ReceivedData<Fixed<u8>>; NUM_CHANNELS],
 }
 
 /// A `Producer` of incoming control messages. Reading data from this producer is what drives processing of *all* incoming messages. If you stop reading from this, no more arriving bytes will be processed, even for non-control messages.
