@@ -359,8 +359,6 @@ test = false
 doc = false
 bench = false
 
-
-
 [[bin]]
 name = "mc_capability_delegation"
 path = "fuzz_targets/mc_capability_delegation.rs"
@@ -378,20 +376,6 @@ bench = false
 [[bin]]
 name = "mc_is_authorised_write"
 path = "fuzz_targets/mc_is_authorised_write.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_capability_rel_area_encoding"
-path = "fuzz_targets/mc_capability_rel_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_capability_rel_area_encoding_random"
-path = "fuzz_targets/mc_capability_rel_area_encoding_random.rs"
 test = false
 doc = false
 bench = false
@@ -483,6 +467,13 @@ bench = false
 [[bin]]
 name = "enc_range3d_rel_range3d"
 path = "fuzz_targets/enc_range3d_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_mccapability_rel_area"
+path = "fuzz_targets/enc_mccapability_rel_area.rs"
 test = false
 doc = false
 bench = false

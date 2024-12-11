@@ -4,7 +4,7 @@ use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, DecodableCanonic, Encodable, RelativeDecodable, RelativeDecodableCanonic,
-    RelativeEncodable,
+    RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId};
 
@@ -428,9 +428,7 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        // we don't actually need this...
-
-        todo!()
+        todo!("We don't actually need this...")
     }
 }
 
@@ -539,6 +537,36 @@ where
         Ok(base_cap)
         */
 
+        todo!()
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeEncodableKnownSize<Area<MCL, MCC, MPL, UserPublicKey>>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    fn relative_len_of_encoding(&self, r: &Area<MCL, MCC, MPL, UserPublicKey>) -> usize {
         todo!()
     }
 }
