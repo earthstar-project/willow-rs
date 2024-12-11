@@ -15,6 +15,7 @@ use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 use async_cell::unsync::AsyncCell;
 use either::Either::*;
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
+use ufotofu_codec::Blame;
 use ufotofu_queues::Queue;
 use wb_async_utils::spsc;
 
@@ -235,10 +236,10 @@ impl Producer for GuaranteesToGive {
 
     type Final = Infallible;
 
-    type Error = ();
+    type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        let () = self.state.guarantee_related_action_necessary.get().await?;
+        let () = self.state.guarantee_related_action_necessary.get().await.or(Err(Blame::TheirFault))?;
         Ok(Left(self.state.guarantees_to_give.get()))
     }
 }
@@ -253,10 +254,10 @@ impl Producer for DroppingsToAnnounce {
 
     type Final = Infallible;
 
-    type Error = ();
+    type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        Ok(Left(self.state.droppings_to_announce.get().await?))
+        Ok(Left(self.state.droppings_to_announce.get().await.or(Err(Blame::TheirFault))?))
     }
 }
 

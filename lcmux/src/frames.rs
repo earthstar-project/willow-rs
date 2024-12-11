@@ -1,15 +1,33 @@
 // TODO implement Encodable for each of these (but not for `IncomingFragmentHeader`)
 
-use ufotofu_codec::{Blame, Decodable, DecodeError};
+use ufotofu_codec::{Blame, Decodable, DecodeError, Encodable};
 
 pub struct IssueGuarantee {
     pub channel: u64,
     pub amount: u64,
 }
 
+impl Encodable for IssueGuarantee {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
 pub struct Absolve {
     pub channel: u64,
     pub amount: u64,
+}
+
+impl Encodable for Absolve {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
 }
 
 pub struct Plead {
@@ -29,6 +47,15 @@ pub struct LimitReceiving {
 
 pub struct AnnounceDropping {
     pub channel: u64,
+}
+
+impl Encodable for AnnounceDropping {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
 }
 
 pub struct Apologise {

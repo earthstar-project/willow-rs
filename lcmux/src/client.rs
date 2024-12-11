@@ -55,6 +55,7 @@ where
         // Acquire exclusive access to the consumer while encoding the message.
         let mut c = self.consumer.write().await;
 
+        // TODO use Encode on SendToChannelHeader instead
         // Send the header byte.
         c.deref_mut().consume(first_byte).await?;
         // Send the encoding of the channel (might be zero bytes long).

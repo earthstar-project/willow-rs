@@ -1,10 +1,11 @@
-use std::{marker::PhantomData, ops::DerefMut};
+use std::{convert::Infallible, marker::PhantomData, ops::DerefMut};
 
 use either::Either::{self, *};
+use futures::try_join;
 
-use ufotofu::{BulkProducer, Producer};
+use ufotofu::{BulkConsumer, BulkProducer, Producer};
 
-use ufotofu_codec::{Blame, Decodable, DecodeError, RelativeDecodable};
+use ufotofu_codec::{Blame, Decodable, DecodeError, Encodable, RelativeDecodable};
 use ufotofu_queues::Fixed;
 use wb_async_utils::Mutex;
 
@@ -47,6 +48,7 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
 
     let mut client_inputs: [client::Input; NUM_CHANNELS] = todo!(); // TODO adapt https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305 (Thanks, Frando!)
     let mut server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS] = todo!();
+    let mut bookkeepings: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS] = todo!();
 
     let control_message_producer = ControlMessageProducer {
         producer,
@@ -57,19 +59,21 @@ pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
 
     Lcmux {
         control_message_producer,
+        channel_bookkeeping: bookkeepings,
         how_to_send_messages_to_a_logical_channel: todo!(),
-        tmp: PhantomData,
     }
 }
 
 /// All components for interacting with an LCMUX session.
 pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
+    /// A producer of incoming control pessages. You *must* read from this *constantly*, as it also drives internal processing of all other LCMUX frames. When it emits its final item or an error, then the full LCMUX session is done.
     pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>,
+    /// For each logical channel an opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer for the channel.
+    pub channel_bookkeeping: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS],
     // control_message_consumer TODO
     pub how_to_send_messages_to_a_logical_channel:
         [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
     // how_to_Receive_messages_from_a_logical_channel TODO
-    tmp: PhantomData<C>,
 }
 
 /// A `Producer` of incoming control messages. Reading data from this producer is what drives processing of *all* incoming messages. If you stop reading from this, no more arriving bytes will be processed, even for non-control messages.
@@ -196,6 +200,126 @@ where
                     return Ok(Left(
                         CMessage::relative_decode(p.deref_mut(), &encoding_nibble).await?,
                     ));
+                }
+            }
+        }
+    }
+}
+
+/// An opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer.
+pub struct ChannelBookkeeping<'transport, C> {
+    channel_id: u64,
+    consumer: &'transport Mutex<C>,
+    absolutions_to_grant: client::AbsolutionsToGrant,
+    guarantees_to_give: server_logic::GuaranteesToGive,
+    droppings_to_announce: server_logic::DroppingsToAnnounce,
+}
+
+impl<'transport, C> ChannelBookkeeping<'transport, C>
+where
+    C: BulkConsumer<Item = u8>,
+{
+    /// Performs all sending of metadata to keep the logical channel functioning.
+    pub async fn do_the_bookkeeping_dance(
+        &mut self,
+    ) -> Result<Infallible, Either<C::Error, Blame>> {
+        let _ = try_join!(
+            Self::grant_all_the_absolutions(
+                self.consumer,
+                &mut self.absolutions_to_grant,
+                self.channel_id
+            ),
+            Self::give_all_the_guarantees(
+                self.consumer,
+                &mut self.guarantees_to_give,
+                self.channel_id
+            ),
+            Self::announce_all_the_droppings(
+                self.consumer,
+                &mut self.droppings_to_announce,
+                self.channel_id
+            ),
+        )?;
+        unreachable!()
+    }
+
+    /// Continuously reads from the `absolutions_to_grant` and acts on them whenever one is actually produced.
+    async fn grant_all_the_absolutions(
+        consumer: &'transport Mutex<C>,
+        absolutions_to_grant: &mut client::AbsolutionsToGrant,
+        channel_id: u64,
+    ) -> Result<Infallible, Either<C::Error, Blame>> {
+        loop {
+            match absolutions_to_grant.produce().await {
+                Ok(Left(amount)) => {
+                    let frame: Absolve = Absolve {
+                        channel: channel_id,
+                        amount,
+                    };
+
+                    let mut c = consumer.write().await;
+                    frame
+                        .encode(c.deref_mut())
+                        .await
+                        .map_err(|con_err| Left(con_err))?;
+                }
+                _ => unreachable!(), // Final and Error of AbsolutionsToGrant are Infallible. Happy refactoring when that changes!
+            }
+        }
+    }
+
+    /// Continuously reads form the `guarantees_to_give` and gives them.
+    async fn give_all_the_guarantees(
+        consumer: &'transport Mutex<C>,
+        guarantees_to_give: &mut server_logic::GuaranteesToGive,
+        channel_id: u64,
+    ) -> Result<Infallible, Either<C::Error, Blame>> {
+        loop {
+            match guarantees_to_give
+                .produce()
+                .await
+                .map_err(|blame| Right(blame))?
+            {
+                Right(_) => unreachable!(),
+                Left(amount) => {
+                    let frame = IssueGuarantee {
+                        channel: channel_id,
+                        amount,
+                    };
+
+                    let mut c = consumer.write().await;
+                    frame
+                        .encode(c.deref_mut())
+                        .await
+                        .map_err(|con_err| Left(con_err))?;
+                }
+            }
+        }
+    }
+
+    /// Continuously reads form the `droppings_to_announce` and does whatever you do with droppings.
+    async fn announce_all_the_droppings(
+        consumer: &'transport Mutex<C>,
+        droppings_to_announce: &mut server_logic::DroppingsToAnnounce,
+        channel_id: u64,
+    ) -> Result<Infallible, Either<C::Error, Blame>> {
+        loop {
+            match droppings_to_announce
+                .produce()
+                .await
+                .map_err(|blame| Right(blame))?
+            {
+                Right(_) => unreachable!(),
+                Left(()) => {
+                    let frame = AnnounceDropping {
+                        channel: channel_id,
+                    };
+
+                    let mut c = consumer.write().await;
+                    frame
+                        .encode(c.deref_mut())
+                        .await
+                        .map_err(|con_err| Left(con_err))?;
                 }
             }
         }
