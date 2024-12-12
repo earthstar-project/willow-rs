@@ -404,6 +404,7 @@ dependencies = [
 name = "lcmux"
 version = "0.1.0"
 dependencies = [
+ "compact_u64",
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",

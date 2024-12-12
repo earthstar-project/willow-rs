@@ -1,7 +1,10 @@
 // TODO implement Encodable for each of these (but not for `IncomingFragmentHeader`)
 
+use compact_u64::{CompactU64, Tag, TagWidth};
 use ufotofu::BulkConsumer;
-use ufotofu_codec::{Encodable, RelativeEncodable};
+use ufotofu_codec::{
+    Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
+};
 
 pub struct IssueGuarantee {
     pub channel: u64,
@@ -14,8 +17,8 @@ impl Encodable for IssueGuarantee {
         C: BulkConsumer<Item = u8>,
     {
         // Header with compacted channel u64
-        HeaderWithEmbeddedChannel::IssueGuarantee
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::IssueGuarantee(self.channel)
+            .encode(consumer)
             .await?;
 
         // Amount
@@ -36,8 +39,8 @@ impl Encodable for Absolve {
         C: BulkConsumer<Item = u8>,
     {
         // Header with compacted channel u64
-        HeaderWithEmbeddedChannel::Absolve
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::Absolve(self.channel)
+            .encode(consumer)
             .await?;
 
         // Amount
@@ -58,8 +61,8 @@ impl Encodable for Plead {
         C: BulkConsumer<Item = u8>,
     {
         // Header with compacted channel u64
-        HeaderWithEmbeddedChannel::Plead
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::Plead(self.channel)
+            .encode(consumer)
             .await?;
 
         // Target
@@ -80,8 +83,8 @@ impl Encodable for LimitSending {
         C: BulkConsumer<Item = u8>,
     {
         // Header with compacted channel u64
-        HeaderWithEmbeddedChannel::LimitSending
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::LimitSending(self.channel)
+            .encode(consumer)
             .await?;
 
         // Bound
@@ -102,8 +105,8 @@ impl Encodable for LimitReceiving {
         C: BulkConsumer<Item = u8>,
     {
         // Header with compacted channel u64
-        HeaderWithEmbeddedChannel::LimitReceiving
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::LimitReceiving(self.channel)
+            .encode(consumer)
             .await?;
 
         // Bound
@@ -122,8 +125,8 @@ impl Encodable for AnnounceDropping {
     where
         C: BulkConsumer<Item = u8>,
     {
-        HeaderWithEmbeddedChannel::AnnounceDropping
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::AnnounceDropping(self.channel)
+            .encode(consumer)
             .await?;
 
         Ok(())
@@ -139,8 +142,8 @@ impl Encodable for Apologise {
     where
         C: BulkConsumer<Item = u8>,
     {
-        HeaderWithEmbeddedChannel::Apologise
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::Apologise(self.channel)
+            .encode(consumer)
             .await?;
 
         Ok(())
@@ -158,38 +161,9 @@ impl Encodable for SendToChannelHeader {
     where
         C: BulkConsumer<Item = u8>,
     {
-        HeaderWithEmbeddedChannel::SendToChannel(self.length)
-            .relative_encode(consumer, &self.channel)
+        HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((self.length, self.channel))
+            .encode(consumer)
             .await?;
-
-        // Encode the length in only as many bytes as we need...
-        let length_bytes = self.length.to_be_bytes();
-
-        // Aljoscha I didn't sleep last night, leave me alone
-        let bytes_to_consume = if self.length < 256 {
-            1
-        } else if self.length < 256_u64.pow(2) {
-            2
-        } else if self.length < 256_u64.pow(3) {
-            3
-        } else if self.length < 256_u64.pow(4) {
-            4
-        } else if self.length < 256_u64.pow(5) {
-            5
-        } else if self.length < 256_u64.pow(6) {
-            6
-        } else if self.length < 256_u64.pow(7) {
-            7
-        } else {
-            8
-        };
-
-        let slice = &length_bytes[8 - bytes_to_consume..];
-
-        consumer
-            .consume_full_slice(slice)
-            .await
-            .map_err(|err| err.into_reason())?;
 
         Ok(())
     }
@@ -229,6 +203,95 @@ pub enum IncomingFragmentHeader {
     SendControlHeader(SendControlHeader),
 }
 
+impl Decodable for IncomingFragmentHeader {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        let id = header & 0b1111_0000;
+
+        match id {
+            0b1000_0000 => {
+                // Decode nibble
+                let nibble = 0b0000_1111 & header;
+
+                Ok(IncomingFragmentHeader::SendControlHeader(
+                    SendControlHeader {
+                        encoding_nibble: nibble,
+                    },
+                ))
+            }
+            _ => {
+                let header = HeaderWithEmbeddedChannelAndMaybeLength::decode(producer).await?;
+
+                // And then get the message field.
+                match header {
+                    HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((length, channel)) => {
+                        Ok(IncomingFragmentHeader::SendToChannelHeader(
+                            SendToChannelHeader { length, channel },
+                        ))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::IssueGuarantee(channel) => {
+                        let field = MessageFieldU64::decode(producer).await?.0;
+
+                        Ok(IncomingFragmentHeader::IssueGuarantee(IssueGuarantee {
+                            channel,
+                            amount: field,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::Absolve(channel) => {
+                        let field = MessageFieldU64::decode(producer).await?.0;
+
+                        Ok(IncomingFragmentHeader::Absolve(Absolve {
+                            channel,
+                            amount: field,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::Plead(channel) => {
+                        let field = MessageFieldU64::decode(producer).await?.0;
+
+                        Ok(IncomingFragmentHeader::Plead(Plead {
+                            channel,
+                            target: field,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::LimitSending(channel) => {
+                        let field = MessageFieldU64::decode(producer).await?.0;
+
+                        Ok(IncomingFragmentHeader::LimitSending(LimitSending {
+                            channel,
+                            bound: field,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::LimitReceiving(channel) => {
+                        let field = MessageFieldU64::decode(producer).await?.0;
+
+                        Ok(IncomingFragmentHeader::LimitReceiving(LimitReceiving {
+                            channel,
+                            bound: field,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::AnnounceDropping(channel) => {
+                        Ok(IncomingFragmentHeader::AnnounceDropping(AnnounceDropping {
+                            channel,
+                        }))
+                    }
+                    HeaderWithEmbeddedChannelAndMaybeLength::Apologise(channel) => {
+                        Ok(IncomingFragmentHeader::Apologise(Apologise { channel }))
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct MessageFieldU64(u64);
 
 impl Encodable for MessageFieldU64 {
@@ -265,22 +328,67 @@ impl Encodable for MessageFieldU64 {
     }
 }
 
-/// Represents the header byte of LCMUX messages which include a logical channel u64 with them
-enum HeaderWithEmbeddedChannel {
-    SendToChannel(u64),
-    IssueGuarantee,
-    Absolve,
-    Plead,
-    LimitSending,
-    LimitReceiving,
-    AnnounceDropping,
-    Apologise,
+impl Decodable for MessageFieldU64 {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let first_byte = producer.produce_item().await?;
+
+        let value = match first_byte {
+            252 => {
+                ufotofu_codec_endian::U8BE::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?
+                    .0 as u64
+            }
+            253 => {
+                ufotofu_codec_endian::U16BE::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?
+                    .0 as u64
+            }
+            254 => {
+                ufotofu_codec_endian::U32BE::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?
+                    .0 as u64
+            }
+            255 => {
+                ufotofu_codec_endian::U64BE::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?
+                    .0 as u64
+            }
+            value => value as u64,
+        };
+
+        Ok(MessageFieldU64(value))
+    }
 }
 
-impl HeaderWithEmbeddedChannel {
-    fn header_id(&self) -> u8 {
+/// Represents the header byte of LCMUX messages which include a logical channel u64 with them
+enum HeaderWithEmbeddedChannelAndMaybeLength {
+    // First u64 is the length field of `SendToChannel`, second is channel
+    SendToChannel((u64, u64)),
+    IssueGuarantee(u64),
+    Absolve(u64),
+    Plead(u64),
+    LimitSending(u64),
+    LimitReceiving(u64),
+    AnnounceDropping(u64),
+    Apologise(u64),
+}
+
+impl HeaderWithEmbeddedChannelAndMaybeLength {
+    fn header_id_bits(&self) -> u8 {
         match self {
-            HeaderWithEmbeddedChannel::SendToChannel(length) => {
+            HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((length, _)) => {
                 if *length < 256 {
                     0b0000_0000
                 } else if *length < 256_u64.pow(2) {
@@ -299,61 +407,157 @@ impl HeaderWithEmbeddedChannel {
                     0b0111_0000
                 }
             }
-            HeaderWithEmbeddedChannel::IssueGuarantee => 0b1001_0000,
-            HeaderWithEmbeddedChannel::Absolve => 0b1010_0000,
-            HeaderWithEmbeddedChannel::Plead => 0b1011_0000,
-            HeaderWithEmbeddedChannel::LimitSending => 0b1100_0000,
-            HeaderWithEmbeddedChannel::LimitReceiving => 0b1101_0000,
-            HeaderWithEmbeddedChannel::AnnounceDropping => 0b1110_0000,
-            HeaderWithEmbeddedChannel::Apologise => 0b1111_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::IssueGuarantee(_) => 0b1001_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::Absolve(_) => 0b1010_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::Plead(_) => 0b1011_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::LimitSending(_) => 0b1100_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::LimitReceiving(_) => 0b1101_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::AnnounceDropping(_) => 0b1110_0000,
+            HeaderWithEmbeddedChannelAndMaybeLength::Apologise(_) => 0b1111_0000,
         }
     }
 }
 
-impl RelativeEncodable<u64> for HeaderWithEmbeddedChannel {
-    async fn relative_encode<C>(&self, consumer: &mut C, r: &u64) -> Result<(), C::Error>
+impl Encodable for HeaderWithEmbeddedChannelAndMaybeLength {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        let channel = *r;
-
-        if channel <= 11 {
-            let header = self.header_id() | channel as u8; // Directly encode the integer's least significant four bits
-            consumer.consume(header).await?;
-        } else if channel < 256 {
-            let header = self.header_id() | 0b0000_1100; // Will be followed by another byte containing the integer
-            consumer.consume(header).await?;
-
-            // Encode channel as 8 bit integer
-            ufotofu_codec_endian::U8BE(channel as u8)
-                .encode(consumer)
-                .await?;
-        } else if channel < 256_u64.pow(2) {
-            let header = self.header_id() | 0b0000_1101; // Will be followed by another two bytes containing the big-endian encoding of the integer
-            consumer.consume(header).await?;
-
-            // Encode channel as 16 bit integer
-            ufotofu_codec_endian::U16BE(channel as u16)
-                .encode(consumer)
-                .await?;
-        } else if channel < 256_u64.pow(4) {
-            let header = self.header_id() | 0b0000_1110; // Will be followed by another four bytes containing the big-endian encoding of the integer
-            consumer.consume(header).await?;
-
-            // Encode channel as 32 bit integer
-            ufotofu_codec_endian::U32BE(channel as u32)
-                .encode(consumer)
-                .await?;
-        } else {
-            let header = self.header_id() | 0b0000_1111; // Will be followed by another eight bytes containing the big-endian encoding of the integer
-            consumer.consume(header).await?;
-
-            // Encode channel as 64 bit integer
-            ufotofu_codec_endian::U64BE(channel)
-                .encode(consumer)
-                .await?;
+        // So what if aljoscha's going to shout at me,
+        let channel = match self {
+            HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((_, c)) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::IssueGuarantee(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::Absolve(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::Plead(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::LimitSending(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::LimitReceiving(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::AnnounceDropping(c) => *c,
+            HeaderWithEmbeddedChannelAndMaybeLength::Apologise(c) => *c,
         };
 
+        let tag = Tag::min_tag(channel, TagWidth::four());
+        let header = self.header_id_bits() | tag.data();
+        consumer.consume(header).await?;
+        CompactU64(channel)
+            .relative_encode(consumer, &tag.encoding_width())
+            .await?;
+
+        if let HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((length, _)) = self {
+            // Encode the length in only as many bytes as we need...
+            let length_bytes = length.to_be_bytes();
+
+            // TODO: move this into a *const* function, just because it can be.
+            let bytes_to_consume = min_bytes_needed(*length) as usize;
+
+            let slice = &length_bytes[8 - bytes_to_consume..];
+
+            consumer
+                .consume_full_slice(slice)
+                .await
+                .map_err(|err| err.into_reason())?;
+        }
+
         Ok(())
+    }
+}
+
+const fn min_bytes_needed(n: u64) -> u8 {
+    if n < 256 {
+        1
+    } else if n < 256_u64.pow(2) {
+        2
+    } else if n < 256_u64.pow(3) {
+        3
+    } else if n < 256_u64.pow(4) {
+        4
+    } else if n < 256_u64.pow(5) {
+        5
+    } else if n < 256_u64.pow(6) {
+        6
+    } else if n < 256_u64.pow(7) {
+        7
+    } else {
+        8
+    }
+}
+
+impl Decodable for HeaderWithEmbeddedChannelAndMaybeLength {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let first_byte = producer.produce_item().await?;
+
+        let tag = Tag::from_raw(first_byte, TagWidth::four(), 4);
+
+        let channel = CompactU64::relative_decode(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0 as u64;
+
+        // Decode the channel appropriately
+
+        match 0b1111_0000 & first_byte {
+            // This is a `SendControlMessage`, which we really should have not let get this far.
+            0b1000_0000 => Err(DecodeError::Other(Blame::OurFault)),
+            0b1001_0000 => {
+                // Return IssueGuarantee with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::IssueGuarantee(
+                    channel,
+                ))
+            }
+            0b1010_0000 => {
+                // Return Absolve with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::Absolve(channel))
+            }
+            0b1011_0000 => {
+                // Return Plead with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::Plead(channel))
+            }
+            0b1100_0000 => {
+                // Return LimitSending with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::LimitSending(
+                    channel,
+                ))
+            }
+            0b1101_0000 => {
+                // Return LimitReceiving with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::LimitReceiving(
+                    channel,
+                ))
+            }
+            0b1110_0000 => {
+                // Return AnnounceDropping with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::AnnounceDropping(
+                    channel,
+                ))
+            }
+            0b1111_0000 => {
+                // Return Apologise with decoded channel
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::Apologise(channel))
+            }
+            _ => {
+                // This is a SendToChannel!
+
+                // Decode the length... width
+                let bytes_to_produce = ((0b0111_0000 & first_byte) >> 4) as usize;
+
+                let mut length_bytes = [0_u8; 8];
+
+                let slice = &mut length_bytes[8 - bytes_to_produce..];
+
+                producer.overwrite_full_slice(slice).await?;
+
+                Ok(HeaderWithEmbeddedChannelAndMaybeLength::SendToChannel((
+                    u64::from_be_bytes(length_bytes),
+                    channel,
+                )))
+            }
+        }
     }
 }
