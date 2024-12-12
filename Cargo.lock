@@ -681,6 +681,7 @@ dependencies = [
  "async_cell",
  "either",
  "futures",
+ "lcmux",
  "smol",
  "ufotofu",
  "ufotofu_codec",

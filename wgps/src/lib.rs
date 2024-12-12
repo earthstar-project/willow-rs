@@ -2,6 +2,7 @@ use std::{future::Future, ops::DerefMut};
 
 use futures::try_join;
 
+use lcmux::new_lcmux;
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
@@ -46,6 +47,11 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
 pub struct SyncOptions<const CHALLENGE_LENGTH: usize> {
     max_payload_power: u8,
     challenge_nonce: [u8; CHALLENGE_LENGTH],
+    /// For all lcmux buffers.
+    max_queue_capacity: usize,
+    /// Only start sending guarantees once the buffer capacity of a logical channel reaches this value.
+    /// Must be at most the max_queue_capacity, or we will never grant any guarantees.
+    watermark: usize,
 }
 
 pub async fn sync_with_peer<
@@ -109,24 +115,37 @@ pub async fn sync_with_peer<
         ret
     };
 
-    let reveal_commitment = async {
-        // Before revealing our commitment, we must have both sent our own prelude and received our peer's prelude.
-        let _ = sent_own_prelude.get().await;
-        let _ = received_prelude.get().await;
+    let lcmux_handling = async {
+        // Everything in here needs to use lcmux.
+        // TODO replace the `i16` with an enum of all supported control messages to receive, once we support any!
+        let mut lcmux = new_lcmux::<7, _, _, i16>(
+            &producer,
+            &consumer,
+            options.max_queue_capacity,
+            options.watermark,
+        );
 
-        let msg = CommitmentReveal {
-            nonce: &options.challenge_nonce,
+        let reveal_commitment = async {
+            // Before revealing our commitment, we must have both sent our own prelude and received our peer's prelude.
+            let _ = sent_own_prelude.get().await;
+            let _ = received_prelude.get().await;
+
+            let msg = CommitmentReveal {
+                nonce: &options.challenge_nonce,
+            };
+            lcmux.control_message_sender.receive(msg).await?;
+
+            let ret: Result<(), WgpsError<E>> = Ok(());
+            ret
         };
-        let mut c = consumer.write().await;
-        msg.encode(c.deref_mut()).await?;
 
-        let ret: Result<(), WgpsError<E>> = Ok(());
-        ret
+        let _ = try_join!(reveal_commitment)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
+        Ok(())
     };
 
     // Add each of the futures here. The macro polls them all to completion, until the first one hits
     // an error, in which case this function immediately returns with that first error.
-    let ((), (), ()) = try_join!(send_prelude, receive_prelude, reveal_commitment)?;
+    let ((), (), ()) = try_join!(send_prelude, receive_prelude, lcmux_handling)?;
     Ok(())
 }
 
