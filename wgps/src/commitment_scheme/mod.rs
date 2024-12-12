@@ -1,7 +1,4 @@
-use ufotofu::ConsumeAtLeastError;
-// use willow_encoding::{Decodable, DecodeError, Encodable, RelationDecodable};
-
-use either::Either::*;
+use ufotofu_codec::{Blame, Decodable, DecodableCanonic, DecodeError, Encodable};
 
 /// The first few bytes to send/receive in a WGPS session.
 #[derive(Debug, Clone)]
@@ -21,50 +18,45 @@ impl<const CHALLENGE_HASH_LENGTH: usize> Encodable for Prelude<CHALLENGE_HASH_LE
     {
         consumer.consume(self.max_payload_power).await?;
 
-        if let Err(ConsumeAtLeastError { reason, .. }) =
-            consumer.bulk_consume_full_slice(&self.commitment[..]).await
-        {
-            return Err(reason);
-        }
+        consumer
+            .bulk_consume_full_slice(&self.commitment[..])
+            .await
+            .map_err(|err| err.into_reason())?;
 
-        // FIXME use this instead of the above if let after updating ufotofu
-        // consumer
-        //     .bulk_consume_full_slice(&self.commitment[..])
-        //     .await
-        //     .map_err(|err| err.into())?;
         Ok(())
     }
 }
 
 impl<const CHALLENGE_HASH_LENGTH: usize> Decodable for Prelude<CHALLENGE_HASH_LENGTH> {
-    async fn decode_canonical<Producer>(
+    type ErrorReason = Blame;
+
+    async fn decode<Producer>(
         producer: &mut Producer,
-    ) -> Result<Self, DecodeError<Producer::Error>>
+    ) -> Result<Self, DecodeError<Producer::Final, Producer::Error, Blame>>
     where
         Producer: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
     {
-        let max_payload_power = match producer
-            .produce()
-            .await
-            .map_err(|err| DecodeError::Producer(err))?
-        {
-            Left(byte) => byte,
-            Right(_) => return Err(DecodeError::InvalidInput),
-        };
+        Self::decode_canonic(producer).await
+    }
+}
+
+impl<const CHALLENGE_HASH_LENGTH: usize> DecodableCanonic for Prelude<CHALLENGE_HASH_LENGTH> {
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        let max_payload_power = producer.produce_item().await?;
 
         if max_payload_power > 64 {
-            return Err(DecodeError::InvalidInput);
+            return Err(DecodeError::Other(Blame::TheirFault));
         }
 
         let mut commitment = [0_u8; CHALLENGE_HASH_LENGTH];
-
-        if let Err(e) = producer.bulk_overwrite_full_slice(&mut commitment).await {
-            match e.reason {
-                Left(_) => return Err(DecodeError::InvalidInput),
-                Right(e) => return Err(DecodeError::Producer(e)),
-            }
-        };
+        producer.bulk_overwrite_full_slice(&mut commitment).await?;
 
         Ok(Prelude {
             max_payload_power,
@@ -72,8 +64,6 @@ impl<const CHALLENGE_HASH_LENGTH: usize> Decodable for Prelude<CHALLENGE_HASH_LE
         })
     }
 }
-
-impl<const CHALLENGE_HASH_LENGTH: usize> RelationDecodable for Prelude<CHALLENGE_HASH_LENGTH> {}
 
 // TODO enable tests again
 // TODO at least one encoding test

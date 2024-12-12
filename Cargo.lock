@@ -404,8 +404,15 @@ dependencies = [
 name = "lcmux"
 version = "0.1.0"
 dependencies = [
+ "async_cell",
+ "compact_u64",
+ "either",
+ "futures",
+ "ufotofu",
+ "ufotofu_codec",
+ "ufotofu_codec_endian",
+ "ufotofu_queues",
  "wb_async_utils",
- "willow-encoding",
 ]
 
 [[package]]
@@ -632,6 +639,7 @@ dependencies = [
  "either",
  "pollster",
  "ufotofu",
+ "wb_async_utils",
 ]
 
 [[package]]
@@ -659,6 +667,12 @@ checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 [[package]]
 name = "wb_async_utils"
 version = "0.1.0"
+dependencies = [
+ "async_cell",
+ "either",
+ "ufotofu",
+ "ufotofu_queues",
+]
 
 [[package]]
 name = "wgps"
@@ -667,6 +681,7 @@ dependencies = [
  "async_cell",
  "either",
  "futures",
+ "lcmux",
  "smol",
  "ufotofu",
  "ufotofu_codec",

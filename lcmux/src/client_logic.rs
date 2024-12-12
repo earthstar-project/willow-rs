@@ -2,7 +2,7 @@
 //!
 //! For each logical channel to write to, the client tracks the available guarantees at any point in time. It further tracks incoming `Plead` messages. This implementation fully honours all `Plead` messages. Finally, it tracks the bounds communicated by incoming `ControlLimitReceiving` messages.
 //!
-//! On the outgoing side, the module allows for sending to the logical channel while respecting the available guarantees; the implementation does not support optimistic sending. It provides notifications when `Absolve` messages should be sent in response to incoming `Plead` messages; it does not support unsolicited absolutions. It sends a `LimitSending` message with a `bound` of zero when the `Consumer` representation of the logical channel is closed; it does not support earlier `LimitSending` messages with nonzero bounds.
+//! On the outgoing side, the module allows for sending to the logical channel while respecting the available guarantees; the implementation does not support optimistic sending. It provides notifications when `Absolve` messages should be sent in response to incoming `Plead` messages; it does not support the sending of unsolicited absolutions. It sends a `LimitSending` message with a `bound` of zero when the `Consumer` representation of the logical channel is closed; it does not support sending earlier `LimitSending` messages with nonzero bounds.
 //!
 //! The implementation does not concern itself with incoming `AnnounceDropping` messages, nor with sending `Apologise` messages, because neither occurs (in communication with a correct peer) since it never sends optimistically.
 //!
@@ -20,19 +20,14 @@
 
 use std::{cell::Cell, convert::Infallible, rc::Rc};
 
-use ufotofu::local_nb::{BulkConsumer, Consumer, Producer};
+use ufotofu::Producer;
 
-use async_cell::unsync::AsyncCell;
 use either::Either;
 
-use willow_encoding::EncodableExactSize;
-
-use crate::util::SharedEncoder;
-
-use super::LogicalChannel;
+use wb_async_utils::TakeCell;
 
 #[derive(Debug)]
-struct SharedState {
+pub struct SharedState {
     /// How many guarantees do we have available right now?
     guarantees_available: Cell<u64>,
     /// How many guarantees is the `WaitForGuarantees` endpoint waiting for right now, if for any?
@@ -41,19 +36,19 @@ struct SharedState {
     guarantees_bound: Cell<Option<u64>>,
     /// Notify the `WaitForGuarantees` endpoint when enough guarantees are avaible (Ok) or
     /// we know that enough guarantees will never become available (Err).
-    notify_guarantees: AsyncCell<Result<(), ()>>,
+    notify_guarantees: TakeCell<Result<(), ()>>,
     /// Notify the `AbsolutionsToGrant` endpoint when there *are* absolutions to grant.
-    absolution_to_grant: AsyncCell<u64>, // empty when no absolution to grant, inner u64 is always nonzero
+    absolution_to_grant: TakeCell<u64>, // empty when no absolution to grant, inner u64 is always nonzero
 }
 
 /// Creates the three endpoint for managing the client-side state of a single logical channel.
-fn new_logical_channel_client_state_internal() -> (Input, WaitForGuarantees, AbsolutionsToGrant) {
+pub fn new_logical_channel_client_logic_state() -> (Input, WaitForGuarantees, AbsolutionsToGrant) {
     let state = Rc::new(SharedState {
         guarantees_available: Cell::new(0),
         guarantees_threshold: Cell::new(None),
         guarantees_bound: Cell::new(None),
-        notify_guarantees: AsyncCell::new(),
-        absolution_to_grant: AsyncCell::new(),
+        notify_guarantees: TakeCell::new(),
+        absolution_to_grant: TakeCell::new(),
     });
 
     return (
@@ -134,9 +129,9 @@ impl Input {
                 // Store how many guarantees to absolve them off in the next absolution message, by adding the diff to what we stored previously (or using the diff directly, if we didn't store anything previously).
                 // If this saturates, the peers will get out of sync... after sending 2^64 bytes, which they won't in all likelyhood.
                 // And even if that happened, then it would be the other peer's fault, not ours.
-                self.state.absolution_to_grant.update(|old| {
-                    Some(old.map_or(diff, |old_value| old_value.saturating_add(diff)))
-                });
+                self.state
+                    .absolution_to_grant
+                    .update(|old| old.map_or(diff, |old_value| old_value.saturating_add(diff)));
             }
         }
     }
@@ -144,7 +139,7 @@ impl Input {
     /// Updates the client state after receiving a [`ControlLimitReceiving`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceiving) message with a given [`bound`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceivingBound) value.
     ///
     /// Silently ignores invalid bounds (i.e., bounds that are less tight than a previously communicated bound), and keeps using the older, tighter bound.
-    pub fn receive_bound(&mut self, bound: u64) {
+    pub fn receive_limit_receiving(&mut self, bound: u64) {
         let new_bound = match self.state.guarantees_bound.get() {
             None => {
                 self.state.guarantees_bound.set(Some(bound));
@@ -192,7 +187,7 @@ impl Producer for AbsolutionsToGrant {
 }
 
 /// A value for asynchronously waiting until a certain amount of guarantees is available.
-struct WaitForGuarantees {
+pub struct WaitForGuarantees {
     state: Rc<SharedState>,
 }
 
@@ -222,81 +217,4 @@ impl WaitForGuarantees {
             }
         }
     }
-}
-
-/// A consumer that respects the guarantees available on a logical channel.
-pub struct LogicalChannelClientConsumer<T, C> {
-    inner: SharedEncoder<T, C>,
-    channel: LogicalChannel,
-    guarantees: WaitForGuarantees,
-}
-
-/// The `Error` type for a consumer for logical channel. A final value is either one from the underlying `BulkConsumer` (of type `E`), or a dedicated variant to indicate that the logical channel was closed by the peer.
-pub enum LogicalChannelClientError<E> {
-    /// The underlying `BulkConsumer` errored.
-    Underlying(E),
-    /// The peer closed this logical channel, so it must reject future values.
-    LogicalChannelClosed,
-}
-
-impl<E> From<E> for LogicalChannelClientError<E> {
-    fn from(err: E) -> Self {
-        Self::Underlying(err)
-    }
-}
-
-impl<T, C> Consumer for LogicalChannelClientConsumer<T, C>
-where
-    T: EncodableExactSize,
-    C: BulkConsumer<Item = u8>,
-{
-    type Item = T;
-
-    type Final = C::Final;
-
-    type Error = LogicalChannelClientError<C::Error>;
-
-    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
-        let size = item.encoded_size() as u64;
-
-        if let Err(()) = self.guarantees.wait_for_guarantees(size).await {
-            return Err(LogicalChannelClientError::LogicalChannelClosed);
-        }
-
-        return Ok(self.inner.consume(item).await?);
-    }
-
-    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-        // Take the actual BulkConsumer, so that everything we do next happens without interference from other references to the BulkConsumer.
-        let mut c = self.inner.inner.take().await;
-
-        // Send the [encoding](https://willowprotocol.org/specs/sync/index.html#enc_ctrl_limit_sending) of a [`ControlLimitSending`](https://willowprotocol.org/specs/sync/index.html#ControlLimitSending).
-        c.consume(0b100_00110).await?;
-        c.consume(self.channel.encode_channel() << 3).await?; // bit 8 and 9 are always zero, since we send an amount of zero.
-        c.consume(0).await?; // The amount of bytes we may still send in the future: always zero. Encoded in a single byte, since compact_width(0) == 0.
-
-        self.inner.inner.set(c);
-
-        // Actually close the underlying BulConsumer if we are the last to reference it. Otherwise, do nothing.
-        return Ok(self.inner.close(fin).await?);
-    }
-}
-
-/// Creates the three parts of the client-side implementation of a logical channel.
-pub fn new_logical_channel_client_state<T, C>(
-    consumer: AsyncShared<C>,
-    channel: LogicalChannel,
-) -> (
-    Input,
-    LogicalChannelClientConsumer<T, C>,
-    AbsolutionsToGrant,
-) {
-    let (input, wfg, atg) = new_logical_channel_client_state_internal();
-    let lccc = LogicalChannelClientConsumer {
-        channel,
-        guarantees: wfg,
-        inner: SharedEncoder::new(consumer),
-    };
-
-    return (input, lccc, atg);
 }

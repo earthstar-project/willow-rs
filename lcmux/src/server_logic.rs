@@ -12,11 +12,12 @@
 
 use std::{cell::Cell, cmp::min, convert::Infallible, rc::Rc};
 
-use crate::util::mpmc_channel as mpmc; // TODO use a spsc channel instead (nested TODO: implement one (nested TODO: write an SPSCAsyncCell crate))
 use async_cell::unsync::AsyncCell;
 use either::Either::*;
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
+use ufotofu_codec::Blame;
 use ufotofu_queues::Queue;
+use wb_async_utils::spsc;
 
 pub struct SharedState {
     max_queue_capacity: usize,
@@ -44,16 +45,11 @@ pub struct SharedState {
 /// - The queue's max capacity must match the given `max_queue_capacity`.
 /// - `max_queue_capacity` must be greater than zero.
 /// - `watermark` must be less than or equal to `max_queue_capacity`.
-pub fn new_logical_channel_server_state_internal<Q>(
+pub fn new_logical_channel_server_logic_state<Q>(
     max_queue_capacity: usize,
     watermark: usize,
     queue: Q,
-) -> (
-    Input<Q>,
-    GuaranteesToGive,
-    DroppingsToAnnounce,
-    ReceivedData<Q>,
-) {
+) -> ServerHandle<Q> {
     let state = Rc::new(SharedState {
         max_queue_capacity,
         guarantees_to_give: Cell::new(max_queue_capacity as u64),
@@ -66,21 +62,21 @@ pub fn new_logical_channel_server_state_internal<Q>(
         no_more_data_will_ever_arrive: AsyncCell::new(),
     });
 
-    let (buffer_in, buffer_out) = mpmc::new_mpmc(queue);
+    let (buffer_in, buffer_out) = spsc::new_spsc(queue);
 
-    (
-        Input {
+    ServerHandle {
+        input: Input {
             buffer_in,
             state: state.clone(),
         },
-        GuaranteesToGive {
+        guarantees_to_give: GuaranteesToGive {
             state: state.clone(),
         },
-        DroppingsToAnnounce {
+        droppings_to_announce: DroppingsToAnnounce {
             state: state.clone(),
         },
-        ReceivedData { buffer_out, state },
-    )
+        received_data: ReceivedData { buffer_out, state },
+    }
 }
 
 pub struct GuaranteeOverflow;
@@ -106,7 +102,11 @@ impl SharedState {
         Ok(())
     }
 
-    fn decrease_their_guarantees(&self, amount: u64) -> Result<(), GuaranteeOverflow> {
+    fn decrease_their_guarantees<Q: Queue>(
+        &self,
+        amount: u64,
+        buffer_in: &mut spsc::Input<Q, (), ()>,
+    ) -> Result<(), GuaranteeOverflow> {
         let current_their_guarantees = self.their_guarantees.get();
         let next_their_guarantees = current_their_guarantees
             .checked_sub(amount)
@@ -118,6 +118,11 @@ impl SharedState {
             let next_bound = bound.saturating_sub(amount);
 
             self.guarantees_bound.set(Some(next_bound));
+
+            // Reached a bound of zero? Notify the queue that no more data will arrive.
+            if next_bound == 0 {
+                buffer_in.close_sync(());
+            }
         }
 
         Ok(())
@@ -133,10 +138,11 @@ pub enum ReceiveDataError<ProducerFinal, ProducerError> {
 
 pub struct Input<Q> {
     state: Rc<SharedState>,
-    buffer_in: mpmc::Input<Q, Infallible, ()>,
+    buffer_in: spsc::Input<Q, (), ()>,
 }
 
 impl<Q: Queue<Item = u8>> Input<Q> {
+    /// Reads the next `length` bytes from the given producer, modifying internal state and erroring as appropriate.
     pub async fn receive_data<P: BulkProducer<Item = u8>>(
         &mut self,
         length: u64,
@@ -166,7 +172,8 @@ impl<Q: Queue<Item = u8>> Input<Q> {
 
                 //    (and decrease state.their_guarantees by length)
                 //    (and decrease state.guarantees_bound by length...)
-                self.state.decrease_their_guarantees(length)?;
+                self.state
+                    .decrease_their_guarantees(length, &mut self.buffer_in)?;
             } else {
                 //  otherwise, announce a dropping, and change our state to indicate that we are now dropping things on this channel.
                 self.state.droppings_to_announce.set(Ok(()));
@@ -183,7 +190,8 @@ impl<Q: Queue<Item = u8>> Input<Q> {
     pub fn receive_absolve(&mut self, amount: u64) -> Result<(), GuaranteeOverflow> {
         // The other peer reduced their available guarantees by some amount.
         // We now decrease state.their_guarantees by amount,
-        self.state.decrease_their_guarantees(amount)?;
+        self.state
+            .decrease_their_guarantees(amount, &mut self.buffer_in)?;
         // and increase state.guarantees_to_give by amount.
         self.state.increase_guarantees_to_give(amount)?;
 
@@ -228,10 +236,10 @@ impl Producer for GuaranteesToGive {
 
     type Final = Infallible;
 
-    type Error = ();
+    type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        let () = self.state.guarantee_related_action_necessary.get().await?;
+        let () = self.state.guarantee_related_action_necessary.get().await.or(Err(Blame::TheirFault))?;
         Ok(Left(self.state.guarantees_to_give.get()))
     }
 }
@@ -246,23 +254,23 @@ impl Producer for DroppingsToAnnounce {
 
     type Final = Infallible;
 
-    type Error = ();
+    type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        Ok(Left(self.state.droppings_to_announce.get().await?))
+        Ok(Left(self.state.droppings_to_announce.get().await.or(Err(Blame::TheirFault))?))
     }
 }
 
 /// A `BulkProducer` of all data being sent to the logical channel.
 pub struct ReceivedData<Q> {
     state: Rc<SharedState>,
-    buffer_out: mpmc::Output<Q, Infallible, ()>,
+    buffer_out: spsc::Output<Q, (), ()>,
 }
-// this is a producer of data taken from SharedState.buffer_out,
-// and whenever we produce data we check whether we want to send more guarantees.
-// should also keep track of state.guarantees_bound. emit final once that value reaches zero.
-
-impl<Q> Producer for ReceivedData<Q> {
+// This is a wrapper around SharedState.buffer_out that also calls `increase_guarantees_to_give` for every produced byte.
+impl<Q> Producer for ReceivedData<Q>
+where
+    Q: Queue<Item = u8>,
+{
     type Item = u8;
 
     type Final = ();
@@ -270,39 +278,49 @@ impl<Q> Producer for ReceivedData<Q> {
     type Error = ();
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        // let's not do this right now.
-        todo!();
+        match self.buffer_out.produce().await? {
+            Left(byte) => {
+                self.state.increase_guarantees_to_give(1).or(Err(()))?;
+                Ok(Left(byte))
+            }
+            Right(fin) => Ok(Right(fin)),
+        }
     }
 }
 
-impl<Q> BufferedProducer for ReceivedData<Q> {
+impl<Q> BufferedProducer for ReceivedData<Q>
+where
+    Q: Queue<Item = u8>,
+{
     async fn slurp(&mut self) -> Result<(), Self::Error> {
-        todo!()
+        self.buffer_out.slurp().await
     }
 }
 
-impl<Q> BulkProducer for ReceivedData<Q> {
+impl<Q> BulkProducer for ReceivedData<Q>
+where
+    Q: Queue<Item = u8>,
+{
     async fn expose_items<'a>(
         &'a mut self,
     ) -> Result<either::Either<&'a [Self::Item], Self::Final>, Self::Error>
     where
         Self::Item: 'a,
     {
-        todo!()
+        self.buffer_out.expose_items().await
     }
 
     async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
-        todo!()
+        self.buffer_out.consider_produced(amount).await?;
+        self.state
+            .increase_guarantees_to_give(amount as u64)
+            .or(Err(()))
     }
 }
 
-pub enum PipeExactError<F, E> {
-    EarlyFinal(F),
-    ProducerError(E),
-}
-
 /// Like `bulk_pipe`, but piping exactly `n` many items (stopping after `n` many, and returning an error if the final value is emitted before).
-pub async fn bulk_pipe_exact<P, C>(
+/// Except hardcoded for the needs of this file... Rework this at some point!
+async fn bulk_pipe_exact<P, C>(
     producer: &mut P,
     consumer: &mut C,
     n: u64,
@@ -310,7 +328,7 @@ pub async fn bulk_pipe_exact<P, C>(
 where
     P: BulkProducer,
     P::Item: Copy,
-    C: BulkConsumer<Item = P::Item, Final = Infallible, Error = Infallible>,
+    C: BulkConsumer<Item = P::Item, Final = (), Error = ()>,
 {
     let mut count = 0;
 
@@ -341,4 +359,11 @@ where
             }
         }
     }
+}
+
+pub struct ServerHandle<Q> {
+    pub input: Input<Q>,
+    pub guarantees_to_give: GuaranteesToGive,
+    pub droppings_to_announce: DroppingsToAnnounce,
+    pub received_data: ReceivedData<Q>,
 }
