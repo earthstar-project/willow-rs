@@ -283,7 +283,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_abs_path3"
+name = "enc_path3_abs"
 path = "fuzz_targets/enc_path3_abs.rs"
 test = false
 doc = false
@@ -360,76 +360,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "entry_rel_entry_encoding"
-path = "fuzz_targets/entry_rel_entry_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_entry_encoding_random"
-path = "fuzz_targets/entry_rel_entry_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_area_encoding"
-path = "fuzz_targets/entry_rel_namespace_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_area_encoding_random"
-path = "fuzz_targets/entry_rel_namespace_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_range_encoding"
-path = "fuzz_targets/entry_rel_namespace_range_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_range_encoding_random"
-path = "fuzz_targets/entry_rel_namespace_range_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "area_rel_area_encoding"
-path = "fuzz_targets/area_rel_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "area_rel_area_encoding_random"
-path = "fuzz_targets/area_rel_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "range3d_rel_range3d_encoding"
-path = "fuzz_targets/range3d_rel_range3d_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "range3d_rel_range3d_encoding_random"
-path = "fuzz_targets/range3d_rel_range3d_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "mc_capability_delegation"
 path = "fuzz_targets/mc_capability_delegation.rs"
 test = false
@@ -451,20 +381,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mc_capability_rel_area_encoding"
-path = "fuzz_targets/mc_capability_rel_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_capability_rel_area_encoding_random"
-path = "fuzz_targets/mc_capability_rel_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "mc_subspace_capability_delegation"
 path = "fuzz_targets/mc_subspace_capability_delegation.rs"
 test = false
@@ -474,20 +390,6 @@ bench = false
 [[bin]]
 name = "mc_subspace_capability_append_delegation"
 path = "fuzz_targets/mc_subspace_capability_append_delegation.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_subspace_capability_encoding"
-path = "fuzz_targets/mc_subspace_capability_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_subspace_capability_encoding_random"
-path = "fuzz_targets/mc_subspace_capability_encoding_random.rs"
 test = false
 doc = false
 bench = false
@@ -519,3 +421,53 @@ path = "fuzz_targets/enc_entry_abs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_entry_rel_entry"
+path = "fuzz_targets/enc_entry_rel_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_area"
+path = "fuzz_targets/enc_entry_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_range3d"
+path = "fuzz_targets/enc_entry_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_area_rel_area"
+path = "fuzz_targets/enc_area_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_range3d_rel_range3d"
+path = "fuzz_targets/enc_range3d_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_mccapability_rel_area"
+path = "fuzz_targets/enc_mccapability_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_mcsubspacecapability_abs"
+path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+test = false
+doc = false
+bench = false
+

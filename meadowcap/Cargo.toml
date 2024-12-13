@@ -17,5 +17,10 @@ either = "1.13.0"
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 willow-data-model = { path = "../data-model", version = "0.1.0" }
 
+[dependencies.ufotofu_codec]
+path = "../ufotofu_codec"
+version = "0.1.0"
+
+
 [lints]
 workspace = true

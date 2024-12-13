@@ -20,11 +20,12 @@ impl Representation {
         Self::usize_at_offset(buf, 0)
     }
 
-    /// Gets the total length of the path in bytes.
-    pub fn total_length(buf: &[u8]) -> usize {
-        let comp_count = Self::component_count(buf);
-
-        buf.len() - (size_of::<usize>() * (comp_count + 1))
+    /// Gets the total length of the path in bytes, but only considering its `component_count` many first components.
+    pub fn total_length(buf: &[u8], component_count: usize) -> usize {
+        match component_count.checked_sub(1) {
+            None => 0,
+            Some(i) => Self::sum_of_lengths_for_component(buf, i),
+        }
     }
 
     /// Gets the length of the i`-th component.
@@ -61,7 +62,7 @@ impl Representation {
         total_length + ((component_count + 1) * size_of::<usize>())
     }
 
-    /// Gets the offset in bytes where the accumulated sum of lengths of the first `i` components is stored. Panics if `i` is outside the slice.
+    /// Gets the offset in bytes where the accumulated sum of lengths of the first `i` components is stored.
     pub fn start_offset_of_sum_of_lengths_for_component(i: usize) -> usize {
         // First usize is the number of components, then the i usizes storing the lengths; hence at i + 1.
         size_of::<usize>() * (i + 1)

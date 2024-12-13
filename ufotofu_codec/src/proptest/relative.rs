@@ -158,7 +158,7 @@ where
             }
         }
         Err(err) => {
-            panic!("Relative encoding then relative decoding a value resulted in failure to decode.\n\nRelative To: {:?}\n\nOriginal: {:?}\n\nEncoding: {:?}\n\n Decodeing Error: {:?}", r, t, &enc[..], err);
+            panic!("Relative encoding then relative decoding a value resulted in failure to decode.\n\nRelative To: {:?}\n\nOriginal: {:?}\n\nEncoding: {:?}\n\nDecoding Error: {:?}", r, t, &enc[..], err);
         }
     }
 }

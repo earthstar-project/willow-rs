@@ -26,6 +26,7 @@ use core::convert::Infallible;
 use core::fmt::Display;
 
 use ufotofu::{BulkConsumer, BulkProducer};
+use ufotofu_codec::Blame;
 use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
 use ufotofu_codec::DecodableSync;
@@ -631,7 +632,13 @@ impl Display for NotMinimal {
     }
 }
 
-#[cfg(std)]
+impl From<NotMinimal> for Blame {
+    fn from(_value: NotMinimal) -> Self {
+        Blame::TheirFault
+    }
+}
+
+#[cfg(feature = "std")]
 impl std::error::Error for NotMinimal {}
 
 impl From<Infallible> for NotMinimal {
