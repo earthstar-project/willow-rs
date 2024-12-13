@@ -1,7 +1,6 @@
 use signature::Verifier;
-use ufotofu::sync::consumer::IntoVec;
+use ufotofu_codec::Encodable;
 use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
-use willow_encoding::sync::Encodable;
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
 
@@ -122,19 +121,21 @@ where
             return false;
         }
 
-        let mut consumer = IntoVec::<u8>::new();
-        entry.encode(&mut consumer).unwrap();
+        todo!("Implement with a single allocation with known-size encoder trait.")
 
-        if self
-            .capability
-            .receiver()
-            .verify(&consumer.into_vec(), &self.signature)
-            .is_err()
-        {
-            return false;
-        }
+        // let mut consumer = IntoVec::<u8>::new();
+        // entry.encode(&mut consumer).unwrap();
 
-        true
+        // if self
+        //     .capability
+        //     .receiver()
+        //     .verify(&consumer.into_vec(), &self.signature)
+        //     .is_err()
+        // {
+        //     return false;
+        // }
+
+        // true
     }
 }
 

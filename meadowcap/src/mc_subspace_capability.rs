@@ -1,8 +1,12 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::sync::{consumer::IntoVec, Consumer};
+use ufotofu::Consumer;
+use ufotofu_codec::Blame;
+use ufotofu_codec::Decodable;
+use ufotofu_codec::DecodableCanonic;
+use ufotofu_codec::Encodable;
+use ufotofu_codec::EncodableKnownSize;
 use willow_data_model::NamespaceId;
 use willow_data_model::SubspaceId;
-use willow_encoding::sync::Encodable;
 
 use crate::IsCommunal;
 
@@ -80,23 +84,24 @@ where
     where
         NamespaceSecret: Signer<NamespaceSignature>,
     {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        let signature = namespace_secret.sign(&message);
+        // let signature = namespace_secret.sign(&message);
 
-        namespace_key.verify(&message, &signature)?;
+        // namespace_key.verify(&message, &signature)?;
 
-        Ok(McSubspaceCapability {
-            namespace_key: namespace_key.clone(),
-            user_key,
-            initial_authorisation: signature,
-            delegations: Vec::new(),
-        })
+        // Ok(McSubspaceCapability {
+        //     namespace_key: namespace_key.clone(),
+        //     user_key,
+        //     initial_authorisation: signature,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Creates an [`McSubspaceCapability`] using an existing authorisation (e.g. one received over the network), or return an error if the signature was not created by the namespace key.
@@ -105,21 +110,22 @@ where
         user_key: UserPublicKey,
         initial_authorisation: NamespaceSignature,
     ) -> Result<Self, SignatureError> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        namespace_key.verify(&message, &initial_authorisation)?;
+        // namespace_key.verify(&message, &initial_authorisation)?;
 
-        Ok(Self {
-            namespace_key,
-            user_key,
-            initial_authorisation,
-            delegations: Vec::new(),
-        })
+        // Ok(Self {
+        //     namespace_key,
+        //     user_key,
+        //     initial_authorisation,
+        //     delegations: Vec::new(),
+        // })
     }
 
     /// Returns the public key of the user to whom this capability grants access.
@@ -201,170 +207,172 @@ where
     ///
     /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_handover)
     fn handover(&self, new_user: &UserPublicKey) -> Box<[u8]> {
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
+        // let mut consumer = IntoVec::<u8>::new();
 
-        if self.delegations.is_empty() {
-            // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // if self.delegations.is_empty() {
+        //     // We can safely unwrap all these encodings as IntoVec's error is the never type.
 
-            self.initial_authorisation.encode(&mut consumer).unwrap();
-            new_user.encode(&mut consumer).unwrap();
+        //     self.initial_authorisation.encode(&mut consumer).unwrap();
+        //     new_user.encode(&mut consumer).unwrap();
 
-            return consumer.into_vec().into();
-        }
+        //     return consumer.into_vec().into();
+        // }
 
-        // We can unwrap here because we know that self.delegations is not empty.
-        let last_delegation = self.delegations.last().unwrap();
+        // // We can unwrap here because we know that self.delegations is not empty.
+        // let last_delegation = self.delegations.last().unwrap();
 
-        let prev_signature = &last_delegation.signature();
-        // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        prev_signature.encode(&mut consumer).unwrap();
-        new_user.encode(&mut consumer).unwrap();
+        // let prev_signature = &last_delegation.signature();
+        // // We can safely unwrap all these encodings as IntoVec's error is the never type.
+        // prev_signature.encode(&mut consumer).unwrap();
+        // new_user.encode(&mut consumer).unwrap();
 
-        consumer.into_vec().into()
+        // consumer.into_vec().into()
     }
 }
 
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
-pub(super) mod encoding {
-    use super::*;
-
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable};)]
-    use willow_encoding::{Decodable, Encodable};
-
-    use willow_encoding::{sync::Encodable as EncodableSync, CompactWidth, DecodeError};
-
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
-    use willow_encoding::produce_byte;
-
-    #[syncify_replace(
-      use willow_encoding::sync::{encode_compact_width_be, decode_compact_width_be};
-  )]
-    use willow_encoding::{decode_compact_width_be, encode_compact_width_be};
-
-    impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
-        for McSubspaceCapability<
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        >
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
-        NamespacePublicKey:
-            NamespaceId + EncodableSync + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-        NamespaceSignature: EncodableSync + Encodable + Clone,
-        UserPublicKey: SubspaceId + EncodableSync + Encodable + Verifier<UserSignature>,
-        UserSignature: EncodableSync + Encodable + Clone,
+        C: ufotofu::BulkConsumer<Item = u8>,
     {
-        async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
-        where
-            C: BulkConsumer<Item = u8>,
-        {
-            let mut header = 0;
+        /*
+        let mut header = 0;
 
-            let delegations_count = self.delegations.len() as u64;
+        let delegations_count = self.delegations.len() as u64;
 
-            if delegations_count >= 4294967296 {
-                header |= 0b1111_1111;
-            } else if delegations_count >= 65536 {
-                header |= 0b1111_1110;
-            } else if delegations_count >= 256 {
-                header |= 0b1111_1101;
-            } else if delegations_count >= 60 {
-                header |= 0b1111_1100;
-            } else {
-                header |= delegations_count as u8;
-            }
-
-            consumer.consume(header).await?;
-
-            Encodable::encode(&self.namespace_key, consumer).await?;
-            Encodable::encode(&self.user_key, consumer).await?;
-            Encodable::encode(&self.initial_authorisation, consumer).await?;
-
-            if delegations_count >= 60 {
-                encode_compact_width_be(delegations_count, consumer).await?;
-            }
-
-            for delegation in self.delegations.iter() {
-                Encodable::encode(delegation.user(), consumer).await?;
-                Encodable::encode(delegation.signature(), consumer).await?;
-            }
-
-            Ok(())
+        if delegations_count >= 4294967296 {
+            header |= 0b1111_1111;
+        } else if delegations_count >= 65536 {
+            header |= 0b1111_1110;
+        } else if delegations_count >= 256 {
+            header |= 0b1111_1101;
+        } else if delegations_count >= 60 {
+            header |= 0b1111_1100;
+        } else {
+            header |= delegations_count as u8;
         }
+
+        consumer.consume(header).await?;
+
+        Encodable::encode(&self.namespace_key, consumer).await?;
+        Encodable::encode(&self.user_key, consumer).await?;
+        Encodable::encode(&self.initial_authorisation, consumer).await?;
+
+        if delegations_count >= 60 {
+            encode_compact_width_be(delegations_count, consumer).await?;
+        }
+
+        for delegation in self.delegations.iter() {
+            Encodable::encode(delegation.user(), consumer).await?;
+            Encodable::encode(delegation.signature(), consumer).await?;
+        }
+
+        Ok(())
+        */
+
+        todo!()
     }
+}
 
-    impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
-        for McSubspaceCapability<
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
-        >
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Decodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + Decodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Decodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Decodable + Clone,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
     where
-        NamespacePublicKey:
-            NamespaceId + EncodableSync + Decodable + Verifier<NamespaceSignature> + IsCommunal,
-        NamespaceSignature: EncodableSync + Decodable + Clone,
-        UserPublicKey: SubspaceId + EncodableSync + Decodable + Verifier<UserSignature>,
-        UserSignature: EncodableSync + Decodable + Clone,
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
     {
-        async fn decode_canonical<P>(producer: &mut P) -> Result<Self, DecodeError<P::Error>>
-        where
-            P: BulkProducer<Item = u8>,
-        {
-            // TODO: Strict encoding relations - this decoder will not throw if the number of delegations claimed is not the same as the number of delegations decoded.
+        todo!("We don't actually need this...")
+    }
+}
 
-            let header = produce_byte(producer).await?;
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> DecodableCanonic
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + DecodableCanonic + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + DecodableCanonic + Clone,
+    UserPublicKey: SubspaceId + Encodable + DecodableCanonic + Verifier<UserSignature>,
+    UserSignature: Encodable + DecodableCanonic + Clone,
+{
+    type ErrorCanonic = Blame;
 
-            let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
-            let user_key = UserPublicKey::decode_canonical(producer).await?;
-            let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        /*
+        // TODO: Strict encoding relations - this decoder will not throw if the number of delegations claimed is not the same as the number of delegations decoded.
 
-            let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
-                .map_err(|_| DecodeError::InvalidInput)?;
+        let header = produce_byte(producer).await?;
 
-            let delegations_to_decode = if header == 0b1111_1111 {
-                decode_compact_width_be(CompactWidth::Eight, producer).await?
-            } else if header == 0b1111_1110 {
-                decode_compact_width_be(CompactWidth::Four, producer).await?
-            } else if header == 0b1111_1101 {
-                decode_compact_width_be(CompactWidth::Two, producer).await?
-            } else if header == 0b1111_1100 {
-                let count = decode_compact_width_be(CompactWidth::One, producer).await?;
+        let namespace_key = NamespacePublicKey::decode_canonical(producer).await?;
+        let user_key = UserPublicKey::decode_canonical(producer).await?;
+        let initial_authorisation = NamespaceSignature::decode_canonical(producer).await?;
 
-                if count < 60 {
-                    Err(DecodeError::InvalidInput)?;
-                }
+        let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
+            .map_err(|_| DecodeError::InvalidInput)?;
 
-                count
-            } else {
-                let count = header as u64;
+        let delegations_to_decode = if header == 0b1111_1111 {
+            decode_compact_width_be(CompactWidth::Eight, producer).await?
+        } else if header == 0b1111_1110 {
+            decode_compact_width_be(CompactWidth::Four, producer).await?
+        } else if header == 0b1111_1101 {
+            decode_compact_width_be(CompactWidth::Two, producer).await?
+        } else if header == 0b1111_1100 {
+            let count = decode_compact_width_be(CompactWidth::One, producer).await?;
 
-                if count > 60 {
-                    Err(DecodeError::InvalidInput)?;
-                }
-
-                count
-            };
-
-            for _ in 0..delegations_to_decode {
-                let user = UserPublicKey::decode_canonical(producer).await?;
-                let signature = UserSignature::decode_canonical(producer).await?;
-                let delegation = SubspaceDelegation::new(user, signature);
-
-                base_cap
-                    .append_existing_delegation(delegation)
-                    .map_err(|_| DecodeError::InvalidInput)?;
+            if count < 60 {
+                Err(DecodeError::InvalidInput)?;
             }
 
-            Ok(base_cap)
+            count
+        } else {
+            let count = header as u64;
+
+            if count > 60 {
+                Err(DecodeError::InvalidInput)?;
+            }
+
+            count
+        };
+
+        for _ in 0..delegations_to_decode {
+            let user = UserPublicKey::decode_canonical(producer).await?;
+            let signature = UserSignature::decode_canonical(producer).await?;
+            let delegation = SubspaceDelegation::new(user, signature);
+
+            base_cap
+                .append_existing_delegation(delegation)
+                .map_err(|_| DecodeError::InvalidInput)?;
         }
+
+        Ok(base_cap)
+        */
+
+        todo!()
     }
 }
 
@@ -383,22 +391,38 @@ where
         let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
         let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
 
-        let mut consumer = IntoVec::<u8>::new();
+        todo!("Implement with a single allocation with known-size encoder trait.")
 
-        // We can unwrap here because IntoVec::Error is ! (never)
-        consumer.consume(0x2).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-        let message = consumer.into_vec();
+        // let mut consumer = IntoVec::<u8>::new();
 
-        namespace_key
-            .verify(&message, &initial_authorisation)
-            .map_err(|_| ArbitraryError::IncorrectFormat)?;
+        // // We can unwrap here because IntoVec::Error is ! (never)
+        // consumer.consume(0x2).unwrap();
+        // user_key.encode(&mut consumer).unwrap();
+        // let message = consumer.into_vec();
 
-        Ok(Self {
-            namespace_key,
-            user_key,
-            initial_authorisation,
-            delegations: Vec::new(),
-        })
+        // namespace_key
+        //     .verify(&message, &initial_authorisation)
+        //     .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+        // Ok(Self {
+        //     namespace_key,
+        //     user_key,
+        //     initial_authorisation,
+        //     delegations: Vec::new(),
+        // })
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
+    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey:
+        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    fn len_of_encoding(&self) -> usize {
+        todo!()
     }
 }
