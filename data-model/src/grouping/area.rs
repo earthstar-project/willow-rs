@@ -44,6 +44,15 @@ impl<S: SubspaceId> AreaSubspace<S> {
     }
 }
 
+impl<S: SubspaceId> PartialEq<S> for AreaSubspace<S> {
+    fn eq(&self, other: &S) -> bool {
+        match self {
+            AreaSubspace::Any => false,
+            AreaSubspace::Id(s) => s == other,
+        }
+    }
+}
+
 #[cfg(feature = "dev")]
 impl<'a, S> Arbitrary<'a> for AreaSubspace<S>
 where

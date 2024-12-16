@@ -1,13 +1,18 @@
 // Entry <> Entry
 
+use compact_u64::{CompactU64, Tag, TagWidth};
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Decodable, DecodableCanonic, DecodableSync, DecodeError, Blame, Encodable,
-    EncodableKnownSize, EncodableSync, RelativeDecodable, RelativeDecodableCanonic,
-    RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
+    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync,
+    RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
 };
+use willow_encoding::is_bitflagged;
 
-use crate::{grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId};
+use crate::{
+    grouping::{Area, AreaSubspace},
+    Entry, NamespaceId, Path, PayloadDigest, SubspaceId,
+};
 
 // Entry <> Area
 
@@ -29,8 +34,7 @@ where
     where
         C: BulkConsumer<Item = u8>,
     {
-        /*
-        let (namespace, out) = reference;
+        let (namespace, out) = r;
 
         if self.namespace_id() != namespace {
             panic!("Tried to encode an entry relative to a namespace it does not belong to")
@@ -55,8 +59,11 @@ where
             header |= 0b0100_0000;
         }
 
-        header |= CompactWidth::from_u64(time_diff).bitmask(2);
-        header |= CompactWidth::from_u64(self.payload_length()).bitmask(4);
+        let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+
+        header |= time_diff_tag.data_at_offset(4);
+        header |= payload_length_tag.data_at_offset(6);
 
         consumer.consume(header).await?;
 
@@ -64,25 +71,29 @@ where
             self.subspace_id().encode(consumer).await?;
         }
 
-        self.path().relative_encode(out.path(), consumer).await?;
-        encode_compact_width_be(time_diff, consumer).await?;
-        encode_compact_width_be(self.payload_length(), consumer).await?;
+        self.path().relative_encode(consumer, out.path()).await?;
+
+        CompactU64(time_diff)
+            .relative_encode(consumer, &time_diff_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.payload_length())
+            .relative_encode(consumer, &payload_length_tag.encoding_width())
+            .await?;
+
         self.payload_digest().encode(consumer).await?;
 
         Ok(())
-        */
-
-        todo!()
     }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodable<(N, Area<MCL, MCC, MPL, S>), Blame>
-    for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeDecodable<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Decodable,
     S: SubspaceId + Decodable + std::fmt::Debug,
     PD: PayloadDigest + Decodable,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
 {
     /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
     ///
@@ -97,63 +108,58 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        /*
-        let (namespace, out) = reference;
+        let (namespace, out) = r;
 
-        let header = produce_byte(producer).await?;
+        let header = producer.produce_item().await?;
 
         let is_subspace_encoded = is_bitflagged(header, 0);
         let add_time_diff_to_start = is_bitflagged(header, 1);
-        let time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 2);
-        let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
-
-        if is_bitflagged(header, 6) || is_bitflagged(header, 7) {
-            return Err(DecodeError::InvalidInput);
-        }
+        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
+        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
 
         let subspace_id = if is_subspace_encoded {
             match &out.subspace() {
-                AreaSubspace::Any => S::decode_canonical(producer).await?,
-                AreaSubspace::Id(_) => return Err(DecodeError::InvalidInput),
+                AreaSubspace::Any => S::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?,
+                AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
             }
         } else {
             match &out.subspace() {
-                AreaSubspace::Any => return Err(DecodeError::InvalidInput),
+                AreaSubspace::Any => return Err(DecodeError::Other(Blame::TheirFault)),
                 AreaSubspace::Id(id) => id.clone(),
             }
         };
 
-        let path = Path::relative_decode_canonical(out.path(), producer).await?;
+        let path = Path::<MCL, MCC, MPL>::relative_decode(producer, r.1.path()).await?;
 
         if !path.is_prefixed_by(out.path()) {
-            return Err(DecodeError::InvalidInput);
+            return Err(DecodeError::Other(Blame::TheirFault));
         }
 
-        let time_diff = decode_compact_width_be(time_diff_compact_width, producer).await?;
-        let payload_length =
-            decode_compact_width_be(payload_length_compact_width, producer).await?;
-
-        let payload_digest = PD::decode_canonical(producer).await?;
+        let time_diff = CompactU64::relative_decode(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
 
         let timestamp = if add_time_diff_to_start {
             out.times().start.checked_add(time_diff)
         } else {
             u64::from(&out.times().end).checked_sub(time_diff)
         }
-        .ok_or(DecodeError::InvalidInput)?;
+        .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
-        // === Necessary to produce canonic encodings. ===
-        // Verify that the correct add_or_subtract_time_diff flag was set.
-        let should_have_added = timestamp.checked_sub(out.times().start)
-            <= u64::from(&out.times().end).checked_sub(timestamp);
+        let payload_length = CompactU64::relative_decode(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
 
-        if add_time_diff_to_start != should_have_added {
-            return Err(DecodeError::InvalidInput);
-        }
-        // ===============================================
+        let payload_digest = PD::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
 
         if !out.times().includes(&timestamp) {
-            return Err(DecodeError::InvalidInput);
+            return Err(DecodeError::Other(Blame::TheirFault));
         }
 
         Ok(Self::new(
@@ -164,9 +170,6 @@ where
             payload_length,
             payload_digest,
         ))
-        */
-
-        todo!()
     }
 }
 
@@ -177,6 +180,12 @@ where
     N: NamespaceId + DecodableCanonic,
     S: SubspaceId + DecodableCanonic + std::fmt::Debug,
     PD: PayloadDigest + DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
 {
     async fn relative_decode_canonic<P>(
         producer: &mut P,
@@ -186,60 +195,76 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        /*
-        let (namespace, out) = reference;
+        let (namespace, out) = r;
 
-        let header = produce_byte(producer).await?;
+        let header = producer.produce_item().await?;
 
         let is_subspace_encoded = is_bitflagged(header, 0);
         let add_time_diff_to_start = is_bitflagged(header, 1);
-        let time_diff_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 2);
-        let payload_length_compact_width = CompactWidth::decode_fixed_width_bitmask(header, 4);
+        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
+        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
 
-        let subspace_id = match &out.subspace() {
-            AreaSubspace::Any => {
-                if !is_subspace_encoded {
-                    return Err(DecodeError::InvalidInput);
-                }
+        if is_bitflagged(header, 6) || is_bitflagged(header, 7) {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
 
-                S::decode_relation(producer).await?
+        let subspace_id = if is_subspace_encoded {
+            match &out.subspace() {
+                AreaSubspace::Any => S::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?,
+                AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
             }
-            AreaSubspace::Id(out_subspace) => {
-                if !is_subspace_encoded {
-                    out_subspace.clone()
-                } else {
-                    let subspace_id = S::decode_relation(producer).await?;
-
-                    if &subspace_id != out_subspace {
-                        return Err(DecodeError::InvalidInput);
-                    }
-
-                    subspace_id
-                }
+        } else {
+            match &out.subspace() {
+                AreaSubspace::Any => return Err(DecodeError::Other(Blame::TheirFault)),
+                AreaSubspace::Id(id) => id.clone(),
             }
         };
 
-        let path = Path::relative_decode_canonical(out.path(), producer).await?;
-
-        if !path.is_prefixed_by(out.path()) {
-            return Err(DecodeError::InvalidInput);
+        if is_subspace_encoded && r.1.subspace() == &subspace_id {
+            return Err(DecodeError::Other(Blame::TheirFault));
         }
 
-        let time_diff = decode_compact_width_be_relation(time_diff_compact_width, producer).await?;
-        let payload_length =
-            decode_compact_width_be_relation(payload_length_compact_width, producer).await?;
+        let path = Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.1.path()).await?;
 
-        let payload_digest = PD::decode_relation(producer).await?;
+        if !path.is_prefixed_by(out.path()) {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
+        let time_diff = CompactU64::relative_decode_canonic(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
 
         let timestamp = if add_time_diff_to_start {
             out.times().start.checked_add(time_diff)
         } else {
             u64::from(&out.times().end).checked_sub(time_diff)
         }
-        .ok_or(DecodeError::InvalidInput)?;
+        .ok_or(DecodeError::Other(Blame::TheirFault))?;
+
+        let payload_length = CompactU64::relative_decode_canonic(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let payload_digest = PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        // === Necessary to produce canonic encodings. ===
+        // Verify that the correct add_or_subtract_time_diff flag was set.
+        let should_have_added = timestamp.checked_sub(out.times().start)
+            <= u64::from(&out.times().end).checked_sub(timestamp);
+
+        if add_time_diff_to_start != should_have_added {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+        // ===============================================
 
         if !out.times().includes(&timestamp) {
-            return Err(DecodeError::InvalidInput);
+            return Err(DecodeError::Other(Blame::TheirFault));
         }
 
         Ok(Self::new(
@@ -250,9 +275,6 @@ where
             payload_length,
             payload_digest,
         ))
-        */
-
-        todo!()
     }
 }
 
@@ -264,7 +286,39 @@ where
     PD: PayloadDigest + EncodableKnownSize,
 {
     fn relative_len_of_encoding(&self, r: &(N, Area<MCL, MCC, MPL, S>)) -> usize {
-        todo!()
+        let (namespace, out) = r;
+
+        if self.namespace_id() != namespace {
+            panic!("Tried to get the encoded length of an entry relative to a namespace it does not belong to")
+        }
+
+        if !out.includes_entry(self) {
+            panic!("Tried to get the encoded length of an entry relative to an area it is not included by")
+        }
+
+        let time_diff = core::cmp::min(
+            self.timestamp() - out.times().start,
+            u64::from(&out.times().end) - self.timestamp(),
+        );
+        let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
+        let time_diff_len =
+            CompactU64(time_diff).relative_len_of_encoding(&time_diff_tag.encoding_width());
+
+        let subspace_len = if out.subspace().is_any() {
+            self.subspace_id().len_of_encoding()
+        } else {
+            0
+        };
+
+        let path_len = self.path().relative_len_of_encoding(out.path());
+
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+        let payload_length_len = CompactU64(self.payload_length())
+            .relative_len_of_encoding(&payload_length_tag.encoding_width());
+
+        let payload_digest_len = self.payload_digest().len_of_encoding();
+
+        1 + subspace_len + path_len + time_diff_len + payload_length_len + payload_digest_len
     }
 }
 
@@ -278,11 +332,11 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableSync<(N, Area<MCL, MCC, MPL, S>), Blame>
-    for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeDecodableSync<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableSync,
     S: SubspaceId + DecodableSync + std::fmt::Debug,
     PD: PayloadDigest + DecodableSync,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
 {
 }
