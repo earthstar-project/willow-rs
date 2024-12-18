@@ -1,0 +1,7 @@
+[package]
+name = "fairly_unsafe_cell"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
