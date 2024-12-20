@@ -407,44 +407,44 @@ impl<'b, T: ?Sized> RefMut<'b, T> {
         RefMut(core::cell::RefMut::map(orig.0, f))
     }
 
-    /// Makes a new `RefMut` for an optional component of the borrowed data. The
-    /// original guard is returned as an `Err(..)` if the closure returns
-    /// `None`.
-    ///
-    /// The `FairlyUnsafeCell` is already mutably borrowed, so this cannot fail.
-    ///
-    /// This is an associated function that needs to be used as
-    /// `RefMut::filter_map(...)`. A method would interfere with methods of the
-    /// same name on the contents of a `FairlyUnsafeCell` used through `Deref`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use fairly_unsafe_cell::*;
-    ///
-    /// let c = FairlyUnsafeCell::new(vec![1, 2, 3]);
-    ///
-    /// {
-    ///     let b1: RefMut<'_, Vec<u32>> = unsafe { c.borrow_mut() };
-    ///     let mut b2: Result<RefMut<'_, u32>, _> = RefMut::filter_map(b1, |v| v.get_mut(1));
-    ///
-    ///     if let Ok(mut b2) = b2 {
-    ///         *b2 += 2;
-    ///     }
-    /// }
-    ///
-    /// assert_eq!(* unsafe { c.borrow() }, vec![1, 4, 3]);
-    /// ```
-    #[inline]
-    pub fn filter_map<U: ?Sized, F>(orig: RefMut<'b, T>, f: F) -> Result<RefMut<'b, U>, Self>
-    where
-        F: FnOnce(&mut T) -> Option<&mut U>,
-    {
-        match core::cell::RefMut::filter_map(orig.0, f) {
-            Ok(yay) => Ok(RefMut(yay)),
-            Err(nay) => Err(RefMut(nay)),
-        }
-    }
+    // /// Makes a new `RefMut` for an optional component of the borrowed data. The
+    // /// original guard is returned as an `Err(..)` if the closure returns
+    // /// `None`.
+    // ///
+    // /// The `FairlyUnsafeCell` is already mutably borrowed, so this cannot fail.
+    // ///
+    // /// This is an associated function that needs to be used as
+    // /// `RefMut::filter_map(...)`. A method would interfere with methods of the
+    // /// same name on the contents of a `FairlyUnsafeCell` used through `Deref`.
+    // ///
+    // /// # Examples
+    // ///
+    // /// ```
+    // /// use fairly_unsafe_cell::*;
+    // ///
+    // /// let c = FairlyUnsafeCell::new(vec![1, 2, 3]);
+    // ///
+    // /// {
+    // ///     let b1: RefMut<'_, Vec<u32>> = unsafe { c.borrow_mut() };
+    // ///     let mut b2: Result<RefMut<'_, u32>, _> = RefMut::filter_map(b1, |v| v.get_mut(1));
+    // ///
+    // ///     if let Ok(mut b2) = b2 {
+    // ///         *b2 += 2;
+    // ///     }
+    // /// }
+    // ///
+    // /// assert_eq!(* unsafe { c.borrow() }, vec![1, 4, 3]);
+    // /// ```
+    // #[inline]
+    // pub fn filter_map<U: ?Sized, F>(orig: RefMut<'b, T>, f: F) -> Result<RefMut<'b, U>, Self>
+    // where
+    //     F: FnOnce(&mut T) -> Option<&mut U>,
+    // {
+    //     match core::cell::RefMut::filter_map(orig.0, f) {
+    //         Ok(yay) => Ok(RefMut(yay)),
+    //         Err(nay) => Err(RefMut(nay)),
+    //     }
+    // }
 
     /// Splits a `RefMut` into multiple `RefMut`s for different components of the
     /// borrowed data.
