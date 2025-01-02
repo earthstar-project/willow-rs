@@ -11,9 +11,14 @@
 //!
 //! See [`new_spsc`] for the entrypoint to this module and some examples.
 
-use async_cell::unsync::AsyncCell;
 use either::Either::{self, *};
-use std::{cell::RefCell, convert::Infallible, marker::PhantomData, ops::Deref, rc::Rc};
+use fairly_unsafe_cell::*;
+use std::{
+    cell::Cell,
+    convert::Infallible,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use ufotofu_queues::Queue;
 
@@ -22,19 +27,26 @@ use crate::{Mutex, TakeCell};
 /// The state shared between the [`Sender`] and the [`Receiver`]. This is fully opaque, but we expose it to give control over where it is allocated.
 #[derive(Debug)]
 pub struct State<Q, F, E> {
-    // Empty while an endpoint needs to wait. At most endpoint waits at a time (because the queue must have non-zero capacity, and then it is impossible for it to be both full and empty at the same time).
+    // Empty while an endpoint needs to wait. At most one endpoint waits at a time (because the queue must have non-zero capacity, and then it is impossible for it to be both full and empty at the same time).
     notifier: TakeCell<()>,
-    queue: RefCell<Q>,
-    last: RefCell<Option<Result<F, E>>>,
+    // We need a Mutex here because `expose_slots` and `expose_items` can be called concurrently on the two endpoints but would result in a mutable and an immutable borrow coexisting.
+    queue: Mutex<Q>,
+    // Safety: We never return refs to this from any method, and we never hold a borrow across `.await` points.
+    // Hence, no cuncurrent refs can exist.
+    last: FairlyUnsafeCell<Option<Result<F, E>>>,
+    // We track the number of items in the queue here, so that we can access it without waiting for the Mutex of the queue itself.
+    // A bit awkward, but it allows for sync access to the current count.
+    len: Cell<usize>,
 }
 
-impl<Q, F, E> State<Q, F, E> {
+impl<Q: Queue, F, E> State<Q, F, E> {
     /// Creates a new [`State`], using the given queue for the SPSC channel. The queue must have a non-zero maximum capacity.
     pub fn new(queue: Q) -> Self {
         State {
             notifier: TakeCell::new_with(()),
-            queue: RefCell::new(queue),
-            last: RefCell::new(None),
+            len: Cell::new(queue.len()),
+            queue: Mutex::new(queue),
+            last: FairlyUnsafeCell::new(None),
         }
     }
 }
@@ -44,25 +56,48 @@ impl<Q, F, E> State<Q, F, E> {
 /// An example with a stack-allocated [`State`]:
 ///
 /// ```
-/// let state = State::new(Fixed::new(2 /* capacity */));
-/// let (sender, receiver) = new_spsc(&state);
-///
+/// use wb_async_utils::spsc::*;
+/// use ufotofu::*;
+/// 
+/// let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
+/// let (mut sender, mut receiver) = new_spsc(&state);
+///        
 /// pollster::block_on(async {
-///     // TODO this example needs a join
+///     // If the capacity was less than four, you would need to join
+///     // a future that sends and a future that receives the items.
 ///     assert!(sender.consume(300).await.is_ok());
 ///     assert!(sender.consume(400).await.is_ok());
 ///     assert!(sender.consume(500).await.is_ok());
 ///     assert!(sender.close(-17).await.is_ok());
 ///     assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
 ///     assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
-///     assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
+///     assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
 ///     assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
 /// });
 /// ```
-/// 
+///
 /// An example with a heap-allocated [`State`]:
+///
+/// ```
+/// use wb_async_utils::spsc::*;
+/// use ufotofu::*;
 /// 
-/// [TODO]
+/// let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
+/// let (mut sender, mut receiver) = new_spsc(std::rc::Rc::new(state));
+///        
+/// pollster::block_on(async {
+///     // If the capacity was less than four, you would need to join
+///     // a future that sends and a future that receives the items.
+///     assert!(sender.consume(300).await.is_ok());
+///     assert!(sender.consume(400).await.is_ok());
+///     assert!(sender.consume(500).await.is_ok());
+///     assert!(sender.close(-17).await.is_ok());
+///     assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
+///     assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
+///     assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
+///     assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
+/// });
+/// ```
 pub fn new_spsc<R, Q, F, E>(state_ref: R) -> (Sender<R, Q, F, E>, Receiver<R, Q, F, E>)
 where
     R: Deref<Target = State<Q, F, E>> + Clone,
@@ -93,247 +128,318 @@ pub struct Receiver<R, Q, F, E> {
     phantom: PhantomData<(Q, F, E)>,
 }
 
-impl<R, Q, F, E> Sender<R, Q, F, E> {}
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
+    /// Returns the number of items that are currently buffered.
+    pub fn len(&self) -> usize {
+        self.state.len.get()
+    }
 
-// impl<Q: Queue, F, E> Input<Q, F, E> {
-//     /// Return the number of items that are currently buffered.
-//     pub fn len(&self) -> usize {
-//         self.state.queue.borrow().len()
-//     }
+    /// Sets an error to be emitted on the corresponding `Sender`.
+    /// The error is only emitted there when trying to produce values
+    /// via `produce` or `expose_items` (or any method calling one of these),
+    /// but never when `slurp`ing or calling `consider_produced`.
+    ///
+    /// Must not call any of the `Consumer`, `BufferedConsumer`, or `BulkProducer` methods
+    /// on this `Receiver` after calling this function, nor `close_sync`.
+    /// May call this function at most once per `Receiver`.
+    /// Must not call this function after calling `close` or `close_sync`.
+    pub fn cause_error(&mut self, err: E) {
+        let mut last = unsafe { self.state.last.borrow_mut() };
+        debug_assert!(
+            last.is_none(),
+            "Must not call `cause_error` multiple times or after calling `close` or `close_sync`."
+        );
+        *last = Some(Err(err));
 
-//     /// Set an error to be emitted on the corresponding `Output`.
-//     /// The error is only emitted there when trying to produce values
-//     /// via `produce` or `expose_items` (or any method calling one of these),
-//     /// but never when `slurp`ing or calling `consider_produced`.
-//     ///
-//     /// Must not call any of the `Consumer`, `BufferedConsumer`, or `BulkProducer` methods
-//     /// on this `Input` after calling this function.
-//     /// May call this function at most once per `Input`.
-//     pub fn cause_error(&mut self, err: E) {
-//         *self.state.err.borrow_mut() = Some(err);
-//         self.state.notify.set(());
-//     }
+        self.state.notifier.set(());
+    }
 
-//     /// Same as calling [`Consumer::close`], but sync.
-//     pub fn close_sync(&mut self, fin: F) -> Result<(), E> {
-//         // Store the final value for later access by the Output.
-//         *self.state.fin.borrow_mut() = Some(fin);
+    /// Same as calling [`Consumer::close`], but sync. Must not use this multiple times, after calling `close`, or after calling `cause_error`.
+    pub fn close_sync(&mut self, fin: F) -> Result<(), Infallible> {
+        // Store the final value for later access by the Sender.
+        let mut last = unsafe { self.state.last.borrow_mut() };
+        debug_assert!(
+            last.is_none(),
+            "Must not call `close` or `close_sync` multiple times or after calling `cause_error`."
+        );
+        *last = Some(Ok(fin));
 
-//         // If the queue is empty, we need to notify the waiting Output (if any) of the final value.
-//         if self.state.queue.borrow().is_empty() {
-//             self.state.notify.set(());
-//         }
+        self.state.notifier.set(());
 
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
 
-// impl<Q: Queue, F, E> Consumer for Input<Q, F, E> {
-//     type Item = Q::Item;
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Consumer for Sender<R, Q, F, E> {
+    type Item = Q::Item;
 
-//     type Final = F;
+    type Final = F;
 
-//     type Error = E;
+    type Error = Infallible;
 
-//     /// Write the item into the buffer queue, waiting for buffer space to
-//     /// become available (by reading items from the corresponding [`Output`]) if necessary.
-//     async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
-//         loop {
-//             // Try to buffer the item.
-//             match self.state.queue.borrow_mut().enqueue(item) {
-//                 // Enqueueing failed.
-//                 Some(_) => {
-//                     // Wait for queue space.
-//                     let () = self.state.notify.take().await;
-//                     // Go into the next iteration of the loop, where enqueeuing is guaranteed to succeed.
-//                 }
-//                 // Enqueueing succeeded.
-//                 None => return Ok(()),
-//             }
-//         }
-//     }
+    /// Writes the item into the buffer queue, waiting for buffer space to
+    /// become available (by reading items from the corresponding [`Sender`]) if necessary.
+    async fn consume(&mut self, item_: Self::Item) -> Result<(), Self::Error> {
+        let mut item = item_;
+        loop {
+            // Try to buffer the item.
+            let did_it_work = {
+                // Inside a block to drop the Mutex access before awaiting on the notifier.
+                self.state.queue.write().await.deref_mut().enqueue(item)
+            };
 
-//     async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-//         self.close_sync(fin)
-//     }
-// }
+            match did_it_work {
+                // Enqueueing failed.
+                Some(item_) => {
+                    // Wait for queue space.
+                    println!("wait in consume");
+                    let () = self.state.notifier.take().await;
+                    println!("done waiting in consume");
+                    // Go into the next iteration of the loop, where enqueeuing is guaranteed to succeed.
+                    item = item_;
+                }
+                // Enqueueing succeeded.
+                None => {
+                    self.state.len.set(self.state.len.get() + 1);
+                    self.state.notifier.set(());
+                    return Ok(());
+                }
+            }
+        }
+    }
 
-// impl<Q: Queue, F, E> BufferedConsumer for Input<Q, F, E> {
-//     async fn flush(&mut self) -> Result<(), Self::Error> {
-//         Ok(()) // Nothing to do here.
-//     }
-// }
+    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
+        self.close_sync(fin)
+    }
+}
 
-// impl<Q: Queue, F, E> BulkConsumer for Input<Q, F, E> {
-//     async fn expose_slots<'a>(&'a mut self) -> Result<&'a mut [Self::Item], Self::Error>
-//     where
-//         Self::Item: 'a,
-//     {
-//         loop {
-//             // Try obtain at least one empty slots.
-//             match self.state.queue.borrow_mut().expose_slots() {
-//                 // No empty slot available.
-//                 None => {
-//                     // Wait for queue space.
-//                     let () = self.state.notify.take().await;
-//                     // Go into the next iteration of the loop, where there will be slots available.
-//                 }
-//                 //Got some empty slots.
-//                 Some(slots) => {
-//                     // We need to return something which lives for 'a,
-//                     // but to the compiler's best knowledge, `slots` lives only
-//                     // for as long as the return value of `self.state.queue.borrow_mut()`,
-//                     // whose lifetime is limited by the current stack frame.
-//                     //
-//                     // We *know* that these slots will have a sufficiently long lifetime,
-//                     // however, because they sit inside an Rc which has a lifetime of 'a.
-//                     // An Rc keeps its contents alive as long at least as itself.
-//                     // Thus we know that the slots have a lifetime of at least 'a.
-//                     // Hence, extending the lifetime to 'a is safe.
-//                     let slots: &'a mut [Q::Item] = unsafe { extend_lifetime_mut(slots) };
-//                     return Ok(slots);
-//                 }
-//             }
-//         }
-//     }
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BufferedConsumer for Sender<R, Q, F, E> {
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        Ok(()) // Nothing to do here.
+    }
+}
 
-//     async fn consume_slots(&mut self, amount: usize) -> Result<(), Self::Error> {
-//         self.state.queue.borrow_mut().consider_enqueued(amount);
-//         Ok(())
-//     }
-// }
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkConsumer for Sender<R, Q, F, E> {
+    async fn expose_slots<'a>(&'a mut self) -> Result<&'a mut [Self::Item], Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        loop {
+            // Try obtain at least one empty slots.
+            match { self.state.queue.write().await.deref_mut().expose_slots() } {
+                // No empty slot available.
+                None => {
+                    // Wait for queue space.
+                    let () = self.state.notifier.take().await;
+                    // Go into the next iteration of the loop, where there will be slots available.
+                }
+                //Got some empty slots.
+                Some(slots) => {
+                    // We need to return something which lives for 'a,
+                    // but to the compiler's best knowledge, `slots` lives only
+                    // for as long as the return value of `self.state.queue.borrow_mut()`,
+                    // whose lifetime is limited by the current stack frame.
+                    //
+                    // We *know* that these slots will have a sufficiently long lifetime,
+                    // however, because they sit inside a State which must outlive 'a.
+                    // Hence, extending the lifetime to 'a is safe.
+                    let slots: &'a mut [Q::Item] = unsafe { extend_lifetime_mut(slots) };
+                    return Ok(slots);
+                }
+            }
+        }
+    }
 
-// #[derive(Debug)]
-// pub struct Output<Q, F, E> {
-//     state: Rc<SpscState<Q, F, E>>,
-// }
+    async fn consume_slots(&mut self, amount: usize) -> Result<(), Self::Error> {
+        self.state
+            .queue
+            .write()
+            .await
+            .deref_mut()
+            .consider_enqueued(amount);
+        self.state.len.set(self.state.len.get() + amount);
+        self.state.notifier.set(());
+        Ok(())
+    }
+}
 
-// impl<Q: Queue, F, E> Output<Q, F, E> {
-//     /// Return the number of items that are currently buffered.
-//     pub fn len(&self) -> usize {
-//         self.state.queue.borrow().len()
-//     }
-// }
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Receiver<R, Q, F, E> {
+    /// Returns the number of items that are currently buffered.
+    pub fn len(&self) -> usize {
+        self.state.len.get()
+    }
+}
 
-// impl<Q: Queue, F, E> Producer for Output<Q, F, E> {
-//     type Item = Q::Item;
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R, Q, F, E> {
+    type Item = Q::Item;
 
-//     type Final = F;
+    type Final = F;
 
-//     type Error = E;
+    type Error = E;
 
-//     /// Take an item from the buffer queue, waiting for an item to
-//     /// become available (by being consumed by the corresponding [`Input`]) if necessary.
-//     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-//         loop {
-//             // Try to obtain the next item.
-//             match self.state.queue.borrow_mut().dequeue() {
-//                 // At least one item was in the buffer, return it.
-//                 Some(item) => return Ok(Left(item)),
-//                 None => {
-//                     // Buffer is empty.
-//                     // But perhaps the final item has been consumed already?
-//                     match self.state.fin.borrow_mut().take() {
-//                         Some(fin) => {
-//                             // Yes, so we can return the final item.
-//                             return Ok(Right(fin));
-//                         }
-//                         None => {
-//                             // No, so we check whether there is an error.
-//                             match self.state.err.borrow_mut().take() {
-//                                 Some(err) => {
-//                                     // Yes, there is an error; return it.
-//                                     return Err(err);
-//                                 }
-//                                 None => {
-//                                     // No, no error either, so we wait until something changes.
-//                                     let () = self.state.notify.take().await;
-//                                     // Go into the next iteration of the loop, where progress will be made.
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
+    /// Take an item from the buffer queue, waiting for an item to
+    /// become available (by being consumed by the corresponding [`Sender`]) if necessary.
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        loop {
+            // Try to obtain the next item.
+            match { self.state.queue.write().await.deref_mut().dequeue() } {
+                // At least one item was in the buffer, return it.
+                Some(item) => {
+                    self.state.len.set(self.state.len.get() - 1);
+                    self.state.notifier.set(());
+                    println!("set notifier in produce");
+                    return Ok(Left(item));
+                }
+                None => {
+                    // Buffer is empty.
+                    // But perhaps the final item has been consumed already, or an error was requested?
+                    match unsafe { self.state.last.borrow_mut().take() } {
+                        Some(Ok(fin)) => {
+                            return Ok(Right(fin));
+                        }
+                        Some(Err(err)) => {
+                            return Err(err);
+                        }
+                        None => {
+                            // No last item yet, so we wait until something changes.
+                            let () = self.state.notifier.take().await;
+                            // Go into the next iteration of the loop, where progress will be made.
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
-// impl<Q: Queue, F, E> BufferedProducer for Output<Q, F, E> {
-//     async fn slurp(&mut self) -> Result<(), Self::Error> {
-//         Ok(()) // Nothing to do.
-//     }
-// }
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BufferedProducer for Receiver<R, Q, F, E> {
+    async fn slurp(&mut self) -> Result<(), Self::Error> {
+        // Nothing to do really, except that if the buffer is empty and an error was set, then we emit it.
+        if self.len() == 0 {
+            if let Some(Err(err)) = unsafe { self.state.last.borrow_mut().take() } {
+                return Err(err);
+            }
+        }
 
-// impl<Q: Queue, F, E> BulkProducer for Output<Q, F, E> {
-//     async fn expose_items<'a>(
-//         &'a mut self,
-//     ) -> Result<Either<&'a [Self::Item], Self::Final>, Self::Error>
-//     where
-//         Self::Item: 'a,
-//     {
-//         loop {
-//             // Try to get at least one item.
-//             match self.state.queue.borrow_mut().expose_items() {
-//                 // No items available
-//                 None => {
-//                     // But perhaps the final item has been consumed already?
-//                     match self.state.fin.borrow_mut().take() {
-//                         Some(fin) => {
-//                             // Yes, so we can return the final item.
-//                             return Ok(Right(fin));
-//                         }
-//                         None => {
-//                             // No, so we check whether there is an error.
-//                             match self.state.err.borrow_mut().take() {
-//                                 Some(err) => {
-//                                     // Yes, there is an error; return it.
-//                                     return Err(err);
-//                                 }
-//                                 None => {
-//                                     // No, no error either, so we wait until something changes.
-//                                     let () = self.state.notify.take().await;
-//                                     // Go into the next iteration of the loop, where progress will be made.
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//                 // Got at least one item
-//                 Some(items) => {
-//                     // We need to return something which lives for 'a,
-//                     // but to the compiler's best knowledge, `items` lives only
-//                     // for as long as the return value of `self.state.queue.borrow_mut()`,
-//                     // whose lifetime is limited by the current stack frame.
-//                     //
-//                     // We *know* that these items will have a sufficiently long lifetime,
-//                     // however, because they sit inside an Rc which has a lifetime of 'a.
-//                     // An Rc keeps its contents alive as long at least as itself.
-//                     // Thus we know that the items have a lifetime of at least 'a.
-//                     // Hence, extending the lifetime to 'a is safe.
-//                     let items: &'a [Q::Item] = unsafe { extend_lifetime(items) };
-//                     return Ok(Left(items));
-//                 }
-//             }
-//         }
-//     }
+        Ok(()) // Nothing to do.
+    }
+}
 
-//     async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
-//         self.state.queue.borrow_mut().consider_dequeued(amount);
-//         Ok(())
-//     }
-// }
+impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkProducer for Receiver<R, Q, F, E> {
+    async fn expose_items<'a>(
+        &'a mut self,
+    ) -> Result<Either<&'a [Self::Item], Self::Final>, Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        loop {
+            // Try to get at least one item.
+            match { self.state.queue.write().await.deref_mut().expose_items() } {
+                // No items available
+                None => {
+                    // But perhaps the final item has been consumed already, or an error was requested?
+                    match unsafe { self.state.last.borrow_mut().take() } {
+                        Some(Ok(fin)) => {
+                            return Ok(Right(fin));
+                        }
+                        Some(Err(err)) => {
+                            return Err(err);
+                        }
+                        None => {
+                            // No last item yet, so we wait until something changes.
+                            let () = self.state.notifier.take().await;
+                            // Go into the next iteration of the loop, where progress will be made.
+                        }
+                    }
+                }
+                // Got at least one item
+                Some(items) => {
+                    // We need to return something which lives for 'a,
+                    // but to the compiler's best knowledge, `items` lives only
+                    // for as long as the return value of `self.state.queue.borrow_mut()`,
+                    // whose lifetime is limited by the current stack frame.
+                    //
+                    // We *know* that these items will have a sufficiently long lifetime,
+                    // however, because they sit inside a State which must outlive 'a.
+                    // Hence, extending the lifetime to 'a is safe.
+                    let items: &'a [Q::Item] = unsafe { extend_lifetime(items) };
+                    return Ok(Left(items));
+                }
+            }
+        }
+    }
 
-// // This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
-// // See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
-// unsafe fn extend_lifetime<'shorter, 'longer, T: ?Sized>(reference: &'shorter T) -> &'longer T {
-//     std::mem::transmute::<&'shorter T, &'longer T>(reference)
-// }
+    async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
+        self.state
+            .queue
+            .write()
+            .await
+            .deref_mut()
+            .consider_dequeued(amount);
+        self.state.len.set(self.state.len.get() - amount);
+        self.state.notifier.set(());
+        Ok(())
+    }
+}
 
-// // This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
-// // See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
-// unsafe fn extend_lifetime_mut<'shorter, 'longer, T: ?Sized>(
-//     reference: &'shorter mut T,
-// ) -> &'longer mut T {
-//     std::mem::transmute::<&'shorter mut T, &'longer mut T>(reference)
-// }
+// This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
+// See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
+unsafe fn extend_lifetime<'shorter, 'longer, T: ?Sized>(reference: &'shorter T) -> &'longer T {
+    std::mem::transmute::<&'shorter T, &'longer T>(reference)
+}
+
+// This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
+// See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
+unsafe fn extend_lifetime_mut<'shorter, 'longer, T: ?Sized>(
+    reference: &'shorter mut T,
+) -> &'longer mut T {
+    std::mem::transmute::<&'shorter mut T, &'longer mut T>(reference)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use futures::join;
+
+    // #[test]
+    // fn test_spsc_sufficient_capacity() {
+    //     let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
+    //     let (mut sender, mut receiver) = new_spsc(&state);
+        
+    //     pollster::block_on(async {
+    //         assert!(sender.consume(300).await.is_ok());
+    //         assert!(sender.consume(400).await.is_ok());
+    //         assert!(sender.consume(500).await.is_ok());
+    //         assert!(sender.close(-17).await.is_ok());
+    //         assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
+    //         assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
+    //         assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
+    //         assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
+    //     });
+    // }
+
+    #[test]
+    fn test_spsc_low_capacity() {
+        pollster::block_on(async {
+            let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(2 /* capacity */));
+            let (mut sender, mut receiver) = new_spsc(&state);
+    
+            let send_things = async {
+                assert!(sender.consume(300).await.is_ok());
+                assert!(sender.consume(400).await.is_ok());
+                assert!(sender.consume(500).await.is_ok());
+                assert!(sender.close(-17).await.is_ok());
+            };
+    
+            let receive_things = async {
+                assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
+                assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
+                assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
+                assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
+            };
+    
+            join!(send_things, receive_things);
+        });
+    }
+}
