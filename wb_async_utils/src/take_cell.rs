@@ -42,7 +42,30 @@ impl<T> TakeCell<T> {
         unsafe { &*self.value.get() }.is_none()
     }
 
+    /// Returns how many tasks are currently waiting for the cell to be filled.
+    pub fn count_waiting(&self) -> usize {
+        unsafe { &*self.parked.get() }.len()
+    }
+
     /// Sets the value in the cell. If the cell was empty, wakes up the oldest pending async method call that was waiting for a value in the cell.
+    /// 
+    /// ```
+    /// use futures::join;
+    /// use wb_async_utils::TakeCell;
+    /// 
+    /// let cell = TakeCell::new();
+    /// 
+    /// pollster::block_on(async {
+    ///     let waitForSetting = async {
+    ///         assert_eq!(5, cell.take().await);
+    ///     };
+    ///     let setToFive = async {
+    ///         cell.set(5);
+    ///     };
+    /// 
+    ///     join!(waitForSetting, setToFive);
+    /// });
+    /// ```
     pub fn set(&self, value: T) {
         let _ = self.replace(value);
     }
@@ -68,6 +91,17 @@ impl<T> TakeCell<T> {
     }
 
     /// Takes the current value out of the cell if there is one, waiting for one to arrive if necessary.
+    /// 
+    /// ```
+    /// use futures::join;
+    /// use wb_async_utils::TakeCell;
+    /// 
+    /// let cell = TakeCell::new_with(5);
+    /// 
+    /// pollster::block_on(async {
+    ///     assert_eq!(5, cell.take().await);
+    /// });
+    /// ```
     pub async fn take(&self) -> T {
         TakeFuture(self).await
     }

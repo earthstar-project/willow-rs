@@ -27,26 +27,29 @@ use crate::{Mutex, TakeCell};
 /// The state shared between the [`Sender`] and the [`Receiver`]. This is fully opaque, but we expose it to give control over where it is allocated.
 #[derive(Debug)]
 pub struct State<Q, F, E> {
-    // Empty while an endpoint needs to wait. At most one endpoint waits at a time (because the queue must have non-zero capacity, and then it is impossible for it to be both full and empty at the same time).
-    notifier: TakeCell<()>,
     // We need a Mutex here because `expose_slots` and `expose_items` can be called concurrently on the two endpoints but would result in a mutable and an immutable borrow coexisting.
     queue: Mutex<Q>,
     // Safety: We never return refs to this from any method, and we never hold a borrow across `.await` points.
     // Hence, no cuncurrent refs can exist.
     last: FairlyUnsafeCell<Option<Result<F, E>>>,
     // We track the number of items in the queue here, so that we can access it without waiting for the Mutex of the queue itself.
-    // A bit awkward, but it allows for sync access to the current count.
+    // A bit awkward, but this enables sync access to the current count.
     len: Cell<usize>,
+    // Empty while the sender cannot make progress.
+    notify_the_sender: TakeCell<()>,
+    // Empty while the receiver cannot make progress.
+    notify_the_receiver: TakeCell<()>,
 }
 
 impl<Q: Queue, F, E> State<Q, F, E> {
     /// Creates a new [`State`], using the given queue for the SPSC channel. The queue must have a non-zero maximum capacity.
     pub fn new(queue: Q) -> Self {
         State {
-            notifier: TakeCell::new_with(()),
             len: Cell::new(queue.len()),
             queue: Mutex::new(queue),
             last: FairlyUnsafeCell::new(None),
+            notify_the_sender: TakeCell::new_with(()),
+            notify_the_receiver: TakeCell::new_with(()),
         }
     }
 }
@@ -58,7 +61,7 @@ impl<Q: Queue, F, E> State<Q, F, E> {
 /// ```
 /// use wb_async_utils::spsc::*;
 /// use ufotofu::*;
-/// 
+///
 /// let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
 /// let (mut sender, mut receiver) = new_spsc(&state);
 ///        
@@ -81,7 +84,7 @@ impl<Q: Queue, F, E> State<Q, F, E> {
 /// ```
 /// use wb_async_utils::spsc::*;
 /// use ufotofu::*;
-/// 
+///
 /// let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
 /// let (mut sender, mut receiver) = new_spsc(std::rc::Rc::new(state));
 ///        
@@ -134,7 +137,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
         self.state.len.get()
     }
 
-    /// Sets an error to be emitted on the corresponding `Sender`.
+    /// Sets an error to be emitted on the corresponding `Receiver`.
     /// The error is only emitted there when trying to produce values
     /// via `produce` or `expose_items` (or any method calling one of these),
     /// but never when `slurp`ing or calling `consider_produced`.
@@ -151,7 +154,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
         );
         *last = Some(Err(err));
 
-        self.state.notifier.set(());
+        self.state.notify_the_receiver.set(());
     }
 
     /// Same as calling [`Consumer::close`], but sync. Must not use this multiple times, after calling `close`, or after calling `cause_error`.
@@ -164,7 +167,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
         );
         *last = Some(Ok(fin));
 
-        self.state.notifier.set(());
+        self.state.notify_the_receiver.set(());
 
         Ok(())
     }
@@ -192,16 +195,14 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Consumer for Sender<R, Q
                 // Enqueueing failed.
                 Some(item_) => {
                     // Wait for queue space.
-                    println!("wait in consume");
-                    let () = self.state.notifier.take().await;
-                    println!("done waiting in consume");
+                    let () = self.state.notify_the_sender.take().await;
                     // Go into the next iteration of the loop, where enqueeuing is guaranteed to succeed.
                     item = item_;
                 }
                 // Enqueueing succeeded.
                 None => {
                     self.state.len.set(self.state.len.get() + 1);
-                    self.state.notifier.set(());
+                    self.state.notify_the_receiver.set(());
                     return Ok(());
                 }
             }
@@ -230,7 +231,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkConsumer for Sender<
                 // No empty slot available.
                 None => {
                     // Wait for queue space.
-                    let () = self.state.notifier.take().await;
+                    let () = self.state.notify_the_sender.take().await;
                     // Go into the next iteration of the loop, where there will be slots available.
                 }
                 //Got some empty slots.
@@ -258,7 +259,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkConsumer for Sender<
             .deref_mut()
             .consider_enqueued(amount);
         self.state.len.set(self.state.len.get() + amount);
-        self.state.notifier.set(());
+        self.state.notify_the_receiver.set(());
         Ok(())
     }
 }
@@ -286,8 +287,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R,
                 // At least one item was in the buffer, return it.
                 Some(item) => {
                     self.state.len.set(self.state.len.get() - 1);
-                    self.state.notifier.set(());
-                    println!("set notifier in produce");
+                    self.state.notify_the_sender.set(());
                     return Ok(Left(item));
                 }
                 None => {
@@ -302,7 +302,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R,
                         }
                         None => {
                             // No last item yet, so we wait until something changes.
-                            let () = self.state.notifier.take().await;
+                            let () = self.state.notify_the_receiver.take().await;
                             // Go into the next iteration of the loop, where progress will be made.
                         }
                     }
@@ -316,8 +316,14 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BufferedProducer for Rec
     async fn slurp(&mut self) -> Result<(), Self::Error> {
         // Nothing to do really, except that if the buffer is empty and an error was set, then we emit it.
         if self.len() == 0 {
-            if let Some(Err(err)) = unsafe { self.state.last.borrow_mut().take() } {
-                return Err(err);
+            // if self.state.queue.read().await.len() == 0 {
+            match unsafe { self.state.last.borrow_mut().take() } {
+                None => { /* no-op */ }
+                Some(Err(err)) => return Err(err),
+                Some(Ok(fin)) => {
+                    // Put the fin back in the cell.
+                    unsafe { *self.state.last.borrow_mut().deref_mut() = Some(Ok(fin)) }
+                }
             }
         }
 
@@ -347,7 +353,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkProducer for Receive
                         }
                         None => {
                             // No last item yet, so we wait until something changes.
-                            let () = self.state.notifier.take().await;
+                            let () = self.state.notify_the_receiver.take().await;
                             // Go into the next iteration of the loop, where progress will be made.
                         }
                     }
@@ -377,7 +383,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkProducer for Receive
             .deref_mut()
             .consider_dequeued(amount);
         self.state.len.set(self.state.len.get() - amount);
-        self.state.notifier.set(());
+        self.state.notify_the_sender.set(());
         Ok(())
     }
 }
@@ -402,43 +408,99 @@ mod tests {
 
     use futures::join;
 
-    // #[test]
-    // fn test_spsc_sufficient_capacity() {
-    //     let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(99 /* capacity */));
-    //     let (mut sender, mut receiver) = new_spsc(&state);
-        
-    //     pollster::block_on(async {
-    //         assert!(sender.consume(300).await.is_ok());
-    //         assert!(sender.consume(400).await.is_ok());
-    //         assert!(sender.consume(500).await.is_ok());
-    //         assert!(sender.close(-17).await.is_ok());
-    //         assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
-    //         assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
-    //         assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
-    //         assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
-    //     });
-    // }
+    use ufotofu_queues::Fixed;
+
+    #[test]
+    fn test_spsc_sufficient_capacity() {
+        let state: State<_, _, ()> = State::new(Fixed::new(99 /* capacity */));
+        let (mut sender, mut receiver) = new_spsc(&state);
+
+        pollster::block_on(async {
+            assert!(sender.consume(300).await.is_ok());
+            assert!(sender.consume(400).await.is_ok());
+            assert!(sender.consume(500).await.is_ok());
+            assert!(sender.close(-17).await.is_ok());
+            assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
+            assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
+            assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
+            assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
+        });
+    }
 
     #[test]
     fn test_spsc_low_capacity() {
         pollster::block_on(async {
-            let state: State<_, _, ()> = State::new(ufotofu_queues::Fixed::new(2 /* capacity */));
+            let state: State<_, _, ()> = State::new(Fixed::new(3 /* capacity */));
             let (mut sender, mut receiver) = new_spsc(&state);
-    
+
             let send_things = async {
                 assert!(sender.consume(300).await.is_ok());
                 assert!(sender.consume(400).await.is_ok());
                 assert!(sender.consume(500).await.is_ok());
                 assert!(sender.close(-17).await.is_ok());
             };
-    
+
             let receive_things = async {
                 assert_eq!(300, receiver.produce().await.unwrap().unwrap_left());
                 assert_eq!(400, receiver.produce().await.unwrap().unwrap_left());
                 assert_eq!(500, receiver.produce().await.unwrap().unwrap_left());
                 assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
             };
-    
+
+            join!(send_things, receive_things);
+        });
+    }
+
+    #[test]
+    fn test_spsc_immediate_final() {
+        pollster::block_on(async {
+            let state: State<Fixed<u8>, i16, ()> = State::new(Fixed::new(3 /* capacity */));
+            let (mut sender, mut receiver) = new_spsc(&state);
+
+            let send_things = async {
+                assert!(sender.close(-17).await.is_ok());
+            };
+
+            let receive_things = async {
+                assert_eq!(-17, receiver.produce().await.unwrap().unwrap_right());
+            };
+
+            join!(send_things, receive_things);
+        });
+    }
+
+    #[test]
+    fn test_spsc_immediate_error() {
+        pollster::block_on(async {
+            let state: State<Fixed<u8>, i16, i16> = State::new(Fixed::new(3 /* capacity */));
+            let (mut sender, mut receiver) = new_spsc(&state);
+
+            let send_things = async {
+                sender.cause_error(-17);
+            };
+
+            let receive_things = async {
+                assert_eq!(-17, receiver.produce().await.unwrap_err());
+            };
+
+            join!(send_things, receive_things);
+        });
+    }
+
+    #[test]
+    fn test_spsc_slurp() {
+        pollster::block_on(async {
+            let state: State<Fixed<u8>, i16, i16> = State::new(Fixed::new(3 /* capacity */));
+            let (mut sender, mut receiver) = new_spsc(&state);
+
+            let send_things = async {
+                sender.cause_error(-17);
+            };
+
+            let receive_things = async {
+                assert_eq!(-17, receiver.slurp().await.unwrap_err());
+            };
+
             join!(send_things, receive_things);
         });
     }

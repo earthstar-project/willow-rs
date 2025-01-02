@@ -12,16 +12,20 @@ workspace = true
 
 [dependencies]
 ufotofu = { version = "0.6.0", features = ["std", "dev"] }
+# ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
+ufotofu_queues = { version = "0.5.0", features = ["std"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 signature = "2.2.0"
 syncify = "0.1.0"
 willow-encoding = { path = "../encoding" }
-ufotofu_codec = { path = "../ufotofu_codec", features = [ "std", "dev" ] }
-ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = [ "std" ] }
-compact_u64 = { path = "../compact_u64", features = [ "std", "dev" ] }
+ufotofu_codec = { path = "../ufotofu_codec", features = ["std", "dev"] }
+ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = ["std"] }
+compact_u64 = { path = "../compact_u64", features = ["std", "dev"] }
 either = "1.10.0"
+wb_async_utils = { path = "../wb_async_utils", features = ["channels"] }
+futures = { version = "0.3.31" }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -189,6 +193,17 @@ bench = false
 [[bin]]
 name = "encoder_canonic_decoder_relative"
 path = "fuzz_targets/encoder_canonic_decoder_relative.rs"
+test = false
+doc = false
+bench = false
+
+##################
+# wb_async_utils #
+##################
+
+[[bin]]
+name = "spsc"
+path = "fuzz_targets/spsc.rs"
 test = false
 doc = false
 bench = false
