@@ -4,7 +4,7 @@ use std::{
     future::Future,
 };
 
-use ufotofu::{local_nb::Producer, nb::BulkProducer};
+use ufotofu::{BulkProducer, Producer};
 
 use crate::{
     entry::AuthorisedEntry,
