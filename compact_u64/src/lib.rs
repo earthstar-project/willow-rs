@@ -631,7 +631,7 @@ impl Display for NotMinimal {
     }
 }
 
-#[cfg(std)]
+#[cfg(feature = "std")]
 impl std::error::Error for NotMinimal {}
 
 impl From<Infallible> for NotMinimal {
