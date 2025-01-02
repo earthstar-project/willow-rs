@@ -300,30 +300,9 @@ impl Encodable for MessageFieldU64 {
     where
         C: BulkConsumer<Item = u8>,
     {
-        if self.0 <= 251 {
-            // Encode channel as 8 bit integer
-            ufotofu_codec_endian::U8BE(self.0 as u8)
-                .encode(consumer)
-                .await?;
-        } else if self.0 <= 255 {
-            consumer.consume(252).await?;
-            ufotofu_codec_endian::U8BE(self.0 as u8)
-                .encode(consumer)
-                .await?;
-        } else if self.0 <= 2_u64.pow(16) {
-            consumer.consume(253).await?;
-            ufotofu_codec_endian::U16BE(self.0 as u16)
-                .encode(consumer)
-                .await?;
-        } else if self.0 <= 2_u64.pow(32) {
-            consumer.consume(254).await?;
-            ufotofu_codec_endian::U32BE(self.0 as u32)
-                .encode(consumer)
-                .await?;
-        } else {
-            consumer.consume(255).await?;
-            ufotofu_codec_endian::U64BE(self.0).encode(consumer).await?;
-        }
+        CompactU64(self.0)
+            .relative_encode(consumer, &compact_u64::EncodingWidth::eight())
+            .await?;
 
         Ok(())
     }
@@ -339,37 +318,13 @@ impl Decodable for MessageFieldU64 {
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let first_byte = producer.produce_item().await?;
+        let tag = Tag::min_tag(0, TagWidth::eight());
 
-        let value = match first_byte {
-            252 => {
-                ufotofu_codec_endian::U8BE::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-                    .0 as u64
-            }
-            253 => {
-                ufotofu_codec_endian::U16BE::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-                    .0 as u64
-            }
-            254 => {
-                ufotofu_codec_endian::U32BE::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-                    .0 as u64
-            }
-            255 => {
-                ufotofu_codec_endian::U64BE::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-                    .0 as u64
-            }
-            value => value as u64,
-        };
+        let value = CompactU64::relative_decode(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?;
 
-        Ok(MessageFieldU64(value))
+        Ok(MessageFieldU64(value.0))
     }
 }
 
@@ -447,7 +402,6 @@ impl Encodable for HeaderWithEmbeddedChannelAndMaybeLength {
             // Encode the length in only as many bytes as we need...
             let length_bytes = length.to_be_bytes();
 
-            // TODO: move this into a *const* function, just because it can be.
             let bytes_to_consume = min_bytes_needed(*length) as usize;
 
             let slice = &length_bytes[8 - bytes_to_consume..];
