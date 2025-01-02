@@ -19,6 +19,12 @@ enum State<T> {
     Empty(VecDeque<Waker>),
 }
 
+impl<T> Default for OnceCell<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> OnceCell<T> {
     /// Creates a new, empty [`OnceCell`].
     pub fn new() -> Self {

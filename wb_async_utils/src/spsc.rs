@@ -137,6 +137,11 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
         self.state.len.get()
     }
 
+    /// Returns whether there are currently no items buffered.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Sets an error to be emitted on the corresponding `Receiver`.
     /// The error is only emitted there when trying to produce values
     /// via `produce` or `expose_items` (or any method calling one of these),
@@ -227,7 +232,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkConsumer for Sender<
     {
         loop {
             // Try obtain at least one empty slots.
-            match { self.state.queue.write().await.deref_mut().expose_slots() } {
+            match self.state.queue.write().await.deref_mut().expose_slots() {
                 // No empty slot available.
                 None => {
                     // Wait for queue space.
@@ -269,6 +274,11 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Receiver<R, Q, F, E> {
     pub fn len(&self) -> usize {
         self.state.len.get()
     }
+
+    /// Returns whether there are currently no items buffered.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R, Q, F, E> {
@@ -283,7 +293,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R,
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         loop {
             // Try to obtain the next item.
-            match { self.state.queue.write().await.deref_mut().dequeue() } {
+            match self.state.queue.write().await.deref_mut().dequeue() {
                 // At least one item was in the buffer, return it.
                 Some(item) => {
                     self.state.len.set(self.state.len.get() - 1);
@@ -315,7 +325,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Producer for Receiver<R,
 impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BufferedProducer for Receiver<R, Q, F, E> {
     async fn slurp(&mut self) -> Result<(), Self::Error> {
         // Nothing to do really, except that if the buffer is empty and an error was set, then we emit it.
-        if self.len() == 0 {
+        if self.is_empty() {
             // if self.state.queue.read().await.len() == 0 {
             match unsafe { self.state.last.borrow_mut().take() } {
                 None => { /* no-op */ }
@@ -340,7 +350,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkProducer for Receive
     {
         loop {
             // Try to get at least one item.
-            match { self.state.queue.write().await.deref_mut().expose_items() } {
+            match self.state.queue.write().await.deref_mut().expose_items() {
                 // No items available
                 None => {
                     // But perhaps the final item has been consumed already, or an error was requested?
