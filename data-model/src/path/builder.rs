@@ -48,6 +48,64 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
         })
     }
 
+    /// Creates a builder for a path of known total length and component count, efficiently prefilled with the first `prefix_component_count` components of a given `reference` path. Panics if there are not enough components in the `reference`.
+    /// The missing component data must be filled in before building.
+    pub fn new_from_prefix(
+        target_total_length: usize,
+        target_component_count: usize,
+        reference: &Path<MCL, MCC, MPL>,
+        prefix_component_count: usize,
+    ) -> Result<Self, InvalidPathError> {
+        let mut builder = Self::new(target_total_length, target_component_count)?;
+
+        assert!(reference.component_count() >= prefix_component_count);
+
+        // The following is logically equivalent to successively appending the first `prefix_component_count` components of `reference` to the builder, but more efficient in terms of `memcpy` calls.
+        match prefix_component_count.checked_sub(1) {
+            None => return Ok(builder),
+            Some(index_of_final_component) => {
+                // Overwrite the dummy accumulated component lengths for the first `prefix_component_count` components with the actual values.
+                let accumulated_component_lengths_start =
+                    Representation::start_offset_of_sum_of_lengths_for_component(0);
+                let accumulated_component_lengths_end =
+                    Representation::start_offset_of_sum_of_lengths_for_component(
+                        index_of_final_component + 1,
+                    );
+                builder.bytes.as_mut()
+                    [accumulated_component_lengths_start..accumulated_component_lengths_end]
+                    .copy_from_slice(
+                        &reference.data[accumulated_component_lengths_start
+                            ..accumulated_component_lengths_end],
+                    );
+
+                let components_start_in_prefix =
+                    Representation::start_offset_of_component(&reference.data, 0);
+                let components_end_in_prefix = Representation::end_offset_of_component(
+                    &reference.data,
+                    index_of_final_component,
+                );
+                builder.bytes.extend_from_slice(
+                    &reference.data[components_start_in_prefix..components_end_in_prefix],
+                );
+
+                // Record that we added the components.
+                builder.initialised_components = prefix_component_count;
+            }
+        }
+
+        // For reference, here is a naive implementation of the same functionality:
+
+        // for comp in reference
+        //     .create_prefix(prefix_component_count)
+        //     .expect("`prefix_component_count` must be less than the number of components in `reference`")
+        //     .components()
+        // {
+        //     builder.append_component(comp);
+        // }
+
+        Ok(builder)
+    }
+
     /// Appends data for a component of known length by reading data from a [`BulkProducer`] of bytes. Panics if `component_length > MCL`.
     pub async fn append_component_from_bulk_producer<P>(
         &mut self,
@@ -128,15 +186,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     ///
     /// Panics if the number of components or the total length does not match what was claimed in [`PathBuilder::new`].
     pub fn build(self) -> Path<MCL, MCC, MPL> {
-        assert_eq!(
-            self.target_length,
-            Representation::total_length(&self.bytes)
-        );
-
         // Check whether we appended the correct number of components.
         assert_eq!(
             self.initialised_components,
             Representation::component_count(self.bytes.as_ref())
+        );
+
+        assert_eq!(
+            self.target_length,
+            Representation::total_length(&self.bytes, self.initialised_components),
+            "Expected a target length of {}, but got an actual total_length of {}\nRaw representation:{:?}",
+            self.target_length,
+            Representation::total_length(&self.bytes, self.initialised_components),
+            self.bytes
         );
 
         Path {

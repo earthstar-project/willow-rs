@@ -1,10 +1,9 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::Consumer;
+use ufotofu_codec::Encodable;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     NamespaceId, Path, SubspaceId,
 };
-use willow_encoding::{Encodable, RelativeEncodable};
 
 use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
 

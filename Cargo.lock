@@ -417,6 +417,7 @@ dependencies = [
  "ufotofu_codec_endian",
  "ufotofu_queues",
  "wb_async_utils",
+ "willow-encoding",
 ]
 
 [[package]]
@@ -450,6 +451,7 @@ dependencies = [
  "either",
  "signature",
  "ufotofu",
+ "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
 ]

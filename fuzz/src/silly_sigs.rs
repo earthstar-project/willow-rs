@@ -1,6 +1,7 @@
 use arbitrary::Arbitrary;
 use meadowcap::IsCommunal;
 use signature::{Error as SignatureError, Signer, Verifier};
+use ufotofu_codec::{Blame, Decodable, DecodableCanonic, Encodable};
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
@@ -74,66 +75,88 @@ impl IsCommunal for SillyPublicKey {
     }
 }
 
-use syncify::{syncify, syncify_replace};
+impl Encodable for SillyPublicKey {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        consumer.consume(self.0).await?;
 
-pub mod encoding {
-    use super::*;
-
-    use ufotofu::{BulkConsumer, BulkProducer};
-
-    use willow_encoding::produce_byte;
-    use willow_encoding::DecodeError;
-    use willow_encoding::{Decodable, Encodable, RelationDecodable};
-
-    impl Encodable for SillyPublicKey {
-        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-        where
-            Consumer: BulkConsumer<Item = u8>,
-        {
-            consumer.consume(self.0).await?;
-
-            Ok(())
-        }
+        Ok(())
     }
+}
 
-    impl Decodable for SillyPublicKey {
-        async fn decode_canonical<Producer>(
-            producer: &mut Producer,
-        ) -> Result<Self, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-        {
-            let num = produce_byte(producer).await?;
+impl Decodable for SillyPublicKey {
+    type ErrorReason = Blame;
 
-            Ok(SillyPublicKey(num))
-        }
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillyPublicKey(num))
     }
+}
 
-    impl Encodable for SillySig {
-        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-        where
-            Consumer: BulkConsumer<Item = u8>,
-        {
-            consumer.consume(self.0).await?;
+impl DecodableCanonic for SillyPublicKey {
+    type ErrorCanonic = Blame;
 
-            Ok(())
-        }
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillyPublicKey(num))
     }
+}
 
-    impl Decodable for SillySig {
-        async fn decode_canonical<Producer>(
-            producer: &mut Producer,
-        ) -> Result<Self, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-        {
-            let num = produce_byte(producer).await?;
+impl Encodable for SillySig {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        consumer.consume(self.0).await?;
 
-            Ok(SillySig(num))
-        }
+        Ok(())
     }
+}
 
-    impl RelationDecodable for SillyPublicKey {}
+impl Decodable for SillySig {
+    type ErrorReason = Blame;
 
-    impl RelationDecodable for SillySig {}
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillySig(num))
+    }
+}
+
+impl DecodableCanonic for SillySig {
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillySig(num))
+    }
 }

@@ -15,6 +15,7 @@ compact_u64 = { path = "../compact_u64", version = "0.1.0" }
 ufotofu_queues = { version = "0.5.0", features = ["std"] }
 async_cell = "0.2.2"
 futures = { version = "0.3.31" }
+willow-encoding = { path = "../encoding", version = "0.1.0" }
 
 [lints]
 workspace = true
