@@ -6,15 +6,13 @@ edition = "2021"
 [features]
 
 # enables inmemory channel functionality
-# channels = ["ufotofu", "ufotofu_queues", "either", "async_cell"]
-channels = ["ufotofu", "ufotofu_queues", "either"]
+ufotofu_utils = ["ufotofu", "ufotofu_queues", "either"]
 
 [dependencies]
 ufotofu = { version = "0.6.1", features = ["std"], optional = true }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"], optional = true }
 ufotofu_queues = { version = "0.5.0", features = ["std"], optional = true }
 either = { version = "1.10.0", optional = true }
-# async_cell = { version = "0.2.2", optional = true }
 fairly_unsafe_cell = { path = "../fairly_unsafe_cell", version = "0.1.0" }
 
 [dev-dependencies]

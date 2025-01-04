@@ -10,5 +10,5 @@ pub use once_cell::OnceCell;
 mod take_cell;
 pub use take_cell::TakeCell;
 
-#[cfg(feature = "ufotofu")]
+#[cfg(feature = "ufotofu_utils")]
 pub mod spsc;

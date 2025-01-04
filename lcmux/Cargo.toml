@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 either = "1.10.0"
 wb_async_utils = { path = "../wb_async_utils", version = "0.1.0", features = [
-    "channels",
+    "ufotofu_utils",
 ] }
 ufotofu = { version = "0.6.0", features = ["std"] }
 ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
