@@ -205,7 +205,7 @@ pub struct ReadGuard<'lock, T> {
     lock: &'lock RwLock<T>,
 }
 
-impl<'lock, T> Drop for ReadGuard<'lock, T> {
+impl<T> Drop for ReadGuard<'_, T> {
     fn drop(&mut self) {
         match self.lock.readers.get() {
             None => unsafe { unreachable_unchecked() }, // ReadGuards are only created when there are no writers
@@ -219,7 +219,7 @@ impl<'lock, T> Drop for ReadGuard<'lock, T> {
     }
 }
 
-impl<'lock, T> Deref for ReadGuard<'lock, T> {
+impl<T> Deref for ReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -234,7 +234,7 @@ pub struct WriteGuard<'lock, T> {
     lock: &'lock RwLock<T>,
 }
 
-impl<'lock, T> Drop for WriteGuard<'lock, T> {
+impl<T> Drop for WriteGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.readers.set(Some(0)); // Guaranteed to have been `None` before.
 
@@ -242,7 +242,7 @@ impl<'lock, T> Drop for WriteGuard<'lock, T> {
     }
 }
 
-impl<'lock, T> Deref for WriteGuard<'lock, T> {
+impl<T> Deref for WriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -250,7 +250,7 @@ impl<'lock, T> Deref for WriteGuard<'lock, T> {
     }
 }
 
-impl<'lock, T> DerefMut for WriteGuard<'lock, T> {
+impl<T> DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.lock.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut RwLock`
     }

@@ -183,14 +183,14 @@ pub struct ReadGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
 }
 
-impl<'mutex, T> Drop for ReadGuard<'mutex, T> {
+impl<T> Drop for ReadGuard<'_, T> {
     fn drop(&mut self) {
         self.mutex.currently_used.set(false);
         self.mutex.wake_next();
     }
 }
 
-impl<'mutex, T> Deref for ReadGuard<'mutex, T> {
+impl<T> Deref for ReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -205,14 +205,14 @@ pub struct WriteGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
 }
 
-impl<'mutex, T> Drop for WriteGuard<'mutex, T> {
+impl<T> Drop for WriteGuard<'_, T> {
     fn drop(&mut self) {
         self.mutex.currently_used.set(false);
         self.mutex.wake_next();
     }
 }
 
-impl<'mutex, T> Deref for WriteGuard<'mutex, T> {
+impl<T> Deref for WriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -220,7 +220,7 @@ impl<'mutex, T> Deref for WriteGuard<'mutex, T> {
     }
 }
 
-impl<'mutex, T> DerefMut for WriteGuard<'mutex, T> {
+impl<T> DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.mutex.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut Mutex`
     }

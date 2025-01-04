@@ -5,6 +5,7 @@ members = [
     "data-model",
     "earthstar",
     "encoding",
+    "fairly_unsafe_cell",
     "fuzz",
     "lcmux",
     "meadowcap",
