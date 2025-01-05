@@ -1,5 +1,5 @@
 use core::{
-    cell::{Cell, UnsafeCell},
+    cell::Cell,
     future::Future,
     ops::{Deref, DerefMut},
     pin::Pin,
@@ -8,22 +8,26 @@ use core::{
 use std::collections::VecDeque;
 use std::fmt;
 
+use fairly_unsafe_cell::*;
+
+use crate::{extend_lifetime, extend_lifetime_mut};
+
 /// An awaitable, single-threaded mutex. Only a single reference to the contents of the mutex can exist at any time.
 ///
 /// All accesses are parked and waked in FIFO order.
 pub struct Mutex<T> {
-    value: UnsafeCell<T>,
+    value: FairlyUnsafeCell<T>,
     currently_used: Cell<bool>,
-    parked: UnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
+    parked: FairlyUnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
 }
 
 impl<T> Mutex<T> {
     /// Creates a new mutex storing the given value.
     pub fn new(value: T) -> Self {
         Mutex {
-            value: UnsafeCell::new(value),
+            value: FairlyUnsafeCell::new(value),
             currently_used: Cell::new(false),
-            parked: UnsafeCell::new(VecDeque::new()),
+            parked: FairlyUnsafeCell::new(VecDeque::new()),
         }
     }
 
@@ -304,21 +308,25 @@ impl<T> Mutex<T> {
     // }
 
     fn wake_next(&self) {
-        if let Some(waker) = (unsafe { &mut *self.parked.get() }).pop_front() {
+        // Safe because self.parked is only accessed during `wake_next` and `park_waker` and access does not outlive those functions.
+        let mut r = unsafe { self.parked.borrow_mut() };
+
+        if let Some(waker) = r.deref_mut().pop_front() {
             waker.wake()
         }
     }
 
     fn park(&self, cx: &mut Context<'_>) {
         // Safe because self.parked is only accessed during `wake_next` and `park_waker` and access does not outlive those functions.
-        let parked = unsafe { &mut *self.parked.get() };
-        parked.push_back(cx.waker().clone());
+        let mut r = unsafe { self.parked.borrow_mut() };
+
+        r.deref_mut().push_back(cx.waker().clone());
     }
 }
 
 impl<T> AsMut<T> for Mutex<T> {
     fn as_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.value.get() } // Safe because a `&mut Mutex` can never live at the same time as a `ReadGuard`, `WriteGuard` or another `&mut Mutex`
+        self.value.get_mut()
     }
 }
 
@@ -368,7 +376,10 @@ impl<T> Deref for ReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.value.get() } // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`
+        let borrowed = unsafe { self.mutex.value.borrow() }; // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`.
+                                                               // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                               // as `self`.
+        unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
 
@@ -411,13 +422,19 @@ impl<T> Deref for WriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.value.get() } // Safe because a `&WriteGuard` can never live at the same time as a `&mut WriteGuard` or a `&mut Mutex`
+        let borrowed = unsafe { self.mutex.value.borrow() }; // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`.
+                                                               // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                               // as `self`.
+        unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
 
 impl<T> DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut Mutex`
+        let mut borrowed = unsafe { self.mutex.value.borrow_mut() }; // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`.
+                                                                       // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                                       // as `self`.
+        unsafe { extend_lifetime_mut(borrowed.deref_mut()) }
     }
 }
 
