@@ -27,6 +27,13 @@ impl<T> Default for OnceCell<T> {
 
 impl<T> OnceCell<T> {
     /// Creates a new, empty [`OnceCell`].
+    ///
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    ///
+    /// let c = OnceCell::<()>::new();
+    /// assert_eq!(None, c.into_inner());
+    /// ```
     pub fn new() -> Self {
         OnceCell {
             state: UnsafeCell::new(State::Empty(VecDeque::new())),
@@ -34,6 +41,13 @@ impl<T> OnceCell<T> {
     }
 
     /// Creates a new [`OnceCell`] that contains a value.
+    ///
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    ///
+    /// let c = OnceCell::new_with(17);
+    /// assert_eq!(Some(17), c.into_inner());
+    /// ```
     pub fn new_with(t: T) -> Self {
         OnceCell {
             state: UnsafeCell::new(State::Set(t)),
@@ -41,6 +55,13 @@ impl<T> OnceCell<T> {
     }
 
     /// Consumes the [`OnceCell`] and returns the wrapped value, if there is any.
+    ///
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    ///
+    /// let c = OnceCell::new_with(17);
+    /// assert_eq!(Some(17), c.into_inner());
+    /// ```
     pub fn into_inner(self) -> Option<T> {
         match self.state.into_inner() {
             State::Empty(_) => None,
@@ -48,7 +69,35 @@ impl<T> OnceCell<T> {
         }
     }
 
+    /// Returns whether the [`OnceCell`] is currently empty.
+    /// 
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    /// 
+    /// let c1 = OnceCell::<()>::new();
+    /// assert!(c1.is_empty());
+    /// 
+    /// let c2 = OnceCell::new_with(17);
+    /// assert!(!c2.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        match unsafe { &mut *self.state.get() } {
+            State::Empty(_) => true,
+            State::Set(_) => false,
+        }
+    }
+
     /// Obtain a mutable reference to the stored value, or `None` if nothing is stored.
+    /// 
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    /// 
+    /// let mut c1 = OnceCell::<()>::new();
+    /// assert_eq!(None, c1.try_get_mut());
+    /// 
+    /// let mut c2 = OnceCell::new_with(17);
+    /// assert_eq!(Some(&mut 17), c2.try_get_mut());
+    /// ```
     pub fn try_get_mut(&mut self) -> Option<&mut T> {
         match unsafe { &mut *self.state.get() } {
             State::Empty(_) => None,
@@ -57,6 +106,16 @@ impl<T> OnceCell<T> {
     }
 
     /// Try to obtain an immutable reference to the stored value, or `None` if nothing is stored.
+    /// 
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    /// 
+    /// let c1 = OnceCell::<()>::new();
+    /// assert_eq!(None, c1.try_get());
+    /// 
+    /// let c2 = OnceCell::new_with(17);
+    /// assert_eq!(Some(&17), c2.try_get());
+    /// ```
     pub fn try_get(&self) -> Option<&T> {
         match unsafe { &*self.state.get() } {
             State::Empty(_) => None,
@@ -65,11 +124,40 @@ impl<T> OnceCell<T> {
     }
 
     /// Obtain an immutable reference to the stored value, `.await`ing it to be set if necessary.
+    /// 
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    ///
+    /// let cell = OnceCell::new();
+    ///
+    /// pollster::block_on(async {
+    ///     futures::join!(async {
+    ///         assert_eq!(&5, cell.get().await);
+    ///     }, async {
+    ///         assert_eq!(Ok(()), cell.set(5));
+    ///     });
+    /// });
+    /// ```
     pub async fn get(&self) -> &T {
         GetFuture(self).await
     }
 
     /// Set the value in the cell if it was empty before, return an error and do nothing if is was not empty.
+    /// 
+    /// ```
+    /// use wb_async_utils::OnceCell;
+    ///
+    /// let cell = OnceCell::new();
+    ///
+    /// pollster::block_on(async {
+    ///     futures::join!(async {
+    ///         assert_eq!(&5, cell.get().await);
+    ///         assert_eq!(Err(17), cell.set(17));
+    ///     }, async {
+    ///         assert_eq!(Ok(()), cell.set(5));
+    ///     });
+    /// });
+    /// ```
     pub fn set(&self, t: T) -> Result<(), T> {
         match unsafe { &mut *self.state.get() } {
             State::Empty(queue) => {

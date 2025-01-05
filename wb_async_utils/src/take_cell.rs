@@ -152,7 +152,6 @@ impl<T> TakeCell<T> {
     /// Takes the current value out of the cell if there is one, waiting for one to arrive if necessary.
     ///
     /// ```
-    /// use futures::join;
     /// use wb_async_utils::TakeCell;
     ///
     /// let cell = TakeCell::new_with(5);
