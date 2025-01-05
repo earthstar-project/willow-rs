@@ -12,3 +12,6 @@ pub use take_cell::TakeCell;
 
 #[cfg(feature = "ufotofu_utils")]
 pub mod spsc;
+
+#[cfg(feature = "ufotofu_utils")]
+pub mod shared_producer;

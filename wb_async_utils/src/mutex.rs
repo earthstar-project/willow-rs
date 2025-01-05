@@ -43,6 +43,7 @@ impl<T> Mutex<T> {
             return None;
         }
 
+        self.currently_used.set(true);
         Some(ReadGuard { mutex: self })
     }
 
@@ -57,6 +58,7 @@ impl<T> Mutex<T> {
             return None;
         }
 
+        self.currently_used.set(true);
         Some(WriteGuard { mutex: self })
     }
 
@@ -179,6 +181,7 @@ impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
 /// Read-only access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref`.
+#[derive(Debug)]
 pub struct ReadGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
 }
@@ -201,6 +204,7 @@ impl<T> Deref for ReadGuard<'_, T> {
 /// Read and write access access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref` and `DerefMut`.
+#[derive(Debug)]
 pub struct WriteGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
 }
@@ -255,5 +259,36 @@ impl<'mutex, T> Future for WriteFuture<'mutex, T> {
                 Poll::Pending
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::time::Duration;
+    use smol::{block_on, Timer};
+
+    #[test]
+    fn test_mutex_basic() {
+        let m = Mutex::new(0);
+
+        let set1 = async {
+            {
+                let mut handle = m.write().await;
+                Timer::after(Duration::from_millis(50)).await; // Since we hold a handle right now, obtaining the second handle has to wait for us.
+                assert_eq!(0, *handle.deref());
+                *handle.deref_mut() = 1;
+            }
+        };
+
+        let set2 = async {
+            Timer::after(Duration::from_millis(10)).await; // ensure that the other task "starts"
+
+            let mut handle = m.write().await;
+            assert_eq!(1, *handle.deref());
+            *handle.deref_mut() = 2;
+        };
+
+        block_on(futures::future::join(set1, set2));
     }
 }

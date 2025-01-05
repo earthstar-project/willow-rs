@@ -575,9 +575,9 @@ dependencies = [
 
 [[package]]
 name = "smol"
-version = "2.0.0"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e635339259e51ef85ac7aa29a1cd991b957047507288697a690e80ab97d07cad"
+checksum = "a33bd3e260892199c3ccfc487c88b2da2265080acb316cd920da72fdfd7c599f"
 dependencies = [
  "async-channel",
  "async-executor",
@@ -678,6 +678,7 @@ dependencies = [
  "fairly_unsafe_cell",
  "futures",
  "pollster",
+ "smol",
  "ufotofu",
  "ufotofu_queues",
 ]
