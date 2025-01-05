@@ -1,18 +1,19 @@
 use core::{
-    cell::UnsafeCell,
     future::Future,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ops::{Deref, DerefMut}};
 use std::fmt;
+
+use fairly_unsafe_cell::FairlyUnsafeCell;
 
 /// An async cell akin to an [`Option`], whose value can only be accessed via an async `take` method that non-blocks while the cell is empty.
 ///
 /// All accesses are parked and waked in FIFO order.
 pub struct TakeCell<T> {
-    value: UnsafeCell<Option<T>>,
-    parked: UnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
+    value: FairlyUnsafeCell<Option<T>>,
+    parked: FairlyUnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
 }
 
 impl<T> Default for TakeCell<T> {
@@ -32,8 +33,8 @@ impl<T> TakeCell<T> {
     /// ```
     pub fn new() -> Self {
         TakeCell {
-            value: UnsafeCell::new(None),
-            parked: UnsafeCell::new(VecDeque::new()),
+            value: FairlyUnsafeCell::new(None),
+            parked: FairlyUnsafeCell::new(VecDeque::new()),
         }
     }
 
@@ -47,8 +48,8 @@ impl<T> TakeCell<T> {
     /// ```
     pub fn new_with(value: T) -> Self {
         TakeCell {
-            value: UnsafeCell::new(Some(value)),
-            parked: UnsafeCell::new(VecDeque::new()),
+            value: FairlyUnsafeCell::new(Some(value)),
+            parked: FairlyUnsafeCell::new(VecDeque::new()),
         }
     }
 
@@ -76,7 +77,8 @@ impl<T> TakeCell<T> {
     /// assert!(!c2.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        unsafe { &*self.value.get() }.is_none()
+        let r = unsafe { self.value.borrow() };
+        r.deref().is_none()
     }
 
     /// Sets the value in the cell. If the cell was empty, wakes up the oldest pending async method call that was waiting for a value in the cell.
@@ -116,14 +118,16 @@ impl<T> TakeCell<T> {
     /// });
     /// ```
     pub fn replace(&self, value: T) -> Option<T> {
-        match unsafe { &mut *self.value.get() }.take() {
+        let mut r = unsafe { self.value.borrow_mut() };
+
+        match r.deref_mut().take() {
             None => {
-                *unsafe { &mut *self.value.get() } = Some(value);
+                *r.deref_mut() = Some(value);
                 self.wake_next();
                 None
             }
             Some(old) => {
-                *unsafe { &mut *self.value.get() } = Some(value);
+                *r.deref_mut() = Some(value);
                 Some(old)
             }
         }
@@ -141,7 +145,8 @@ impl<T> TakeCell<T> {
     /// assert_eq!(Some(17), c2.try_take());
     /// ```
     pub fn try_take(&self) -> Option<T> {
-        unsafe { &mut *self.value.get() }.take()
+        let mut r = unsafe { self.value.borrow_mut() };
+        r.deref_mut().take()
     }
 
     /// Takes the current value out of the cell if there is one, waiting for one to arrive if necessary.
@@ -234,25 +239,29 @@ impl<T> TakeCell<T> {
     /// });
     /// ```
     pub fn count_waiting(&self) -> usize {
-        unsafe { &*self.parked.get() }.len()
+        let parked = unsafe { self.parked.borrow() };
+        parked.deref().len()
     }
 
     fn wake_next(&self) {
-        if let Some(waker) = (unsafe { &mut *self.parked.get() }).pop_front() {
+        let mut parked = unsafe { self.parked.borrow_mut() };
+
+        if let Some(waker) = parked.deref_mut().pop_front() {
             waker.wake()
         }
     }
 
     fn park(&self, cx: &mut Context<'_>) {
-        let parked = unsafe { &mut *self.parked.get() };
-        parked.push_back(cx.waker().clone());
+        let mut parked = unsafe { self.parked.borrow_mut() };
+        
+        parked.deref_mut().push_back(cx.waker().clone());
     }
 }
 
 impl<T: fmt::Debug> fmt::Debug for TakeCell<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_tuple("TakeCell");
-        match unsafe { &*self.value.get() } {
+        match unsafe { self.value.borrow().deref() } {
             Some(t) => {
                 d.field(t);
             }
