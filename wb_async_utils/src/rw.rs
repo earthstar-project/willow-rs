@@ -1,5 +1,5 @@
 use core::{
-    cell::{Cell, UnsafeCell},
+    cell::Cell,
     future::Future,
     hint::unreachable_unchecked,
     ops::{Deref, DerefMut},
@@ -9,16 +9,20 @@ use core::{
 use std::collections::VecDeque;
 use std::fmt;
 
+use fairly_unsafe_cell::FairlyUnsafeCell;
+
+use crate::{extend_lifetime, extend_lifetime_mut};
+
 /// An awaitable, single-threaded read-write lock. Allows an arbitrary number of concurrent immutable accesses, or a single mutable access.
 ///
 /// Write accesses are parked and waked in FIFO order, but read accesses always have priority.
 /// That is, after a write access has completed, all read accesses are granted.
 /// Only if there are no pending read accesses is the next (in FIFO order) write access granted.
 pub struct RwLock<T> {
-    value: UnsafeCell<T>,
+    value: FairlyUnsafeCell<T>,
     readers: Cell<Option<usize>>, // `None` while writing, `Some(0)` if there are neither readers nor writers
-    parked_reads: UnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
-    parked_writes: UnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
+    parked_reads: FairlyUnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
+    parked_writes: FairlyUnsafeCell<VecDeque<Waker>>, // push_back to enqueue, pop_front to dequeue
 }
 
 impl<T> RwLock<T> {
@@ -32,10 +36,10 @@ impl<T> RwLock<T> {
     /// ```
     pub fn new(value: T) -> Self {
         RwLock {
-            value: UnsafeCell::new(value),
+            value: FairlyUnsafeCell::new(value),
             readers: Cell::new(Some(0)),
-            parked_reads: UnsafeCell::new(VecDeque::new()),
-            parked_writes: UnsafeCell::new(VecDeque::new()),
+            parked_reads: FairlyUnsafeCell::new(VecDeque::new()),
+            parked_writes: FairlyUnsafeCell::new(VecDeque::new()),
         }
     }
 
@@ -306,14 +310,16 @@ impl<T> RwLock<T> {
     fn wake_next(&self) {
         debug_assert_eq!(self.readers.get(), Some(0));
 
-        let there_are_no_pending_reads = { (unsafe { &*self.parked_reads.get() }).is_empty() };
+        let there_are_no_pending_reads = unsafe { self.parked_reads.borrow().deref().is_empty() };
 
         if there_are_no_pending_reads {
-            if let Some(next_write) = (unsafe { &mut *self.parked_writes.get() }).pop_front() {
+            if let Some(next_write) =
+                unsafe { self.parked_writes.borrow_mut().deref_mut().pop_front() }
+            {
                 next_write.wake();
             }
         } else {
-            for parked_read in (unsafe { &mut *self.parked_reads.get() }).drain(..) {
+            for parked_read in unsafe { self.parked_reads.borrow_mut().deref_mut().drain(..) } {
                 parked_read.wake();
             }
         }
@@ -321,20 +327,20 @@ impl<T> RwLock<T> {
 
     fn park_read(&self, cx: &mut Context<'_>) {
         // Safe because self.parked_reads is only accessed during `wake_next` and `park_waker` and access does not outlive those functions.
-        let parked_reads = unsafe { &mut *self.parked_reads.get() };
-        parked_reads.push_back(cx.waker().clone());
+        let mut parked_reads = unsafe { self.parked_reads.borrow_mut() };
+        parked_reads.deref_mut().push_back(cx.waker().clone());
     }
 
     fn park_write(&self, cx: &mut Context<'_>) {
         // Safe because self.parked_reads is only accessed during `wake_next` and `park_waker` and access does not outlive those functions.
-        let parked_writes = unsafe { &mut *self.parked_writes.get() };
-        parked_writes.push_back(cx.waker().clone());
+        let mut parked_writes = unsafe { self.parked_writes.borrow_mut() };
+        parked_writes.deref_mut().push_back(cx.waker().clone());
     }
 }
 
 impl<T> AsMut<T> for RwLock<T> {
     fn as_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.value.get() } // Safe because a `&mut RwLock` can never live at the same time as a `ReadGuard`, `WriteGuard` or another `&mut RwLock`
+        self.value.get_mut()
     }
 }
 
@@ -391,7 +397,10 @@ impl<T> Deref for ReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.lock.value.get() } // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut RwLock`
+        let borrowed = unsafe { self.lock.value.borrow() }; // Safe because a ReadGuard can never live at the same time as a WriteGuard or a `&mut Mutex`.
+                                                            // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                            // as `self`.
+        unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
 
@@ -435,13 +444,19 @@ impl<T> Deref for WriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.lock.value.get() } // Safe because a `&WriteGuard` can never live at the same time as a `&mut WriteGuard` or a `&mut RwLock`
+        let borrowed = unsafe { self.lock.value.borrow() }; // Safe because a WriteGuard can never live at the same time as another guard or a `&mut Mutex`.
+                                                            // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                            // as `self`.
+        unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
 
 impl<T> DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.lock.value.get() } // Safe because a `&mut WriteGuard` can never live at the same time as another `&mut WriteGuard` or a `&mut RwLock`
+        let mut borrowed = unsafe { self.lock.value.borrow_mut() }; // Safe because a WriteGuard can never live at the same time as another guard or a `&mut Mutex`.
+                                                                    // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                                    // as `self`.
+        unsafe { extend_lifetime_mut(borrowed.deref_mut()) }
     }
 }
 
