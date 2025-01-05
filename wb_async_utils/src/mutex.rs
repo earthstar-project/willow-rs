@@ -28,16 +28,52 @@ impl<T> Mutex<T> {
     }
 
     /// Consumes the mutex and returns the wrapped value.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    ///
+    /// let m = Mutex::new(5);
+    /// assert_eq!(5, m.into_inner());
+    /// ```
     pub fn into_inner(self) -> T {
         self.value.into_inner()
     }
 
     /// Gives read access to the wrapped value, waiting if necessary.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    /// use core::time::Duration;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     let handle = m.read().await;
+    ///     assert_eq!(0, *handle.deref());
+    /// });
+    /// ```
     pub async fn read(&self) -> ReadGuard<T> {
         ReadFuture(self).await
     }
 
     /// Gives read access if doing so is possible without waiting, returns `None` otherwise.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    /// use core::time::Duration;
+    /// use smol::{block_on, Timer};
+    ///
+    /// let m = Mutex::new(0);
+    /// assert_eq!(&0, m.try_read().unwrap().deref());
+    ///
+    /// block_on(futures::future::join(async {
+    ///     let handle = m.read().await;
+    ///     Timer::after(Duration::from_millis(50)).await;
+    /// }, async {
+    ///     assert!(m.try_read().is_none());
+    /// }));
+    /// ```
     pub fn try_read(&self) -> Option<ReadGuard<T>> {
         if self.currently_used.get() {
             return None;
@@ -48,11 +84,48 @@ impl<T> Mutex<T> {
     }
 
     /// Gives write access to the wrapped value, waiting if necessary.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::{Deref, DerefMut};
+    /// use core::time::Duration;
+    /// use smol::{block_on, Timer};
+    ///
+    /// let m = Mutex::new(0);
+    /// block_on(futures::future::join(async {
+    ///     let mut handle = m.write().await;
+    ///     // Simulate doing some work.
+    ///     Timer::after(Duration::from_millis(50)).await;
+    ///     assert_eq!(0, *handle.deref());
+    ///     *handle.deref_mut() = 1;
+    /// }, async {
+    ///     // This future is "faster", but has to wait for the "work" performed by the first one.
+    ///     let mut handle = m.read().await;
+    ///     assert_eq!(1, *handle.deref());
+    /// }));
+    /// ```
     pub async fn write(&self) -> WriteGuard<T> {
         WriteFuture(self).await
     }
 
     /// Gives write access if doing so is possible without waiting, returns `None` otherwise.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    /// use core::time::Duration;
+    /// use smol::{block_on, Timer};
+    ///
+    /// let m = Mutex::new(0);
+    /// assert_eq!(&0, m.try_write().unwrap().deref());
+    ///
+    /// block_on(futures::future::join(async {
+    ///     let handle = m.write().await;
+    ///     Timer::after(Duration::from_millis(50)).await;
+    /// }, async {
+    ///     assert!(m.try_write().is_none());
+    /// }));
+    /// ```
     pub fn try_write(&self) -> Option<WriteGuard<T>> {
         if self.currently_used.get() {
             return None;
@@ -63,7 +136,18 @@ impl<T> Mutex<T> {
     }
 
     /// Sets the wrapped value.
-    /// Needs to `.await` read access internally.
+    /// Needs to `.await` write access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     m.set(1).await;
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn set(&self, to: T) {
         let mut guard = self.write().await;
         *guard = to;
@@ -71,6 +155,17 @@ impl<T> Mutex<T> {
 
     /// Replaces the wrapped value, and returns the old one.
     /// Needs to `.await` read access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     assert_eq!(0, m.replace(1).await);
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn replace(&self, mut to: T) -> T {
         let mut guard = self.write().await;
         core::mem::swap(guard.deref_mut(), &mut to);
@@ -79,6 +174,17 @@ impl<T> Mutex<T> {
 
     /// Updates the wrapped value with the given function.
     /// Needs to `.await` read access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     m.update(|x| x + 1).await;
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn update(&self, with: impl FnOnce(&T) -> T) {
         let mut guard = self.write().await;
         *guard = with(&guard);
@@ -86,32 +192,68 @@ impl<T> Mutex<T> {
 
     /// Updates the wrapped value with the successful result of the given function, or propagates the error of the function.
     /// Needs to `.await` read access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     assert_eq!(Ok(()), m.fallible_update(|x| Ok::<u8, i8>(x + 1)).await);
+    ///     assert_eq!(1, *m.read().await.deref());
+    ///
+    ///     assert_eq!(Err(-17), m.fallible_update(|_| Err(-17)).await);
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn fallible_update<E>(&self, with: impl FnOnce(&T) -> Result<T, E>) -> Result<(), E> {
         let mut guard = self.write().await;
         *guard = with(&guard)?;
         Ok(())
     }
 
-    /// Updates the wrapped value with the given async function.
-    /// Needs to `.await` read access internally.
-    pub async fn update_async<Fut: Future<Output = T>>(&self, with: impl FnOnce(&T) -> Fut) {
-        let mut guard = self.write().await;
-        *guard = with(&guard).await;
-    }
+    // /// Updates the wrapped value with the given async function.
+    // /// Needs to `.await` read access internally.
+    // ///
+    // /// ```
+    // /// use wb_async_utils::mutex::*;
+    // /// use core::ops::Deref;
+    // ///
+    // /// let m = Mutex::new(0);
+    // /// pollster::block_on(async {
+    // ///     m.update_async(move |x| {async move {x + 1}}).await;
+    // ///     assert_eq!(1, *m.read().await.deref());
+    // /// });
+    // /// ```
+    // pub async fn update_async<Fut: Future<Output = T>>(&self, with: impl FnOnce(&T) -> Fut) {
+    //     let mut guard = self.write().await;
+    //     *guard = with(&guard).await;
+    // }
 
-    /// Updates the wrapped value with the successful result of the given async function, or propagates the error of the function.
-    /// Needs to `.await` read access internally.
-    pub async fn fallible_update_async<E, Fut: Future<Output = Result<T, E>>>(
-        &self,
-        with: impl FnOnce(&T) -> Fut,
-    ) -> Result<(), E> {
-        let mut guard = self.write().await;
-        *guard = with(&guard).await?;
-        Ok(())
-    }
+    // /// Updates the wrapped value with the successful result of the given async function, or propagates the error of the function.
+    // /// Needs to `.await` read access internally.
+    // pub async fn fallible_update_async<E, Fut: Future<Output = Result<T, E>>>(
+    //     &self,
+    //     with: impl FnOnce(&T) -> Fut,
+    // ) -> Result<(), E> {
+    //     let mut guard = self.write().await;
+    //     *guard = with(&guard).await?;
+    //     Ok(())
+    // }
 
     /// Mutates the wrapped value with the given function.
     /// Needs to `.await` read access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     m.mutate(|x| *x += 1).await;
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn mutate(&self, with: impl FnOnce(&mut T)) {
         let mut guard = self.write().await;
         with(&mut guard)
@@ -119,6 +261,23 @@ impl<T> Mutex<T> {
 
     /// Mutates the wrapped value with the given fallible function, propagates its error if any.
     /// Needs to `.await` read access internally.
+    ///
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    /// use core::ops::Deref;
+    ///
+    /// let m = Mutex::new(0);
+    /// pollster::block_on(async {
+    ///     assert_eq!(Ok(()), m.fallible_mutate(|x| {
+    ///         *x +=1 ;
+    ///         Ok::<(), i8>(())
+    ///     }).await);
+    ///     assert_eq!(1, *m.read().await.deref());
+    ///
+    ///     assert_eq!(Err(-17), m.fallible_mutate(|_| Err(-17)).await);
+    ///     assert_eq!(1, *m.read().await.deref());
+    /// });
+    /// ```
     pub async fn fallible_mutate<E>(
         &self,
         with: impl FnOnce(&mut T) -> Result<(), E>,
@@ -127,22 +286,22 @@ impl<T> Mutex<T> {
         with(&mut guard)
     }
 
-    /// Mutates the wrapped value with the given async function.
-    /// Needs to `.await` read access internally.
-    pub async fn mutate_async<Fut: Future<Output = ()>>(&self, with: impl FnOnce(&mut T) -> Fut) {
-        let mut guard = self.write().await;
-        with(&mut guard).await
-    }
+    // /// Mutates the wrapped value with the given async function.
+    // /// Needs to `.await` read access internally.
+    // pub async fn mutate_async<Fut: Future<Output = ()>>(&self, with: impl FnOnce(&mut T) -> Fut) {
+    //     let mut guard = self.write().await;
+    //     with(&mut guard).await
+    // }
 
-    /// Mutates the wrapped value with the given fallible async function, propagates its error if any.
-    /// Needs to `.await` read access internally.
-    pub async fn fallible_mutate_async<E, Fut: Future<Output = Result<(), E>>>(
-        &self,
-        with: impl FnOnce(&mut T) -> Fut,
-    ) -> Result<(), E> {
-        let mut guard = self.write().await;
-        with(&mut guard).await
-    }
+    // /// Mutates the wrapped value with the given fallible async function, propagates its error if any.
+    // /// Needs to `.await` read access internally.
+    // pub async fn fallible_mutate_async<E, Fut: Future<Output = Result<(), E>>>(
+    //     &self,
+    //     with: impl FnOnce(&mut T) -> Fut,
+    // ) -> Result<(), E> {
+    //     let mut guard = self.write().await;
+    //     with(&mut guard).await
+    // }
 
     fn wake_next(&self) {
         if let Some(waker) = (unsafe { &mut *self.parked.get() }).pop_front() {
@@ -181,6 +340,18 @@ impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
 /// Read-only access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref`.
+///
+/// ```
+/// use wb_async_utils::mutex::*;
+/// use core::ops::Deref;
+/// use core::time::Duration;
+///
+/// let m = Mutex::new(0);
+/// pollster::block_on(async {
+///     let handle = m.read().await;
+///     assert_eq!(0, *handle.deref());
+/// });
+/// ```
 #[derive(Debug)]
 pub struct ReadGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
@@ -204,6 +375,26 @@ impl<T> Deref for ReadGuard<'_, T> {
 /// Read and write access access to the value stored in a [`Mutex`].
 ///
 /// The wrapped value is accessible via the implementation of `Deref` and `DerefMut`.
+///
+/// ```
+/// use wb_async_utils::mutex::*;
+/// use core::ops::{Deref, DerefMut};
+/// use core::time::Duration;
+/// use smol::{block_on, Timer};
+///
+/// let m = Mutex::new(0);
+/// block_on(futures::future::join(async {
+///     let mut handle = m.write().await;
+///     // Simulate doing some work.
+///     Timer::after(Duration::from_millis(50)).await;
+///     assert_eq!(0, *handle.deref());
+///     *handle.deref_mut() = 1;
+/// }, async {
+///     // This future is "faster", but has to wait for the "work" performed by the first one.
+///     let mut handle = m.read().await;
+///     assert_eq!(1, *handle.deref());
+/// }));
+/// ```
 #[derive(Debug)]
 pub struct WriteGuard<'mutex, T> {
     mutex: &'mutex Mutex<T>,
