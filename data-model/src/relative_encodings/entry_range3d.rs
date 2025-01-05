@@ -155,8 +155,8 @@ where
         // Add time_diff to out.get_times().start, or subtract from out.get_times().end?
         let add_time_diff_to_start = is_bitflagged(header, 2);
 
-        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
-        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
 
         let subspace_id = if is_subspace_encoded {
             S::decode(producer)
@@ -261,8 +261,8 @@ where
             return Err(DecodeError::Other(Blame::TheirFault));
         }
 
-        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
-        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
 
         let subspace_id = if is_subspace_encoded {
             S::decode_canonic(producer)

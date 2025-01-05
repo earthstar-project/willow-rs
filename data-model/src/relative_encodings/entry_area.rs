@@ -62,8 +62,8 @@ where
         let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
         let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
 
-        header |= time_diff_tag.data_at_offset(4);
-        header |= payload_length_tag.data_at_offset(6);
+        header |= time_diff_tag.data_at_offset(2);
+        header |= payload_length_tag.data_at_offset(4);
 
         consumer.consume(header).await?;
 
@@ -149,6 +149,12 @@ where
         }
         .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
+        if !out.times().includes(&timestamp) {
+            println!("timediff: {}", time_diff);
+            println!("timestamp: {}", timestamp);
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
         let payload_length = CompactU64::relative_decode(producer, &payload_length_tag)
             .await
             .map_err(DecodeError::map_other_from)?
@@ -157,10 +163,6 @@ where
         let payload_digest = PD::decode(producer)
             .await
             .map_err(DecodeError::map_other_from)?;
-
-        if !out.times().includes(&timestamp) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
 
         Ok(Self::new(
             namespace.clone(),
@@ -244,15 +246,6 @@ where
         }
         .ok_or(DecodeError::Other(Blame::TheirFault))?;
 
-        let payload_length = CompactU64::relative_decode_canonic(producer, &payload_length_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        let payload_digest = PD::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-
         // === Necessary to produce canonic encodings. ===
         // Verify that the correct add_or_subtract_time_diff flag was set.
         let should_have_added = timestamp.checked_sub(out.times().start)
@@ -266,6 +259,15 @@ where
         if !out.times().includes(&timestamp) {
             return Err(DecodeError::Other(Blame::TheirFault));
         }
+
+        let payload_length = CompactU64::relative_decode_canonic(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let payload_digest = PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
 
         Ok(Self::new(
             namespace.clone(),
