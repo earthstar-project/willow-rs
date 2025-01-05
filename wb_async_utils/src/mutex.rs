@@ -23,6 +23,13 @@ pub struct Mutex<T> {
 
 impl<T> Mutex<T> {
     /// Creates a new mutex storing the given value.
+    /// 
+    /// ```
+    /// use wb_async_utils::mutex::*;
+    ///
+    /// let m = Mutex::new(5);
+    /// assert_eq!(5, m.into_inner());
+    /// ```
     pub fn new(value: T) -> Self {
         Mutex {
             value: FairlyUnsafeCell::new(value),
@@ -104,7 +111,7 @@ impl<T> Mutex<T> {
     ///     *handle.deref_mut() = 1;
     /// }, async {
     ///     // This future is "faster", but has to wait for the "work" performed by the first one.
-    ///     let mut handle = m.read().await;
+    ///     let mut handle = m.write().await;
     ///     assert_eq!(1, *handle.deref());
     /// }));
     /// ```
