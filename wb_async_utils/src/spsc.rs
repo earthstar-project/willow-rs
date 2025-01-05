@@ -22,7 +22,7 @@ use std::{
 use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use ufotofu_queues::Queue;
 
-use crate::{Mutex, TakeCell};
+use crate::{extend_lifetime, extend_lifetime_mut, Mutex, TakeCell};
 
 /// The state shared between the [`Sender`] and the [`Receiver`]. This is fully opaque, but we expose it to give control over where it is allocated.
 #[derive(Debug)]
@@ -396,20 +396,6 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> BulkProducer for Receive
         self.state.notify_the_sender.set(());
         Ok(())
     }
-}
-
-// This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
-// See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
-unsafe fn extend_lifetime<'shorter, 'longer, T: ?Sized>(reference: &'shorter T) -> &'longer T {
-    std::mem::transmute::<&'shorter T, &'longer T>(reference)
-}
-
-// This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
-// See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
-unsafe fn extend_lifetime_mut<'shorter, 'longer, T: ?Sized>(
-    reference: &'shorter mut T,
-) -> &'longer mut T {
-    std::mem::transmute::<&'shorter mut T, &'longer mut T>(reference)
 }
 
 #[cfg(test)]
