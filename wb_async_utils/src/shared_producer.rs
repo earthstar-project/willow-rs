@@ -230,7 +230,7 @@ where
         let inner_state = self.0.deref_mut();
 
         match inner_state.last.as_ref() {
-            Some(Ok(_fin)) => Ok(()), // Slurping becomes a no-op after the final value has been emitted on a different handle.
+            Some(Ok(_fin)) => Ok(()), // Consider_produced becomes a no-op after the final value has been emitted on a different handle.
             Some(Err(err)) => Err(err.clone()),
             None => match inner_state.p.consider_produced(amount).await {
                 Ok(()) => Ok(()),
@@ -279,7 +279,7 @@ mod tests {
         };
 
         let read_some_items2 = async {
-            Timer::after(Duration::from_millis(10)).await; // ensure that the other task "starts"
+            Timer::after(Duration::from_millis(10)).await; // Ensure that the other task "starts".
 
             {
                 let mut p_handle = shared2.access_producer().await;
