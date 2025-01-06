@@ -23,7 +23,7 @@ pub struct Mutex<T> {
 
 impl<T> Mutex<T> {
     /// Creates a new mutex storing the given value.
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::mutex::*;
     ///
@@ -384,8 +384,8 @@ impl<T> Deref for ReadGuard<'_, T> {
 
     fn deref(&self) -> &T {
         let borrowed = unsafe { self.mutex.value.borrow() }; // Safe because a ReadGuard can never live at the same time as another guard or a `&mut Mutex`.
-                                                               // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
-                                                               // as `self`.
+                                                             // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                             // as `self`.
         unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
@@ -430,8 +430,8 @@ impl<T> Deref for WriteGuard<'_, T> {
 
     fn deref(&self) -> &T {
         let borrowed = unsafe { self.mutex.value.borrow() }; // Safe because a WriteGuard can never live at the same time as another guard or a `&mut Mutex`.
-                                                               // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
-                                                               // as `self`.
+                                                             // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                             // as `self`.
         unsafe { extend_lifetime(borrowed.deref()) }
     }
 }
@@ -439,8 +439,8 @@ impl<T> Deref for WriteGuard<'_, T> {
 impl<T> DerefMut for WriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         let mut borrowed = unsafe { self.mutex.value.borrow_mut() }; // Safe because a WriteGuard can never live at the same time as another or a `&mut Mutex`.
-                                                                       // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
-                                                                       // as `self`.
+                                                                     // We can only obtain references with a lifetime tied to `borrowed`, but we know the refs to be both alive and exclusive for as long
+                                                                     // as `self`.
         unsafe { extend_lifetime_mut(borrowed.deref_mut()) }
     }
 }

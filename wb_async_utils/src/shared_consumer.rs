@@ -156,7 +156,7 @@ pub struct SharedConsumerAccess<'shared_consumer, C: Consumer> {
     unclosed_handle_count: &'shared_consumer Cell<usize>,
 }
 
-impl<'shared_consumer, C> Debug for SharedConsumerAccess<'shared_consumer, C>
+impl<C> Debug for SharedConsumerAccess<'_, C>
 where
     C: Consumer + Debug,
     C::Error: Debug,

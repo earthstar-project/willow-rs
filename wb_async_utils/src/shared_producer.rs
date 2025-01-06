@@ -124,7 +124,7 @@ pub struct SharedProducerAccess<'shared_producer, P: Producer>(
     WriteGuard<'shared_producer, MutexState<P>>,
 );
 
-impl<'shared_producer, P> Debug for SharedProducerAccess<'shared_producer, P>
+impl<P> Debug for SharedProducerAccess<'_, P>
 where
     P: Producer + Debug,
     P::Final: Debug,
@@ -156,9 +156,7 @@ where
             Some(Ok(fin)) => Ok(Right(fin.clone())),
             Some(Err(err)) => Err(err.clone()),
             None => match inner_state.p.produce().await {
-                Ok(Left(item)) => {
-                    Ok(Left(item))
-                }
+                Ok(Left(item)) => Ok(Left(item)),
                 Ok(Right(fin)) => {
                     inner_state.last = Some(Ok(fin.clone()));
                     Ok(Right(fin))
