@@ -3,9 +3,9 @@
 use compact_u64::{CompactU64, Tag, TagWidth};
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync,
-    RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
+    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync, RelativeEncodable,
+    RelativeEncodableKnownSize, RelativeEncodableSync,
 };
 use willow_encoding::is_bitflagged;
 
@@ -90,10 +90,15 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + Decodable,
-    S: SubspaceId + Decodable + std::fmt::Debug,
-    PD: PayloadDigest + Decodable,
-    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    PD: PayloadDigest + DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
 {
     /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
     ///
@@ -108,70 +113,7 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let (namespace, out) = r;
-
-        let header = producer.produce_item().await?;
-
-        let is_subspace_encoded = is_bitflagged(header, 0);
-        let add_time_diff_to_start = is_bitflagged(header, 1);
-        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
-        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
-
-        let subspace_id = if is_subspace_encoded {
-            match &out.subspace() {
-                AreaSubspace::Any => S::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?,
-                AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
-            }
-        } else {
-            match &out.subspace() {
-                AreaSubspace::Any => return Err(DecodeError::Other(Blame::TheirFault)),
-                AreaSubspace::Id(id) => id.clone(),
-            }
-        };
-
-        let path = Path::<MCL, MCC, MPL>::relative_decode(producer, r.1.path()).await?;
-
-        if !path.is_prefixed_by(out.path()) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let time_diff = CompactU64::relative_decode(producer, &time_diff_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        let timestamp = if add_time_diff_to_start {
-            out.times().start.checked_add(time_diff)
-        } else {
-            u64::from(&out.times().end).checked_sub(time_diff)
-        }
-        .ok_or(DecodeError::Other(Blame::TheirFault))?;
-
-        if !out.times().includes(&timestamp) {
-            println!("timediff: {}", time_diff);
-            println!("timestamp: {}", timestamp);
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let payload_length = CompactU64::relative_decode(producer, &payload_length_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        let payload_digest = PD::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-
-        Ok(Self::new(
-            namespace.clone(),
-            subspace_id,
-            path,
-            timestamp,
-            payload_length,
-            payload_digest,
-        ))
+        relative_decode_maybe_canonic::<false, MCL, MCC, MPL, N, S, PD, P>(producer, r).await
     }
 }
 
@@ -197,86 +139,7 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let (namespace, out) = r;
-
-        let header = producer.produce_item().await?;
-
-        let is_subspace_encoded = is_bitflagged(header, 0);
-        let add_time_diff_to_start = is_bitflagged(header, 1);
-        let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
-        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
-
-        if is_bitflagged(header, 6) || is_bitflagged(header, 7) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let subspace_id = if is_subspace_encoded {
-            match &out.subspace() {
-                AreaSubspace::Any => S::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?,
-                AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
-            }
-        } else {
-            match &out.subspace() {
-                AreaSubspace::Any => return Err(DecodeError::Other(Blame::TheirFault)),
-                AreaSubspace::Id(id) => id.clone(),
-            }
-        };
-
-        if is_subspace_encoded && r.1.subspace() == &subspace_id {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let path = Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.1.path()).await?;
-
-        if !path.is_prefixed_by(out.path()) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let time_diff = CompactU64::relative_decode_canonic(producer, &time_diff_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        let timestamp = if add_time_diff_to_start {
-            out.times().start.checked_add(time_diff)
-        } else {
-            u64::from(&out.times().end).checked_sub(time_diff)
-        }
-        .ok_or(DecodeError::Other(Blame::TheirFault))?;
-
-        // === Necessary to produce canonic encodings. ===
-        // Verify that the correct add_or_subtract_time_diff flag was set.
-        let should_have_added = timestamp.checked_sub(out.times().start)
-            <= u64::from(&out.times().end).checked_sub(timestamp);
-
-        if add_time_diff_to_start != should_have_added {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-        // ===============================================
-
-        if !out.times().includes(&timestamp) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        let payload_length = CompactU64::relative_decode_canonic(producer, &payload_length_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        let payload_digest = PD::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-
-        Ok(Self::new(
-            namespace.clone(),
-            subspace_id,
-            path,
-            timestamp,
-            payload_length,
-            payload_digest,
-        ))
+        relative_decode_maybe_canonic::<true, MCL, MCC, MPL, N, S, PD, P>(producer, r).await
     }
 }
 
@@ -336,9 +199,154 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableSync,
-    S: SubspaceId + DecodableSync + std::fmt::Debug,
-    PD: PayloadDigest + DecodableSync,
-    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    PD: PayloadDigest + DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
 {
+}
+
+async fn relative_decode_maybe_canonic<
+    const CANONIC: bool,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    P,
+>(
+    producer: &mut P,
+    r: &(N, Area<MCL, MCC, MPL, S>),
+) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<P::Final, P::Error, Blame>>
+where
+    P: BulkProducer<Item = u8>,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    PD: PayloadDigest + DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
+{
+    let (namespace, out) = r;
+
+    let header = producer.produce_item().await?;
+
+    let is_subspace_encoded = is_bitflagged(header, 0);
+    let add_time_diff_to_start = is_bitflagged(header, 1);
+    let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 2);
+    let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 4);
+
+    if is_bitflagged(header, 6) || is_bitflagged(header, 7) {
+        return Err(DecodeError::Other(Blame::TheirFault));
+    }
+
+    let subspace_id = if is_subspace_encoded {
+        match &out.subspace() {
+            AreaSubspace::Any => {
+                if CANONIC {
+                    S::decode_canonic(producer)
+                        .await
+                        .map_err(DecodeError::map_other_from)?
+                } else {
+                    S::decode(producer)
+                        .await
+                        .map_err(DecodeError::map_other_from)?
+                }
+            }
+            AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
+        }
+    } else {
+        match &out.subspace() {
+            AreaSubspace::Any => return Err(DecodeError::Other(Blame::TheirFault)),
+            AreaSubspace::Id(id) => id.clone(),
+        }
+    };
+
+    if is_subspace_encoded && r.1.subspace() == &subspace_id {
+        return Err(DecodeError::Other(Blame::TheirFault));
+    }
+
+    let path = if CANONIC {
+        Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.1.path()).await?
+    } else {
+        Path::<MCL, MCC, MPL>::relative_decode(producer, r.1.path()).await?
+    };
+
+    if !path.is_prefixed_by(out.path()) {
+        return Err(DecodeError::Other(Blame::TheirFault));
+    }
+
+    let time_diff = if CANONIC {
+        CompactU64::relative_decode_canonic(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    } else {
+        CompactU64::relative_decode(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    };
+
+    let timestamp = if add_time_diff_to_start {
+        out.times().start.checked_add(time_diff)
+    } else {
+        u64::from(&out.times().end).checked_sub(time_diff)
+    }
+    .ok_or(DecodeError::Other(Blame::TheirFault))?;
+
+    // === Necessary to produce canonic encodings. ===
+    // Verify that the correct add_or_subtract_time_diff flag was set.
+    if CANONIC {
+        let should_have_added = timestamp.checked_sub(out.times().start)
+            <= u64::from(&out.times().end).checked_sub(timestamp);
+
+        if add_time_diff_to_start != should_have_added {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+    }
+
+    if !out.times().includes(&timestamp) {
+        return Err(DecodeError::Other(Blame::TheirFault));
+    }
+
+    let payload_length = if CANONIC {
+        CompactU64::relative_decode_canonic(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    } else {
+        CompactU64::relative_decode(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    };
+
+    let payload_digest = if CANONIC {
+        PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+    } else {
+        PD::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+    };
+
+    Ok(Entry::new(
+        namespace.clone(),
+        subspace_id,
+        path,
+        timestamp,
+        payload_length,
+        payload_digest,
+    ))
 }

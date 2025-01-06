@@ -3,9 +3,9 @@
 use compact_u64::*;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync,
-    RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
+    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync, RelativeEncodable,
+    RelativeEncodableKnownSize, RelativeEncodableSync,
 };
 use willow_encoding::is_bitflagged;
 
@@ -82,9 +82,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>, Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + Decodable + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + Decodable + DecodableCanonic + std::fmt::Debug,
-    PD: PayloadDigest + Decodable + DecodableCanonic,
+    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
         + From<PD::ErrorReason>
@@ -189,9 +189,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<Entry<MCL, MCC, MPL, N, S, PD>, Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + Decodable + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + Decodable + DecodableCanonic + std::fmt::Debug,
-    PD: PayloadDigest + Decodable + DecodableCanonic,
+    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
         + From<PD::ErrorReason>
