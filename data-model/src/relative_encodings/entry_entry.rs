@@ -240,9 +240,15 @@ where
     let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
 
     let namespace_id = if is_namespace_encoded {
-        N::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?
+        if CANONIC {
+            N::decode_canonic(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        } else {
+            N::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        }
     } else {
         r.namespace_id().clone()
     };
@@ -254,9 +260,15 @@ where
     }
 
     let subspace_id = if is_subspace_encoded {
-        S::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?
+        if CANONIC {
+            S::decode_canonic(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        } else {
+            S::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        }
     } else {
         r.subspace_id().clone()
     };
@@ -267,12 +279,23 @@ where
         return Err(DecodeError::Other(Blame::TheirFault));
     }
 
-    let path = Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.path()).await?;
+    let path = if CANONIC {
+        Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.path()).await?
+    } else {
+        Path::<MCL, MCC, MPL>::relative_decode(producer, r.path()).await?
+    };
 
-    let time_diff = CompactU64::relative_decode_canonic(producer, &time_diff_tag)
-        .await
-        .map_err(DecodeError::map_other_from)?
-        .0;
+    let time_diff = if CANONIC {
+        CompactU64::relative_decode_canonic(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    } else {
+        CompactU64::relative_decode(producer, &time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    };
 
     // Add or subtract safely here to avoid overflows caused by malicious or faulty encodings.
     let timestamp = if add_or_subtract_time_diff {
@@ -293,14 +316,27 @@ where
         }
     }
 
-    let payload_length = CompactU64::relative_decode_canonic(producer, &payload_length_tag)
-        .await
-        .map_err(DecodeError::map_other_from)?
-        .0;
+    let payload_length = if CANONIC {
+        CompactU64::relative_decode_canonic(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    } else {
+        CompactU64::relative_decode(producer, &payload_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0
+    };
 
-    let payload_digest = PD::decode_canonic(producer)
-        .await
-        .map_err(DecodeError::map_other_from)?;
+    let payload_digest = if CANONIC {
+        PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+    } else {
+        PD::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+    };
 
     Ok(Entry::new(
         namespace_id,
