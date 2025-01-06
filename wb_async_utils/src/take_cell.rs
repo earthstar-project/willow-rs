@@ -3,8 +3,11 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use std::{collections::VecDeque, ops::{Deref, DerefMut}};
 use std::fmt;
+use std::{
+    collections::VecDeque,
+    ops::{Deref, DerefMut},
+};
 
 use fairly_unsafe_cell::FairlyUnsafeCell;
 
@@ -24,10 +27,10 @@ impl<T> Default for TakeCell<T> {
 
 impl<T> TakeCell<T> {
     /// Creates a new, empty [`TakeCell`].
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::TakeCell;
-    /// 
+    ///
     /// let c = TakeCell::<()>::new();
     /// assert_eq!(None, c.into_inner());
     /// ```
@@ -39,10 +42,10 @@ impl<T> TakeCell<T> {
     }
 
     /// Creates a new [`TakeCell`] storing the given value.
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::TakeCell;
-    /// 
+    ///
     /// let c = TakeCell::new_with(17);
     /// assert_eq!(Some(17), c.into_inner());
     /// ```
@@ -54,10 +57,10 @@ impl<T> TakeCell<T> {
     }
 
     /// Consumes the [`TakeCell`] and returns the wrapped value, if any.
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::TakeCell;
-    /// 
+    ///
     /// let c = TakeCell::new_with(17);
     /// assert_eq!(Some(17), c.into_inner());
     /// ```
@@ -66,13 +69,13 @@ impl<T> TakeCell<T> {
     }
 
     /// Returns whether the [`TakeCell`] is currently empty.
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::TakeCell;
-    /// 
+    ///
     /// let c1 = TakeCell::<()>::new();
     /// assert!(c1.is_empty());
-    /// 
+    ///
     /// let c2 = TakeCell::new_with(17);
     /// assert!(!c2.is_empty());
     /// ```
@@ -102,7 +105,7 @@ impl<T> TakeCell<T> {
     }
 
     /// Sets the value in the cell, and returns the old value (if any). If the cell was empty, wakes the oldest pending async method call that was waiting for a value in the cell.
-    /// 
+    ///
     /// ```
     /// use futures::join;
     /// use wb_async_utils::TakeCell;
@@ -134,13 +137,13 @@ impl<T> TakeCell<T> {
     }
 
     /// Takes the current value out of the cell if there is one, or returns `None` otherwise.
-    /// 
+    ///
     /// ```
     /// use wb_async_utils::TakeCell;
-    /// 
+    ///
     /// let c1 = TakeCell::<()>::new();
     /// assert_eq!(None, c1.try_take());
-    /// 
+    ///
     /// let c2 = TakeCell::new_with(17);
     /// assert_eq!(Some(17), c2.try_take());
     /// ```
@@ -167,7 +170,7 @@ impl<T> TakeCell<T> {
     /// Set the value based on the current value (or abscence thereof).
     ///
     /// If the cell was empty, this wakes the oldest pending async method call that was waiting for a value in the cell.
-    /// 
+    ///
     /// ```
     /// use futures::join;
     /// use wb_async_utils::TakeCell;
@@ -192,7 +195,7 @@ impl<T> TakeCell<T> {
     /// Fallibly set the value based on the current value (or absence thereof). If `with` returns an `Err`, the cell is emptied.
     ///
     /// If the cell was empty and `with` returned `Ok`, this wakes the oldest pending async method call that was waiting for a value in the cell.
-    /// 
+    ///
     /// ```
     /// use futures::join;
     /// use wb_async_utils::TakeCell;
@@ -217,9 +220,9 @@ impl<T> TakeCell<T> {
         self.set(with(self.try_take())?);
         Ok(())
     }
-    
+
     /// Returns how many tasks are currently waiting for the cell to be filled.
-    /// 
+    ///
     /// ```
     /// use futures::join;
     /// use wb_async_utils::TakeCell;
@@ -252,7 +255,7 @@ impl<T> TakeCell<T> {
 
     fn park(&self, cx: &mut Context<'_>) {
         let mut parked = unsafe { self.parked.borrow_mut() };
-        
+
         parked.deref_mut().push_back(cx.waker().clone());
     }
 }
