@@ -412,6 +412,7 @@ dependencies = [
  "compact_u64",
  "either",
  "futures",
+ "smol",
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",

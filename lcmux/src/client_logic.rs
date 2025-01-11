@@ -1,220 +1,218 @@
+//! See [`new_client_logic`] fr the entrypoint to this module.
+//!
+//!
+//! ## Scope of this implementation
+//!
+//!
 //! Components for the client side of logical channels, i.e., the side that receives guarantees and respects them. This implementation always respects the granted guarantees, it does not allow for optimistic sending, and has no way of handling the communication that can be caused by overly optimistic sending.
 //!
 //! For each logical channel to write to, the client tracks the available guarantees at any point in time. It further tracks incoming `Plead` messages. This implementation fully honours all `Plead` messages. Finally, it tracks the bounds communicated by incoming `ControlLimitReceiving` messages.
 //!
-//! On the outgoing side, the module allows for sending to the logical channel while respecting the available guarantees; the implementation does not support optimistic sending. It provides notifications when `Absolve` messages should be sent in response to incoming `Plead` messages; it does not support the sending of unsolicited absolutions. It sends a `LimitSending` message with a `bound` of zero when the `Consumer` representation of the logical channel is closed; it does not support sending earlier `LimitSending` messages with nonzero bounds.
+//! On the outgoing side, the module allows for sending to the logical channel while respecting the available guarantees; the implementation does not support optimistic sending. It further provides a method for sending arbitrary `LimitSending` frames. It provides notifications when `Absolve` messages should be sent in response to incoming `Plead` messages; it does not support the sending of unsolicited absolutions.
 //!
 //! The implementation does not concern itself with incoming `AnnounceDropping` messages, nor with sending `Apologise` messages, because neither occurs (in communication with a correct peer) since it never sends optimistically.
-//!
-//! Note that this module does not deal with any sort of message encoding or decoding, it merely provides the machinery for tracking and modifying guarantees. The one exception is the sending of the `LimitSending` message when the consumer is closed, that one is encoded as bytes and sent directly into the underlying consumer.
 
-// Implementing correct client behaviour requires working both with incoming data and sending data to an outgoing channel. Both happen concurrently, and both need to be able to modify the state that the client must track. Since rust is not keen on shared mutable state, we follow the common pattern of having a shared state inside some cell(s) inside an Rc, with multiple values having access to the Rc. In particular, we use `AsyncCell`s.
+use std::{num::NonZeroU64, ops::Deref};
 
-// We have three access points to the mutable state:
-//
-// - A receiving end that synchronously updates the state based on incoming `IssueGuarantee`, `Plead`, and `ControlLimitReceiving` messages (there are no facilities for processing `Apologise` messages, since this implementation never causes them): `Input`.
-// - An end for sending messages on the logical channel: the program can asynchronously wait for a notification that a certain amount of guarantees has become available; this credit is considered to be used up once the async notification has been delivered: `WaitForGuarantees`.
-// - An end for asynchronously listening for received `Plead` messages. This component generates information about what sort of `Absolve` messages the client must then send to keep everything consistent. Internally, every `Plead` message is immediately respected (i.e., the `WaitForGuarantees` endpoint will have to wait even longer): `AbsolutionsToGrant`.
+use ufotofu::BulkConsumer;
 
-// On top of the `WaitForGuarantees` endpoint, we then implement a Consumer of messages that respects guarantees. The `WaitForGuarantees` endpoint itself is not part of the exported interface.
+use either::Either::*;
 
-use std::{cell::Cell, convert::Infallible, rc::Rc};
+use ufotofu_codec::{Encodable, EncodableKnownSize};
+use wb_async_utils::{
+    shared_consumer::{self, SharedConsumer},
+    shelf::{self, new_shelf},
+};
 
-use ufotofu::Producer;
-
-use either::Either;
-
-use wb_async_utils::TakeCell;
+use crate::{
+    frames::{LimitSending, SendToChannelHeader},
+    guarantee_cell::{GuaranteeCell, ThresholdOutcome},
+};
 
 #[derive(Debug)]
-pub struct SharedState {
-    /// How many guarantees do we have available right now?
-    guarantees_available: Cell<u64>,
-    /// How many guarantees is the `WaitForGuarantees` endpoint waiting for right now, if for any?
-    guarantees_threshold: Cell<Option<u64>>,
-    /// How many more guarantees will we be granted at most, if we know a bound at all?
-    guarantees_bound: Cell<Option<u64>>,
-    /// Notify the `WaitForGuarantees` endpoint when enough guarantees are avaible (Ok) or
-    /// we know that enough guarantees will never become available (Err).
-    notify_guarantees: TakeCell<Result<(), ()>>,
-    /// Notify the `AbsolutionsToGrant` endpoint when there *are* absolutions to grant.
-    absolution_to_grant: TakeCell<u64>, // empty when no absolution to grant, inner u64 is always nonzero
+pub(crate) struct State {
+    // Absolutions that should be granted to the server. Closed with `()` when we have no guarantees available and know that the server will never grant us any new ones either.
+    absolution: shelf::State<NonZeroU64, ()>,
+    // Guarantees that the server has granted us, with the option to subscribe to some particular amount becoming available. The `Final` value `()` is emitted when we know that the currently desired amount will never become available (because of a bound on the incoming guarantees).
+    guarantees: GuaranteeCell,
+    // The unchanging channel id of the channel whose state is being handled here.
+    channel_id: u64,
 }
 
-/// Creates the three endpoint for managing the client-side state of a single logical channel.
-pub fn new_logical_channel_client_logic_state() -> (Input, WaitForGuarantees, AbsolutionsToGrant) {
-    let state = Rc::new(SharedState {
-        guarantees_available: Cell::new(0),
-        guarantees_threshold: Cell::new(None),
-        guarantees_bound: Cell::new(None),
-        notify_guarantees: TakeCell::new(),
-        absolution_to_grant: TakeCell::new(),
-    });
-
-    return (
-        Input {
-            state: state.clone(),
-        },
-        WaitForGuarantees {
-            state: state.clone(),
-        },
-        AbsolutionsToGrant { state: state },
-    );
-}
-
-/// The endpoint for updating the client's state with information from the server.
-pub struct Input {
-    state: Rc<SharedState>,
-}
-
-impl Input {
-    /// Updates the client state with more guarantees. To be called whenever receiving a [IssueGuarantee](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlGuarantee) message.
-    ///
-    /// Returns an `Err(())` when the available guarantees would exceed the maximum of `2^64 - 1`. If this happens, the logical channel should be considered completely unuseable (and usually, the whole connection should be dropped, since we are talking to a buggy or malicious peer).
-    /// Silently ignores when the server sends guarantees exceeding a previously communicated bound.
-    pub fn receive_guarantees(&mut self, amount: u64) -> Result<(), ()> {
-        // By the way: we take `&mut self` instead of `&self` (which would also compile) because to the outside this function looks like it mutates some state.
-        // The fact that all of that happens via interior mutability is a detail we don't need to communicate to the outside.
-
-        // Can we increase the guarantees without an overflow?
-        match self.state.guarantees_available.get().checked_add(amount) {
-            // Nope, report an error.
-            None => return Err(()),
-            Some(new_amount) => {
-                // Yes, so update guarantees.
-                self.state.guarantees_available.set(new_amount);
-
-                // Update the bound, if there is one.
-                if let Some(bound) = self.state.guarantees_bound.get() {
-                    // Using saturating subtraction (i.e., setting to zero if it would become negative)
-                    // Means that we silently ignore that we got more guarantees than the bound promised.
-                    // The server violated the protocol, but we don't want to spend resources on checking
-                    // and handling this. We still will not make any *use* of those extra guarantees,
-                    // because the `WaitForGuarantees` endpoint will receive an error once the bound
-                    // has been reached.
-                    let new_bound = bound.saturating_sub(amount);
-                    self.state.guarantees_bound.set(Some(new_bound));
-
-                    // No need to check the new bound against what the `WaitForGuarantees` endpoint requested,
-                    // because the total of `guarantees_available + guarantees_bound` remained unchanged.
-                }
-
-                // Is anything currently waiting on having a certain threshold of guarantees?
-                if let Some(threshold) = self.state.guarantees_threshold.get() {
-                    if new_amount >= threshold {
-                        // Yes, and we have that many. Tell them, then reduce the guarantees (we assume that whoever was waiting will send exactly that many bytes).
-                        self.state.notify_guarantees.set(Ok(()));
-                        self.state.guarantees_available.set(new_amount - threshold);
-                    } else {
-                        // Do nothing, we'll notify them later, once we got enough guarantees.
-                    }
-                }
-
-                // We did all we had to do, and encountered no overflows. Report success.
-                return Ok(());
-            }
+impl State {
+    pub fn new(channel_id: u64) -> Self {
+        Self {
+            absolution: shelf::State::new(),
+            guarantees: GuaranteeCell::new(),
+            channel_id,
         }
     }
+}
 
-    /// Updates the client state after receiving a [`Plead`](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlOops) message with a given [`target`](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlOopsTarget) value. Fully accepts the `Plead`, if you want to reject some `Plead`s, you need a different implementation.
-    pub fn receive_plead(&mut self, target: u64) {
-        match self.state.guarantees_available.get().checked_sub(target) {
-            None => {
-                // Nothing to do if we already used up all the guarantees they ask us to absolve them off.
-            }
-            Some(diff) => {
-                // Locally respect their wish for absolution.
-                self.state.guarantees_available.set(target);
+/// Everything you need to correctly manage an LCMUX client.
+pub(crate) struct ClientLogic<R> {
+    /// Inform the client logic about incoming messages on this.
+    receiver: MessageReceiver<R>,
+    /// Receive information about when to grant absolution on this. Whenever a value is read from this shelf, the client logic assumes that the absolution will be granted.
+    grant_absolution: shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
+    /// Allows sending messages to this channel, also allows sending `LimitSending` frames.
+    sender: SendToChannel<R>,
+}
 
-                // Store how many guarantees to absolve them off in the next absolution message, by adding the diff to what we stored previously (or using the diff directly, if we didn't store anything previously).
-                // If this saturates, the peers will get out of sync... after sending 2^64 bytes, which they won't in all likelyhood.
-                // And even if that happened, then it would be the other peer's fault, not ours.
-                self.state
-                    .absolution_to_grant
-                    .update(|old| old.map_or(diff, |old_value| old_value.saturating_add(diff)));
-            }
-        }
+/// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the session state for an LCMUX client.
+pub(crate) fn new_client_logic<R>(state: R) -> ClientLogic<R>
+where
+    R: Deref<Target = State> + Clone,
+{
+    let (shelf_sender, shelf_receiver) = new_shelf(ProjectAbsolutionShelf { r: state.clone() });
+
+    ClientLogic {
+        receiver: MessageReceiver {
+            state: state.clone(),
+            absolution_shelf_sender: shelf_sender,
+        },
+        grant_absolution: shelf_receiver,
+        sender: SendToChannel { state },
+    }
+}
+
+pub(crate) struct MessageReceiver<R> {
+    state: R,
+    absolution_shelf_sender: shelf::Sender<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
+}
+
+impl<R> MessageReceiver<R>
+where
+    R: Deref<Target = State>,
+{
+    /// Updates the client state with more guarantees. To be called whenever receiving a [IssueGuarantee](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlGuarantee) message.
+    ///
+    /// Returns an `Err(())` when the available guarantees would exceed the maximum of `2^64 - 1`, or when the guarantees would disrespect a prior bound on guarantees. If either happens, the logical channel should be considered completely unuseable (and usually, the whole connection should be dropped, since we are talking to a buggy or malicious peer).
+    pub fn receive_guarantees(&mut self, amount: u64) -> Result<(), ()> {
+        let state = self.state.deref();
+        state.guarantees.add_guarantees(amount)
     }
 
     /// Updates the client state after receiving a [`ControlLimitReceiving`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceiving) message with a given [`bound`](https://willowprotocol.org/specs/sync/index.html#ControlLimitReceivingBound) value.
     ///
-    /// Silently ignores invalid bounds (i.e., bounds that are less tight than a previously communicated bound), and keeps using the older, tighter bound.
-    pub fn receive_limit_receiving(&mut self, bound: u64) {
-        let new_bound = match self.state.guarantees_bound.get() {
-            None => {
-                self.state.guarantees_bound.set(Some(bound));
-                bound
-            }
-            Some(old) => {
-                let new_bound = core::cmp::min(old, bound);
-                self.state.guarantees_bound.set(Some(new_bound));
-                new_bound
-            }
+    /// Returns an error when given an invalid bound (i.e., bounds that are less tight than a previously communicated bound).
+    pub fn receive_limit_receiving(&mut self, bound: u64) -> Result<(), ()> {
+        let state = self.state.deref();
+        state.guarantees.apply_bound(bound).map_err(|_| ())
+    }
+
+    /// Updates the client state after receiving a [`Plead`](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlOops) message with a given [`target`](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlOopsTarget) value. Fully accepts the `Plead`, if you want to reject some `Plead`s, you need a different implementation.
+    pub fn receive_plead(&mut self, target: NonZeroU64) {
+        let state = self.state.deref();
+        let reduced_by = state.guarantees.reduce_guarantees_down_to(target.into());
+
+        self.absolution_shelf_sender
+            .update(|old_absolutions| match old_absolutions {
+                None => Left(target),
+                Some(Right(())) => Right(()),
+                Some(Left(old)) => Left(old.saturating_add(target.into())),
+            });
+    }
+}
+
+pub(crate) struct SendToChannel<R> {
+    state: R,
+}
+
+impl<R> SendToChannel<R>
+where
+    R: Deref<Target = State>,
+{
+    /// Pause until the desired amount of guarantees is available, then reduce the internal state by that amount. In other words, once the guarantees are available, they *must* be used up by sending messages of that side.
+    /// Yields an error if the guarantees are known to never become available (because the server communicated a bound on how many guarantees it will still send at most).
+    async fn wait_for_guarantees(&mut self, amount: u64) -> Result<(), ()> {
+        let state = self.state.deref();
+        match state.guarantees.await_threshold_sub(amount).await {
+            ThresholdOutcome::YayReached => Ok(()),
+            ThresholdOutcome::NopeBound => Err(()),
+        }
+    }
+
+    /// Send a message to a logical channel. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel<CR, C, M>(
+        &mut self,
+        consumer: &SharedConsumer<CR, C>,
+        message: M,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+        CR: Deref<Target = shared_consumer::State<C>> + Clone,
+        M: EncodableKnownSize,
+    {
+        let size = message.len_of_encoding() as u64;
+
+        // Wait for the necessary guarantees to become available.
+        if let Err(()) = self.wait_for_guarantees(size).await {
+            return Err(LogicalChannelClientError::LogicalChannelClosed);
+        }
+
+        let header = SendToChannelHeader {
+            channel: self.state.deref().channel_id,
+            length: size,
         };
 
-        if let Some(threshold) = self.state.guarantees_threshold.get() {
-            if threshold
-                > self
-                    .state
-                    .guarantees_available
-                    .get()
-                    .saturating_add(new_bound)
-            {
-                // We'll never get enough guarantees. Report the sad news to the `WaitForGuarantees` endpoint.
-                self.state.notify_guarantees.set(Err(()));
-            }
-        }
+        let mut c = consumer.access_consumer().await;
+        header.encode(&mut c).await?;
+        message.encode(&mut c).await?;
+
+        Ok(())
+    }
+
+    /// Send a `LimitSending` frame to the server.
+    ///
+    /// This method does not check that you send valid limits or that you respect them on the future.
+    pub async fn limit_sending<CR, C>(
+        &mut self,
+        consumer: &SharedConsumer<CR, C>,
+        bound: u64,
+    ) -> Result<(), C::Error>
+    where
+        C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+        CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    {
+        let frame = LimitSending {
+            channel: self.state.deref().channel_id,
+            bound,
+        };
+
+        let mut c = consumer.access_consumer().await;
+        frame.encode(&mut c).await?;
+
+        Ok(())
     }
 }
 
-/// A [`local_nb::Producer`](ufotofu::local_nb::Producer) of amounts for `Absolve` messages that the client must send to the server.
-///
-/// The producer does not use the `Final` type to express when the stream has been closed so no absolutions can be granted in the future. Instead, this struct should be dropped when the corresponding `WaitForGuarantees` endpoint reports that no future guarantees will be granted.
-pub struct AbsolutionsToGrant {
-    state: Rc<SharedState>,
+/// The `Error` type for a consumer for logical channel. A final value is either one from the underlying `BulkConsumer` (of type `E`), or a dedicated variant to indicate that the logical channel was closed by the peer.
+pub enum LogicalChannelClientError<E> {
+    /// The underlying `BulkConsumer` errored.
+    Underlying(E),
+    /// The peer closed this logical channel, so it must reject future values.
+    LogicalChannelClosed,
 }
 
-impl Producer for AbsolutionsToGrant {
-    type Item = u64;
-
-    type Final = Infallible;
-
-    type Error = Infallible;
-
-    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-        return Ok(Either::Left(self.state.absolution_to_grant.take().await));
+impl<E> From<E> for LogicalChannelClientError<E> {
+    fn from(err: E) -> Self {
+        Self::Underlying(err)
     }
 }
 
-/// A value for asynchronously waiting until a certain amount of guarantees is available.
-pub struct WaitForGuarantees {
-    state: Rc<SharedState>,
+#[derive(Debug, Clone)]
+struct ProjectAbsolutionShelf<R> {
+    r: R,
 }
 
-impl WaitForGuarantees {
-    /// Pause until the desired amount of guarantees is available, then reduce the internal state by that amount. In other words, once the guarantees are available, they *must* be used up by sending messages of that side.
-    pub async fn wait_for_guarantees(&mut self, amount: u64) -> Result<(), ()> {
-        // Are sufficient guarantees available right now?
-        let current_guarantees = self.state.guarantees_available.get();
-        if current_guarantees >= amount {
-            // If so, remove `amount` many, indicate that no more guarantees are awaited right now, and report success.
-            self.state
-                .guarantees_available
-                .set(current_guarantees - amount);
-            self.state.guarantees_threshold.set(None);
-            return Ok(());
-        } else {
-            // Not enough guarantees here. Can that possibly change?
-            if amount
-                > current_guarantees.saturating_add(self.state.guarantees_bound.get().unwrap_or(0))
-            {
-                // We'll never get enough guarantees.
-                return Err(());
-            } else {
-                // We might get enough guarantees in the future. Register our demand, and wait.
-                self.state.guarantees_threshold.set(Some(amount));
-                return self.state.notify_guarantees.take().await;
-            }
-        }
+impl<R> Deref for ProjectAbsolutionShelf<R>
+where
+    R: Deref<Target = State>,
+{
+    type Target = shelf::State<NonZeroU64, ()>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.r.deref().absolution
     }
 }

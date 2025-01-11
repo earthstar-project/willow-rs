@@ -53,9 +53,7 @@ impl<Item, Final> State<Item, Final> {
 ///     futures::join!(send_things, receive_things);
 /// });
 /// ```
-pub fn new_shelf<R, Item, Final>(
-    state_ref: R,
-) -> (Sender<R, Item, Final>, Receiver<R, Item, Final>)
+pub fn new_shelf<R, Item, Final>(state_ref: R) -> (Sender<R, Item, Final>, Receiver<R, Item, Final>)
 where
     R: Deref<Target = State<Item, Final>> + Clone,
 {
@@ -89,6 +87,11 @@ impl<R: Deref<Target = State<Item, Final>>, Item, Final> Sender<R, Item, Final> 
     /// Indicates to the corresponding [`Sender`] that no more items will be set. Must not be called multiple times.
     pub fn close(&mut self, fin: Final) {
         self.state.deref().cell.set(Right(fin))
+    }
+
+    /// Updates the shelf's current value (if any) with a synchronous function.
+    pub fn update(&self, with: impl FnOnce(Option<Either<Item, Final>>) -> Either<Item, Final>) {
+        self.state.deref().cell.update(with)
     }
 }
 
