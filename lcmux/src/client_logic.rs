@@ -59,20 +59,22 @@ pub(crate) struct ClientLogic<R> {
     sender: SendToChannel<R>,
 }
 
-/// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the session state for an LCMUX client.
-pub(crate) fn new_client_logic<R>(state: R) -> ClientLogic<R>
+impl<R> ClientLogic<R>
 where
     R: Deref<Target = State> + Clone,
 {
-    let (shelf_sender, shelf_receiver) = new_shelf(ProjectAbsolutionShelf { r: state.clone() });
+    /// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the session state for an LCMUX client.
+    pub fn new(state: R) -> Self {
+        let (shelf_sender, shelf_receiver) = new_shelf(ProjectAbsolutionShelf { r: state.clone() });
 
-    ClientLogic {
-        receiver: MessageReceiver {
-            state: state.clone(),
-            absolution_shelf_sender: shelf_sender,
-        },
-        grant_absolution: shelf_receiver,
-        sender: SendToChannel { state },
+        ClientLogic {
+            receiver: MessageReceiver {
+                state: state.clone(),
+                absolution_shelf_sender: shelf_sender,
+            },
+            grant_absolution: shelf_receiver,
+            sender: SendToChannel { state },
+        }
     }
 }
 
@@ -106,12 +108,19 @@ where
         let state = self.state.deref();
         let reduced_by = state.guarantees.reduce_guarantees_down_to(target.into());
 
-        self.absolution_shelf_sender
-            .update(|old_absolutions| match old_absolutions {
-                None => Left(target),
-                Some(Right(())) => Right(()),
-                Some(Left(old)) => Left(old.saturating_add(target.into())),
-            });
+        match NonZeroU64::new(reduced_by) {
+            None => {
+                // Do nothing
+            }
+            Some(reduced_by_nz) => {
+                self.absolution_shelf_sender
+                    .update(|old_absolutions| match old_absolutions {
+                        None => Left(reduced_by_nz),
+                        Some(Right(())) => Right(()),
+                        Some(Left(old)) => Left(old.saturating_add(reduced_by)),
+                    });
+            }
+        }
     }
 }
 
@@ -137,7 +146,7 @@ where
     pub async fn send_to_channel<CR, C, M>(
         &mut self,
         consumer: &SharedConsumer<CR, C>,
-        message: M,
+        message: &M,
     ) -> Result<(), LogicalChannelClientError<C::Error>>
     where
         C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
@@ -188,6 +197,7 @@ where
 }
 
 /// The `Error` type for a consumer for logical channel. A final value is either one from the underlying `BulkConsumer` (of type `E`), or a dedicated variant to indicate that the logical channel was closed by the peer.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
 pub enum LogicalChannelClientError<E> {
     /// The underlying `BulkConsumer` errored.
     Underlying(E),
@@ -214,5 +224,132 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.r.deref().absolution
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, time::Duration};
+
+    use super::*;
+
+    use ufotofu::{consumer::IntoVec, ConsumeAtLeastError, Producer};
+
+    use smol::{block_on, Timer};
+
+    #[test]
+    fn test_bound() {
+        let state = State::new(17);
+        let mut client_logic = ClientLogic::new(&state);
+
+        assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(12));
+        assert_eq!(Ok(()), client_logic.receiver.receive_limit_receiving(8));
+        assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(8));
+        assert_eq!(Err(()), client_logic.receiver.receive_guarantees(1));
+    }
+
+    #[test]
+    fn test_plead() {
+        let state = State::new(17);
+        let mut client_logic = ClientLogic::new(&state);
+
+        smol::block_on(async {
+            assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(12));
+            client_logic
+                .receiver
+                .receive_plead(NonZeroU64::new(5).unwrap());
+            assert_eq!(
+                Ok(Left(NonZeroU64::new(7).unwrap())),
+                client_logic.grant_absolution.produce().await
+            );
+
+            client_logic
+                .receiver
+                .receive_plead(NonZeroU64::new(4).unwrap());
+            client_logic
+                .receiver
+                .receive_plead(NonZeroU64::new(3).unwrap());
+            assert_eq!(
+                Ok(Left(NonZeroU64::new(2).unwrap())),
+                client_logic.grant_absolution.produce().await
+            );
+        });
+    }
+
+    struct TestMessage;
+
+    impl Encodable for TestMessage {
+        async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+        where
+            C: BulkConsumer<Item = u8>,
+        {
+            consumer
+                .bulk_consume_full_slice(&[1, 2, 3])
+                .await
+                .map_err(ConsumeAtLeastError::into_reason)
+        }
+    }
+
+    impl EncodableKnownSize for TestMessage {
+        fn len_of_encoding(&self) -> usize {
+            3
+        }
+    }
+
+    #[test]
+    fn test_sending() {
+        let state = State::new(17);
+        let mut client_logic = ClientLogic::new(&state);
+
+        let inner_consumer = IntoVec::new();
+        let shared_consumer_state = shared_consumer::State::new(inner_consumer);
+        let c = SharedConsumer::new(&shared_consumer_state);
+
+        let stage = Cell::new(0); // for writing assertions about when methods block.
+
+        smol::block_on(async {
+            futures::join!(
+                async {
+                    assert_eq!(
+                        Ok(()),
+                        client_logic.sender.send_to_channel(&c, &TestMessage).await
+                    );
+                    stage.set(1);
+
+                    assert_eq!(
+                        Ok(()),
+                        client_logic.sender.send_to_channel(&c, &TestMessage).await
+                    );
+                    stage.set(2);
+
+                    assert_eq!(
+                        Err(LogicalChannelClientError::LogicalChannelClosed),
+                        client_logic.sender.send_to_channel(&c, &TestMessage).await
+                    );
+                    stage.set(3);
+                },
+                async {
+                    assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(2));
+                    Timer::after(Duration::from_millis(20)).await;
+                    assert_eq!(0, stage.get());
+
+                    assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(2));
+                    Timer::after(Duration::from_millis(20)).await;
+                    assert_eq!(1, stage.get());
+
+                    assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(1));
+                    Timer::after(Duration::from_millis(20)).await;
+                    assert_eq!(1, stage.get());
+
+                    assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(2));
+                    Timer::after(Duration::from_millis(20)).await;
+                    assert_eq!(2, stage.get());
+
+                    assert_eq!(Ok(()), client_logic.receiver.receive_limit_receiving(1));
+                    Timer::after(Duration::from_millis(20)).await;
+                    assert_eq!(3, stage.get());
+                },
+            );
+        });
     }
 }

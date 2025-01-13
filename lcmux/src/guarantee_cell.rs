@@ -124,7 +124,7 @@ mod tests {
 
     use ThresholdOutcome::*;
 
-    use smol::{block_on, Timer};
+    use smol::block_on;
 
     #[test]
     fn test_immediately_available() {
