@@ -146,6 +146,7 @@ impl<T> TakeCell<T> {
     ///
     /// let c2 = TakeCell::new_with(17);
     /// assert_eq!(Some(17), c2.try_take());
+    /// assert!(c2.is_empty());
     /// ```
     pub fn try_take(&self) -> Option<T> {
         let mut r = unsafe { self.value.borrow_mut() };
@@ -161,6 +162,7 @@ impl<T> TakeCell<T> {
     ///
     /// pollster::block_on(async {
     ///     assert_eq!(5, cell.take().await);
+    ///     assert!(cell.is_empty());
     /// });
     /// ```
     pub async fn take(&self) -> T {
@@ -257,6 +259,28 @@ impl<T> TakeCell<T> {
         let mut parked = unsafe { self.parked.borrow_mut() };
 
         parked.deref_mut().push_back(cx.waker().clone());
+    }
+}
+
+impl<T: Clone> TakeCell<T> {
+    /// Synchronously returns a clone of the current value if there is any, or `None` otherwise. Does not change the cell in any way.
+    ///
+    /// ```
+    /// use wb_async_utils::TakeCell;
+    ///
+    /// let c1 = TakeCell::<()>::new();
+    /// assert_eq!(None, c1.peek());
+    ///
+    /// let c2 = TakeCell::new_with(17);
+    /// assert_eq!(Some(17), c2.peek());
+    /// assert!(!c2.is_empty());
+    /// ```
+    pub fn peek(&self) -> Option<T> {
+        let r = unsafe { self.value.borrow_mut() };
+        match r.deref() {
+            None => None,
+            Some(content_ref) => Some(content_ref.clone()),
+        }
     }
 }
 

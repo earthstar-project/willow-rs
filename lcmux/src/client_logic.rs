@@ -29,6 +29,7 @@ use crate::{
     guarantee_cell::{GuaranteeCell, ThresholdOutcome},
 };
 
+/// The opaque state by which the separate components of a [`ClientLogic`] struct can communicate.
 #[derive(Debug)]
 pub(crate) struct State {
     // Absolutions that should be granted to the server. Closed with `()` when we have no guarantees available and know that the server will never grant us any new ones either.
@@ -51,19 +52,19 @@ impl State {
 
 /// Everything you need to correctly manage an LCMUX client.
 pub(crate) struct ClientLogic<R> {
-    /// Inform the client logic about incoming messages on this.
-    receiver: MessageReceiver<R>,
-    /// Receive information about when to grant absolution on this. Whenever a value is read from this shelf, the client logic assumes that the absolution will be granted.
-    grant_absolution: shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
+    /// Inform the client logic about incoming control messages about this logical channel.
+    pub receiver: MessageReceiver<R>,
+    /// Receive information about when to grant absolution on this logical channel. Whenever a value is read from this shelf, the client logic assumes that the absolution will be granted.
+    pub grant_absolution: shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
     /// Allows sending messages to this channel, also allows sending `LimitSending` frames.
-    sender: SendToChannel<R>,
+    pub sender: SendToChannel<R>,
 }
 
 impl<R> ClientLogic<R>
 where
     R: Deref<Target = State> + Clone,
 {
-    /// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the session state for an LCMUX client.
+    /// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the client session state for single logical channel.
     pub fn new(state: R) -> Self {
         let (shelf_sender, shelf_receiver) = new_shelf(ProjectAbsolutionShelf { r: state.clone() });
 
@@ -253,7 +254,7 @@ mod tests {
         let state = State::new(17);
         let mut client_logic = ClientLogic::new(&state);
 
-        smol::block_on(async {
+        block_on(async {
             assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(12));
             client_logic
                 .receiver
@@ -307,7 +308,7 @@ mod tests {
 
         let stage = Cell::new(0); // for writing assertions about when methods block.
 
-        smol::block_on(async {
+        block_on(async {
             futures::join!(
                 async {
                     assert_eq!(

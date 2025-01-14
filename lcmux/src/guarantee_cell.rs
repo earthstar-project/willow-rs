@@ -6,6 +6,7 @@
 //! - It also incorporates a `GuaranteeBound` to allow for setting and tracking voluntary limits on how many more guarantees will be worked with. Waiting for a threshold that cannot possibly be reached due to a bound emits an immediate error notification.
 
 use core::cell::Cell;
+use std::num::NonZeroU64;
 
 use either::Either::{self, *};
 
@@ -231,5 +232,133 @@ mod tests {
         assert_eq!(Ok(()), guarantees.apply_bound(500));
         assert_eq!(Ok(()), guarantees.add_guarantees(400));
         assert_eq!(Err(()), guarantees.add_guarantees(101));
+    }
+}
+
+/// Manages guarantees via interior mutability. Tracks available guarantees, and allows subscribing to a certain amount to become available.
+#[derive(Debug)]
+pub(crate) struct GuaranteeCellWithoutBound {
+    acc: Cell<u64>,
+    threshold: Cell<Option<u64>>,
+    notify: TakeCell<Result<Either<(), ()>, ()>>,
+}
+
+impl GuaranteeCellWithoutBound {
+    /// Creates a new [`GuaranteeCellWithoutBound`]. Accumulated value is zero, no threshold is registered.
+    pub fn new() -> Self {
+        GuaranteeCellWithoutBound {
+            acc: Cell::new(0),
+            threshold: Cell::new(None),
+            notify: TakeCell::new(),
+        }
+    }
+
+    /// Error if the guarantees would overflow our pool of guarantees.
+    pub fn add_guarantees(&self, amount: u64) -> Result<(), ()> {
+        // Can we increase the guarantees without an overflow?
+        match self.acc.get().checked_add(amount) {
+            // Nope, report an error.
+            None => Err(()),
+            Some(new_amount) => {
+                // Yes, so update guarantees.
+                self.acc.set(new_amount);
+
+                // Notify any waiting task if possible/necessary.
+                self.notify_threshold();
+
+                Ok(())
+            }
+        }
+    }
+
+    /// Reduces the stored guarantees down to `target`. If `target` is greater than or equal to the current amount, does nothing. Returns how many guarantees were removed (which is zero if target is gtreater than or equal to the current amount).
+    pub fn reduce_guarantees_down_to(&self, target: u64) -> u64 {
+        let diff = self.acc.get().saturating_sub(target);
+        self.acc.set(target);
+        diff
+    }
+
+    /// Park the task until the given threshold has been reached, reports the value of acc, then reduce acc down to zero.
+    pub async fn await_threshold_clear(&self, threshold: u64) -> Result<Either<u64, ()>, ()> {
+        self.threshold.set(Some(threshold));
+        self.notify_threshold();
+        let notification = self.notify.take().await;
+
+        notification.map(|yay| {
+            yay.map_left(|_| {
+                let acc = self.acc.get();
+                self.acc.set(0);
+                acc
+            })
+        })
+    }
+
+    pub fn get_current_acc(&self) -> u64 {
+        self.acc.get()
+    }
+
+    pub fn set_final(&self) {
+        self.notify.set(Ok(Right(())))
+    }
+
+    pub fn set_error(&self) {
+        self.notify.set(Err(()))
+    }
+
+    fn notify_threshold(&self) {
+        // Should we notify anyone?
+        if let Some(threshold) = self.threshold.get() {
+            let acc = self.acc.get();
+            if acc >= threshold {
+                // Yes, and we have enough guarantees.
+                // Notify the waiting task, and reset the threshold. When the task is notified, it decreases the accumulated value again.
+                self.notify.set(Ok(Left(())));
+                self.threshold.set(None);
+            } else {
+                // Do nothing
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_without_bound {
+    use super::*;
+
+    use smol::block_on;
+
+    #[test]
+    fn test_immediately_available() {
+        let guarantees = GuaranteeCellWithoutBound::new();
+
+        block_on(async {
+            futures::join!(
+                async {
+                    assert_eq!(Ok(()), guarantees.add_guarantees(9999));
+                },
+                async {
+                    assert_eq!(Ok(Left(9999)), guarantees.await_threshold_clear(12).await);
+                    assert_eq!(0, guarantees.get_current_acc());
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn test_becoming_available() {
+        let guarantees = GuaranteeCellWithoutBound::new();
+
+        block_on(async {
+            futures::join!(
+                async {
+                    assert_eq!(Ok(Left(44)), guarantees.await_threshold_clear(12).await);
+                    assert_eq!(Ok(Left(43)), guarantees.await_threshold_clear(30).await);
+                },
+                async {
+                    assert_eq!(Ok(()), guarantees.add_guarantees(44));
+                    assert_eq!(Ok(()), guarantees.add_guarantees(43));
+                },
+            );
+        });
     }
 }
