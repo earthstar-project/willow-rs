@@ -308,14 +308,22 @@ impl GuaranteeCellWithoutBound {
     fn notify_threshold(&self) {
         // Should we notify anyone?
         if let Some(threshold) = self.threshold.get() {
-            let acc = self.acc.get();
-            if acc >= threshold {
-                // Yes, and we have enough guarantees.
-                // Notify the waiting task, and reset the threshold. When the task is notified, it decreases the accumulated value again.
-                self.notify.set(Ok(Left(())));
-                self.threshold.set(None);
-            } else {
-                // Do nothing
+            // Only do anything if the last value hasn't been set yet.
+            match self.notify.peek() {
+                Some(Ok(Right(()))) | Some(Err(())) => {
+                    return;
+                }
+                _ => {
+                    let acc = self.acc.get();
+                    if acc >= threshold {
+                        // Yes, and we have enough guarantees.
+                        // Notify the waiting task, and reset the threshold. When the task is notified, it decreases the accumulated value again.
+                        self.notify.set(Ok(Left(())));
+                        self.threshold.set(None);
+                    } else {
+                        // Do nothing
+                    }
+                }
             }
         }
     }

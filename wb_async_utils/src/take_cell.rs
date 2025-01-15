@@ -99,6 +99,14 @@ impl<T> TakeCell<T> {
     ///         cell.set(5);
     ///     });
     /// });
+    /// 
+    /// let cell2 = TakeCell::new();
+    ///
+    /// pollster::block_on(async {
+    ///     cell2.set(5);
+    ///     cell2.set(6);
+    ///     assert_eq!(6, cell2.take().await);
+    /// });
     /// ```
     pub fn set(&self, value: T) {
         let _ = self.replace(value);

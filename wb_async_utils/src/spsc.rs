@@ -79,6 +79,11 @@ impl<Q: Queue, F, E> State<Q, F, E> {
 
         self.notify_the_receiver.set(());
     }
+
+    /// Returns whether this has been closed yet or whether an error has been caused yet.
+    pub fn has_been_closed_or_errored_yet(&self) -> bool {
+        unsafe { self.last.borrow().is_some() }
+    }
 }
 
 /// Creates a new SPSC channel in the form of a [`Sender`] and a [`Receiver`] endpoint which communicate via the given [`State`].

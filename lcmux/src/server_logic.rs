@@ -66,14 +66,18 @@ impl<Q: Queue<Item = u8>> State<Q> {
 
     // Everything we need to do when we know that no more data will (or rather, should) ever arrive because a voluntary bound was exactly reached.
     fn bound_of_zero(&self) {
-        self.spsc_state.close(());
+        if !self.spsc_state.has_been_closed_or_errored_yet() {
+            self.spsc_state.close(());
+        }
         self.start_dropping.set(Right(Ok(())));
         self.guarantees.set_final();
     }
 
     // Report to all components that an error ocurred and the session is now invalid.
     fn report_error(&self) {
-        self.spsc_state.cause_error(());
+        if !self.spsc_state.has_been_closed_or_errored_yet() {
+            self.spsc_state.cause_error(());
+        }
         self.start_dropping.set(Right(Err(())));
         self.guarantees.set_error();
     }
@@ -481,15 +485,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::Cell, time::Duration};
-
     use super::*;
 
-    use ufotofu::{consumer::IntoVec, producer::FromSlice, ConsumeAtLeastError, Producer};
+    use ufotofu::{
+        producer::{FromSlice, TestProducer, TestProducerBuilder},
+        Producer,
+    };
 
     use ufotofu_queues::Fixed;
 
-    use smol::{block_on, Timer};
+    use smol::block_on;
 
     #[test]
     fn test_happy_case_sending_dropping_apologising() {
@@ -580,6 +585,385 @@ mod tests {
             assert_eq!(Ok(Left(3)), server_logic.received_data.produce().await);
             assert_eq!(Ok(Left(4)), server_logic.received_data.produce().await);
             assert_eq!(Ok(Left(9)), server_logic.received_data.produce().await);
+
+            // We have three guarantees to give now. Let's pretend we got absolved of one.
+            assert_eq!(Ok(()), server_logic.receiver.receive_absolve(1));
+            // Since we got absolved of one, but did not reduce our buffer capacity, we can now grant one *more* guarantee than before.
+            assert_eq!(Ok(4), server_logic.guarantees_to_give.produce_item().await);
+        });
+    }
+
+    #[test]
+    fn test_happy_case_close_indirect() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Client communicates a bound of zero.
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(0));
+
+            // This closes everything.
+            assert_eq!(
+                Ok(Right(())),
+                server_logic.guarantees_to_give.produce().await
+            ); // We don't even give the guarantees that we could have given still.
+               // Had the server needed those it shouldn't have closed, then.
+            assert_eq!(Ok(Right(())), server_logic.start_dropping.produce().await);
+            assert_eq!(Ok(Right(())), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_happy_case_close_exact() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Client communicates a nonzero bound.
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(3));
+
+            // And then uses up that bound over two messages!
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(2, &mut data_producer)
+                    .await
+            );
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(1, &mut data_producer)
+                    .await
+            );
+
+            assert_eq!(Ok(Left(0)), server_logic.received_data.produce().await);
+            assert_eq!(Ok(Left(1)), server_logic.received_data.produce().await);
+            assert_eq!(Ok(Left(2)), server_logic.received_data.produce().await);
+
+            // This closes everything.
+            assert_eq!(
+                Ok(Right(())),
+                server_logic.guarantees_to_give.produce().await
+            ); // We don't even give the guarantees that we could have given still.
+               // Had the server needed those it shouldn't have closed, then.
+            assert_eq!(Ok(Right(())), server_logic.start_dropping.produce().await);
+            assert_eq!(Ok(Right(())), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_ignore_explicit_zero_bound() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Client communicates a zero bound.
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(0));
+
+            // And then ignores it!
+            assert_eq!(
+                Err(ReceiveSendToChannelError::DisrespectedLimitSendingMessage),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(3, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            // Or almost: the received_data report closing (since that might have been queried before the error happened anyway, and it was more simple to implement this way rather than having the error override the closing).
+            assert_eq!(Ok(Right(())), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_ignore_bound() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Client communicates a bound.
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(2));
+
+            // And then ignores it!
+            assert_eq!(
+                Err(ReceiveSendToChannelError::DisrespectedLimitSendingMessage),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(3, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_invalid_bound() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        block_on(async {
+            // Client communicates a bound.
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(2));
+
+            // And then communicates another bound that is less tight!
+            assert_eq!(Err(()), server_logic.receiver.receive_limit_sending(3));
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_end_of_input() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Trying to read two bytes, but the producer ends too early.
+            assert_eq!(
+                Err(ReceiveSendToChannelError::UnexpectedEndOfInput(())),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(2, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere, once we read all the bytes that did make it.
+            assert_eq!(Ok(Left(0)), server_logic.received_data.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_end_of_input_while_dropping() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2, 3, 4, 5, 6];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // The client sends too many bytes, so the server starts dropping.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(5, &mut data_producer)
+                    .await
+            );
+            assert!(state.currently_dropping.get());
+
+            // Trying to read four more bytes, but the producer ends too early.
+            assert_eq!(
+                Err(ReceiveSendToChannelError::UnexpectedEndOfInput(())),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(4, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_producer_errs() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let mut data_producer: TestProducer<u8, (), i16> =
+            TestProducerBuilder::new(vec![1].into(), Err(-4)).build();
+
+        block_on(async {
+            // Trying to read three bytes, but the producer errors after one.
+            assert_eq!(
+                Err(ReceiveSendToChannelError::ProducerError(-4)),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(4, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere, after reading the bytes that made it.
+            assert_eq!(Ok(Left(1)), server_logic.received_data.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_producer_errs_while_dropping() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let mut data_producer: TestProducer<u8, (), i16> =
+            TestProducerBuilder::new(vec![1, 2, 3, 4, 5, 6].into(), Err(-4)).build();
+
+        block_on(async {
+            // The client sends too many bytes, so the server starts dropping.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(5, &mut data_producer)
+                    .await
+            );
+            assert!(state.currently_dropping.get());
+
+            // Trying to read four more bytes, but the producer errors.
+            assert_eq!(
+                Err(ReceiveSendToChannelError::ProducerError(-4)),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(4, &mut data_producer)
+                    .await
+            );
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_absolve_too_great() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        block_on(async {
+            // Client absolves more than it can.
+            assert_eq!(Ok(Left(4)), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.receiver.receive_absolve(99));
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_absolve_too_early() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        block_on(async {
+            // The client absolved us of guarantees it couldn't have known we gave to it.
+            assert_eq!(Err(()), server_logic.receiver.receive_absolve(2));
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_absolve_exceeding_bound() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        block_on(async {
+            // Client absolves more than its bound allows it to.
+            assert_eq!(Ok(Left(4)), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Ok(()), server_logic.receiver.receive_limit_sending(2));
+            assert_eq!(Err(()), server_logic.receiver.receive_absolve(3));
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_spurious_apology() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        block_on(async {
+            // Client sends an apology for no reason.
+            assert_eq!(Err(()), server_logic.receiver.receive_apologise());
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
+        });
+    }
+
+    #[test]
+    fn test_err_optimistic_apology() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let mut data_producer: TestProducer<u8, (), i16> =
+            TestProducerBuilder::new(vec![1, 2, 3, 4, 5, 6].into(), Err(-4)).build();
+
+        block_on(async {
+            // The client sends too many bytes, so the server starts dropping.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(5, &mut data_producer)
+                    .await
+            );
+            assert!(state.currently_dropping.get());
+
+            // We then receive an apology, before we even notified the client that we were mad!
+            assert_eq!(Err(()), server_logic.receiver.receive_apologise());
+
+            // This triggers errors everywhere.
+            assert_eq!(Err(()), server_logic.guarantees_to_give.produce().await);
+            assert_eq!(Err(()), server_logic.start_dropping.produce().await);
+            assert_eq!(Err(()), server_logic.received_data.produce().await);
         });
     }
 }
