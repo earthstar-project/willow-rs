@@ -325,7 +325,9 @@ impl GuaranteeCellWithoutBound {
 mod tests_without_bound {
     use super::*;
 
-    use smol::block_on;
+    use core::time::Duration;
+
+    use smol::{block_on, Timer};
 
     #[test]
     fn test_immediately_available() {
@@ -356,6 +358,7 @@ mod tests_without_bound {
                 },
                 async {
                     assert_eq!(Ok(()), guarantees.add_guarantees(44));
+                    Timer::after(Duration::from_millis(20)).await;
                     assert_eq!(Ok(()), guarantees.add_guarantees(43));
                 },
             );

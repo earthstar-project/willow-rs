@@ -46,14 +46,18 @@ pub(crate) struct State<Q> {
     max_queue_capacity: usize,
 }
 
-impl<Q: Queue> State<Q> {
+impl<Q: Queue<Item = u8>> State<Q> {
     pub fn new(channel_id: u64, queue: Q, max_queue_capacity: usize, watermark: u64) -> Self {
+        let guarantees = GuaranteeCellWithoutBound::new();
+        let result = guarantees.add_guarantees((max_queue_capacity - queue.len()) as u64);
+        debug_assert!(result == Ok(()));
+
         Self {
             spsc_state: spsc::State::new(queue),
             currently_dropping: Cell::new(false),
             start_dropping: TakeCell::new(),
             bound: GuaranteeBoundCell::new(),
-            guarantees: GuaranteeCellWithoutBound::new(),
+            guarantees,
             watermark,
             channel_id,
             max_queue_capacity,
@@ -120,7 +124,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ReceiveSendToChannelError<ProducerFinal, ProducerError> {
     UnexpectedEndOfInput(ProducerFinal),
     ProducerError(ProducerError),
@@ -148,14 +152,16 @@ where
 
         // If we are currently dropping, do so, silently.
         if state.currently_dropping.get() {
-            Ok(())
+            return self.drop_producer_data(length, p).await;
         } else {
             // Not dropping (yet). Does the message fit into our buffer?
             if length > (state.max_queue_capacity - self.buffer_sender.len()) as u64 {
                 // Message is too large, drop it and all further messages until the next apology.
                 state.currently_dropping.set(true);
                 state.start_dropping.set(Left(()));
-                return Ok(());
+
+                // We need to actively read data from the producer and drop it, and report producer errors if necessary.
+                return self.drop_producer_data(length, p).await;
             }
 
             // The message would fit into our buffer. Check if it violates a voluntary bound.
@@ -190,6 +196,7 @@ where
                     Ok(Left(items)) => {
                         let num_items_to_read =
                             min(items.len(), min(remaining, usize::MAX as u64) as usize);
+
                         match self
                             .buffer_sender
                             .bulk_consume(&items[..num_items_to_read])
@@ -265,6 +272,9 @@ where
                 None => {
                     // All good, we already notified them.
                     // Actually, we don't know whether us writing the corresponding message was still flushed into the network, but this is the best we can check. And even if they sent their message too soon, no inconsistencies can arise from that.
+
+                    // Anyway, set our state to not dropping, and report success.
+                    self.state.currently_dropping.set(false);
                     Ok(())
                 }
                 _ => {
@@ -281,6 +291,42 @@ where
         let pending_guarantees_to_give = self.state.guarantees.get_current_acc();
         (self.state.max_queue_capacity as u64)
             - ((self.buffer_sender.len() as u64) + pending_guarantees_to_give)
+    }
+
+    async fn drop_producer_data<P: BulkProducer<Item = u8>>(
+        &mut self,
+        mut remaining: u64,
+        p: &mut P,
+    ) -> Result<(), ReceiveSendToChannelError<P::Final, P::Error>> {
+        let state = self.state.deref();
+        while remaining > 0 {
+            match p.expose_items().await {
+                Err(producer_error) => {
+                    state.report_error();
+                    return Err(ReceiveSendToChannelError::ProducerError(producer_error));
+                }
+                Ok(Right(final_value)) => {
+                    state.report_error();
+                    return Err(ReceiveSendToChannelError::UnexpectedEndOfInput(final_value));
+                }
+                Ok(Left(items)) => {
+                    let num_items_to_drop =
+                        min(items.len(), min(remaining, usize::MAX as u64) as usize);
+
+                    match p.consider_produced(num_items_to_drop).await {
+                        Err(err) => {
+                            state.report_error();
+                            return Err(ReceiveSendToChannelError::ProducerError(err));
+                        }
+                        Ok(()) => {
+                            remaining -= num_items_to_drop as u64;
+                        }
+                    }
+                }
+            }
+        }
+
+        return Ok(());
     }
 }
 
@@ -430,5 +476,110 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.r.deref().spsc_state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, time::Duration};
+
+    use super::*;
+
+    use ufotofu::{consumer::IntoVec, producer::FromSlice, ConsumeAtLeastError, Producer};
+
+    use ufotofu_queues::Fixed;
+
+    use smol::{block_on, Timer};
+
+    #[test]
+    fn test_happy_case_sending_dropping_apologising() {
+        let queue_size = 4;
+        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let mut server_logic = ServerLogic::new(&state);
+
+        let msg_data = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let mut data_producer = FromSlice::new(&msg_data[..]);
+
+        block_on(async {
+            // Initially, all buffer capacity is granted as guarantees.
+            assert_eq!(Ok(4), server_logic.guarantees_to_give.produce_item().await);
+            // Initially, we are not dropping.
+            assert!(!state.currently_dropping.get());
+
+            // Hence, receiving two bytes of messages works.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(2, &mut data_producer)
+                    .await
+            );
+            assert_eq!(Ok(Left(0)), server_logic.received_data.produce().await);
+            assert_eq!(Ok(Left(1)), server_logic.received_data.produce().await);
+
+            // Receiving a third byte also works.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(1, &mut data_producer)
+                    .await
+            );
+            assert_eq!(Ok(Left(2)), server_logic.received_data.produce().await);
+
+            // Receiving two more bytes *still* works, because we already produced all the data on the `server_logic.received_data`.
+            // This scenario here corresponds to the client optimistically sending a two byte message despite having only one guarantee left.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(2, &mut data_producer)
+                    .await
+            );
+            // Let us *not* produce those bytes right now, so that they stay in our buffer for a while. At this point, the buffer contains [3, 4].
+
+            // Granting guarantees should consequently grant three guarantees: one for the succesful optimistic byte, and two for the remaining buffer capacity.
+            assert_eq!(Ok(3), server_logic.guarantees_to_give.produce_item().await);
+
+            // At this point, the client knows it can safely send two more bytes. Lets have it send three and let it fail.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(3, &mut data_producer)
+                    .await
+            ); // drops [5, 6, 7]
+            assert!(state.currently_dropping.get());
+
+            // Further messages are now also dropped, even if they would fit into the remaining buffer space.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(1, &mut data_producer)
+                    .await
+            ); // drops [8]
+            assert!(state.currently_dropping.get());
+
+            // The server expects an apology.
+            assert_eq!(Ok(Left(())), server_logic.start_dropping.produce().await);
+            // Hence, receiving an apology does not cause an error.
+            assert_eq!(Ok(()), server_logic.receiver.receive_apologise());
+            assert!(!state.currently_dropping.get()); // We are not dropping anymore after receiving an apology!
+
+            // Now, the server can accept new data that fits its buffer.
+            assert_eq!(
+                Ok(()),
+                server_logic
+                    .receiver
+                    .receive_send_to_channel(1, &mut data_producer)
+                    .await
+            ); // accepts [9]
+
+            // Let's confirm that the correct data was accepted and dropped.
+            assert_eq!(Ok(Left(3)), server_logic.received_data.produce().await);
+            assert_eq!(Ok(Left(4)), server_logic.received_data.produce().await);
+            assert_eq!(Ok(Left(9)), server_logic.received_data.produce().await);
+        });
     }
 }
