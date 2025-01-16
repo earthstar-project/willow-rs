@@ -1,11 +1,10 @@
 mod frames;
 mod client_logic;
 mod server_logic;
-// mod client;
 
 mod guarantee_bound;
 mod guarantee_cell;
 
-// // The entrypoint to the logic. All public exports stem from here.
-// mod session;
-// pub use session::*;
+// The entrypoint to the logic. All public exports stem from here.
+mod session;
+pub use session::*;
