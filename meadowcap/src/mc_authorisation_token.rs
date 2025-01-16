@@ -133,21 +133,18 @@ where
             return false;
         }
 
-        todo!("Implement with a single allocation with known-size encoder trait.")
+        let message = entry.sync_encode_into_boxed_slice();
 
-        // let mut consumer = IntoVec::<u8>::new();
-        // entry.encode(&mut consumer).unwrap();
+        if self
+            .capability
+            .receiver()
+            .verify(&message, &self.signature)
+            .is_err()
+        {
+            return false;
+        }
 
-        // if self
-        //     .capability
-        //     .receiver()
-        //     .verify(&consumer.into_vec(), &self.signature)
-        //     .is_err()
-        // {
-        //     return false;
-        // }
-
-        // true
+        true
     }
 }
 
