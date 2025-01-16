@@ -5,7 +5,7 @@ use crate::{
 use core::fmt::Debug;
 use core::num::NonZeroUsize;
 use std::boxed::Box;
-use std::format;
+use std::{format, println};
 use ufotofu::producer::{FromSlice, TestProducerBuilder};
 use ufotofu::{consumer::TestConsumer, producer::TestProducer};
 
@@ -309,10 +309,12 @@ pub async fn assert_relative_canonic_invariants<T, R, ErrR, ErrC>(
         &potential_encoding2,
     )
     .await;
+
     assert_relative_canonic_decoding_specialises_regular_decoding::<T, R, ErrR, ErrC>(
         r,
         &potential_encoding1,
     )
     .await;
+
     assert_relative_canonic_decoding_roundtrips::<T, R, ErrR, ErrC>(r, &potential_encoding1).await;
 }

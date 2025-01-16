@@ -1,5 +1,5 @@
 use signature::Verifier;
-use ufotofu_codec::Encodable;
+use ufotofu_codec::{Encodable, EncodableKnownSize, EncodableSync};
 use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
@@ -17,10 +17,14 @@ pub struct McAuthorisationToken<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: NamespaceId
+        + EncodableSync
+        + EncodableKnownSize
+        + Verifier<NamespaceSignature>
+        + IsCommunal,
+    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Certifies that an Entry may be written.
     pub capability: McCapability<
@@ -55,10 +59,14 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: NamespaceId
+        + EncodableSync
+        + EncodableKnownSize
+        + Verifier<NamespaceSignature>
+        + IsCommunal,
+    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and [`UserSignature`].
     ///
@@ -102,11 +110,15 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
-    PD: PayloadDigest + Encodable,
+    NamespacePublicKey: NamespaceId
+        + EncodableSync
+        + EncodableKnownSize
+        + Verifier<NamespaceSignature>
+        + IsCommunal,
+    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    PD: PayloadDigest + EncodableSync + EncodableKnownSize,
 {
     fn is_authorised_write(
         &self,
@@ -163,11 +175,16 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey:
-        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
-    UserSignature: Encodable + Clone + Arbitrary<'a>,
+    NamespacePublicKey: NamespaceId
+        + EncodableSync
+        + EncodableKnownSize
+        + IsCommunal
+        + Arbitrary<'a>
+        + Verifier<NamespaceSignature>,
+    UserPublicKey:
+        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let capability: McCapability<
