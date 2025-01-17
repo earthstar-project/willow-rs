@@ -353,9 +353,9 @@ macro_rules! fuzz_relative_all {
                         yield_pattern2,
                     )
                     .await;
-    
+
                     assert_relative_known_size_invariants(&r, &t1).await;
-    
+
                     assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                         &r,
                         &potential_encoding1,
@@ -435,7 +435,7 @@ macro_rules! fuzz_relative_canonic {
                         yield_pattern2,
                     )
                     .await;
-    
+
                     assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
                         &r,
                         &potential_encoding1,
@@ -513,7 +513,7 @@ macro_rules! fuzz_relative_known_size {
                         yield_pattern2,
                     )
                     .await;
-    
+
                     assert_relative_known_size_invariants(&r, &t1).await;
                 });
             }

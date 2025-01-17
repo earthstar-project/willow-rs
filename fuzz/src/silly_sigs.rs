@@ -1,7 +1,9 @@
 use arbitrary::Arbitrary;
 use meadowcap::IsCommunal;
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu_codec::{Blame, Decodable, DecodableCanonic, Encodable};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
+};
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
@@ -86,6 +88,14 @@ impl Encodable for SillyPublicKey {
     }
 }
 
+impl EncodableKnownSize for SillyPublicKey {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
+
+impl EncodableSync for SillyPublicKey {}
+
 impl Decodable for SillyPublicKey {
     type ErrorReason = Blame;
 
@@ -128,6 +138,14 @@ impl Encodable for SillySig {
         Ok(())
     }
 }
+
+impl EncodableKnownSize for SillySig {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
+
+impl EncodableSync for SillySig {}
 
 impl Decodable for SillySig {
     type ErrorReason = Blame;

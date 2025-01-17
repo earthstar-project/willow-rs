@@ -448,6 +448,7 @@ name = "meadowcap"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "compact_u64",
  "either",
  "signature",
  "ufotofu",
