@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use meadowcap::IsCommunal;
+use meadowcap::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
@@ -61,6 +61,8 @@ impl Verifier<SillySig> for SillyPublicKey {
 
 impl NamespaceId for SillyPublicKey {}
 
+impl McNamespacePublicKey for SillyPublicKey {}
+
 impl SubspaceId for SillyPublicKey {
     fn successor(&self) -> Option<Self> {
         if self.0 == 255 {
@@ -70,6 +72,8 @@ impl SubspaceId for SillyPublicKey {
         Some(SillyPublicKey(self.0 + 1))
     }
 }
+
+impl McPublicUserKey<SillySig> for SillyPublicKey {}
 
 impl IsCommunal for SillyPublicKey {
     fn is_communal(&self) -> bool {

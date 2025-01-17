@@ -36,7 +36,7 @@ pub struct Delegation<
     UserPublicKey,
     UserSignature,
 > where
-    UserPublicKey: SubspaceId,
+    UserPublicKey: McPublicUserKey<UserSignature>,
 {
     area: Area<MCL, MCC, MPL, UserPublicKey>,
     user: UserPublicKey,
@@ -46,7 +46,7 @@ pub struct Delegation<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey, UserSignature>
     Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>
 where
-    UserPublicKey: SubspaceId,
+    UserPublicKey: McPublicUserKey<UserSignature>,
 {
     pub fn new(
         area: Area<MCL, MCC, MPL, UserPublicKey>,
@@ -84,7 +84,7 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey, Us
     Arbitrary<'a> for Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>
 where
     UserSignature: Arbitrary<'a>,
-    UserPublicKey: SubspaceId + Arbitrary<'a>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let area: Area<MCL, MCC, MPL, UserPublicKey> = Arbitrary::arbitrary(u)?;
@@ -187,7 +187,7 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        UserPublicKey: SubspaceId,
+        UserPublicKey: McPublicUserKey<UserSignature>,
         UserSignature,
     > core::fmt::Display for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
 {
@@ -216,9 +216,9 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        UserPublicKey: SubspaceId,
+        UserPublicKey: McPublicUserKey<UserSignature>,
         UserSignature: std::fmt::Debug,
-    > std::error::Error for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
+    > core::error::Error for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
 {
 }
 
@@ -236,3 +236,6 @@ pub use owned_capability::*;
 
 mod mc_subspace_capability;
 pub use mc_subspace_capability::*;
+
+mod parameters;
+pub use parameters::*;

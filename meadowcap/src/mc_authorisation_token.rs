@@ -1,8 +1,8 @@
 use signature::Verifier;
 use ufotofu_codec::{EncodableKnownSize, EncodableSync};
-use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
+use willow_data_model::{AuthorisationToken, Entry, PayloadDigest};
 
-use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
+use crate::{mc_capability::McCapability, AccessMode, McNamespacePublicKey, McPublicUserKey};
 
 /// To be used as the [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) parameter for the [Willow data model](https://willowprotocol.org/specs/data-model).
 ///
@@ -17,12 +17,8 @@ pub struct McAuthorisationToken<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -59,12 +55,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -110,12 +102,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
     PD: PayloadDigest + EncodableSync + EncodableKnownSize,
@@ -172,14 +160,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + IsCommunal
-        + Arbitrary<'a>
-        + Verifier<NamespaceSignature>,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
 {

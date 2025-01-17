@@ -4,10 +4,13 @@ use ufotofu_codec::{
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    NamespaceId, Path, SubspaceId,
+    Path, SubspaceId,
 };
 
-use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
+use crate::{
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
+    McPublicUserKey,
+};
 
 /// Returned when an attempt to create a new owned capability failed.
 #[derive(Debug)]
@@ -51,13 +54,9 @@ pub struct OwnedCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     access_mode: AccessMode,
@@ -86,13 +85,9 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Creates a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
@@ -400,13 +395,9 @@ pub struct OwnedHandover<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     cap: &'a OwnedCapability<
@@ -443,13 +434,9 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -500,13 +487,9 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     fn len_of_encoding(&self) -> usize {
@@ -554,13 +537,9 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
 }
@@ -589,14 +568,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + IsCommunal
-        + Arbitrary<'a>
-        + Verifier<NamespaceSignature>,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
