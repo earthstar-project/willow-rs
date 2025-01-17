@@ -235,13 +235,9 @@ where
 
         let delegations_count = self.delegations.len() as u64;
 
-        if delegations_count < 252 {
-            header |= delegations_count as u8
-        } else {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
-            header |= 0b1111_1100;
-            header |= tag.data();
-        }
+        let tag = Tag::min_tag(delegations_count, TagWidth::eight());
+
+        header |= tag.data();
 
         consumer.consume(header).await?;
 
@@ -249,13 +245,9 @@ where
         Encodable::encode(&self.user_key, consumer).await?;
         Encodable::encode(&self.initial_authorisation, consumer).await?;
 
-        if delegations_count >= 252 {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
-
-            CompactU64(delegations_count)
-                .relative_encode(consumer, &tag.encoding_width())
-                .await?;
-        }
+        CompactU64(delegations_count)
+            .relative_encode(consumer, &tag.encoding_width())
+            .await?;
 
         for delegation in self.delegations.iter() {
             Encodable::encode(delegation.user(), consumer).await?;
@@ -353,29 +345,20 @@ where
         let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
             .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
 
-        let delegations_to_decode = if header < 252 {
-            header as u64
-        } else {
-            let tag = Tag::from_raw(header, TagWidth::two(), 6);
+        let tag = Tag::from_raw(header, TagWidth::eight(), 0);
 
-            let count = CompactU64::relative_decode_canonic(producer, &tag)
-                .await
-                .map_err(DecodeError::map_other_from)?
-                .0;
+        let delegations_to_decode = CompactU64::relative_decode_canonic(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
 
-            let expected_tag = Tag::min_tag(count, TagWidth::two());
+        /*
+        let expected_tag = Tag::min_tag(delegations_to_decode, TagWidth::eight());
 
-            if expected_tag != tag {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            count
-        };
-
-        if header & 0b1111_1100 == 0b1111_1100 && delegations_to_decode < 252 {
-            // The delegation count should have been encoded directly in the header.
+        if expected_tag != tag {
             return Err(DecodeError::Other(Blame::TheirFault));
         }
+        */
 
         let mut delegations_decoded = 0;
 
@@ -419,13 +402,10 @@ where
         let user_len = self.user_key.len_of_encoding();
         let init_auth_len = self.initial_authorisation.len_of_encoding();
 
-        let delegation_count_len = if delegations_count >= 60 {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
+        let tag = Tag::min_tag(delegations_count, TagWidth::eight());
 
-            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width())
-        } else {
-            0
-        };
+        let delegation_count_len =
+            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width());
 
         let mut delegations_len = 0;
 

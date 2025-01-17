@@ -359,14 +359,9 @@ where
         }
 
         let delegations_count = self.delegations_len() as u64;
+        let tag = Tag::min_tag(delegations_count, TagWidth::six());
 
-        if delegations_count < 60 {
-            header |= delegations_count as u8;
-        } else {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
-            header |= 0b0011_1100;
-            header |= tag.data();
-        }
+        header |= tag.data();
 
         consumer.consume(header).await?;
 
@@ -380,13 +375,9 @@ where
             }
         };
 
-        if delegations_count >= 60 {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
-
-            CompactU64(delegations_count)
-                .relative_encode(consumer, &tag.encoding_width())
-                .await?;
-        }
+        CompactU64(delegations_count)
+            .relative_encode(consumer, &tag.encoding_width())
+            .await?;
 
         let mut prev_area = r.clone();
 
@@ -549,21 +540,12 @@ where
             Self::Communal(cap)
         };
 
-        let delegations_to_decode = if (header & 0b0011_1111) < 60 {
-            (header & 0b0011_1111) as u64
-        } else {
-            let tag = Tag::from_raw(header, TagWidth::two(), 6);
+        let tag = Tag::from_raw(header, TagWidth::six(), 2);
 
-            CompactU64::relative_decode_canonic(producer, &tag)
-                .await
-                .map_err(DecodeError::map_other_from)?
-                .0
-        };
-
-        if header & 0b0011_1100 == 0b0011_1100 && delegations_to_decode < 60 {
-            // The delegation count should have been encoded directly in the header.
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
+        let delegations_to_decode = CompactU64::relative_decode_canonic(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
 
         let mut prev_area = r.clone();
 
@@ -632,13 +614,10 @@ where
 
         let delegations_count = self.delegations_len() as u64;
 
-        let delegations_count_len = if delegations_count >= 60 {
-            let tag = Tag::min_tag(delegations_count, TagWidth::two());
+        let tag = Tag::min_tag(delegations_count, TagWidth::six());
 
-            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width())
-        } else {
-            0
-        };
+        let delegations_count_len =
+            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width());
 
         let mut prev_area = r.clone();
 
