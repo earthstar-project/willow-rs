@@ -324,8 +324,7 @@ where
         + EncodableKnownSize
         + Verifier<NamespaceSignature>
         + IsCommunal,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + std::fmt::Debug,
+    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -424,8 +423,7 @@ where
         + EncodableSync
         + EncodableKnownSize
         + DecodableCanonic
-        + Verifier<UserSignature>
-        + std::fmt::Debug,
+        + Verifier<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
@@ -478,8 +476,7 @@ where
         + EncodableSync
         + EncodableKnownSize
         + DecodableCanonic
-        + Verifier<UserSignature>
-        + std::fmt::Debug,
+        + Verifier<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
@@ -598,8 +595,7 @@ where
         + EncodableKnownSize
         + Verifier<NamespaceSignature>
         + IsCommunal,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + std::fmt::Debug,
+    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {

@@ -1,5 +1,5 @@
 use signature::Verifier;
-use ufotofu_codec::{Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{EncodableKnownSize, EncodableSync};
 use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
 
 use crate::{mc_capability::McCapability, AccessMode, IsCommunal};

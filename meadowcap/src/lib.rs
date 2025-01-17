@@ -156,12 +156,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey: Subspa
     }
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        UserPublicKey: SubspaceId + std::fmt::Debug,
-    > std::error::Error for FailedDelegationError<MCL, MCC, MPL, UserPublicKey>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, UserPublicKey: SubspaceId>
+    std::error::Error for FailedDelegationError<MCL, MCC, MPL, UserPublicKey>
 {
 }
 
@@ -220,7 +216,7 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        UserPublicKey: SubspaceId + std::fmt::Debug,
+        UserPublicKey: SubspaceId,
         UserSignature: std::fmt::Debug,
     > std::error::Error for InvalidDelegationError<MCL, MCC, MPL, UserPublicKey, UserSignature>
 {

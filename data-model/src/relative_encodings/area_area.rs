@@ -102,7 +102,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
 {
     /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
@@ -125,7 +125,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableCanonic<Area<MCL, MCC, MPL, S>, Blame, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
 {
     async fn relative_decode_canonic<P>(
@@ -199,7 +199,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableSync<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
 {
 }
@@ -217,9 +217,7 @@ async fn relative_decode_maybe_canonic<
 ) -> Result<Area<MCL, MCC, MPL, S>, DecodeError<P::Final, P::Error, Blame>>
 where
     P: BulkProducer<Item = u8>,
-
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
-
+    S: SubspaceId + DecodableCanonic,
     Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
 {
     let header = producer.produce_item().await?;
