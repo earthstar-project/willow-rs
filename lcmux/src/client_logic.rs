@@ -55,10 +55,12 @@ pub(crate) struct ClientLogic<R> {
     /// Inform the client logic about incoming control messages about this logical channel.
     pub receiver: MessageReceiver<R>,
     /// Receive information about when to grant absolution on this logical channel. Whenever a value is read from this shelf, the client logic assumes that the absolution will be granted.
-    pub grant_absolution: shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
+    pub grant_absolution: GrantAbsolution<R>,
     /// Allows sending messages to this channel, also allows sending `LimitSending` frames.
     pub sender: SendToChannel<R>,
 }
+
+pub(crate) type GrantAbsolution<R> = shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>;
 
 impl<R> ClientLogic<R>
 where
@@ -79,6 +81,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct MessageReceiver<R> {
     state: R,
     absolution_shelf_sender: shelf::Sender<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
@@ -125,6 +128,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct SendToChannel<R> {
     state: R,
 }
@@ -213,7 +217,7 @@ impl<E> From<E> for LogicalChannelClientError<E> {
 }
 
 #[derive(Debug, Clone)]
-struct ProjectAbsolutionShelf<R> {
+pub(crate) struct ProjectAbsolutionShelf<R> {
     r: R,
 }
 
