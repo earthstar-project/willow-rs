@@ -7,14 +7,15 @@ use ufotofu_codec::{
     Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
     RelativeDecodable, RelativeDecodableCanonic, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::{grouping::Area, Entry, NamespaceId, PayloadDigest, SubspaceId};
+use willow_data_model::{grouping::Area, Entry, PayloadDigest};
 use willow_encoding::is_bitflagged;
 
 use crate::{
     communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
     mc_authorisation_token::McAuthorisationToken,
     owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
-    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal,
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
+    McPublicUserKey,
 };
 
 /// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
@@ -46,12 +47,8 @@ pub enum McCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -88,12 +85,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -319,13 +312,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + std::fmt::Debug,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
@@ -414,18 +402,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<UserSignature>
-        + std::fmt::Debug,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
@@ -468,18 +446,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey: SubspaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<UserSignature>
-        + std::fmt::Debug,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
@@ -593,13 +561,8 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + std::fmt::Debug,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {

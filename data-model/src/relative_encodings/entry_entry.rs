@@ -82,8 +82,8 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<Entry<MCL, MCC, MPL, N, S, PD>, Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -108,8 +108,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableCanonic<Entry<MCL, MCC, MPL, N, S, PD>, Blame, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -189,8 +189,8 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<Entry<MCL, MCC, MPL, N, S, PD>, Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -216,8 +216,8 @@ async fn relative_decode_maybe_canonic<
 ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<P::Final, P::Error, Blame>>
 where
     P: BulkProducer<Item = u8>,
-    N: NamespaceId + DecodableCanonic + std::fmt::Debug,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>

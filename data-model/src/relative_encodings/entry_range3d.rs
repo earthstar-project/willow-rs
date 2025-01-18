@@ -125,7 +125,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<(N, Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -156,7 +156,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -255,7 +255,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<(N, Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
@@ -282,7 +282,7 @@ async fn relative_decode_maybe_canonic<
 where
     P: BulkProducer<Item = u8>,
     N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic + std::fmt::Debug,
+    S: SubspaceId + DecodableCanonic,
     PD: PayloadDigest + DecodableCanonic,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>

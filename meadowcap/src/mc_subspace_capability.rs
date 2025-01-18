@@ -2,7 +2,6 @@ use compact_u64::CompactU64;
 use compact_u64::Tag;
 use compact_u64::TagWidth;
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::Consumer;
 use ufotofu_codec::Blame;
 use ufotofu_codec::Decodable;
 use ufotofu_codec::DecodableCanonic;
@@ -13,10 +12,10 @@ use ufotofu_codec::EncodableSync;
 use ufotofu_codec::RelativeDecodableCanonic;
 use ufotofu_codec::RelativeEncodable;
 use ufotofu_codec::RelativeEncodableKnownSize;
-use willow_data_model::NamespaceId;
 use willow_data_model::SubspaceId;
 
-use crate::IsCommunal;
+use crate::McNamespacePublicKey;
+use crate::McPublicUserKey;
 
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
@@ -61,9 +60,9 @@ pub struct McSubspaceCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: Encodable + Clone,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: Encodable + Clone,
 {
     namespace_key: NamespacePublicKey,
@@ -75,13 +74,10 @@ pub struct McSubspaceCapability<
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
     McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Creates a new [`McSubspaceCapability`] for a given user, or return an error if the given namespace secret is incorrect.
@@ -221,10 +217,9 @@ where
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
     for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey:
-        NamespaceId + Encodable + Encodable + Verifier<NamespaceSignature> + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: Encodable + Encodable + Clone,
-    UserPublicKey: SubspaceId + Encodable + Encodable + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: Encodable + Encodable + Clone,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -261,18 +256,9 @@ where
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
     for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserPublicKey: SubspaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
         + From<UserPublicKey::ErrorReason>
@@ -299,18 +285,9 @@ where
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> DecodableCanonic
     for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<NamespaceSignature>
-        + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserPublicKey: SubspaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + DecodableCanonic
-        + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     Blame: From<NamespacePublicKey::ErrorReason>
         + From<UserPublicKey::ErrorReason>
@@ -389,10 +366,9 @@ where
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
     for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey:
-        NamespaceId + EncodableKnownSize + Verifier<NamespaceSignature> + IsCommunal,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableKnownSize + Clone,
 {
     fn len_of_encoding(&self) -> usize {
@@ -456,14 +432,9 @@ impl<'a, UserPublicKey> EncodableSync for SubspaceInitialAuthorisationMsg<'a, Us
 /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_handover)
 struct SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal
-        + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     subspace_cap: &'a McSubspaceCapability<
@@ -478,14 +449,9 @@ where
 impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
     for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal
-        + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -519,14 +485,9 @@ where
 impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
     for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal
-        + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     fn len_of_encoding(&self) -> usize {
@@ -555,14 +516,9 @@ where
 impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableSync
     for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + Verifier<NamespaceSignature>
-        + IsCommunal
-        + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserPublicKey: SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
 }
@@ -571,14 +527,8 @@ where
 impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Arbitrary<'a>
     for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: NamespaceId
-        + EncodableSync
-        + EncodableKnownSize
-        + IsCommunal
-        + Arbitrary<'a>
-        + Verifier<NamespaceSignature>,
-    UserPublicKey:
-        SubspaceId + EncodableSync + EncodableKnownSize + Verifier<UserSignature> + Arbitrary<'a>,
+    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
