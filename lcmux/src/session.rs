@@ -30,7 +30,7 @@ use crate::{
     server_logic::{self, ServerLogic, StartDropping},
 };
 
-pub use crate::frames::SendControlNibble;
+pub use crate::frames::SendGlobalNibble;
 
 /// The state for an Lcmux session for channels `0` to `NUM_CHANNELS - 1`.
 ///
@@ -92,13 +92,14 @@ where
 pub struct Session<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     /// A struct with an async function whose Future must be polled to completion to run the LCMUX session. Yields `Ok(())` if every logical channel got closed by both peers, yields an `Err` if *any* channel encounters any error.
     bookkeeping: Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>,
+    /// A struct for sending global messages to the other peer.
+    global_messenger: GlobalMessenger<NUM_CHANNELS, R>,
 }
 
 /// Call and poll to completion the `keep_the_books` method on this struct to run an LCMUX session.
 #[derive(Debug)]
 pub struct Bookkeeping<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     state: R,
-    // client_receivers: [client_logic::MessageReceiver<ProjectIthClientState<NUM_CHANNELS, R>>; NUM_CHANNELS],
     client_grant_absolutions: Option<
         [client_logic::GrantAbsolution<ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>>;
             NUM_CHANNELS],
@@ -284,6 +285,44 @@ where
     fn deref(&self) -> &Self::Target {
         &self.r.deref().channel_states[self.i].1
     }
+}
+
+/// Send global messages to the other peer via this struct.
+#[derive(Debug)]
+pub struct GlobalMessenger<const NUM_CHANNELS: usize, R> {
+    state: R,
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessenger<NUM_CHANNELS, R>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    pub async fn send_global_message<
+        CMessage: RelativeEncodable<SendGlobalNibble> + GetGlobalNibble,
+    >(
+        &mut self,
+        message: CMessage,
+    ) -> Result<(), C::Error> {
+        let mut c = self.state.deref().c.access_consumer().await;
+
+        let nibble = message.control_nibble();
+        let header = SendGlobalHeader {
+            encoding_nibble: nibble,
+        };
+        header.encode(&mut c).await?;
+
+        message.relative_encode(&mut c, &nibble).await?;
+        c.close(()).await
+    }
+}
+
+/// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
+pub trait GetGlobalNibble {
+    fn control_nibble(&self) -> SendGlobalNibble;
 }
 
 // /// All components for interacting with an LCMUX session.
