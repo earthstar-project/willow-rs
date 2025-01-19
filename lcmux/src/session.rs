@@ -1,33 +1,30 @@
 use std::{
-    convert::Infallible,
-    future::Future,
+    error::Error,
+    fmt::{Debug, Display, Formatter},
     marker::PhantomData,
-    mem::MaybeUninit,
-    ops::{Deref, DerefMut},
+    num::NonZeroU64,
+    ops::Deref,
 };
 
 use either::Either::{self, *};
 use futures::{
     future::{try_join3, try_join_all},
-    try_join, FutureExt, TryFutureExt,
+    TryFutureExt,
 };
 
 use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{
-    Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
-};
+use ufotofu_codec::{Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable};
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    Mutex,
 };
 
 use crate::{
-    client_logic::{self, ClientLogic, SendToChannel},
+    client_logic::{self},
     frames::*,
-    server_logic::{self, ServerLogic, StartDropping},
+    server_logic::{self, ReceiveSendToChannelError},
 };
 
 pub use crate::frames::SendGlobalNibble;
@@ -91,9 +88,18 @@ where
 #[derive(Debug)]
 pub struct Session<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     /// A struct with an async function whose Future must be polled to completion to run the LCMUX session. Yields `Ok(())` if every logical channel got closed by both peers, yields an `Err` if *any* channel encounters any error.
-    bookkeeping: Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>,
+    pub bookkeeping: Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>,
     /// A struct for sending global messages to the other peer.
-    global_messenger: GlobalMessenger<NUM_CHANNELS, R>,
+    pub global_messenger: GlobalMessengeSender<NUM_CHANNELS, R>,
+    /// For each logical channel, a producer of the bytes that were sent to that channel via `SendToChannel` frames.
+    pub channel_receivers: [server_logic::ReceivedData<
+        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
+        Fixed<u8>,
+    >; NUM_CHANNELS],
+    /// For each logical channel, a way to send data to that channel via `SendToChannel` frames.
+    pub channel_senders: [client_logic::SendToChannel<
+        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
+    >; NUM_CHANNELS],
 }
 
 /// Call and poll to completion the `keep_the_books` method on this struct to run an LCMUX session.
@@ -241,6 +247,299 @@ where
     }
 }
 
+/// Send global messages to the other peer via this struct.
+#[derive(Debug)]
+pub struct GlobalMessengeSender<const NUM_CHANNELS: usize, R> {
+    state: R,
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessengeSender<NUM_CHANNELS, R>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    pub async fn send_global_message<
+        CMessage: RelativeEncodable<SendGlobalNibble> + GetGlobalNibble,
+    >(
+        &mut self,
+        message: CMessage,
+    ) -> Result<(), C::Error> {
+        let mut c = self.state.deref().c.access_consumer().await;
+
+        let nibble = message.control_nibble();
+        let header = SendGlobalHeader {
+            encoding_nibble: nibble,
+        };
+        header.encode(&mut c).await?;
+
+        message.relative_encode(&mut c, &nibble).await?;
+        c.close(()).await
+    }
+}
+
+/// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
+pub trait GetGlobalNibble {
+    fn control_nibble(&self) -> SendGlobalNibble;
+}
+
+/// Receive global messenges from the other peer via the [`Producer`] implementation of this struct. The producer must constantly be read, as it internally decodes and processes all control messages.
+#[derive(Debug)]
+pub struct GlobalMessageReceiver<
+    const NUM_CHANNELS: usize,
+    R,
+    P,
+    PR,
+    C,
+    CR,
+    GlobalMessage,
+    GlobalMessageDecodeErrorReason,
+> {
+    state: R,
+    client_receivers: [client_logic::MessageReceiver<
+        ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>,
+    >; NUM_CHANNELS],
+    server_receivers: [server_logic::MessageReceiver<
+        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
+        Fixed<u8>,
+    >; NUM_CHANNELS],
+    phantom: PhantomData<(GlobalMessage, GlobalMessageDecodeErrorReason)>,
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
+    Producer
+    for GlobalMessageReceiver<
+        NUM_CHANNELS,
+        R,
+        P,
+        PR,
+        C,
+        CR,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+    >
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: BulkProducer<Item = u8, Final: Clone, Error: Clone>,
+    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    GlobalMessage: RelativeDecodable<SendGlobalNibble, GlobalMessageDecodeErrorReason>,
+{
+    type Item = GlobalMessage;
+
+    type Final = P::Final;
+
+    type Error = GlobalMessageError<P::Final, P::Error, GlobalMessageDecodeErrorReason>;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        let mut p = self.state.p.access_producer().await;
+
+        // Decode frames until encountering a `SendGlobal` frame header. For all other frames, update the corresponding client or server state.
+        loop {
+            // Is the producer done? If so, emit final.
+            match p.expose_items().await? {
+                Left(_) => {} // no-op
+                Right(fin) => return Ok(Right(fin)),
+            }
+
+            match IncomingFrameHeader::decode(&mut p).await.map_err(
+                |decode_err| match decode_err {
+                    DecodeError::Producer(err) => err.into(),
+                    _ => GlobalMessageError::Other,
+                },
+            )? {
+                // Forward incoming IssueGuarantee frames to the indicated client input.
+                IncomingFrameHeader::IssueGuarantee(IssueGuarantee { channel, amount }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.client_receivers[channel as usize]
+                            .receive_guarantees(amount)
+                            .or(Err(GlobalMessageError::Other))?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // Forward incoming Absolve frames to the indicated server input.
+                IncomingFrameHeader::Absolve(Absolve { channel, amount }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_receivers[channel as usize]
+                            .receive_absolve(amount)
+                            .or(Err(GlobalMessageError::Other))?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // Forward incoming Plead frames to the indicated client input.
+                IncomingFrameHeader::Plead(Plead { channel, target }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        if let Some(target_nz) = NonZeroU64::new(target) {
+                            self.client_receivers[channel as usize].receive_plead(target_nz);
+                        }
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // Forward incoming LimitSending frames to the indicated server input.
+                IncomingFrameHeader::LimitSending(LimitSending { channel, bound }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_receivers[channel as usize]
+                            .receive_limit_sending(bound)
+                            .or(Err(GlobalMessageError::Other))?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // Forward incoming LimitReceiving frames to the indicated client input.
+                IncomingFrameHeader::LimitReceiving(LimitReceiving { channel, bound }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.client_receivers[channel as usize]
+                            .receive_limit_receiving(bound)
+                            .or(Err(GlobalMessageError::Other))?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // AnnounceDropping frames should never arrive, because we do not send optimistically.
+                IncomingFrameHeader::AnnounceDropping(AnnounceDropping { channel: _ }) => {
+                    return Err(GlobalMessageError::Other);
+                }
+
+                // Forward incoming Apologise frames to the indicated server input.
+                IncomingFrameHeader::Apologise(Apologise { channel }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_receivers[channel as usize]
+                            .receive_apologise()
+                            .or(Err(GlobalMessageError::Other))?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // When receiving a SendToChannel frame header, forward the indicated amount of bytes into the corresponding buffer.
+                IncomingFrameHeader::SendToChannelHeader(SendToChannelHeader {
+                    channel,
+                    length,
+                }) => {
+                    if channel < (NUM_CHANNELS as u64) {
+                        self.server_receivers[channel as usize]
+                            .receive_send_to_channel(length, &mut p)
+                            .await
+                            .map_err(|err| match err {
+                                ReceiveSendToChannelError::ProducerError(err) => {
+                                    GlobalMessageError::Producer(err)
+                                }
+                                _ => GlobalMessageError::Other,
+                            })?;
+                        continue;
+                    } else {
+                        return Err(GlobalMessageError::UnsupportedChannel(channel));
+                    }
+                }
+
+                // When receiving a SendControl frame header, we can actually produce an item! Yay!
+                IncomingFrameHeader::SendGlobalHeader(SendGlobalHeader { encoding_nibble }) => {
+                    // Did the producer end?
+                    match p.expose_items().await? {
+                        Left(_) => {} // no-op
+                        Right(fin) => return Ok(Right(fin)),
+                    }
+
+                    return Ok(Left(
+                        GlobalMessage::relative_decode(&mut p, &encoding_nibble).await?,
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Reasons why producing an item from a [`GlobalMessageReceiver`] can fail: the underlying transport may fail, the peer might send a global message that cannot be decoded, the peer might reference a channel we did not expect, or the peer might deviate from the LCMUX spec in any other way.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum GlobalMessageError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason> {
+    /// The underlying transport errored.
+    Producer(ProducerError),
+    /// The peer sent a `SendGlobal` frame, but its payload did not decode correctly.
+    DecodeGlobalMessage(DecodeError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>),
+    /// The peer references a channel_id which we did not expect.
+    UnsupportedChannel(u64),
+    /// The peer deviated from the LCMUX specification.
+    Other,
+}
+
+impl<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason> From<ProducerError>
+    for GlobalMessageError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>
+{
+    fn from(err: ProducerError) -> Self {
+        GlobalMessageError::Producer(err)
+    }
+}
+
+impl<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>
+    From<DecodeError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>>
+    for GlobalMessageError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>
+{
+    fn from(
+        err: DecodeError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>,
+    ) -> Self {
+        GlobalMessageError::DecodeGlobalMessage(err)
+    }
+}
+
+impl<ProducerFinal: Display, ProducerError: Display, GlobalMessageDecodeErrorReason: Display>
+    Display for GlobalMessageError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            GlobalMessageError::Producer(err) => {
+                write!(f, "The underlying producer encountered an error: {}", err,)
+            }
+            GlobalMessageError::DecodeGlobalMessage(fin) => {
+                write!(f, "Decoding an LCMUX global message failed: {}", fin)
+            }
+            GlobalMessageError::UnsupportedChannel(channel_id) => {
+                write!(
+                    f,
+                    "Peer used a logical channel id we did not expect: {}",
+                    channel_id
+                )
+            }
+            GlobalMessageError::Other => {
+                write!(f, "Peer deviated from the LCMUX spec")
+            }
+        }
+    }
+}
+
+impl<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason> Error
+    for GlobalMessageError<ProducerFinal, ProducerError, GlobalMessageDecodeErrorReason>
+where
+    ProducerFinal: Display + Debug,
+    ProducerError: 'static + Error,
+    GlobalMessageDecodeErrorReason: 'static + Error,
+{
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            GlobalMessageError::Producer(err) => Some(err),
+            GlobalMessageError::DecodeGlobalMessage(_)
+            | GlobalMessageError::UnsupportedChannel(_)
+            | GlobalMessageError::Other => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ProjectIthClientState<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     r: R,
@@ -286,434 +585,3 @@ where
         &self.r.deref().channel_states[self.i].1
     }
 }
-
-/// Send global messages to the other peer via this struct.
-#[derive(Debug)]
-pub struct GlobalMessenger<const NUM_CHANNELS: usize, R> {
-    state: R,
-}
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessenger<NUM_CHANNELS, R>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    pub async fn send_global_message<
-        CMessage: RelativeEncodable<SendGlobalNibble> + GetGlobalNibble,
-    >(
-        &mut self,
-        message: CMessage,
-    ) -> Result<(), C::Error> {
-        let mut c = self.state.deref().c.access_consumer().await;
-
-        let nibble = message.control_nibble();
-        let header = SendGlobalHeader {
-            encoding_nibble: nibble,
-        };
-        header.encode(&mut c).await?;
-
-        message.relative_encode(&mut c, &nibble).await?;
-        c.close(()).await
-    }
-}
-
-/// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
-pub trait GetGlobalNibble {
-    fn control_nibble(&self) -> SendGlobalNibble;
-}
-
-// /// All components for interacting with an LCMUX session.
-// pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
-//     /// A producer of incoming control messages. You *must* read from this *constantly*, as it also drives internal processing of all other LCMUX frames. When it emits its final item or an error, then the full LCMUX session is done.
-//     pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>,
-//     /// Takes outgoing control messages and frames, encodes, and transmits them.
-//     pub control_message_sender: ControlMessageSender<'transport, C>,
-//     /// For each logical channel an opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer for the channel.
-//     pub channel_bookkeeping: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS],
-//     /// Structs that allow for sending messages to a logical channel, one struct per channel.
-//     pub how_to_send_messages_to_a_logical_channel:
-//         [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
-//     // Producers of data received on a logical channel, one producer per channel.
-//     pub receive_data_from_logical_channel: [server_logic::ReceivedData<Fixed<u8>>; NUM_CHANNELS],
-// }
-
-// /// Given a producer and consumer of bytes that represent an ordered, bidirectional, byte-oriented, reliable communication channel with a peer,
-// /// provide multiplexing and demultiplexing based on LCMUX.
-// ///
-// /// - `P` and `C` are the specific producer and consumer types of the communication channel.
-// /// - `CMessage` is the type of all messages that can be received via [`SendControl`](https://willowprotocol.org/specs/resource-control/index.html#SendControl) frames.
-// /// - `Q` is the type of queues that should be used to buffer the message bytes received on a logical channel.
-// ///
-// /// `NUM_CHANNELS` denotes how many of the channels are actively used, their channel ids range from zero to `NUM_CHANNELS - 1`. Receiving any frame for a channel of id `NUM_CHANNEL` or greater is reported as a fatal error.
-// ///
-// /// - `max_queue_capacity` must be greater than zero.
-// /// - `watermark` must be less than or equal to `max_queue_capacity`.
-// pub fn new_lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage>(
-//     producer: &'transport Mutex<P>,
-//     consumer: &'transport Mutex<C>,
-//     max_queue_capacity: usize,
-//     watermark: usize,
-// ) -> Lcmux<'transport, NUM_CHANNELS, P, C, CMessage> {
-//     let client_handles: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
-//         new_logical_channel_client_state(consumer, channel_id as u64)
-//     });
-//     let server_handles: [_; NUM_CHANNELS] = core::array::from_fn(|_| {
-//         new_logical_channel_server_logic_state(
-//             max_queue_capacity,
-//             watermark,
-//             Fixed::<u8>::new(max_queue_capacity),
-//         )
-//     });
-
-//     // Conversion from arrays of structs to arrays of individual fields adapted from https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305
-//     // Thank you, Frando!
-//     let mut client_inputs: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
-//     let mut server_inputs: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
-//     let mut bookkeepings: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
-//     let mut how_to_send_messages_to_a_logical_channel: [_; NUM_CHANNELS] =
-//         std::array::from_fn(|_| MaybeUninit::uninit());
-//     let mut receive_data_from_logical_channel: [_; NUM_CHANNELS] =
-//         std::array::from_fn(|_| MaybeUninit::uninit());
-
-//     for (i, (client_handle, server_handle)) in client_handles
-//         .into_iter()
-//         .zip(server_handles.into_iter())
-//         .enumerate()
-//     {
-//         client_inputs[i].write(client_handle.input);
-//         server_inputs[i].write(server_handle.input);
-//         bookkeepings[i].write(ChannelBookkeeping {
-//             channel_id: i as u64,
-//             consumer,
-//             absolutions_to_grant: client_handle.absolutions,
-//             guarantees_to_give: server_handle.guarantees_to_give,
-//             droppings_to_announce: server_handle.droppings_to_announce,
-//         });
-//         how_to_send_messages_to_a_logical_channel[i].write(client_handle.logical_consumer);
-//         receive_data_from_logical_channel[i].write(server_handle.received_data);
-//     }
-
-//     // SAFETY: As N is constant, we know that all elements are initialized.
-//     let client_inputs = client_inputs.map(|x| unsafe { x.assume_init() });
-//     let server_inputs = server_inputs.map(|x| unsafe { x.assume_init() });
-//     let bookkeepings = bookkeepings.map(|x| unsafe { x.assume_init() });
-//     let how_to_send_messages_to_a_logical_channel =
-//         how_to_send_messages_to_a_logical_channel.map(|x| unsafe { x.assume_init() });
-//     let receive_data_from_logical_channel =
-//         receive_data_from_logical_channel.map(|x| unsafe { x.assume_init() });
-
-//     let control_message_producer = ControlMessageProducer {
-//         producer,
-//         client_inputs,
-//         server_inputs,
-//         phantom: PhantomData,
-//     };
-
-//     let control_message_consumer = ControlMessageSender { consumer };
-
-//     Lcmux {
-//         control_message_producer,
-//         control_message_sender: control_message_consumer,
-//         channel_bookkeeping: bookkeepings,
-//         how_to_send_messages_to_a_logical_channel,
-//         receive_data_from_logical_channel,
-//     }
-// }
-
-// /// All components for interacting with an LCMUX session.
-// pub struct Lcmux<'transport, const NUM_CHANNELS: usize, P, C, CMessage> {
-//     /// A producer of incoming control messages. You *must* read from this *constantly*, as it also drives internal processing of all other LCMUX frames. When it emits its final item or an error, then the full LCMUX session is done.
-//     pub control_message_producer: ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>,
-//     /// Takes outgoing control messages and frames, encodes, and transmits them.
-//     pub control_message_sender: ControlMessageSender<'transport, C>,
-//     /// For each logical channel an opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer for the channel.
-//     pub channel_bookkeeping: [ChannelBookkeeping<'transport, C>; NUM_CHANNELS],
-//     /// Structs that allow for sending messages to a logical channel, one struct per channel.
-//     pub how_to_send_messages_to_a_logical_channel:
-//         [LogicalChannelClientEndpoint<'transport, C>; NUM_CHANNELS],
-//     // Producers of data received on a logical channel, one producer per channel.
-//     pub receive_data_from_logical_channel: [server_logic::ReceivedData<Fixed<u8>>; NUM_CHANNELS],
-// }
-
-// /// A `Producer` of incoming control messages. Reading data from this producer is what drives processing of *all* incoming messages. If you stop reading from this, no more arriving bytes will be processed, even for non-control messages.
-// pub struct ControlMessageProducer<'transport, const NUM_CHANNELS: usize, P, CMessage> {
-//     producer: &'transport Mutex<P>,
-//     client_inputs: [client::Input; NUM_CHANNELS],
-//     server_inputs: [server_logic::Input<Fixed<u8>>; NUM_CHANNELS],
-//     phantom: PhantomData<CMessage>,
-// }
-
-// impl<'transport, const NUM_CHANNELS: usize, P, CMessage> Producer
-//     for ControlMessageProducer<'transport, NUM_CHANNELS, P, CMessage>
-// where
-//     P: BulkProducer<Item = u8>,
-//     CMessage: RelativeDecodable<SendControlNibble, Blame>,
-// {
-//     type Item = CMessage;
-
-//     type Final = P::Final;
-
-//     type Error = DecodeError<P::Final, P::Error, Blame>;
-
-//     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-//         // Decode LCMUX frames until finding a control message.
-//         // For all non-control messages, update the appropriate client states or server states.
-//         loop {
-//             let mut p = self.producer.write().await;
-
-//             // The `continue` statements below don't actually skip anything, they just emphasise that the next step is continuing to loop.
-
-//             match IncomingFrameHeader::decode(p.deref_mut()).await? {
-//                 // Forward incoming IssueGuarantee frames to the indicated client input.
-//                 IncomingFrameHeader::IssueGuarantee(IssueGuarantee { channel, amount }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.client_inputs[channel as usize]
-//                             .receive_guarantees(amount)
-//                             .or(Err(DecodeError::Other(Blame::TheirFault)))?;
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // Forward incoming Absolve frames to the indicated server input.
-//                 IncomingFrameHeader::Absolve(Absolve { channel, amount }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.server_inputs[channel as usize]
-//                             .receive_absolve(amount)
-//                             .or(Err(DecodeError::Other(Blame::TheirFault)))?;
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // Forward incoming Plead frames to the indicated client input.
-//                 IncomingFrameHeader::Plead(Plead { channel, target }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.client_inputs[channel as usize].receive_plead(target);
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // Forward incoming LimitSending frames to the indicated server input.
-//                 IncomingFrameHeader::LimitSending(LimitSending { channel, bound }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.server_inputs[channel as usize].receive_limit_sending(bound);
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // Forward incoming LimitReceiving frames to the indicated client input.
-//                 IncomingFrameHeader::LimitReceiving(LimitReceiving { channel, bound }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.client_inputs[channel as usize].receive_limit_receiving(bound);
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // AnnounceDropping frames should never arrive, because we do not send optimistically.
-//                 IncomingFrameHeader::AnnounceDropping(AnnounceDropping { channel: _ }) => {
-//                     return Err(DecodeError::Other(Blame::TheirFault));
-//                 }
-
-//                 // Forward incoming Apologise frames to the indicated server input.
-//                 IncomingFrameHeader::Apologise(Apologise { channel }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.server_inputs[channel as usize].receive_apology();
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // When receiving a SendToChannel frame header, forward the indicated amount of bytes into the corresponding buffer.
-//                 IncomingFrameHeader::SendToChannelHeader(SendToChannelHeader {
-//                     channel,
-//                     length,
-//                 }) => {
-//                     if channel < (NUM_CHANNELS as u64) {
-//                         self.server_inputs[channel as usize]
-//                             .receive_data(length, p.deref_mut())
-//                             .await
-//                             .or(Err(DecodeError::Other(Blame::TheirFault)))?;
-//                         continue;
-//                     } else {
-//                         return Err(DecodeError::Other(Blame::TheirFault));
-//                     }
-//                 }
-
-//                 // When receiving a SendControl frame header, we can actually produce an item! Yay!
-//                 IncomingFrameHeader::SendControlHeader(SendControlHeader { encoding_nibble }) => {
-//                     match p.deref_mut().expose_items().await? {
-//                         Left(_) => {} // no-op
-//                         Right(fin) => return Ok(Right(fin)),
-//                     }
-
-//                     return Ok(Left(
-//                         CMessage::relative_decode(p.deref_mut(), &encoding_nibble).await?,
-//                     ));
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// /// Sends control messages to send to the other peer.
-// pub struct ControlMessageSender<'transport, C> {
-//     consumer: &'transport Mutex<C>,
-// }
-
-// impl<'transport, C> ControlMessageSender<'transport, C>
-// where
-//     C: BulkConsumer<Item = u8>,
-// {
-//     pub async fn receive<CMessage: RelativeEncodable<SendControlNibble> + GetControlNibble>(
-//         &mut self,
-//         item: CMessage,
-//     ) -> Result<(), C::Error> {
-//         let mut c = self.consumer.write().await;
-
-//         let nibble = item.control_nibble();
-//         let header = SendControlHeader {
-//             encoding_nibble: nibble,
-//         };
-//         header.encode(c.deref_mut()).await?;
-
-//         item.relative_encode(c.deref_mut(), &nibble).await
-//     }
-// }
-
-// /// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
-// pub trait GetControlNibble {
-//     fn control_nibble(&self) -> SendControlNibble;
-// }
-
-// /// An opaque struct whose async `do_the_bookkeeping_dance` method must be called and continuously polled, to carry out all behind-the-scenes bookkeeping transmissions by the peer.
-// pub struct ChannelBookkeeping<'transport, C> {
-//     channel_id: u64,
-//     consumer: &'transport Mutex<C>,
-//     absolutions_to_grant: client::AbsolutionsToGrant,
-//     guarantees_to_give: server_logic::GuaranteesToGive,
-//     droppings_to_announce: server_logic::DroppingsToAnnounce,
-// }
-
-// impl<'transport, C> ChannelBookkeeping<'transport, C>
-// where
-//     C: BulkConsumer<Item = u8>,
-// {
-//     /// Performs all sending of metadata to keep the logical channel functioning.
-//     pub async fn do_the_bookkeeping_dance(
-//         &mut self,
-//     ) -> Result<Infallible, Either<C::Error, Blame>> {
-//         let _ = try_join!(
-//             Self::grant_all_the_absolutions(
-//                 self.consumer,
-//                 &mut self.absolutions_to_grant,
-//                 self.channel_id
-//             ),
-//             Self::give_all_the_guarantees(
-//                 self.consumer,
-//                 &mut self.guarantees_to_give,
-//                 self.channel_id
-//             ),
-//             Self::announce_all_the_droppings(
-//                 self.consumer,
-//                 &mut self.droppings_to_announce,
-//                 self.channel_id
-//             ),
-//         )?;
-//         unreachable!()
-//     }
-
-//     /// Continuously reads from the `absolutions_to_grant` and acts on them whenever one is actually produced.
-//     async fn grant_all_the_absolutions(
-//         consumer: &'transport Mutex<C>,
-//         absolutions_to_grant: &mut client::AbsolutionsToGrant,
-//         channel_id: u64,
-//     ) -> Result<Infallible, Either<C::Error, Blame>> {
-//         loop {
-//             match absolutions_to_grant.produce().await {
-//                 Ok(Left(amount)) => {
-//                     let frame: Absolve = Absolve {
-//                         channel: channel_id,
-//                         amount,
-//                     };
-
-//                     let mut c = consumer.write().await;
-//                     frame
-//                         .encode(c.deref_mut())
-//                         .await
-//                         .map_err(|con_err| Left(con_err))?;
-//                 }
-//                 _ => unreachable!(), // Final and Error of AbsolutionsToGrant are Infallible. Happy refactoring when that changes!
-//             }
-//         }
-//     }
-
-//     /// Continuously reads form the `guarantees_to_give` and gives them.
-//     async fn give_all_the_guarantees(
-//         consumer: &'transport Mutex<C>,
-//         guarantees_to_give: &mut server_logic::GuaranteesToGive,
-//         channel_id: u64,
-//     ) -> Result<Infallible, Either<C::Error, Blame>> {
-//         loop {
-//             match guarantees_to_give
-//                 .produce()
-//                 .await
-//                 .map_err(|blame| Right(blame))?
-//             {
-//                 Right(_) => unreachable!(),
-//                 Left(amount) => {
-//                     let frame = IssueGuarantee {
-//                         channel: channel_id,
-//                         amount,
-//                     };
-
-//                     let mut c = consumer.write().await;
-//                     frame
-//                         .encode(c.deref_mut())
-//                         .await
-//                         .map_err(|con_err| Left(con_err))?;
-//                 }
-//             }
-//         }
-//     }
-
-//     /// Continuously reads form the `droppings_to_announce` and does whatever you do with droppings.
-//     async fn announce_all_the_droppings(
-//         consumer: &'transport Mutex<C>,
-//         droppings_to_announce: &mut server_logic::DroppingsToAnnounce,
-//         channel_id: u64,
-//     ) -> Result<Infallible, Either<C::Error, Blame>> {
-//         loop {
-//             match droppings_to_announce
-//                 .produce()
-//                 .await
-//                 .map_err(|blame| Right(blame))?
-//             {
-//                 Right(_) => unreachable!(),
-//                 Left(()) => {
-//                     let frame = AnnounceDropping {
-//                         channel: channel_id,
-//                     };
-
-//                     let mut c = consumer.write().await;
-//                     frame
-//                         .encode(c.deref_mut())
-//                         .await
-//                         .map_err(|con_err| Left(con_err))?;
-//                 }
-//             }
-//         }
-//     }
-// }
