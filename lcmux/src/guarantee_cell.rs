@@ -91,6 +91,7 @@ impl GuaranteeCell {
         }
     }
 
+    #[cfg(test)]
     pub fn get_current_acc(&self) -> u64 {
         self.acc.get()
     }
@@ -268,13 +269,6 @@ impl GuaranteeCellWithoutBound {
                 Ok(())
             }
         }
-    }
-
-    /// Reduces the stored guarantees down to `target`. If `target` is greater than or equal to the current amount, does nothing. Returns how many guarantees were removed (which is zero if target is gtreater than or equal to the current amount).
-    pub fn reduce_guarantees_down_to(&self, target: u64) -> u64 {
-        let diff = self.acc.get().saturating_sub(target);
-        self.acc.set(target);
-        diff
     }
 
     /// Park the task until the given threshold has been reached, reports the value of acc, then reduce acc down to zero.

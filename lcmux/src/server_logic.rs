@@ -34,13 +34,11 @@ pub(crate) struct State<Q> {
     guarantees: GuaranteeCellWithoutBound,
     /// Notify of guarantees to give only once accumulated guarantees have crossed this threshold.
     watermark: u64,
-    // The unchanging channel id of the channel whose state is being handled here.
-    channel_id: u64,
     max_queue_capacity: usize,
 }
 
 impl<Q: Queue<Item = u8>> State<Q> {
-    pub fn new(channel_id: u64, queue: Q, max_queue_capacity: usize, watermark: u64) -> Self {
+    pub fn new(queue: Q, max_queue_capacity: usize, watermark: u64) -> Self {
         let guarantees = GuaranteeCellWithoutBound::new();
         let result = guarantees.add_guarantees((max_queue_capacity - queue.len()) as u64);
         debug_assert!(result == Ok(()));
@@ -52,7 +50,6 @@ impl<Q: Queue<Item = u8>> State<Q> {
             bound: GuaranteeBoundCell::new(),
             guarantees,
             watermark,
-            channel_id,
             max_queue_capacity,
         }
     }
@@ -492,7 +489,7 @@ mod tests {
     #[test]
     fn test_happy_case_sending_dropping_apologising() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -589,11 +586,8 @@ mod tests {
     #[test]
     fn test_happy_case_close_indirect() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
-
-        let msg_data = vec![0, 1, 2];
-        let mut data_producer = FromSlice::new(&msg_data[..]);
 
         block_on(async {
             // Client communicates a bound of zero.
@@ -613,7 +607,7 @@ mod tests {
     #[test]
     fn test_happy_case_close_exact() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0, 1, 2];
@@ -657,7 +651,7 @@ mod tests {
     #[test]
     fn test_err_ignore_explicit_zero_bound() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0, 1, 2];
@@ -687,7 +681,7 @@ mod tests {
     #[test]
     fn test_err_ignore_bound() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0, 1, 2];
@@ -716,7 +710,7 @@ mod tests {
     #[test]
     fn test_err_invalid_bound() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         block_on(async {
@@ -736,7 +730,7 @@ mod tests {
     #[test]
     fn test_err_end_of_input() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0];
@@ -763,7 +757,7 @@ mod tests {
     #[test]
     fn test_err_end_of_input_while_dropping() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let msg_data = vec![0, 1, 2, 3, 4, 5, 6];
@@ -799,7 +793,7 @@ mod tests {
     #[test]
     fn test_err_producer_errs() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let mut data_producer: TestProducer<u8, (), i16> =
@@ -826,7 +820,7 @@ mod tests {
     #[test]
     fn test_err_producer_errs_while_dropping() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let mut data_producer: TestProducer<u8, (), i16> =
@@ -862,7 +856,7 @@ mod tests {
     #[test]
     fn test_err_absolve_too_great() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         block_on(async {
@@ -880,7 +874,7 @@ mod tests {
     #[test]
     fn test_err_absolve_too_early() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         block_on(async {
@@ -897,7 +891,7 @@ mod tests {
     #[test]
     fn test_err_absolve_exceeding_bound() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         block_on(async {
@@ -916,7 +910,7 @@ mod tests {
     #[test]
     fn test_err_spurious_apology() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         block_on(async {
@@ -933,7 +927,7 @@ mod tests {
     #[test]
     fn test_err_optimistic_apology() {
         let queue_size = 4;
-        let state = State::new(17, Fixed::new(queue_size), queue_size, 2);
+        let state = State::new(Fixed::new(queue_size), queue_size, 2);
         let mut server_logic = ServerLogic::new(&state);
 
         let mut data_producer: TestProducer<u8, (), i16> =

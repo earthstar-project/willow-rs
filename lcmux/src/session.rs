@@ -2,6 +2,7 @@ use std::{
     error::Error,
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
+    mem::MaybeUninit,
     num::NonZeroU64,
     ops::Deref,
 };
@@ -24,9 +25,9 @@ use wb_async_utils::{
 };
 
 use crate::{
-    client_logic::{self, LogicalChannelClientError},
+    client_logic::{self, ClientLogic, LogicalChannelClientError},
     frames::*,
-    server_logic::{self, ReceiveSendToChannelError},
+    server_logic::{self, ReceiveSendToChannelError, ServerLogic},
 };
 
 pub use crate::frames::SendGlobalNibble;
@@ -69,7 +70,6 @@ where
                 (
                     client_logic::State::new(i as u64),
                     server_logic::State::new(
-                        i as u64,
                         Fixed::new(buffer_capacity),
                         buffer_capacity,
                         watermark,
@@ -122,10 +122,93 @@ pub struct Session<
 
 impl<const NUM_CHANNELS: usize, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
     Session<NUM_CHANNELS, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>> + Clone,
+    P: Producer,
+    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
 {
     /// Creates a new LCMUX session.
     pub fn new(state_ref: R) -> Self {
-        todo!()
+        let client_logics: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
+            ClientLogic::new(ProjectIthClientState {
+                r: state_ref.clone(),
+                i: channel_id,
+                phantom: PhantomData,
+            })
+        });
+        let server_logics: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
+            ServerLogic::new(ProjectIthServerState {
+                r: state_ref.clone(),
+                i: channel_id,
+                phantom: PhantomData,
+            })
+        });
+
+        // Now we do a silly dance to create a bunch of arrays of the components.
+        // Thank you, Frando, for this technique: https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=e76eb546c6e973d693e7c089e9a1f305
+
+        let mut client_receivers: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut client_grant_absolutions: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut client_senders: [_; NUM_CHANNELS] = std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut server_receivers: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut server_guarantees_to_gives: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut server_start_droppings: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+        let mut server_received_datas: [_; NUM_CHANNELS] =
+            std::array::from_fn(|_| MaybeUninit::uninit());
+
+        for (i, (client_logic, server_logic)) in client_logics
+            .into_iter()
+            .zip(server_logics.into_iter())
+            .enumerate()
+        {
+            client_receivers[i].write(client_logic.receiver);
+            client_grant_absolutions[i].write(client_logic.grant_absolution);
+            client_senders[i].write(client_logic.sender);
+            server_receivers[i].write(server_logic.receiver);
+            server_guarantees_to_gives[i].write(server_logic.guarantees_to_give);
+            server_start_droppings[i].write(server_logic.start_dropping);
+            server_received_datas[i].write(server_logic.received_data);
+        }
+
+        // SAFETY: As N is constant, we know that all elements are initialized.
+        let client_receivers = client_receivers.map(|x| unsafe { x.assume_init() });
+        let client_grant_absolutions = client_grant_absolutions.map(|x| unsafe { x.assume_init() });
+        let client_senders = client_senders.map(|x| unsafe { x.assume_init() });
+        let server_receivers = server_receivers.map(|x| unsafe { x.assume_init() });
+        let server_guarantees_to_gives =
+            server_guarantees_to_gives.map(|x| unsafe { x.assume_init() });
+        let server_start_droppings = server_start_droppings.map(|x| unsafe { x.assume_init() });
+        let server_received_datas = server_received_datas.map(|x| unsafe { x.assume_init() });
+
+        // The silly dance is over. We have successfully decomposed two arrays into arrays of their components.
+
+        Self {
+            bookkeeping: Bookkeeping {
+                state: state_ref.clone(),
+                client_grant_absolutions: Some(client_grant_absolutions),
+                server_guarantees_to_gives: Some(server_guarantees_to_gives),
+                server_start_droppings: Some(server_start_droppings),
+            },
+            global_sender: GlobalMessageSender {
+                state: state_ref.clone(),
+            },
+            global_receiver: GlobalMessageReceiver {
+                state: state_ref.clone(),
+                client_receivers,
+                server_receivers,
+                phantom: PhantomData,
+            },
+            channel_senders: client_senders.map(|send_to_channel| ChannelSender(send_to_channel)),
+            channel_receivers: server_received_datas
+                .map(|receive_data| ChannelReceiver(receive_data)),
+        }
     }
 }
 
@@ -403,8 +486,7 @@ where
         };
         header.encode(&mut c).await?;
 
-        message.relative_encode(&mut c, &nibble).await?;
-        c.close(()).await
+        message.relative_encode(&mut c, &nibble).await
     }
 }
 
@@ -668,7 +750,7 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ProjectIthClientState<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     r: R,
     i: usize,
@@ -691,7 +773,21 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Clone
+    for ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            r: self.r.clone(),
+            i: self.i.clone(),
+            phantom: self.phantom.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ProjectIthServerState<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
     r: R,
     i: usize,
@@ -711,5 +807,19 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.r.deref().channel_states[self.i].1
+    }
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Clone
+    for ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            r: self.r.clone(),
+            i: self.i.clone(),
+            phantom: self.phantom.clone(),
+        }
     }
 }
