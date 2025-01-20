@@ -5,8 +5,8 @@ use ufotofu_codec::{
 use willow_data_model::grouping::Area;
 
 use crate::{
-    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespaceId,
-    McSubspaceId,
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
+    McPublicUserKey,
 };
 
 /// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given [`namespace`](https://willowprotocol.org/specs/data-model/index.html#namespace) to `false`.
@@ -39,8 +39,8 @@ pub struct CommunalCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     access_mode: AccessMode,
@@ -58,8 +58,8 @@ impl<
         UserSignature,
     > CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`.
@@ -252,8 +252,8 @@ pub struct CommunalHandover<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     cap: &'a CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>,
@@ -272,8 +272,8 @@ impl<
     > Encodable
     for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -323,8 +323,8 @@ impl<
     > EncodableKnownSize
     for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
     fn len_of_encoding(&self) -> usize {
@@ -363,8 +363,8 @@ impl<
     > EncodableSync
     for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: McNamespaceId,
-    UserPublicKey: McSubspaceId<UserSignature>,
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize,
 {
 }
@@ -384,8 +384,8 @@ impl<
     > Arbitrary<'a>
     for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
-    NamespacePublicKey: McNamespaceId + Arbitrary<'a>,
-    UserPublicKey: McSubspaceId<UserSignature> + Arbitrary<'a>,
+    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
