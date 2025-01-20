@@ -6,7 +6,6 @@
 //! - It also incorporates a `GuaranteeBound` to allow for setting and tracking voluntary limits on how many more guarantees will be worked with. Waiting for a threshold that cannot possibly be reached due to a bound emits an immediate error notification.
 
 use core::cell::Cell;
-use std::num::NonZeroU64;
 
 use either::Either::{self, *};
 

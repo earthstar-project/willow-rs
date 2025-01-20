@@ -12,9 +12,11 @@ use futures::{
     TryFutureExt,
 };
 
-use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
+use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable};
+use ufotofu_codec::{
+    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeDecodable, RelativeEncodable,
+};
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -22,7 +24,7 @@ use wb_async_utils::{
 };
 
 use crate::{
-    client_logic::{self},
+    client_logic::{self, LogicalChannelClientError},
     frames::*,
     server_logic::{self, ReceiveSendToChannelError},
 };
@@ -86,20 +88,146 @@ where
 /// `P` is the type of the producer of the underlying communication channel, and `PR` is the type of references to the shared state of the `SharedProducer<P>`.
 /// `C` is the type of the consumer of the underlying communication channel, and `CR` is the type of references to the shared state of the `SharedConsumer<C>`.
 #[derive(Debug)]
-pub struct Session<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
+pub struct Session<
+    const NUM_CHANNELS: usize,
+    R,
+    P,
+    PR,
+    C,
+    CR,
+    GlobalMessage,
+    GlobalMessageDecodeErrorReason,
+> {
     /// A struct with an async function whose Future must be polled to completion to run the LCMUX session. Yields `Ok(())` if every logical channel got closed by both peers, yields an `Err` if *any* channel encounters any error.
     pub bookkeeping: Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>,
     /// A struct for sending global messages to the other peer.
-    pub global_messenger: GlobalMessengeSender<NUM_CHANNELS, R>,
-    /// For each logical channel, a producer of the bytes that were sent to that channel via `SendToChannel` frames.
-    pub channel_receivers: [server_logic::ReceivedData<
-        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
-        Fixed<u8>,
-    >; NUM_CHANNELS],
+    pub global_sender: GlobalMessageSender<NUM_CHANNELS, R>,
+    /// A struct for receiving global messages from the other peer.
+    pub global_receiver: GlobalMessageReceiver<
+        NUM_CHANNELS,
+        R,
+        P,
+        PR,
+        C,
+        CR,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+    >,
+    /// A struct for sending global messages to the other peer.
     /// For each logical channel, a way to send data to that channel via `SendToChannel` frames.
-    pub channel_senders: [client_logic::SendToChannel<
-        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
-    >; NUM_CHANNELS],
+    pub channel_senders: [ChannelSender<NUM_CHANNELS, R, P, PR, C, CR>; NUM_CHANNELS],
+    /// For each logical channel, a producer of the bytes that were sent to that channel via `SendToChannel` frames.
+    pub channel_receivers: [ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>; NUM_CHANNELS],
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
+    Session<NUM_CHANNELS, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
+{
+    /// Creates a new LCMUX session.
+    pub fn new(state_ref: R) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct ChannelSender<const NUM_CHANNELS: usize, R, P, PR, C, CR>(
+    client_logic::SendToChannel<ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>>,
+);
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> ChannelSender<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    /// Send a message to a logical channel. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel<M>(
+        &mut self,
+        message: &M,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        M: EncodableKnownSize,
+    {
+        let mut consumer = self.0.state.r.c.clone();
+        self.0.send_to_channel(&mut consumer, message).await
+    }
+
+    /// Send a `LimitSending` frame to the server.
+    ///
+    /// This method does not check that you send valid limits or that you respect them on the future.
+    pub async fn limit_sending(&mut self, bound: u64) -> Result<(), C::Error> {
+        let mut consumer = self.0.state.r.c.clone();
+        self.0.limit_sending(&mut consumer, bound).await
+    }
+
+    /// Same as `self.limit_sending(0)`.
+    pub async fn close(&mut self) -> Result<(), C::Error> {
+        self.limit_sending(0).await
+    }
+}
+
+#[derive(Debug)]
+pub struct ChannelReceiver<const NUM_CHANNELS: usize, R, P, PR, C, CR>(
+    server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>,
+);
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Producer
+    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    type Item = u8;
+
+    type Final = ();
+
+    type Error = ();
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        self.0.produce().await
+    }
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> BufferedProducer
+    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    async fn slurp(&mut self) -> Result<(), Self::Error> {
+        self.0.slurp().await
+    }
+}
+
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> BulkProducer
+    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
+where
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    async fn expose_items<'a>(
+        &'a mut self,
+    ) -> Result<either::Either<&'a [Self::Item], Self::Final>, Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        self.0.expose_items().await
+    }
+
+    async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
+        self.0.consider_produced(amount).await
+    }
 }
 
 /// Call and poll to completion the `keep_the_books` method on this struct to run an LCMUX session.
@@ -249,11 +377,11 @@ where
 
 /// Send global messages to the other peer via this struct.
 #[derive(Debug)]
-pub struct GlobalMessengeSender<const NUM_CHANNELS: usize, R> {
+pub struct GlobalMessageSender<const NUM_CHANNELS: usize, R> {
     state: R,
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessengeSender<NUM_CHANNELS, R>
+impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessageSender<NUM_CHANNELS, R>
 where
     R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
     P: Producer,

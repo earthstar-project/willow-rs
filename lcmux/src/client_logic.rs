@@ -130,7 +130,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct SendToChannel<R> {
-    state: R,
+    pub(crate) state: R,
 }
 
 impl<R> SendToChannel<R>
