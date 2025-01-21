@@ -1,3 +1,4 @@
+use ufotofu::{Consumer, Producer};
 use ufotofu_codec::{Decodable, EncodableKnownSize, EncodableSync};
 use willow_data_model::{
     grouping::Area, AuthorisationToken, NamespaceId, PayloadDigest, Store, SubspaceId,
@@ -38,33 +39,6 @@ pub enum CreateDropError {
     EmptyDrop,
 }
 
-pub struct CreateDropOptions<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: SideloadNamespaceId,
-    S: SideloadSubspaceId,
-    PD: SideloadPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    FE,
-    BIE,
-    OE,
-> {
-    areas: Vec<Area<MCL, MCC, MPL, S>>,
-    store: dyn Store<
-        MCL,
-        MCC,
-        MPL,
-        N,
-        S,
-        PD,
-        AT,
-        FlushError = FE,
-        BulkIngestionError = BIE,
-        OperationsError = OE,
-    >,
-}
-
 fn create_drop<
     const MCL: usize,
     const MCC: usize,
@@ -73,14 +47,49 @@ fn create_drop<
     S: SideloadSubspaceId,
     PD: SideloadPayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    FE,
-    BIE,
-    OE,
+    C,
+    EncryptedC,
+    EncryptFn,
+    StoreType,
+    AreaIterator,
 >(
-    options: CreateDropOptions<MCL, MCC, MPL, N, S, PD, AT, FE, BIE, OE>,
-) -> Result<(), CreateDropError> {
+    consumer: C,
+    encrypt: EncryptFn,
+    areas: AreaIterator,
+    store: &StoreType,
+) -> Result<(), CreateDropError>
+where
+    C: Consumer<Item = u8>,
+    StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    AreaIterator: IntoIterator<Item = Area<MCL, MCC, MPL, S>>,
+    EncryptFn: Fn(C) -> EncryptedC,
+{
+    // https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
     todo!()
 }
-// Create a drop from a store + array of areas
 
-// Ingest a drop into a store
+fn ingest_drop<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N: SideloadNamespaceId,
+    S: SideloadSubspaceId,
+    PD: SideloadPayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    P,
+    DecryptedP,
+    DecryptFn,
+    StoreType,
+    AreaIterator,
+>(
+    producer: P,
+    store: &StoreType,
+) -> Result<(), CreateDropError>
+where
+    P: Producer<Item = u8>,
+    StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    DecryptFn: Fn(P) -> DecryptedP,
+{
+    // do the inverse of https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
+    todo!()
+}
