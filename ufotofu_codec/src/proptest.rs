@@ -293,13 +293,13 @@ macro_rules! fuzz_absolute_basic {
 ///
 /// use ufotofu_codec::fuzz_relative_all;
 ///
-/// fuzz_relative_all!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic);
+/// fuzz_relative_all!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic; |ttt, rtt| true);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
 macro_rules! fuzz_relative_all {
-    ($t:ty; $r:ty; $errR:ty; $errC:ty) => {
+    ($t:ty; $r:ty; $errR:ty; $errC:ty; $predicate:expr) => {
         use libfuzzer_sys::fuzz_target;
 
         use core::num::NonZeroUsize;
@@ -338,30 +338,32 @@ macro_rules! fuzz_relative_all {
                 yield_pattern2,
             ) = data;
 
-            pollster::block_on(async {
-                assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r,
-                    &t1,
-                    &t2,
-                    c1,
-                    c2,
-                    &potential_encoding1,
-                    exposed_items_sizes1,
-                    exposed_items_sizes2,
-                    yield_pattern1,
-                    yield_pattern2,
-                )
-                .await;
+            if $predicate(&t1, &r) && $predicate(&t2, &r) {
+                pollster::block_on(async {
+                    assert_relative_basic_invariants::<$t, $r, $errR>(
+                        &r,
+                        &t1,
+                        &t2,
+                        c1,
+                        c2,
+                        &potential_encoding1,
+                        exposed_items_sizes1,
+                        exposed_items_sizes2,
+                        yield_pattern1,
+                        yield_pattern2,
+                    )
+                    .await;
 
-                assert_relative_known_size_invariants(&r, &t1).await;
+                    assert_relative_known_size_invariants(&r, &t1).await;
 
-                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
-                    &r,
-                    &potential_encoding1,
-                    &potential_encoding2,
-                )
-                .await;
-            });
+                    assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
+                        &r,
+                        &potential_encoding1,
+                        &potential_encoding2,
+                    )
+                    .await;
+                });
+            }
         });
     };
 }
@@ -373,13 +375,13 @@ macro_rules! fuzz_relative_all {
 ///
 /// use ufotofu_codec::fuzz_relative_canonic;
 ///
-/// fuzz_relative_canonic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic);
+/// fuzz_relative_canonic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; path::to::ErrorCanonic; |ttt, rtt| true);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
 macro_rules! fuzz_relative_canonic {
-    ($t:ty; $r:ty; $errR:ty; $errC:ty) => {
+    ($t:ty; $r:ty; $errR:ty; $errC:ty; $predicate:expr) => {
         use libfuzzer_sys::fuzz_target;
 
         use core::num::NonZeroUsize;
@@ -418,28 +420,30 @@ macro_rules! fuzz_relative_canonic {
                 yield_pattern2,
             ) = data;
 
-            pollster::block_on(async {
-                assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r,
-                    &t1,
-                    &t2,
-                    c1,
-                    c2,
-                    &potential_encoding1,
-                    exposed_items_sizes1,
-                    exposed_items_sizes2,
-                    yield_pattern1,
-                    yield_pattern2,
-                )
-                .await;
+            if $predicate(&t1, &r) && $predicate(&t2, &r) {
+                pollster::block_on(async {
+                    assert_relative_basic_invariants::<$t, $r, $errR>(
+                        &r,
+                        &t1,
+                        &t2,
+                        c1,
+                        c2,
+                        &potential_encoding1,
+                        exposed_items_sizes1,
+                        exposed_items_sizes2,
+                        yield_pattern1,
+                        yield_pattern2,
+                    )
+                    .await;
 
-                assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
-                    &r,
-                    &potential_encoding1,
-                    &potential_encoding2,
-                )
-                .await;
-            });
+                    assert_relative_canonic_invariants::<$t, $r, $errR, $errC>(
+                        &r,
+                        &potential_encoding1,
+                        &potential_encoding2,
+                    )
+                    .await;
+                });
+            }
         });
     };
 }
@@ -451,13 +455,13 @@ macro_rules! fuzz_relative_canonic {
 ///
 /// use ufotofu_codec::fuzz_relative_known_size;
 ///
-/// fuzz_relative_known_size!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// fuzz_relative_known_size!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; |ttt, rtt| true);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
 macro_rules! fuzz_relative_known_size {
-    ($t:ty; $r:ty; $errR:ty) => {
+    ($t:ty; $r:ty; $errR:ty; $predicate:expr) => {
         use libfuzzer_sys::fuzz_target;
 
         use core::num::NonZeroUsize;
@@ -494,23 +498,25 @@ macro_rules! fuzz_relative_known_size {
                 yield_pattern2,
             ) = data;
 
-            pollster::block_on(async {
-                assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r,
-                    &t1,
-                    &t2,
-                    c1,
-                    c2,
-                    &potential_encoding1,
-                    exposed_items_sizes1,
-                    exposed_items_sizes2,
-                    yield_pattern1,
-                    yield_pattern2,
-                )
-                .await;
+            if $predicate(&t1, &r) && $predicate(&t2, &r) {
+                pollster::block_on(async {
+                    assert_relative_basic_invariants::<$t, $r, $errR>(
+                        &r,
+                        &t1,
+                        &t2,
+                        c1,
+                        c2,
+                        &potential_encoding1,
+                        exposed_items_sizes1,
+                        exposed_items_sizes2,
+                        yield_pattern1,
+                        yield_pattern2,
+                    )
+                    .await;
 
-                assert_relative_known_size_invariants(&r, &t1).await;
-            });
+                    assert_relative_known_size_invariants(&r, &t1).await;
+                });
+            }
         });
     };
 }
@@ -522,13 +528,13 @@ macro_rules! fuzz_relative_known_size {
 ///
 /// use ufotofu_codec::fuzz_relative_basic;
 ///
-/// fuzz_relative_basic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason);
+/// fuzz_relative_basic!(path::to_some::TypeToTest; path::to::RelativeToType; path::to::ErrorReason; |ttt, rtt| true);
 /// ```
 ///
 /// Assumes that `libfuzzer_sys`, `ufotofu`, and `ufotofu_codec` modules are available.
 #[macro_export]
 macro_rules! fuzz_relative_basic {
-    ($t:ty; $r:ty; $errR:ty) => {
+    ($t:ty; $r:ty; $errR:ty; $predicate:expr) => {
         use libfuzzer_sys::fuzz_target;
 
         use core::num::NonZeroUsize;
@@ -565,21 +571,23 @@ macro_rules! fuzz_relative_basic {
                 yield_pattern2,
             ) = data;
 
-            pollster::block_on(async {
-                assert_relative_basic_invariants::<$t, $r, $errR>(
-                    &r,
-                    &t1,
-                    &t2,
-                    c1,
-                    c2,
-                    &potential_encoding1,
-                    exposed_items_sizes1,
-                    exposed_items_sizes2,
-                    yield_pattern1,
-                    yield_pattern2,
-                )
-                .await;
-            });
+            if $predicate(&t1, &r) && $predicate(&t2, &r) {
+                pollster::block_on(async {
+                    assert_relative_basic_invariants::<$t, $r, $errR>(
+                        &r,
+                        &t1,
+                        &t2,
+                        c1,
+                        c2,
+                        &potential_encoding1,
+                        exposed_items_sizes1,
+                        exposed_items_sizes2,
+                        yield_pattern1,
+                        yield_pattern2,
+                    )
+                    .await;
+                });
+            }
         });
     };
 }

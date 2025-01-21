@@ -1,7 +1,7 @@
 use arbitrary::Arbitrary;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize,
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
 };
 use willow_data_model::{NamespaceId, PayloadDigest, SubspaceId};
 
@@ -204,5 +204,7 @@ impl EncodableKnownSize for FakePayloadDigest {
         32
     }
 }
+
+impl EncodableSync for FakePayloadDigest {}
 
 impl PayloadDigest for FakePayloadDigest {}
