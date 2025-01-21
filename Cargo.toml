@@ -3,7 +3,6 @@
 members = [
     "compact_u64",
     "data-model",
-    "earthstar",
     "encoding",
     "fairly_unsafe_cell",
     "fuzz",
