@@ -21,6 +21,9 @@ mod commitment_scheme;
 use commitment_scheme::*;
 use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable};
 
+mod data_handles;
+use data_handles::*;
+
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
     /// The received payload was invalid.
