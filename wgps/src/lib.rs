@@ -2,7 +2,7 @@ use std::{future::Future, ops::DerefMut};
 
 use futures::try_join;
 
-use lcmux::new_lcmux;
+//use lcmux::new_lcmux;
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
@@ -118,9 +118,11 @@ pub async fn sync_with_peer<
         ret
     };
 
+    /*
     let lcmux_handling = async {
         // Everything in here needs to use lcmux.
         // TODO replace the `i16` with an enum of all supported control messages to receive, once we support any!
+
         let mut lcmux = new_lcmux::<7, _, _, i16>(
             &producer,
             &consumer,
@@ -149,6 +151,7 @@ pub async fn sync_with_peer<
     // Add each of the futures here. The macro polls them all to completion, until the first one hits
     // an error, in which case this function immediately returns with that first error.
     let ((), (), ()) = try_join!(send_prelude, receive_prelude, lcmux_handling)?;
+    */
     Ok(())
 }
 

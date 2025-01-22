@@ -1,8 +1,18 @@
+use std::collections::HashMap;
+use std::convert::Infallible;
 use std::{error::Error, fmt::Display};
 
 /// Returned when a `HandleStore` could not free the data associated with a given handle.
 pub enum FreeHandleError<E> {
     HandleNotBound,
+    StoreError(E),
+}
+
+/// Returned when a `HandleStore` could not confirm a handle as being freed.
+/// Returned when a `HandleStore` could not free the data associated with a given handle.
+pub enum ConfirmFreeHandleError<E> {
+    HandleNotBound,
+    HandleNotMarkedForFreeing,
     StoreError(E),
 }
 
@@ -13,14 +23,173 @@ pub trait HandleStore<DataType> {
     type FreeError: Display + Error;
 
     /// Returns the data bound to the given handle, or an error if no data has not been bound, freed, or if the handle store experiences an internal error.
-    fn get(handle: u64) -> Result<Option<DataType>, Self::GetError>;
+    fn get(&self, handle: u64) -> Result<Option<&DataType>, Self::GetError>;
 
     /// Binds some data to a handle and returns the corresponding handle, or fails in the case of an internal store error.
-    fn bind(data: DataType) -> Result<u64, Self::BindError>;
+    fn bind(&mut self, data: DataType) -> Result<u64, Self::BindError>;
 
     /// Mark the handle for eventually freeing, that is, to remove the binding between the handle and its corresponding data.
-    fn mark_for_freeing(handle: u64) -> Result<(), FreeHandleError<Self::FreeError>>;
+    fn mark_for_freeing(&mut self, handle: u64) -> Result<(), FreeHandleError<Self::FreeError>>;
+
+    /// Mark the handle for eventually freeing, that is, to remove the binding between the handle and its corresponding data.
+    fn confirm_freed(&mut self, handle: u64)
+        -> Result<(), ConfirmFreeHandleError<Self::FreeError>>;
 
     /// Returns whether the given handle has had any data bound to it.
-    fn is_handle_bound(handle: u64) -> bool;
+    /// Will return `false` if the handle has been marked for freeing.
+    fn is_handle_bound(&self, handle: u64) -> bool;
+}
+
+/// A [`HandleStore`] implemented over an ordinary [`HashMap`].
+pub struct HashMapHandleStore<DataType> {
+    /// Mapping of handle to a tuple of (data, marked for freeing).
+    data: HashMap<u64, (DataType, bool)>,
+    least_unassigned_handle: u64,
+}
+
+impl<DataType> HashMapHandleStore<DataType> {
+    fn new() -> Self {
+        HashMapHandleStore {
+            data: HashMap::new(),
+            least_unassigned_handle: 0,
+        }
+    }
+}
+
+impl<DataType> HandleStore<DataType> for HashMapHandleStore<DataType> {
+    type GetError = Infallible;
+    type BindError = Infallible;
+    type FreeError = Infallible;
+
+    fn get(&self, handle: u64) -> Result<Option<&DataType>, Self::GetError> {
+        match self.data.get(&handle) {
+            Some((data, marked_for_freeing)) => {
+                if *marked_for_freeing {
+                    Ok(None)
+                } else {
+                    Ok(Some(data))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn bind(&mut self, data: DataType) -> Result<u64, Self::BindError> {
+        let handle = self.least_unassigned_handle;
+
+        self.data.insert(handle, (data, false));
+
+        self.least_unassigned_handle += 1;
+
+        Ok(handle)
+    }
+
+    fn mark_for_freeing(&mut self, handle: u64) -> Result<(), FreeHandleError<Self::FreeError>> {
+        match self.data.get_mut(&handle) {
+            Some((_data, mark_for_freeing)) => {
+                if mark_for_freeing == &false {
+                    *mark_for_freeing = true;
+                }
+
+                Ok(())
+            }
+            None => Err(FreeHandleError::HandleNotBound),
+        }
+    }
+
+    fn confirm_freed(
+        &mut self,
+        handle: u64,
+    ) -> Result<(), ConfirmFreeHandleError<Self::FreeError>> {
+        match self.data.get(&handle) {
+            Some((_data, true)) => {
+                self.data.remove(&handle);
+
+                Ok(())
+            }
+            Some((_data, false)) => Err(ConfirmFreeHandleError::HandleNotMarkedForFreeing),
+            None => Err(ConfirmFreeHandleError::HandleNotBound),
+        }
+    }
+
+    fn is_handle_bound(&self, handle: u64) -> bool {
+        match self.data.get(&handle) {
+            Some((_data, false)) => true,
+            Some((_data, true)) => false,
+            None => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn bind_increment_get() {
+        let mut store = HashMapHandleStore::<char>::new();
+
+        let res_1 = store.get(0);
+
+        assert_eq!(res_1, Ok(None));
+
+        let handle_0 = store.bind('a');
+
+        assert_eq!(handle_0, Ok(0));
+
+        let res_2 = store.get(handle_0.unwrap());
+
+        assert_eq!(res_2, Ok(Some(&'a')));
+
+        let handle_1 = store.bind('b');
+
+        assert_eq!(handle_1, Ok(1));
+
+        let res_3 = store.get(handle_1.unwrap());
+
+        assert_eq!(res_3, Ok(Some(&'b')));
+    }
+
+    #[test]
+    fn is_handle_bound() {
+        let mut store = HashMapHandleStore::<char>::new();
+
+        let res_1 = store.is_handle_bound(0);
+
+        assert!(!res_1);
+
+        let handle_0 = store.bind('c');
+
+        let res_2 = store.is_handle_bound(handle_0.unwrap());
+
+        assert!(res_2)
+    }
+
+    #[test]
+    fn mark_to_free() {
+        let mut store = HashMapHandleStore::<char>::new();
+
+        let handle_0 = store.bind('a').unwrap();
+
+        store.mark_for_freeing(handle_0);
+
+        let res = store.get(handle_0).unwrap();
+
+        assert_eq!(res, None);
+
+        store.confirm_freed(handle_0);
+
+        // Try to free a non-existing handle
+
+        let res_bad = store.mark_for_freeing(1);
+
+        match res_bad {
+            Ok(_) => panic!(),
+            Err(e) => match e {
+                FreeHandleError::HandleNotBound => {}
+                FreeHandleError::StoreError(_) => panic!(),
+            },
+        }
+    }
 }
