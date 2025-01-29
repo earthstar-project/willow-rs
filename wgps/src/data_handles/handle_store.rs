@@ -6,7 +6,6 @@ use std::fmt::Display;
 /// Returned when a `HandleStore` could not free the data associated with a given handle.
 pub enum FreeHandleError<E> {
     HandleNotBound,
-    AlreadyFreed,
     StoreError(E),
 }
 
@@ -40,10 +39,6 @@ pub trait HandleStore<DataType> {
         &mut self,
         handle: u64,
     ) -> Result<(), ConfirmFreeHandleError<Self::StoreError>>;
-
-    /// Returns whether the given handle can be referenced.
-    /// Will return `false` if the handle has been marked for freeing.
-    fn is_handle_bound(&self, handle: u64) -> bool;
 }
 
 /// A [`HandleStore`] implemented over an ordinary [`HashMap`].
@@ -154,13 +149,6 @@ impl<DataType> HandleStore<DataType> for HashMapHandleStore<DataType> {
             None => Err(ConfirmFreeHandleError::HandleNotBound),
         }
     }
-
-    fn is_handle_bound(&self, handle: u64) -> bool {
-        matches!(
-            self.data.get(&handle),
-            Some((_data, DataHandleState::FullyBound))
-        )
-    }
 }
 
 enum DataHandleState {
@@ -198,20 +186,5 @@ mod tests {
         let res_3 = store.get(handle_1.unwrap());
 
         assert_eq!(res_3, Ok(Some(&'b')));
-    }
-
-    #[test]
-    fn is_handle_bound() {
-        let mut store = HashMapHandleStore::<char>::new(0);
-
-        let res_1 = store.is_handle_bound(0);
-
-        assert!(!res_1);
-
-        let handle_0 = store.bind('c');
-
-        let res_2 = store.is_handle_bound(handle_0.unwrap());
-
-        assert!(res_2)
     }
 }
