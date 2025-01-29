@@ -1,6 +1,6 @@
 use either::Either;
 use ufotofu::{BulkConsumer, Consumer, Producer};
-use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest},
@@ -52,7 +52,7 @@ async fn create_drop<
     N: SideloadNamespaceId,
     S: SideloadSubspaceId,
     PD: SideloadPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    AT: SideloadAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     C,
     EncryptedC,
     EncryptFn,
@@ -112,16 +112,39 @@ where
             }),
         );
 
-        while true {
+        loop {
             match entry_producer.produce().await {
-                Ok(Either::Left(item)) => {}
-                Ok(Either::Right(fin)) => {}
-                Err(err) => return Err(CreateDropError::StoreErr),
+                Ok(Either::Left(lengthy)) => {
+                    let authed_entry = lengthy.entry();
+
+                    // Encode entry
+                    let entry = authed_entry.entry();
+                    entry
+                        .relative_encode(&mut encrypted_consumer, &entry_to_encode_against)
+                        .await
+                        .map_err(|err| CreateDropError::ConsumerProblem(err));
+
+                    entry_to_encode_against = entry.clone();
+
+                    // Encode token
+                    let token = authed_entry.token();
+                    token
+                        .encode(&mut encrypted_consumer)
+                        .await
+                        .map_err(|err| CreateDropError::ConsumerProblem(err));
+
+                    // Consume payload
+                    todo!("Pipe the payload bytes")
+                }
+                Ok(Either::Right(_)) => {
+                    break;
+                }
+                Err(_) => return Err(CreateDropError::StoreErr),
             };
         }
     }
 
-    todo!()
+    Ok(())
 }
 
 fn ingest_drop<
