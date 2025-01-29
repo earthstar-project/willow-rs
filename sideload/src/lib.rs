@@ -1,8 +1,11 @@
+use either::Either;
 use ufotofu::{BulkConsumer, Consumer, Producer};
 use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
-    grouping::Area, AuthorisationToken, NamespaceId, PayloadDigest, Store, SubspaceId,
+    grouping::{Area, AreaOfInterest},
+    AuthorisationToken, Entry, NamespaceId, Path, PayloadDigest, QueryIgnoreParams, QueryOrder,
+    Store, SubspaceId,
 };
 
 pub trait SideloadNamespaceId:
@@ -38,6 +41,7 @@ pub trait SideloadAuthorisationToken<
 
 pub enum CreateDropError<ConsumerError> {
     EmptyDrop,
+    StoreErr,
     ConsumerProblem(ConsumerError),
 }
 
@@ -73,14 +77,49 @@ where
 
     let mut entries_count = 0;
 
+    let mut next_areas_vec: Vec<Area<MCL, MCC, MPL, S>> = Vec::new();
+
     for area in areas {
-        entries_count += store.count_area(&area.into()).await;
+        entries_count += store.count_area(&area.clone().into()).await;
+
+        next_areas_vec.push(area);
     }
 
     U64BE(entries_count)
         .encode(&mut encrypted_consumer)
         .await
         .map_err(|err| CreateDropError::ConsumerProblem(err))?;
+
+    let mut entry_to_encode_against = Entry::new(
+        N::default(),
+        S::default(),
+        Path::<MCL, MCC, MPL>::new_empty(),
+        0,
+        0,
+        PD::default(),
+    );
+
+    for area in next_areas_vec {
+        let aoi: AreaOfInterest<MCL, MCC, MPL, S> = area.into();
+
+        let mut entry_producer = store.query_area(
+            &aoi,
+            &QueryOrder::Subspace,
+            false,
+            Some(QueryIgnoreParams {
+                ignore_incomplete_payloads: true,
+                ignore_empty_payloads: true,
+            }),
+        );
+
+        while true {
+            match entry_producer.produce().await {
+                Ok(Either::Left(item)) => {}
+                Ok(Either::Right(fin)) => {}
+                Err(err) => return Err(CreateDropError::StoreErr),
+            };
+        }
+    }
 
     todo!()
 }

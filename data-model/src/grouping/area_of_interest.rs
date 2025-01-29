@@ -50,7 +50,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Clone> From<Area<M
 {
     fn from(value: Area<MCL, MCC, MPL, S>) -> Self {
         Self {
-            area: value.clone(),
+            area: value,
             max_count: 0,
             max_size: 0,
         }
