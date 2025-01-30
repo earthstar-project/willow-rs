@@ -1,27 +1,34 @@
+use std::convert::Infallible;
+
 use either::Either;
-use ufotofu::{BulkConsumer, Consumer, Producer};
-use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable};
+use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    RelativeDecodable, RelativeEncodable,
+};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest},
-    AuthorisationToken, Entry, NamespaceId, Path, PayloadDigest, QueryIgnoreParams, QueryOrder,
-    Store, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, Path, PayloadDigest,
+    QueryIgnoreParams, QueryOrder, Store, SubspaceId, UnauthorisedWriteError,
 };
 
 pub trait SideloadNamespaceId:
-    NamespaceId + EncodableSync + EncodableKnownSize + Decodable
+    NamespaceId + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
 {
     /// The least element of the set of namespace IDs.
     const DEFAULT_NAMESPACE_ID: Self;
 }
 
-pub trait SideloadSubspaceId: SubspaceId + EncodableSync + EncodableKnownSize + Decodable {
+pub trait SideloadSubspaceId:
+    SubspaceId + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
+{
     /// The least element of the set of subspace IDs.
     const DEFAULT_SUBSPACE_ID: Self;
 }
 
 pub trait SideloadPayloadDigest:
-    PayloadDigest + EncodableSync + EncodableKnownSize + Decodable
+    PayloadDigest + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
 {
     /// The least element of the set of payload digests.
     const DEFAULT_PAYLOAD_DIGEST: Self;
@@ -35,7 +42,11 @@ pub trait SideloadAuthorisationToken<
     S: SideloadSubspaceId,
     PD: SideloadPayloadDigest,
 >:
-    AuthorisationToken<MCL, MCC, MPL, N, S, PD> + EncodableSync + EncodableKnownSize + Decodable
+    AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + EncodableSync
+    + EncodableKnownSize
+    + Decodable
+    + DecodableCanonic
 {
 }
 
@@ -45,7 +56,31 @@ pub enum CreateDropError<ConsumerError> {
     ConsumerProblem(ConsumerError),
 }
 
-async fn create_drop<
+pub enum IngestDropError<ProducerError> {
+    StoreErr,
+    UnexpectedEndOfInput,
+    ProducerProblem(ProducerError),
+    UnauthorisedEntry(UnauthorisedWriteError),
+    Other,
+}
+
+impl<E> From<UnauthorisedWriteError> for IngestDropError<E> {
+    fn from(value: UnauthorisedWriteError) -> Self {
+        IngestDropError::UnauthorisedEntry(value)
+    }
+}
+
+impl<F, E, O> From<DecodeError<F, E, O>> for IngestDropError<E> {
+    fn from(value: DecodeError<F, E, O>) -> Self {
+        match value {
+            DecodeError::UnexpectedEndOfInput(_) => IngestDropError::UnexpectedEndOfInput,
+            DecodeError::Producer(err) => IngestDropError::ProducerProblem(err),
+            DecodeError::Other(_) => IngestDropError::Other,
+        }
+    }
+}
+
+pub async fn create_drop<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -88,7 +123,7 @@ where
     U64BE(entries_count)
         .encode(&mut encrypted_consumer)
         .await
-        .map_err(|err| CreateDropError::ConsumerProblem(err))?;
+        .map_err(CreateDropError::ConsumerProblem)?;
 
     let mut entry_to_encode_against = Entry::new(
         N::default(),
@@ -122,7 +157,7 @@ where
                     entry
                         .relative_encode(&mut encrypted_consumer, &entry_to_encode_against)
                         .await
-                        .map_err(|err| CreateDropError::ConsumerProblem(err));
+                        .map_err(CreateDropError::ConsumerProblem)?;
 
                     entry_to_encode_against = entry.clone();
 
@@ -131,7 +166,7 @@ where
                     token
                         .encode(&mut encrypted_consumer)
                         .await
-                        .map_err(|err| CreateDropError::ConsumerProblem(err));
+                        .map_err(CreateDropError::ConsumerProblem)?;
 
                     // Consume payload
                     todo!("Pipe the payload bytes")
@@ -147,14 +182,14 @@ where
     Ok(())
 }
 
-fn ingest_drop<
+pub async fn ingest_drop<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
     N: SideloadNamespaceId,
     S: SideloadSubspaceId,
     PD: SideloadPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    AT: SideloadAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     P,
     DecryptedP,
     DecryptFn,
@@ -162,13 +197,64 @@ fn ingest_drop<
     AreaIterator,
 >(
     producer: P,
+    decrypt: DecryptFn,
     store: &StoreType,
-) -> Result<(), CreateDropError>
+) -> Result<(), IngestDropError<DecryptedP::Error>>
 where
     P: Producer<Item = u8>,
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     DecryptFn: Fn(P) -> DecryptedP,
+    DecryptedP: BulkProducer<Item = u8>,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
 {
     // do the inverse of https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
-    todo!()
+
+    let mut entry_to_decode_against = Entry::new(
+        N::default(),
+        S::default(),
+        Path::<MCL, MCC, MPL>::new_empty(),
+        0,
+        0,
+        PD::default(),
+    );
+
+    let mut decrypted_producer = decrypt(producer);
+
+    let entries_count = U64BE::decode(&mut decrypted_producer).await?;
+
+    // For each entry we expect,
+    for _ in 0..entries_count.0 {
+        // Decode entry and token
+        let entry =
+            Entry::relative_decode(&mut decrypted_producer, &entry_to_decode_against).await?;
+        let token = AT::decode(&mut decrypted_producer).await?;
+
+        entry_to_decode_against = entry.clone();
+
+        // Fail if the entry isn't authorised.
+        let authed_entry = AuthorisedEntry::new(entry, token)?;
+
+        // Ingest entry
+        store
+            .ingest_entry(authed_entry, false)
+            .await
+            .map_err(|_| IngestDropError::StoreErr)?;
+
+        // Ingest payload
+        store
+            .append_payload(
+                entry_to_decode_against.payload_digest(),
+                entry_to_decode_against.payload_length(),
+                &mut decrypted_producer,
+            )
+            .await
+            .map_err(|_| IngestDropError::StoreErr)?;
+    }
+
+    Ok(())
 }
