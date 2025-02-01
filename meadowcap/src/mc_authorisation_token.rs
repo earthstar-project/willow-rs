@@ -1,9 +1,8 @@
 use signature::Verifier;
-use ufotofu::sync::consumer::IntoVec;
-use willow_data_model::{AuthorisationToken, Entry, NamespaceId, PayloadDigest, SubspaceId};
-use willow_encoding::sync::Encodable;
+use ufotofu_codec::{EncodableKnownSize, EncodableSync};
+use willow_data_model::{AuthorisationToken, Entry, PayloadDigest};
 
-use crate::{mc_capability::McCapability, AccessMode, IsCommunal};
+use crate::{mc_capability::McCapability, AccessMode, McNamespacePublicKey, McPublicUserKey};
 
 /// To be used as the [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) parameter for the [Willow data model](https://willowprotocol.org/specs/data-model).
 ///
@@ -18,10 +17,10 @@ pub struct McAuthorisationToken<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Certifies that an Entry may be written.
     pub capability: McCapability<
@@ -56,10 +55,10 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and [`UserSignature`].
     ///
@@ -103,11 +102,11 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    NamespaceSignature: Encodable + Clone,
-    UserSignature: Encodable + Clone,
-    PD: PayloadDigest + Encodable,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    PD: PayloadDigest + EncodableSync + EncodableKnownSize,
 {
     fn is_authorised_write(
         &self,
@@ -122,13 +121,12 @@ where
             return false;
         }
 
-        let mut consumer = IntoVec::<u8>::new();
-        entry.encode(&mut consumer).unwrap();
+        let message = entry.sync_encode_into_boxed_slice();
 
         if self
             .capability
             .receiver()
-            .verify(&consumer.into_vec(), &self.signature)
+            .verify(&message, &self.signature)
             .is_err()
         {
             return false;
@@ -162,11 +160,10 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey:
-        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
-    UserSignature: Encodable + Clone + Arbitrary<'a>,
+    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let capability: McCapability<

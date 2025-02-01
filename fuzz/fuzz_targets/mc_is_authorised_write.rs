@@ -3,10 +3,10 @@
 use libfuzzer_sys::fuzz_target;
 use meadowcap::{AccessMode, McAuthorisationToken};
 use signature::Signer;
-use ufotofu::sync::consumer::IntoVec;
+use ufotofu::consumer::IntoVec;
+use ufotofu_codec::{Encodable, EncodableSync};
 use willow_data_model::AuthorisationToken;
 use willow_data_model::Entry;
-use willow_encoding::sync::Encodable;
 use willow_fuzz::{
     placeholder_params::FakePayloadDigest,
     silly_sigs::{SillyPublicKey, SillySig},
@@ -21,9 +21,7 @@ fuzz_target!(|data: (
     let is_within_granted_area = token.capability.granted_area().includes_entry(&entry);
     let is_write_cap = token.capability.access_mode() == AccessMode::Write;
 
-    let mut consumer = IntoVec::<u8>::new();
-    entry.encode(&mut consumer).unwrap();
-    let message = consumer.into_vec();
+    let message = entry.sync_encode_into_boxed_slice();
 
     let expected_sig = token
         .capability

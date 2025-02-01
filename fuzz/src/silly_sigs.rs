@@ -1,6 +1,9 @@
 use arbitrary::Arbitrary;
-use meadowcap::IsCommunal;
+use meadowcap::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use signature::{Error as SignatureError, Signer, Verifier};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
+};
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
@@ -58,6 +61,8 @@ impl Verifier<SillySig> for SillyPublicKey {
 
 impl NamespaceId for SillyPublicKey {}
 
+impl McNamespacePublicKey for SillyPublicKey {}
+
 impl SubspaceId for SillyPublicKey {
     fn successor(&self) -> Option<Self> {
         if self.0 == 255 {
@@ -68,77 +73,112 @@ impl SubspaceId for SillyPublicKey {
     }
 }
 
+impl McPublicUserKey<SillySig> for SillyPublicKey {}
+
 impl IsCommunal for SillyPublicKey {
     fn is_communal(&self) -> bool {
         self.0 % 2 == 0
     }
 }
 
-use syncify::{syncify, syncify_replace};
+impl Encodable for SillyPublicKey {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        consumer.consume(self.0).await?;
 
-#[syncify(encoding_sync)]
-pub mod encoding {
-    use super::*;
-
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-
-    use willow_encoding::DecodeError;
-    #[syncify_replace(use willow_encoding::sync::{Encodable, Decodable, RelationDecodable};)]
-    use willow_encoding::{Decodable, Encodable, RelationDecodable};
-
-    #[syncify_replace(use willow_encoding::sync::produce_byte;)]
-    use willow_encoding::produce_byte;
-
-    impl Encodable for SillyPublicKey {
-        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-        where
-            Consumer: BulkConsumer<Item = u8>,
-        {
-            consumer.consume(self.0).await?;
-
-            Ok(())
-        }
+        Ok(())
     }
+}
 
-    impl Decodable for SillyPublicKey {
-        async fn decode_canonical<Producer>(
-            producer: &mut Producer,
-        ) -> Result<Self, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-        {
-            let num = produce_byte(producer).await?;
-
-            Ok(SillyPublicKey(num))
-        }
+impl EncodableKnownSize for SillyPublicKey {
+    fn len_of_encoding(&self) -> usize {
+        1
     }
+}
 
-    impl Encodable for SillySig {
-        async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
-        where
-            Consumer: BulkConsumer<Item = u8>,
-        {
-            consumer.consume(self.0).await?;
+impl EncodableSync for SillyPublicKey {}
 
-            Ok(())
-        }
+impl Decodable for SillyPublicKey {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillyPublicKey(num))
     }
+}
 
-    impl Decodable for SillySig {
-        async fn decode_canonical<Producer>(
-            producer: &mut Producer,
-        ) -> Result<Self, DecodeError<Producer::Error>>
-        where
-            Producer: BulkProducer<Item = u8>,
-        {
-            let num = produce_byte(producer).await?;
+impl DecodableCanonic for SillyPublicKey {
+    type ErrorCanonic = Blame;
 
-            Ok(SillySig(num))
-        }
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillyPublicKey(num))
     }
+}
 
-    impl RelationDecodable for SillyPublicKey {}
+impl Encodable for SillySig {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        consumer.consume(self.0).await?;
 
-    impl RelationDecodable for SillySig {}
+        Ok(())
+    }
+}
+
+impl EncodableKnownSize for SillySig {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
+
+impl EncodableSync for SillySig {}
+
+impl Decodable for SillySig {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillySig(num))
+    }
+}
+
+impl DecodableCanonic for SillySig {
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let num = producer.produce_item().await?;
+
+        Ok(SillySig(num))
+    }
 }
