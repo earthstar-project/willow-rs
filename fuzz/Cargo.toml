@@ -35,9 +35,6 @@ features = ["dev"]
 path = "../meadowcap"
 features = ["dev"]
 
-[dependencies.earthstar]
-path = "../earthstar"
-
 ################
 # compact_u64 #
 ###############

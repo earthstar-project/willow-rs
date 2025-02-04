@@ -230,17 +230,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "earthstar"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "either",
- "ufotofu",
- "willow-data-model",
- "willow-encoding",
-]
-
-[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -412,6 +401,7 @@ dependencies = [
  "compact_u64",
  "either",
  "futures",
+ "smol",
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",
@@ -729,7 +719,6 @@ version = "0.0.0"
 dependencies = [
  "arbitrary",
  "compact_u64",
- "earthstar",
  "either",
  "futures",
  "libfuzzer-sys",

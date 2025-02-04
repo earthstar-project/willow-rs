@@ -7,9 +7,9 @@ use compact_u64::{CompactU64, Tag, TagWidth};
 use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync, RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync,
-    RelativeEncodable, RelativeEncodableKnownSize, RelativeEncodableSync,
+    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync, RelativeEncodable,
+    RelativeEncodableKnownSize, RelativeEncodableSync,
 };
 use willow_encoding::is_bitflagged;
 

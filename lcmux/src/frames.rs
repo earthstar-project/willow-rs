@@ -156,8 +156,9 @@ pub struct SendToChannelHeader {
     pub length: u64,
 }
 
-/// A byte whose most significant four bits are zero, and whose least significant four bits contain encoding information for a SendControl frame.
-pub type SendControlNibble = u8;
+/// A byte whose most significant four bits are zero, and whose least significant four bits contain encoding information for a SendGlobal frame.
+pub type SendGlobalNibble = u8;
+
 impl Encodable for SendToChannelHeader {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
@@ -172,13 +173,13 @@ impl Encodable for SendToChannelHeader {
 }
 
 /// Does not include the actual message bytes.
-pub struct SendControlHeader {
+pub struct SendGlobalHeader {
     /// Information stored in the four least significant bits.
-    pub encoding_nibble: SendControlNibble,
+    pub encoding_nibble: SendGlobalNibble,
 }
 
-/// An incoming LCMUX frame header: all information, except for the message bytes in case of a `SendToChannel` or `SendControl` frame.
-impl Encodable for SendControlHeader {
+/// An incoming LCMUX frame header: all information, except for the message bytes in case of a `SendToChannel` or `SendGlobal` frame.
+impl Encodable for SendGlobalHeader {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
@@ -191,7 +192,7 @@ impl Encodable for SendControlHeader {
     }
 }
 
-/// An incoming LCMUX fragment header: all information, except for the message bytes in case of a `SendToChannel` or `SendControl` fragment.
+/// An incoming LCMUX fragment header: all information, except for the message bytes in case of a `SendToChannel` or `SendGlobal` fragment.
 ///
 /// Implements [`Decodable`] because we use this to figure out with incoming data. Does not implement [`Encodable`], however, since we already know which kind of header we are encoding.
 pub enum IncomingFrameHeader {
@@ -203,7 +204,7 @@ pub enum IncomingFrameHeader {
     AnnounceDropping(AnnounceDropping),
     Apologise(Apologise),
     SendToChannelHeader(SendToChannelHeader),
-    SendControlHeader(SendControlHeader),
+    SendGlobalHeader(SendGlobalHeader),
 }
 
 impl Decodable for IncomingFrameHeader {
@@ -225,7 +226,7 @@ impl Decodable for IncomingFrameHeader {
                 // Decode nibble
                 let nibble = 0b0000_1111 & header;
 
-                Ok(IncomingFrameHeader::SendControlHeader(SendControlHeader {
+                Ok(IncomingFrameHeader::SendGlobalHeader(SendGlobalHeader {
                     encoding_nibble: nibble,
                 }))
             }
@@ -458,7 +459,7 @@ impl Decodable for HeaderWithEmbeddedChannelAndMaybeLength {
         // Decode the channel appropriately
 
         match 0b1111_0000 & first_byte {
-            // This is a `SendControlMessage`, which we really should have not let get this far.
+            // This is a `SendGlobalMessage`, which we really should have not let get this far.
             0b1000_0000 => Err(DecodeError::Other(Blame::OurFault)),
             0b1001_0000 => {
                 // Return IssueGuarantee with decoded channel

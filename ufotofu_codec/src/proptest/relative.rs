@@ -5,7 +5,7 @@ use crate::{
 use core::fmt::Debug;
 use core::num::NonZeroUsize;
 use std::boxed::Box;
-use std::{format, println};
+use std::format;
 use ufotofu::producer::{FromSlice, TestProducerBuilder};
 use ufotofu::{consumer::TestConsumer, producer::TestProducer};
 

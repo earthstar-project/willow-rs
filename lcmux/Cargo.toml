@@ -17,5 +17,8 @@ async_cell = "0.2.2"
 futures = { version = "0.3.31" }
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 
+[dev-dependencies]
+smol = "2.0.2"
+
 [lints]
 workspace = true
