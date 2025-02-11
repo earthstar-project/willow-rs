@@ -1,0 +1,10 @@
+[package]
+name = "willow-store-simple-sled"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+sled = "0.34.7"
