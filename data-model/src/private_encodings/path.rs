@@ -4,7 +4,7 @@ use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
 };
 
-use crate::{encode_from_iterator_of_components, Path};
+use crate::{encode_from_iterator_of_components, Path, PathBuilder};
 
 #[derive(Debug)]
 /// The context necessary to privately encode Paths.
@@ -131,14 +131,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
                 .await
                 .map_err(DecodeError::map_other_from)?;
 
-            let mut path = r.rel.clone();
+            let total_length = r.rel.path_length() + suffix.path_length();
+            let total_count = rel_count + suffix.component_count();
+            let mut path_builder =
+                PathBuilder::new_from_prefix(total_length, total_count, &r.rel, rel_count)
+                    .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
 
             for component in suffix.components() {
-                path = path
-                    .append(component)
-                    .or(Err(DecodeError::Other(Blame::TheirFault)))?;
+                path_builder.append_component(component);
             }
-            Ok(path)
+
+            Ok(path_builder.build())
         } else {
             // Decode C64 of length of longest common prefix of priv with val
             let private_component_count = CompactU64::decode(producer)
@@ -150,15 +153,21 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                let mut path = r.private.clone();
+                let total_length = r.private.path_length() + suffix.path_length();
+                let total_count = private_count + suffix.component_count();
+                let mut path_builder = PathBuilder::new_from_prefix(
+                    total_length,
+                    total_count,
+                    &r.private,
+                    private_count,
+                )
+                .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
 
                 for component in suffix.components() {
-                    path = path
-                        .append(component)
-                        .or(Err(DecodeError::Other(Blame::TheirFault)))?;
+                    path_builder.append_component(component);
                 }
 
-                Ok(path)
+                Ok(path_builder.build())
             } else {
                 // We can unwrap here because we know private_component_count will be less than the component count of r.private
                 r.private
