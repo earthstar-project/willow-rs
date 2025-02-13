@@ -482,3 +482,10 @@ path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_path_rel_privatepathcontext"
+path = "fuzz_targets/enc_path_rel_privatepathcontext.rs"
+test = false
+doc = false
+bench = false

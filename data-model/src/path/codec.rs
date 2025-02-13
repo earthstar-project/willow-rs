@@ -11,7 +11,7 @@ use compact_u64::*;
 use super::*;
 
 /// Essentially how to encode a Path, but working with an arbitrary iterator of components. Path encoding consists of calling this directly, relative path encoding consists of first encoding the length of the greatest common suffix and *then* calling this.
-async fn encode_from_iterator_of_components<'a, const MCL: usize, C, I>(
+pub async fn encode_from_iterator_of_components<'a, const MCL: usize, C, I>(
     consumer: &mut C,
     path_length: u64,
     component_count: u64,
