@@ -1,10 +1,10 @@
-use arbitrary::{Arbitrary, Error as ArbitraryError};
+use arbitrary::Arbitrary;
 use compact_u64::CompactU64;
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
 };
 
-use crate::{encode_from_iterator_of_components, Path, PathBuilder};
+use crate::{decode_path_extends_path, encode_path_extends_path, Path, PathBuilder};
 
 #[derive(Debug)]
 /// The context necessary to privately encode Paths.
@@ -69,22 +69,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
             panic!("Tried to encode a path relative to a PrivatePathContext.private pat it is not related to")
         }
 
-        let val_count = self.component_count();
         let rel_count = r.rel.component_count();
         let private_count = r.private.component_count();
 
         if private_count <= rel_count {
             // path extends path val <> rel
-            let path_len = self.path_length() - r.rel.path_length();
-            let rel_diff = val_count - rel_count;
-
-            encode_from_iterator_of_components(
-                consumer,
-                path_len as u64,
-                rel_diff as u64,
-                self.suffix_components(rel_count),
-            )
-            .await?;
+            encode_path_extends_path(consumer, self, &r.rel).await?;
         } else {
             let lcp = self.longest_common_prefix(&r.private);
 
@@ -95,16 +85,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
 
             if lcp_len >= private_count {
                 // path extends path val <> priv
-                let path_len = self.path_length() - r.private.path_length();
-                let private_diff = val_count - lcp_len;
-
-                encode_from_iterator_of_components(
-                    consumer,
-                    path_len as u64,
-                    private_diff as u64,
-                    self.suffix_components(private_count),
-                )
-                .await?;
+                encode_path_extends_path(consumer, self, &r.private()).await?;
             }
         }
 
@@ -127,21 +108,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
         let private_count = r.private.component_count();
 
         if private_count <= rel_count {
-            let suffix = Path::<MCL, MCC, MPL>::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-
-            let total_length = r.rel.path_length() + suffix.path_length();
-            let total_count = rel_count + suffix.component_count();
-            let mut path_builder =
-                PathBuilder::new_from_prefix(total_length, total_count, &r.rel, rel_count)
-                    .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
-
-            for component in suffix.components() {
-                path_builder.append_component(component);
-            }
-
-            Ok(path_builder.build())
+            decode_path_extends_path(producer, r.rel()).await
         } else {
             // Decode C64 of length of longest common prefix of priv with val
             let private_component_count = CompactU64::decode(producer)
@@ -149,25 +116,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
                 .map_err(DecodeError::map_other_from)?;
 
             if private_component_count.0 >= private_count as u64 {
-                let suffix = Path::<MCL, MCC, MPL>::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
-
-                let total_length = r.private.path_length() + suffix.path_length();
-                let total_count = private_count + suffix.component_count();
-                let mut path_builder = PathBuilder::new_from_prefix(
-                    total_length,
-                    total_count,
-                    &r.private,
-                    private_count,
-                )
-                .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
-
-                for component in suffix.components() {
-                    path_builder.append_component(component);
-                }
-
-                Ok(path_builder.build())
+                decode_path_extends_path(producer, r.private()).await
             } else {
                 // We can unwrap here because we know private_component_count will be less than the component count of r.private
                 r.private

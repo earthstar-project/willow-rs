@@ -11,7 +11,7 @@ use compact_u64::*;
 use super::*;
 
 /// Essentially how to encode a Path, but working with an arbitrary iterator of components. Path encoding consists of calling this directly, relative path encoding consists of first encoding the length of the greatest common suffix and *then* calling this.
-pub async fn encode_from_iterator_of_components<'a, const MCL: usize, C, I>(
+async fn encode_from_iterator_of_components<'a, const MCL: usize, C, I>(
     consumer: &mut C,
     path_length: u64,
     component_count: u64,
@@ -494,4 +494,59 @@ where
             .map_err(|err| DecodeError::map_other(err, |_| Blame::TheirFault))?
             .0)
     }
+}
+
+pub async fn encode_path_extends_path<const MCL: usize, const MCC: usize, const MPL: usize, C>(
+    consumer: &mut C,
+    path: &Path<MCL, MCC, MPL>,
+    extends: &Path<MCL, MCC, MPL>,
+) -> Result<(), C::Error>
+where
+    C: BulkConsumer<Item = u8>,
+{
+    // Check path extends extends
+    if !path.is_prefixed_by(extends) {
+        panic!("Tried to encode with PathExtendsPath with a path that does not extend another path")
+    }
+
+    let extends_count = extends.component_count();
+
+    let path_len = path.path_length() - extends.path_length();
+    let diff = path.component_count() - extends_count;
+
+    encode_from_iterator_of_components(
+        consumer,
+        path_len as u64,
+        diff as u64,
+        path.suffix_components(extends_count),
+    )
+    .await?;
+
+    Ok(())
+}
+
+pub async fn decode_path_extends_path<const MCL: usize, const MCC: usize, const MPL: usize, P>(
+    producer: &mut P,
+    prefix: &Path<MCL, MCC, MPL>,
+) -> Result<Path<MCL, MCC, MPL>, DecodeError<P::Final, P::Error, Blame>>
+where
+    P: BulkProducer<Item = u8>,
+{
+    let suffix = Path::<MCL, MCC, MPL>::decode(producer)
+        .await
+        .map_err(DecodeError::map_other_from)?;
+
+    let prefix_count = prefix.component_count();
+
+    let total_length = prefix.path_length() + suffix.path_length();
+    let total_count = prefix_count + suffix.component_count();
+    let mut path_builder =
+        PathBuilder::new_from_prefix(total_length, total_count, prefix, prefix_count)
+            .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
+
+    for component in suffix.components() {
+        path_builder.append_component(component);
+    }
+
+    Ok(path_builder.build())
 }
