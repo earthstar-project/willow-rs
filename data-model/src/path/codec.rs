@@ -125,10 +125,10 @@ where
     if remaining_component_count == 0 {
         if expected_total_length > accumulated_component_length {
             // Claimed length is incorrect
-            return Err(DecodeError::Other(Blame::TheirFault));
+            Err(DecodeError::Other(Blame::TheirFault))
         } else {
             // Nothing more to do, decoding an empty path turns out to be simple!
-            return Ok(builder.build());
+            Ok(builder.build())
         }
     } else {
         // We have at least one component.
@@ -160,7 +160,7 @@ where
 
         if final_component_length > MCL {
             // Decoded path must respect the MCL.
-            return Err(DecodeError::Other(Blame::TheirFault));
+            Err(DecodeError::Other(Blame::TheirFault))
         } else {
             // Copy the final component bytes into the Path.
             builder
@@ -344,7 +344,7 @@ where
     let builder = PathBuilder::new_from_prefix(
         total_length,
         total_component_count,
-        &r,
+        r,
         prefix_component_count,
     )
     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
@@ -540,6 +540,7 @@ where
 
     let total_length = prefix.path_length() + suffix.path_length();
     let total_count = prefix_count + suffix.component_count();
+
     let mut path_builder =
         PathBuilder::new_from_prefix(total_length, total_count, prefix, prefix_count)
             .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;

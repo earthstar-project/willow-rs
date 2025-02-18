@@ -489,3 +489,10 @@ path = "fuzz_targets/enc_path_rel_privatepathcontext.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_area_rel_privateareacontext"
+path = "fuzz_targets/enc_area_rel_privateareacontext.rs"
+test = false
+doc = false
+bench = false

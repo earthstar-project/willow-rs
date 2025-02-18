@@ -4,7 +4,7 @@ use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
 };
 
-use crate::{decode_path_extends_path, encode_path_extends_path, Path, PathBuilder};
+use crate::{decode_path_extends_path, encode_path_extends_path, Path};
 
 #[derive(Debug)]
 /// The context necessary to privately encode Paths.
@@ -15,6 +15,7 @@ pub struct PrivatePathContext<const MCL: usize, const MCC: usize, const MPL: usi
     rel: Path<MCL, MCC, MPL>,
 }
 
+#[derive(Debug)]
 pub struct ComponentsNotRelatedError {}
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PrivatePathContext<MCL, MCC, MPL> {
@@ -27,6 +28,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PrivatePathContext<MC
         }
 
         Ok(Self { private, rel })
+    }
+
+    pub fn new_unchecked(private: Path<MCL, MCC, MPL>, rel: Path<MCL, MCC, MPL>) -> Self {
+        Self { private, rel }
     }
 
     pub fn private(&self) -> &Path<MCL, MCC, MPL> {

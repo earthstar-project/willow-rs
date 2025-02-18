@@ -27,6 +27,16 @@ impl<S: SubspaceId> AreaSubspace<S> {
         }
     }
 
+    /// Returns whether this [`AreaSubspace`] includes a given [`AreaSubspace`].
+    pub fn includes_area_subspace(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AreaSubspace::Any, AreaSubspace::Any) => true,
+            (AreaSubspace::Any, AreaSubspace::Id(_)) => true,
+            (AreaSubspace::Id(_), AreaSubspace::Any) => false,
+            (AreaSubspace::Id(id), AreaSubspace::Id(id_other)) => id == id_other,
+        }
+    }
+
     /// Returns the intersection between two [`AreaSubspace`].
     fn intersection(&self, other: &Self) -> Option<Self> {
         match (self, other) {
@@ -186,6 +196,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             times,
             path,
         })
+    }
+
+    /// Returns whether an [`Area`] _almost includes_ another area, that is, if the other [`Area`] would be included by this if [`Area] if it had the same [`SubspaceId`].
+    pub fn almost_includes_area(&self, other: &Area<MCL, MCC, MPL, S>) -> bool {
+        self.path.is_prefix_of(&other.path) && self.times.includes_range(&other.times)
     }
 }
 
