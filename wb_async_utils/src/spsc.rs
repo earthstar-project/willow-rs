@@ -52,6 +52,38 @@ impl<Q: Queue, F, E> State<Q, F, E> {
             notify_the_receiver: TakeCell::new_with(()),
         }
     }
+
+    /// Same as calling [`Consumer::close`] on the Sender, but directly from an immutable reference to the state. This is essentially an escape hatch around the *single producer* part for closing. Ideally, you should not need to use this.
+    /// The same invariants as for the regular `close` and `clos_sync` methods on the [`Sender`] apply.
+    pub fn close(&self, fin: F) {
+        // Store the final value for later access by the Sender.
+        let mut last = unsafe { self.last.borrow_mut() };
+        debug_assert!(
+            last.is_none(),
+            "Must not call `close` or `close_sync` multiple times or after calling `cause_error`."
+        );
+        *last = Some(Ok(fin));
+
+        self.notify_the_receiver.set(());
+    }
+
+    /// Same as calling [`cause_error`] on the Sender, but directly from an immutable reference to the state. This is essentially an escape hatch around the *single producer* part for signaling errors. Ideally, you should not need to use this.
+    /// The same invariants as for the regular `cause_error` method on the [`Sender`] apply.
+    pub fn cause_error(&self, err: E) {
+        let mut last = unsafe { self.last.borrow_mut() };
+        debug_assert!(
+            last.is_none(),
+            "Must not call `cause_error` multiple times or after calling `close` or `close_sync`."
+        );
+        *last = Some(Err(err));
+
+        self.notify_the_receiver.set(());
+    }
+
+    /// Returns whether this has been closed yet or whether an error has been caused yet.
+    pub fn has_been_closed_or_errored_yet(&self) -> bool {
+        unsafe { self.last.borrow().is_some() }
+    }
 }
 
 /// Creates a new SPSC channel in the form of a [`Sender`] and a [`Receiver`] endpoint which communicate via the given [`State`].
@@ -152,29 +184,12 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
     /// May call this function at most once per `Receiver`.
     /// Must not call this function after calling `close` or `close_sync`.
     pub fn cause_error(&mut self, err: E) {
-        let mut last = unsafe { self.state.last.borrow_mut() };
-        debug_assert!(
-            last.is_none(),
-            "Must not call `cause_error` multiple times or after calling `close` or `close_sync`."
-        );
-        *last = Some(Err(err));
-
-        self.state.notify_the_receiver.set(());
+        self.state.cause_error(err)
     }
 
     /// Same as calling [`Consumer::close`], but sync. Must not use this multiple times, after calling `close`, or after calling `cause_error`.
-    pub fn close_sync(&mut self, fin: F) -> Result<(), Infallible> {
-        // Store the final value for later access by the Sender.
-        let mut last = unsafe { self.state.last.borrow_mut() };
-        debug_assert!(
-            last.is_none(),
-            "Must not call `close` or `close_sync` multiple times or after calling `cause_error`."
-        );
-        *last = Some(Ok(fin));
-
-        self.state.notify_the_receiver.set(());
-
-        Ok(())
+    pub fn close_sync(&mut self, fin: F) {
+        self.state.close(fin)
     }
 }
 
@@ -215,7 +230,7 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Consumer for Sender<R, Q
     }
 
     async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-        self.close_sync(fin)
+        Ok(self.close_sync(fin))
     }
 }
 
