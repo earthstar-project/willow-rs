@@ -496,3 +496,10 @@ path = "fuzz_targets/enc_area_rel_privateareacontext.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_communalcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_communalcapability_rel_personalprivateinterest.rs"
+test = false
+doc = false
+bench = false

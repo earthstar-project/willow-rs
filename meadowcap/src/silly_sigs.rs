@@ -1,5 +1,5 @@
+use crate::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use arbitrary::Arbitrary;
-use meadowcap::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,

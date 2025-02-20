@@ -9,6 +9,9 @@ use crate::{
     McPublicUserKey,
 };
 
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
+
 /// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given [`namespace`](https://willowprotocol.org/specs/data-model/index.html#namespace) to `false`.
 #[derive(Debug)]
 pub struct NamespaceIsNotCommunalError<NamespacePublicKey>(NamespacePublicKey);
@@ -373,28 +376,33 @@ where
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 #[cfg(feature = "dev")]
-impl<
-        'a,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        UserPublicKey,
-        UserSignature,
-    > Arbitrary<'a>
-    for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, NamespacePublicKey> Arbitrary<'a>
+    for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, SillyPublicKey, SillySig>
 where
     NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a>,
-    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
-        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
         match Self::new(namespace_key, user_key, access_mode) {
-            Ok(cap) => Ok(cap),
+            Ok(cap) => {
+                let mut cap_with_delegations = cap.clone();
+                let delegees: Vec<(SillyPublicKey, Area<MCL, MCC, MPL, SillyPublicKey>)> =
+                    Arbitrary::arbitrary(u)?;
+
+                let mut last_receiver = cap.receiver().clone();
+
+                for (delegee, area) in delegees {
+                    cap_with_delegations = cap_with_delegations
+                        .delegate(&last_receiver.corresponding_secret_key(), &delegee, &area)
+                        .map_err(|_| ArbitraryError::IncorrectFormat)?;
+                    last_receiver = delegee;
+                }
+
+                Ok(cap)
+            }
             Err(_) => Err(ArbitraryError::IncorrectFormat),
         }
     }

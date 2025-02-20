@@ -10,7 +10,7 @@ use crate::{
     Entry, NamespaceId, Path, PayloadDigest, PrivatePathContext, SubspaceId,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Confidential data that relates to determining the AreasOfInterest that peers might be interested in synchronising.
 // TODO: Move this all to WGPS?
 pub struct PrivateInterest<
@@ -28,15 +28,15 @@ pub struct PrivateInterest<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
     PrivateInterest<MCL, MCC, MPL, N, S>
 {
-    fn namespace_id(&self) -> &N {
+    pub fn namespace_id(&self) -> &N {
         &self.namespace_id
     }
 
-    fn subspace_id(&self) -> &AreaSubspace<S> {
+    pub fn subspace_id(&self) -> &AreaSubspace<S> {
         &self.subspace_id
     }
 
-    fn path(&self) -> &Path<MCL, MCC, MPL> {
+    pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
 
@@ -133,6 +133,8 @@ pub struct PrivateAreaContext<
     /// The almost containing Area relative to which we encode.
     rel: Area<MCL, MCC, MPL, S>,
 }
+
+#[derive(Debug)]
 pub struct AreaNotAlmostIncludedError;
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
