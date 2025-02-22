@@ -230,6 +230,10 @@ where
             }
         }
 
+        if cap.delegations_len() > 1 {
+            println!("yayyyy {:?}", cap.delegations_len());
+        }
+
         Ok(cap)
     }
 }

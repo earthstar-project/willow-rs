@@ -2,13 +2,13 @@ use crate::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use arbitrary::Arbitrary;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
 };
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
 #[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord)]
-pub struct SillyPublicKey(u8);
+pub struct SillyPublicKey(bool);
 
 impl SillyPublicKey {
     pub fn corresponding_secret_key(&self) -> SillySecret {
@@ -19,7 +19,7 @@ impl SillyPublicKey {
 /// A silly, trivial, insecure secret key for fuzz testing.
 /// The corresponding [`SillyPublicKey`] is the identity of the secret.
 #[derive(PartialEq, Eq, Debug, Arbitrary)]
-pub struct SillySecret(u8);
+pub struct SillySecret(bool);
 
 impl SillySecret {
     pub fn corresponding_public_key(&self) -> SillyPublicKey {
@@ -41,7 +41,11 @@ impl Signer<SillySig> for SillySecret {
     fn try_sign(&self, msg: &[u8]) -> Result<SillySig, signature::Error> {
         let first_msg_byte = msg.first().unwrap_or(&0x00);
 
-        Ok(SillySig(self.0 ^ first_msg_byte))
+        if self.0 {
+            Ok(SillySig(first_msg_byte | 0b0000_0001))
+        } else {
+            Ok(SillySig(first_msg_byte & 0b1111_1110))
+        }
     }
 }
 
@@ -49,11 +53,15 @@ impl Verifier<SillySig> for SillyPublicKey {
     fn verify(&self, msg: &[u8], signature: &SillySig) -> Result<(), SignatureError> {
         let first_msg_byte = msg.first().unwrap_or(&0x00);
 
-        let expected_sig = self.0 ^ first_msg_byte;
+        let expected_sig = if self.0 {
+            first_msg_byte | 0b0000_0001
+        } else {
+            first_msg_byte & 0b1111_1110
+        };
 
         if signature.0 != expected_sig {
             return Err(SignatureError::new());
-        }
+        };
 
         Ok(())
     }
@@ -65,11 +73,11 @@ impl McNamespacePublicKey for SillyPublicKey {}
 
 impl SubspaceId for SillyPublicKey {
     fn successor(&self) -> Option<Self> {
-        if self.0 == 255 {
+        if self.0 {
             return None;
         }
 
-        Some(SillyPublicKey(self.0 + 1))
+        Some(SillyPublicKey(true))
     }
 }
 
@@ -77,7 +85,7 @@ impl McPublicUserKey<SillySig> for SillyPublicKey {}
 
 impl IsCommunal for SillyPublicKey {
     fn is_communal(&self) -> bool {
-        self.0 % 2 == 0
+        self.0
     }
 }
 
@@ -86,7 +94,9 @@ impl Encodable for SillyPublicKey {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        consumer.consume(self.0).await?;
+        let byte = if self.0 { 1 } else { 0 };
+
+        consumer.consume(byte).await?;
 
         Ok(())
     }
@@ -112,7 +122,13 @@ impl Decodable for SillyPublicKey {
     {
         let num = producer.produce_item().await?;
 
-        Ok(SillyPublicKey(num))
+        if num > 1 {
+            Err(DecodeError::Other(Blame::TheirFault))
+        } else if num == 0 {
+            Ok(SillyPublicKey(false))
+        } else {
+            Ok(SillyPublicKey(true))
+        }
     }
 }
 
@@ -128,7 +144,13 @@ impl DecodableCanonic for SillyPublicKey {
     {
         let num = producer.produce_item().await?;
 
-        Ok(SillyPublicKey(num))
+        if num > 1 {
+            Err(DecodeError::Other(Blame::TheirFault))
+        } else if num == 0 {
+            Ok(SillyPublicKey(false))
+        } else {
+            Ok(SillyPublicKey(true))
+        }
     }
 }
 
