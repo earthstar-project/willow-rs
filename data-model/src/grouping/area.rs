@@ -3,8 +3,10 @@ use arbitrary::{size_hint::and_all, Arbitrary};
 
 use crate::{
     entry::{Entry, Timestamp},
+    grouping::RangeEnd,
     parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
+    PathBuilder,
 };
 
 use super::range::Range;
@@ -200,7 +202,13 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
 
     /// Returns whether an [`Area`] _almost includes_ another area, that is, if the other [`Area`] would be included by this if [`Area] if it had the same [`SubspaceId`].
     pub fn almost_includes_area(&self, other: &Area<MCL, MCC, MPL, S>) -> bool {
-        self.path.is_prefix_of(&other.path) && self.times.includes_range(&other.times)
+        let subspace_is_fine = match (self.subspace(), other.subspace()) {
+            (AreaSubspace::Id(self_id), AreaSubspace::Id(other_id)) => self_id == other_id,
+            _ => true,
+        };
+        subspace_is_fine
+            && self.path.is_prefix_of(&other.path)
+            && self.times.includes_range(&other.times)
     }
 }
 
@@ -229,6 +237,82 @@ where
             Range::<u64>::size_hint(depth),
         ])
     }
+}
+
+#[cfg(feature = "dev")]
+pub fn arbitrary_included_area<'a, const MCL: usize, const MCC: usize, const MPL: usize, S>(
+    area: &Area<MCL, MCC, MPL, S>,
+    u: &mut arbitrary::Unstructured<'a>,
+) -> arbitrary::Result<Area<MCL, MCC, MPL, S>>
+where
+    S: SubspaceId + Arbitrary<'a>,
+{
+    let suffix: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
+
+    let total_length = area.path().path_length() + suffix.path_length();
+    let total_component_length = area.path().component_count() + suffix.component_count();
+
+    let included_path = if let Ok(mut builder) = PathBuilder::new_from_prefix(
+        total_length,
+        total_component_length,
+        area.path(),
+        area.path.component_count(),
+    ) {
+        for component in suffix.components() {
+            builder.append_component(component)
+        }
+
+        builder.build()
+    } else {
+        area.path().clone()
+    };
+
+    let subspace = match area.subspace() {
+        AreaSubspace::Any => {
+            let is_subspace: bool = Arbitrary::arbitrary(u)?;
+
+            if is_subspace {
+                let subspace: S = Arbitrary::arbitrary(u)?;
+                AreaSubspace::Id(subspace)
+            } else {
+                AreaSubspace::Any
+            }
+        }
+        AreaSubspace::Id(id) => AreaSubspace::Id(id.clone()),
+    };
+
+    let start_offset: u64 = Arbitrary::arbitrary(u)?;
+
+    let new_start = area
+        .times()
+        .start
+        .checked_add(start_offset)
+        .map_or(area.times().start, |res| res);
+
+    let end_offset: u64 = Arbitrary::arbitrary(u)?;
+
+    let new_end = match area.times().end {
+        crate::grouping::RangeEnd::Closed(end) => {
+            RangeEnd::Closed(end.checked_sub(end_offset).map_or(end, |res| res))
+        }
+        crate::grouping::RangeEnd::Open => {
+            let is_any: bool = Arbitrary::arbitrary(u)?;
+
+            if is_any {
+                RangeEnd::Open
+            } else {
+                RangeEnd::Closed(end_offset)
+            }
+        }
+    };
+
+    let times = if new_start <= new_end {
+        Range::new(new_start, new_end)
+    } else {
+        *area.times()
+    };
+
+    Ok(Area::new(subspace, included_path, times))
 }
 
 #[cfg(test)]

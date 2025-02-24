@@ -113,25 +113,19 @@ impl<
             .await?;
 
         for (i, delegation) in self.delegations().enumerate() {
+            let ctx_to_use = if i == 0 { &ctx_neg_one } else { &ctxs[i - 1] };
+
             if i == self.delegations_len() - 1 {
                 delegation
                     .area()
-                    .relative_encode(consumer, &ctxs[i - 1])
+                    .relative_encode(consumer, ctx_to_use)
                     .await?;
 
-                delegation.signature().encode(consumer).await?;
-            } else if i == 0 {
-                delegation
-                    .area()
-                    .relative_encode(consumer, &ctx_neg_one)
-                    .await?;
-
-                delegation.user().encode(consumer).await?;
                 delegation.signature().encode(consumer).await?;
             } else {
                 delegation
                     .area()
-                    .relative_encode(consumer, &ctxs[i - 1])
+                    .relative_encode(consumer, ctx_to_use)
                     .await?;
 
                 delegation.user().encode(consumer).await?;
@@ -193,14 +187,11 @@ where
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                let user_key = r.user_key.clone();
-
                 let sig = UserSignature::decode(producer)
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                // wait, so where is final user key from?
-                let delegation = Delegation::new(area, user_key, sig);
+                let delegation = Delegation::new(area, r.user_key().clone(), sig);
 
                 cap.append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
@@ -217,21 +208,14 @@ where
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                last_ctx = PrivateAreaContext::new(
-                    r.private_interest.clone(),
-                    Area::new_subspace(user_key.clone()),
-                )
-                .unwrap();
+                last_ctx =
+                    PrivateAreaContext::new(r.private_interest.clone(), area.clone()).unwrap();
 
                 let delegation = Delegation::new(area, user_key, sig);
 
                 cap.append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
             }
-        }
-
-        if cap.delegations_len() > 1 {
-            println!("yayyyy {:?}", cap.delegations_len());
         }
 
         Ok(cap)

@@ -2,7 +2,7 @@ use signature::Signer;
 use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::grouping::Area;
+use willow_data_model::grouping::{arbitrary_included_area, Area};
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
@@ -386,22 +386,32 @@ where
         let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
+        let mut prev_area = Area::new_subspace(user_key.clone());
+
         match Self::new(namespace_key, user_key, access_mode) {
             Ok(cap) => {
                 let mut cap_with_delegations = cap.clone();
-                let delegees: Vec<(SillyPublicKey, Area<MCL, MCC, MPL, SillyPublicKey>)> =
-                    Arbitrary::arbitrary(u)?;
+                let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
 
                 let mut last_receiver = cap.receiver().clone();
 
-                for (delegee, area) in delegees {
+                for delegee in delegees {
+                    let area = arbitrary_included_area(&prev_area, u)?;
+
+                    prev_area = area;
+
                     cap_with_delegations = cap_with_delegations
-                        .delegate(&last_receiver.corresponding_secret_key(), &delegee, &area)
+                        .delegate(
+                            &last_receiver.corresponding_secret_key(),
+                            &delegee,
+                            &prev_area,
+                        )
                         .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
                     last_receiver = delegee;
                 }
 
-                Ok(cap)
+                Ok(cap_with_delegations)
             }
             Err(_) => Err(ArbitraryError::IncorrectFormat),
         }
