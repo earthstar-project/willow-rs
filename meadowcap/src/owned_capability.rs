@@ -3,7 +3,7 @@ use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    grouping::{Area, AreaSubspace},
+    grouping::{arbitrary_included_area, Area, AreaSubspace},
     Path, SubspaceId,
 };
 
@@ -582,14 +582,23 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
         };
 
         let mut cap_with_delegations = cap.clone();
-        let delegees: Vec<(SillyPublicKey, Area<MCL, MCC, MPL, SillyPublicKey>)> =
-            Arbitrary::arbitrary(u)?;
+        let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
 
         let mut last_receiver = cap.receiver().clone();
 
-        for (delegee, area) in delegees {
+        let mut prev_area = Area::new_full();
+
+        for delegee in delegees {
+            let area = arbitrary_included_area(&prev_area, u)?;
+
+            prev_area = area;
+
             cap_with_delegations = cap_with_delegations
-                .delegate(&last_receiver.corresponding_secret_key(), &delegee, &area)
+                .delegate(
+                    &last_receiver.corresponding_secret_key(),
+                    &delegee,
+                    &prev_area,
+                )
                 .map_err(|_| ArbitraryError::IncorrectFormat)?;
             last_receiver = delegee;
         }
