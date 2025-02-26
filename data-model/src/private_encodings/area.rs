@@ -93,16 +93,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
             && self.path.is_prefix_of(area.path())
     }
 
-    pub fn almost_includes_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
-        self.path.is_prefix_of(area.path())
-    }
-
     pub fn is_related_to_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         self.subspace_id.includes_area_subspace(area.subspace())
             && self.path.is_related(area.path())
     }
 
-    pub fn weirdly_relates_to_an_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
+    pub fn almost_includes_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         let subspace_is_fine = match (self.subspace_id(), area.subspace()) {
             (AreaSubspace::Id(self_id), AreaSubspace::Id(other_id)) => self_id == other_id,
             _ => true,
@@ -202,9 +198,9 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        if !r.rel.almost_includes_area(self) || !r.private.weirdly_relates_to_an_area(self) {
+        if !r.rel.almost_includes_area(self) || !r.private.almost_includes_area(self) {
             panic!(
-                "Tried to encode an Area relative to a PrivateAreaContext it is not weirdly related to."
+                "Tried to encode an Area relative to a PrivateAreaContext it is not almost included by."
             )
         }
 
