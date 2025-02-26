@@ -2,15 +2,13 @@
 
 use libfuzzer_sys::fuzz_target;
 use meadowcap::{AccessMode, McAuthorisationToken};
+use meadowcap::{SillyPublicKey, SillySig};
 use signature::Signer;
 use ufotofu::consumer::IntoVec;
 use ufotofu_codec::{Encodable, EncodableSync};
 use willow_data_model::AuthorisationToken;
 use willow_data_model::Entry;
-use willow_fuzz::{
-    placeholder_params::FakePayloadDigest,
-    silly_sigs::{SillyPublicKey, SillySig},
-};
+use willow_fuzz::placeholder_params::FakePayloadDigest;
 
 fuzz_target!(|data: (
     Entry<16, 16, 16, SillyPublicKey, SillyPublicKey, FakePayloadDigest>,

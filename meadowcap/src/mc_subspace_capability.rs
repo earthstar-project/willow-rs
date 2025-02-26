@@ -16,6 +16,8 @@ use willow_data_model::SubspaceId;
 
 use crate::McNamespacePublicKey;
 use crate::McPublicUserKey;
+use crate::SillyPublicKey;
+use crate::SillySig;
 
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
@@ -209,8 +211,16 @@ where
     /// Returns a slice of all [`SubspaceDelegation`]s made to this capability.
     pub fn delegations(
         &self,
-    ) -> impl Iterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {
+    ) -> impl ExactSizeIterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {
         self.delegations.iter()
+    }
+
+    pub fn initial_authorisation(&self) -> &NamespaceSignature {
+        &self.initial_authorisation
+    }
+
+    pub fn progenitor(&self) -> &UserPublicKey {
+        &self.user_key
     }
 }
 
@@ -524,18 +534,13 @@ where
 }
 
 #[cfg(feature = "dev")]
-impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Arbitrary<'a>
-    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+impl<'a> Arbitrary<'a>
+    for McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
-        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
-        let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
+        let namespace_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
+        let initial_authorisation: SillySig = Arbitrary::arbitrary(u)?;
 
         let init_auth = SubspaceInitialAuthorisationMsg(&user_key);
         let message = init_auth.sync_encode_into_boxed_slice();
@@ -544,11 +549,25 @@ where
             .verify(&message, &initial_authorisation)
             .map_err(|_| ArbitraryError::IncorrectFormat)?;
 
-        Ok(McSubspaceCapability {
-            namespace_key: namespace_key.clone(),
-            user_key,
+        let mut cap = Self {
+            namespace_key,
+            user_key: user_key.clone(),
             initial_authorisation,
             delegations: Vec::new(),
-        })
+        };
+
+        let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
+
+        let mut last_receiver = user_key;
+
+        for delegee in delegees {
+            cap = cap
+                .delegate(&last_receiver.corresponding_secret_key(), &delegee)
+                .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+            last_receiver = delegee;
+        }
+
+        Ok(cap)
     }
 }

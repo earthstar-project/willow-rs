@@ -6,12 +6,13 @@ use ufotofu_codec::{
     RelativeEncodable,
 };
 use willow_data_model::{
-    grouping::{Area, AreaSubspace}, NamespaceId, PrivateAreaContext, PrivateInterest, SubspaceId,
+    grouping::{Area, AreaSubspace},
+    NamespaceId, PrivateAreaContext, PrivateInterest, SubspaceId,
 };
 
 use crate::{
     AccessMode, CommunalCapability, Delegation, McNamespacePublicKey, McPublicUserKey,
-    OwnedCapability,
+    McSubspaceCapability, OwnedCapability, SubspaceDelegation,
 };
 
 #[derive(Debug)]
@@ -245,22 +246,19 @@ impl<
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-     
-        
         if let AreaSubspace::Id(id) = self.granted_area().subspace() {
             if r.private_interest().subspace_id() != id {
                 panic!("Tried to encode a CommunalCapability relative to a PersonalPrivateInterest it has no meaningful relation to.")
             }
         }
-   
-        
+
         // Check if this can be encoded relative to the private area
         // self is read
         if self.access_mode() != AccessMode::Read
         // private interest subspace is same as cap.user_key
             || r.private_interest.subspace_id() != self.progenitor()
         // private interest namespace is same
-            || self.granted_namespace() != r.private_interest.namespace_id() 
+            || self.granted_namespace() != r.private_interest.namespace_id()
         // path of cap granted area is prefix of private interest path
             || !self
                 .granted_area()
@@ -421,5 +419,141 @@ where
         }
 
         Ok(cap)
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>>
+    for McSubspaceCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    N: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>,
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        if *r.private_interest().subspace_id() != AreaSubspace::Any
+            || r.private_interest().namespace_id() != self.granted_namespace()
+        {
+            panic!("Tried to encode a McSubspaceCapability relative to a PrivatePersonalInterest it has no relation to.")
+        };
+
+        CompactU64(self.delegations().len() as u64)
+            .encode(consumer)
+            .await?;
+
+        self.initial_authorisation().encode(consumer).await?;
+
+        if self.delegations().len() > 0 {
+            self.progenitor().encode(consumer).await?;
+        }
+
+        for (i, delegation) in self.delegations().enumerate() {
+            if i == self.delegations().len() - 1 {
+                delegation.signature().encode(consumer).await?
+            } else {
+                delegation.user().encode(consumer).await?;
+                delegation.signature().encode(consumer).await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
+    for McSubspaceCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
+where
+    N: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    Blame: From<N::ErrorReason>
+        + From<NamespaceSignature::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<UserSignature::ErrorReason>,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let delegations_len = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let initial_authorisation = NamespaceSignature::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let user_key = if delegations_len.0 > 0 {
+            UserPublicKey::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        } else {
+            r.user_key().clone()
+        };
+
+        let mut subspace_cap = Self::from_existing(
+            r.private_interest().namespace_id().clone(),
+            user_key,
+            initial_authorisation,
+        )
+        .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        for i in 0..delegations_len.0 {
+            if i == delegations_len.0 - 1 {
+                let sig = UserSignature::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                let delegation = SubspaceDelegation::new(r.user_key().clone(), sig);
+
+                subspace_cap
+                    .append_existing_delegation(delegation)
+                    .map_err(|_| DecodeError::Other(Blame::TheirFault))?
+            } else {
+                let user_key = UserPublicKey::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                let sig = UserSignature::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                let delegation = SubspaceDelegation::new(user_key, sig);
+
+                subspace_cap
+                    .append_existing_delegation(delegation)
+                    .map_err(|_| DecodeError::Other(Blame::TheirFault))?
+            }
+        }
+
+        Ok(subspace_cap)
     }
 }

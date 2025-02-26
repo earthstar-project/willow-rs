@@ -510,3 +510,10 @@ path = "fuzz_targets/enc_ownedcapability_rel_personalprivateinterest.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_subspacecapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
+test = false
+doc = false
+bench = false
