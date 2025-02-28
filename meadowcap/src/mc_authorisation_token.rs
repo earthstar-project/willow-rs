@@ -4,6 +4,9 @@ use willow_data_model::{AuthorisationToken, Entry, PayloadDigest};
 
 use crate::{mc_capability::McCapability, AccessMode, McNamespacePublicKey, McPublicUserKey};
 
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
+
 /// To be used as the [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) parameter for the [Willow data model](https://willowprotocol.org/specs/data-model).
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#MeadowcapAuthorisationToken)
@@ -140,43 +143,21 @@ where
 use arbitrary::Arbitrary;
 
 #[cfg(feature = "dev")]
-impl<
-        'a,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    > Arbitrary<'a>
-    for McAuthorisationToken<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    >
-where
-    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for McAuthorisationToken<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let capability: McCapability<
             MCL,
             MCC,
             MPL,
-            NamespacePublicKey,
-            NamespaceSignature,
-            UserPublicKey,
-            UserSignature,
+            SillyPublicKey,
+            SillySig,
+            SillyPublicKey,
+            SillySig,
         > = Arbitrary::arbitrary(u)?;
 
-        let signature: UserSignature = Arbitrary::arbitrary(u)?;
+        let signature: SillySig = Arbitrary::arbitrary(u)?;
 
         Ok(Self {
             capability,

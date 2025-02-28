@@ -1,38 +1,21 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{FailedDelegationError, McCapability};
+use meadowcap::{FailedDelegationError, McCapability, SillyPublicKey, SillySecret, SillySig};
 use willow_data_model::grouping::Area;
-use willow_fuzz::silly_sigs::{SillyPublicKey, SillySecret, SillySig};
 
 fuzz_target!(|data: (
     SillySecret,
     SillyPublicKey,
     Area<16, 16, 16, SillyPublicKey>,
     McCapability<16, 16, 16, SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-    Vec<SillyPublicKey>
 )| {
-    let (secret, new_user, area, mc_cap, delegees) = data;
+    let (secret, new_user, area, mc_cap) = data;
 
-    let mut cap_with_delegees = mc_cap.clone();
-    let mut last_receiver = mc_cap.receiver().clone();
-    let granted_area = mc_cap.granted_area();
+    let area_is_included = mc_cap.granted_area().includes_area(&area);
+    let is_correct_secret = mc_cap.receiver() == &secret.corresponding_public_key();
 
-    for delegee in delegees {
-        cap_with_delegees = cap_with_delegees
-            .delegate(
-                &last_receiver.corresponding_secret_key(),
-                &delegee,
-                &granted_area,
-            )
-            .unwrap();
-        last_receiver = delegee;
-    }
-
-    let area_is_included = cap_with_delegees.granted_area().includes_area(&area);
-    let is_correct_secret = cap_with_delegees.receiver() == &secret.corresponding_public_key();
-
-    match cap_with_delegees.delegate(&secret, &new_user, &area) {
+    match mc_cap.delegate(&secret, &new_user, &area) {
         Ok(delegated_cap) => {
             assert!(area_is_included);
             assert!(is_correct_secret);
@@ -49,8 +32,8 @@ fuzz_target!(|data: (
                 assert_eq!(excluded_area, area);
             }
             FailedDelegationError::WrongSecretForUser(pub_key) => {
-                assert_eq!(&pub_key, cap_with_delegees.receiver());
-                assert!(secret.corresponding_public_key() != pub_key)
+                assert_eq!(&pub_key, mc_cap.receiver());
+                assert!(secret.corresponding_public_key() != pub_key);
             }
         },
     }
