@@ -208,7 +208,11 @@ where
             (RangeEnd::Open, RangeEnd::Open) => (true, false),
             (RangeEnd::Open, RangeEnd::Closed(_)) => (true, true),
             (RangeEnd::Closed(_), RangeEnd::Open) => (false, false),
-            (RangeEnd::Closed(_), RangeEnd::Closed(_)) => (false, true),
+            (RangeEnd::Closed(rel_end), RangeEnd::Closed(val_end)) => {
+                let end_from_start = val_end - r.rel().times().start <= rel_end - val_end;
+
+                (false, end_from_start)
+            }
         };
 
         let mut header = 0b0000_0000;
@@ -241,11 +245,25 @@ where
 
         let end_diff = match (r.rel.times().end, self.times().end) {
             (RangeEnd::Open, RangeEnd::Open) | (RangeEnd::Closed(_), RangeEnd::Open) => None,
-            (RangeEnd::Open, RangeEnd::Closed(end))
-            | (RangeEnd::Closed(_), RangeEnd::Closed(end)) => {
-                let diff = end - r.rel.times().start;
-                let end_from_start_tag = Tag::min_tag(diff, TagWidth::two());
-                header |= end_from_start_tag.data_at_offset(6);
+            (RangeEnd::Open, RangeEnd::Closed(val_end)) => {
+                let diff = val_end - r.rel.times().start;
+
+                let tag = Tag::min_tag(diff, TagWidth::two());
+                header |= tag.data_at_offset(6);
+                Some(diff)
+            }
+            (RangeEnd::Closed(rel_end), RangeEnd::Closed(val_end)) => {
+                let end_from_start = val_end - r.rel().times().start <= rel_end - val_end;
+                //   println!("end_from_start: {:?}", end_from_start);
+
+                let diff = if end_from_start {
+                    val_end - r.rel.times().start
+                } else {
+                    rel_end - val_end
+                };
+
+                let tag = Tag::min_tag(diff, TagWidth::two());
+                header |= tag.data_at_offset(6);
                 Some(diff)
             }
         };
@@ -346,17 +364,30 @@ where
                 .map_err(DecodeError::map_other_from)?;
 
             let end = if is_end_from_start {
+                //   println!("a");
+
                 end_diff
                     .0
                     .checked_add(r.rel.times().start)
                     .ok_or(DecodeError::Other(Blame::TheirFault))?
             } else {
                 match r.rel.times().end {
-                    RangeEnd::Closed(end) => end_diff
-                        .0
-                        .checked_add(end)
-                        .ok_or(DecodeError::Other(Blame::TheirFault))?,
-                    RangeEnd::Open => return Err(DecodeError::Other(Blame::TheirFault)),
+                    RangeEnd::Closed(end) => {
+                        //   println!("b");
+                        end.checked_sub(end_diff.0)
+                            .ok_or(DecodeError::Other(Blame::TheirFault))?
+
+                        /*
+                        end_diff
+                            .0
+                            .checked_add(end)
+                            .ok_or(DecodeError::Other(Blame::TheirFault))?
+                            */
+                    }
+                    RangeEnd::Open => {
+                        //      println!("c");
+                        return Err(DecodeError::Other(Blame::TheirFault));
+                    }
                 }
             };
 
