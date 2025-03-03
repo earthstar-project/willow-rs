@@ -508,13 +508,19 @@ where
     /// Forces persistence of all previous mutations
     fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
 
+    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given [`PayloadDigest`], if held.
+    fn payload(
+        &self,
+        payload_digest: &PD,
+    ) -> impl Future<Output = Option<impl Producer<Item = u8>>>;
+
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Future<Output = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Future<Output = Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
     fn query_area(
