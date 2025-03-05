@@ -239,7 +239,12 @@ impl Producer for GuaranteesToGive {
     type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        let () = self.state.guarantee_related_action_necessary.get().await.or(Err(Blame::TheirFault))?;
+        let () = self
+            .state
+            .guarantee_related_action_necessary
+            .get()
+            .await
+            .or(Err(Blame::TheirFault))?;
         Ok(Left(self.state.guarantees_to_give.get()))
     }
 }
@@ -257,7 +262,13 @@ impl Producer for DroppingsToAnnounce {
     type Error = Blame;
 
     async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
-        Ok(Left(self.state.droppings_to_announce.get().await.or(Err(Blame::TheirFault))?))
+        Ok(Left(
+            self.state
+                .droppings_to_announce
+                .get()
+                .await
+                .or(Err(Blame::TheirFault))?,
+        ))
     }
 }
 

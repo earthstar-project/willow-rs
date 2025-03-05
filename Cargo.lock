@@ -886,7 +886,12 @@ dependencies = [
 name = "willow-store-simple-sled"
 version = "0.1.0"
 dependencies = [
+ "either",
  "sled",
+ "ufotofu",
+ "ufotofu_codec",
+ "ufotofu_codec_endian",
+ "willow-data-model",
 ]
 
 [[package]]

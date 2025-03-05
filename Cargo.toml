@@ -13,7 +13,7 @@ members = [
     "ufotofu_codec_endian",
     "wgps",
     "wb_async_utils",
-    "store-simple-sled"
+    "store_simple_sled"
 ]
 resolver = "2"
 

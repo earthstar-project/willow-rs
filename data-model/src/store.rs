@@ -51,6 +51,8 @@ pub enum EntryIngestionError<
     WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
+    /// The entry's authorisation token is invalid.
+    NotAuthorised,
     /// Something specific to this store implementation went wrong.
     OperationsError(OE),
 }
@@ -73,6 +75,9 @@ impl<
             }
             EntryIngestionError::PruningPrevented => {
                 write!(f, "Entry ingestion would have triggered undesired pruning.")
+            }
+            EntryIngestionError::NotAuthorised => {
+                write!(f, "The entry had an invalid authorisation token")
             }
             EntryIngestionError::OperationsError(err) => Display::fmt(err, f),
         }
@@ -365,7 +370,7 @@ where
     type OperationsError: Display + Error;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
-    fn namespace_id() -> N;
+    fn namespace_id(&self) -> impl Future<Output = Result<N, Self::OperationsError>>;
 
     /// Attempts to ingest an [`AuthorisedEntry`] into the [`Store`].
     ///
