@@ -88,7 +88,7 @@ where
 
         for (key, value) in tree.scan_prefix(&prefix).flatten() {
             let (other_subspace, other_path, other_timestamp) =
-                decode_entry_key::<MCL, MCC, MPL, S>(key).await;
+                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
             if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
                 let (payload_length, payload_digest, authorisation_token, _operation_id) =
@@ -129,8 +129,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
-    PD: PayloadDigest + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+    PD: PayloadDigest + Encodable + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
     AT::ErrorReason: core::fmt::Debug,
@@ -177,7 +177,7 @@ where
         }
 
         let same_subspace_path_prefix =
-            encode_subspace_path_key(entry.subspace_id(), entry.path()).await;
+            encode_subspace_path_key(entry.subspace_id(), entry.path(), true).await;
 
         let entry_tree = self
             .entry_tree()
@@ -186,7 +186,7 @@ where
         // Check for existing entries with the same subspace + path
         for (key, value) in entry_tree.scan_prefix(&same_subspace_path_prefix).flatten() {
             let (other_subspace, other_path, other_timestamp) =
-                decode_entry_key::<MCL, MCC, MPL, S>(key).await;
+                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
             if other_subspace != *entry.subspace_id() || other_path != *entry.path() {
                 continue;
@@ -202,19 +202,6 @@ where
                     _operation_id,
                 ) = decode_entry_values(value).await;
 
-                if entry.timestamp() == other_timestamp
-                    && *entry.payload_digest() > other_payload_digest
-                {
-                    continue;
-                }
-
-                if entry.timestamp() == other_timestamp
-                    && *entry.payload_digest() == other_payload_digest
-                    && entry.payload_length() > other_payload_length
-                {
-                    continue;
-                }
-
                 let other_entry = Entry::new(
                     self.namespace_id.clone(),
                     other_subspace,
@@ -224,6 +211,10 @@ where
                     other_payload_digest,
                 );
 
+                if other_entry.is_newer_than(&entry) {
+                    continue;
+                }
+
                 return Ok(EntryIngestionSuccess::Obsolete {
                     obsolete: AuthorisedEntry::new_unchecked(entry, token),
                     newer: AuthorisedEntry::new_unchecked(other_entry, other_authorisation_token),
@@ -231,13 +222,74 @@ where
             }
         }
 
-        // If prevent_pruning == true, check if this would prune and abort if so.
+        let same_subspace_path_prefix_trailing_end =
+            encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
 
-        // Insert and prune all entries with paths prefixed by this one with lesser timestamps.
+        let mut keys_to_prune: Vec<IVec> = Vec::new();
 
-        // Transform the entry into a simple sled key value pair.
+        for (key, value) in entry_tree
+            .scan_prefix(&same_subspace_path_prefix_trailing_end)
+            .flatten()
+        {
+            let (other_subspace, other_path, other_timestamp) =
+                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
-        todo!()
+            let (
+                other_payload_length,
+                other_payload_digest,
+                _other_authorisation_token,
+                _operation_id,
+            ) = decode_entry_values::<PD, AT>(value).await;
+
+            let other_entry = Entry::new(
+                self.namespace_id.clone(),
+                other_subspace,
+                other_path,
+                other_timestamp,
+                other_payload_length,
+                other_payload_digest,
+            );
+
+            if other_entry.is_newer_than(&entry) {
+                continue;
+            }
+
+            // This should be pruned!
+
+            if prevent_pruning {
+                return Err(EntryIngestionError::PruningPrevented);
+            }
+
+            // Prune it!
+
+            keys_to_prune.push(key);
+        }
+
+        // I can't do this in the transaction scope because it's async.
+        let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
+        let value =
+            encode_entry_values(entry.payload_length(), entry.payload_digest(), &token, 0).await;
+
+        entry_tree
+            .transaction(
+                |tx| -> Result<
+                    (),
+                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                > {
+                    // Clone because of moving values captured from outside.
+                    for key in keys_to_prune.clone() {
+                        tx.remove(key)?;
+                    }
+
+                    // Clone because of moving values captured from outside.
+                    tx.insert(key.clone(), value.clone())?;
+
+                    Ok(())
+                },
+            )
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+        Ok(EntryIngestionSuccess::Success)
     }
 
     async fn bulk_ingest_entry(
@@ -398,6 +450,7 @@ async fn encode_subspace_path_key<
 >(
     subspace: &S,
     path: &Path<MCL, MCC, MPL>,
+    with_path_end: bool,
 ) -> Vec<u8> {
     let mut consumer: IntoVec<u8> = IntoVec::new();
 
@@ -417,7 +470,7 @@ async fn encode_subspace_path_key<
             }
         }
 
-        if i < component_count - 1 {
+        if i < component_count - 1 || !with_path_end {
             // Unwrap because IntoVec should not fail.
             consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
         } else {
@@ -480,7 +533,7 @@ async fn decode_entry_key<
     const MPL: usize,
     S: SubspaceId + Decodable,
 >(
-    encoded: IVec,
+    encoded: &IVec,
 ) -> (S, Path<MCL, MCC, MPL>, u64)
 where
     S::ErrorReason: core::fmt::Debug,
@@ -550,8 +603,8 @@ where
 
 async fn encode_entry_values<PD, AT>(
     payload_length: u64,
-    payload_digest: PD,
-    auth_token: AT,
+    payload_digest: &PD,
+    auth_token: &AT,
     operation_id: u64,
 ) -> Vec<u8>
 where
