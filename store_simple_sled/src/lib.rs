@@ -16,7 +16,11 @@ use willow_data_model::{
     StoreEvent, SubspaceId,
 };
 
-pub struct StoreSimpleSled {
+pub struct StoreSimpleSled<N>
+where
+    N: NamespaceId + EncodableKnownSize + Decodable,
+{
+    namespace_id: N,
     db: Db,
 }
 
@@ -25,16 +29,23 @@ const OPS_TREE_KEY: [u8; 1] = [0b0000_0001];
 const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0010];
 const MISC_TREE_KEY: [u8; 1] = [0b0000_0011];
 
-impl StoreSimpleSled {
-    pub fn new<N>(namespace: N) -> Self
+impl<N> StoreSimpleSled<N>
+where
+    N: NamespaceId + EncodableKnownSize + Decodable,
+{
+    pub fn new(namespace: &N, db: Db) -> Self
     where
         N: NamespaceId + EncodableKnownSize + EncodableSync,
     {
+        // Write the namespace to the misc tree
+        // Fail if there's already something there.
         todo!()
     }
 
-    pub fn from_db(db: Db) -> Self {
-        Self { db }
+    pub fn from_existing(db: Db) -> Self {
+        // Check namespace from misc tree
+        // Fail if there's nothing there
+        todo!()
     }
 
     fn entry_tree(&self) -> SledResult<Tree> {
@@ -54,22 +65,13 @@ impl StoreSimpleSled {
     }
 
     /// Return whether this store contains entries with paths that are prefixes of the given path and newer than the given timestamp
-    async fn is_prefixed_by_newer<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N,
-        S,
-        PD,
-        AT,
-    >(
+    async fn is_prefixed_by_newer<const MCL: usize, const MCC: usize, const MPL: usize, S, PD, AT>(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         timestamp: u64,
     ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, SimpleStoreSledError>
     where
-        N: NamespaceId + EncodableKnownSize + Decodable,
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
         PD: PayloadDigest + Decodable,
         AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
@@ -93,7 +95,7 @@ impl StoreSimpleSled {
                     decode_entry_values(value).await;
 
                 let entry = Entry::new(
-                    Store::<MCL, MCC, MPL, N, S, PD, AT>::namespace_id(self).await?,
+                    self.namespace_id.clone(),
                     other_subspace,
                     other_path,
                     timestamp,
@@ -123,9 +125,9 @@ impl core::fmt::Display for SimpleStoreSledError {
 impl core::error::Error for SimpleStoreSledError {}
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled
+    Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<N>
 where
-    N: NamespaceId + Encodable + EncodableKnownSize + Decodable,
+    N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Decodable,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
@@ -139,20 +141,8 @@ where
 
     type OperationsError = SimpleStoreSledError;
 
-    async fn namespace_id(&self) -> Result<N, Self::OperationsError> {
-        let tree = self.misc_tree()?;
-
-        let namespace_bytes = tree
-            .get(b"namespace_id")?
-            .expect("There should be a namespace saved here...");
-
-        let mut producer = FromSlice::new(&namespace_bytes);
-
-        let namespace = N::decode(&mut producer)
-            .await
-            .map_err(|_| SimpleStoreSledError {})?;
-
-        Ok(namespace)
+    fn namespace_id(&self) -> &N {
+        &self.namespace_id
     }
 
     async fn ingest_entry(

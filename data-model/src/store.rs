@@ -370,7 +370,7 @@ where
     type OperationsError: Display + Error;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
-    fn namespace_id(&self) -> impl Future<Output = Result<N, Self::OperationsError>>;
+    fn namespace_id(&self) -> &N;
 
     /// Attempts to ingest an [`AuthorisedEntry`] into the [`Store`].
     ///
