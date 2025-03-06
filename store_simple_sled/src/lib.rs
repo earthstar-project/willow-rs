@@ -11,9 +11,9 @@ use ufotofu_codec::{
 };
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadDigest, Store,
-    StoreEvent, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, BulkIngestionError, BulkIngestionResult, Component, Entry,
+    EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path,
+    PayloadDigest, Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -130,7 +130,7 @@ where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
     AT::ErrorReason: core::fmt::Debug,
@@ -252,22 +252,11 @@ where
 
     async fn bulk_ingest_entry(
         &self,
-        authorised_entries: &[willow_data_model::AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
+        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
         prevent_pruning: bool,
     ) -> Result<
-        Vec<
-            willow_data_model::BulkIngestionResult<
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                PD,
-                AT,
-                Self::OperationsError,
-            >,
-        >,
-        willow_data_model::BulkIngestionError<
+        Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
+        BulkIngestionError<
             MCL,
             MCC,
             MPL,
@@ -279,7 +268,19 @@ where
             Self::OperationsError,
         >,
     > {
-        todo!()
+        let mut result_vec: Vec<
+            BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+        > = Vec::new();
+
+        for authed_entry in authorised_entries {
+            let result = self
+                .ingest_entry(authed_entry.clone(), prevent_pruning)
+                .await;
+
+            result_vec.push((authed_entry.clone(), result))
+        }
+
+        Ok(result_vec)
     }
 
     async fn append_payload<Producer>(
