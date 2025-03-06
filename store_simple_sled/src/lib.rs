@@ -147,7 +147,7 @@ where
 
     async fn ingest_entry(
         &self,
-        authorised_entry: willow_data_model::AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
     ) -> Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
@@ -176,51 +176,9 @@ where
             }
         }
 
-        let same_subspace_path_prefix =
-            encode_subspace_path_key(entry.subspace_id(), entry.path(), true).await;
-
         let entry_tree = self
             .entry_tree()
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
-
-        // Check for existing entries with the same subspace + path
-        for (key, value) in entry_tree.scan_prefix(&same_subspace_path_prefix).flatten() {
-            let (other_subspace, other_path, other_timestamp) =
-                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
-
-            if other_subspace != *entry.subspace_id() || other_path != *entry.path() {
-                continue;
-            } else if entry.timestamp() <= other_timestamp {
-                //      If their timestamp is greater, no-op
-                //      If their timestamp is same but digest is greater, no-op
-                //      If their timestamp and digest is same but payload length is greater, no-op.
-
-                let (
-                    other_payload_length,
-                    other_payload_digest,
-                    other_authorisation_token,
-                    _operation_id,
-                ) = decode_entry_values(value).await;
-
-                let other_entry = Entry::new(
-                    self.namespace_id.clone(),
-                    other_subspace,
-                    other_path,
-                    other_timestamp,
-                    other_payload_length,
-                    other_payload_digest,
-                );
-
-                if other_entry.is_newer_than(&entry) {
-                    continue;
-                }
-
-                return Ok(EntryIngestionSuccess::Obsolete {
-                    obsolete: AuthorisedEntry::new_unchecked(entry, token),
-                    newer: AuthorisedEntry::new_unchecked(other_entry, other_authorisation_token),
-                });
-            }
-        }
 
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
