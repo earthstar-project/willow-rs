@@ -223,29 +223,19 @@ where
             keys_to_prune.push(key);
         }
 
-        // I can't do this in the transaction scope because it's async.
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
         let value =
             encode_entry_values(entry.payload_length(), entry.payload_digest(), &token, 0).await;
 
-        // TODO: don't use .transaction, use .batch!
+        let mut batch = sled::Batch::default();
+
+        for key in keys_to_prune {
+            batch.remove(key);
+        }
+        batch.insert(key, value);
+
         entry_tree
-            .transaction(
-                |tx| -> Result<
-                    (),
-                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
-                > {
-                    // Clone because of moving values captured from outside.
-                    for key in keys_to_prune.clone() {
-                        tx.remove(key)?;
-                    }
-
-                    // Clone because of moving values captured from outside.
-                    tx.insert(key.clone(), value.clone())?;
-
-                    Ok(())
-                },
-            )
+            .apply_batch(batch)
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         Ok(EntryIngestionSuccess::Success)
