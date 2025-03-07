@@ -13,7 +13,7 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, BulkIngestionResult, Component, Entry,
     EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadDigest, Store, StoreEvent, SubspaceId,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -73,7 +73,7 @@ where
     ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, SimpleStoreSledError>
     where
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
-        PD: PayloadDigest + Decodable,
+        PD: PayloadDigest + Decodable + EncodableSync + EncodableKnownSize,
         AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
         S::ErrorReason: core::fmt::Debug,
         PD::ErrorReason: core::fmt::Debug,
@@ -129,7 +129,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
-    PD: PayloadDigest + Encodable + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
@@ -228,6 +228,7 @@ where
         let value =
             encode_entry_values(entry.payload_length(), entry.payload_digest(), &token, 0).await;
 
+        // TODO: don't use .transaction, use .batch!
         entry_tree
             .transaction(
                 |tx| -> Result<
@@ -289,13 +290,89 @@ where
         expected_size: u64,
         payload_source: &mut Producer,
     ) -> Result<
-        willow_data_model::PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
-        willow_data_model::PayloadAppendError<Self::OperationsError>,
+        PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
+        PayloadAppendError<Self::OperationsError>,
     >
     where
         Producer: BulkProducer<Item = u8>,
     {
-        todo!()
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+
+        let key = expected_digest.sync_encode_into_boxed_slice();
+
+        // 1. Check if we already have this payload.
+        let existing_value = payload_tree
+            .get(&key)
+            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+
+        let prefix = if let Some(payload) = existing_value {
+            if payload.len() as u64 == expected_size {
+                return Err(PayloadAppendError::AlreadyHaveIt);
+            }
+
+            payload
+        } else {
+            IVec::from(&[])
+        };
+
+        // 2. Check if *any* entry refers to this payload digest - uh-oh.
+        let entry_tree = self
+            .entry_tree()
+            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+
+        let mut found_reference = false;
+
+        for (_key, value) in entry_tree.iter().flatten() {
+            let (_payload_length, payload_digest, _authorisation_token, _operation_id) =
+                decode_entry_values::<PD, AT>(value).await;
+
+            if payload_digest == *expected_digest {
+                found_reference = true;
+                break;
+            }
+        }
+
+        if !found_reference {
+            return Err(PayloadAppendError::NotEntryReference);
+        }
+
+        // Digest
+
+        let mut payload: Vec<u8> = Vec::from(prefix.as_ref());
+
+        let mut received_payload_len = payload.len();
+
+        loop {
+            // 3. Too many bytes ingested? Error.
+            if received_payload_len as u64 > expected_size {
+                return Err(PayloadAppendError::TooManyBytes);
+            }
+
+            let res = payload_source
+                .produce()
+                .await
+                .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+
+            match res {
+                Either::Left(byte) => {
+                    payload.push(byte);
+                    received_payload_len += 1;
+                }
+                Either::Right(_) => break,
+            }
+        }
+
+        if received_payload_len as u64 == expected_size {
+            // TODO: Check for digest mismatch!
+
+            // TODO: Actually add entries referencing this digest.
+            Ok(PayloadAppendSuccess::Completed(Vec::new()))
+        } else {
+            // TODO: Actually add entries referencing this digest.
+            Ok(PayloadAppendSuccess::Appended(Vec::new()))
+        }
     }
 
     async fn forget_entry(
