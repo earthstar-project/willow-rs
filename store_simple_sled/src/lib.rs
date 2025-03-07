@@ -429,7 +429,38 @@ where
         subspace_id: &S,
         traceless: bool,
     ) -> Result<(), Self::OperationsError> {
-        todo!()
+        let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
+
+        let entry_tree = self.entry_tree()?;
+
+        for (key, value) in entry_tree.scan_prefix(exact_key).flatten() {
+            // TODO: Ensure no dangling reference to corresponding payload.
+
+            if traceless {
+                let ops_tree = self.ops_tree()?;
+                let (_length, _digest, _auth_token, op_id) =
+                    decode_entry_values::<PD, AT>(value).await;
+
+                (&entry_tree, &ops_tree)
+                    .transaction(
+                        |(tx_entry, tx_ops): &(TransactionalTree, TransactionalTree)| -> Result<
+                            (),
+                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                        > {
+                            let op_key = U64BE(op_id).sync_encode_into_vec();
+                            tx_entry.remove(key.clone())?;
+                            tx_ops.remove(op_key)?;
+
+                            Ok(())
+                        },
+                    )
+                    .map_err(|_| SimpleStoreSledError {})?;
+            } else {
+                entry_tree.remove(key)?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn forget_area(
