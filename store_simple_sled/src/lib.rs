@@ -137,6 +137,12 @@ where
 
         Ok(())
     }
+
+    fn flush(&self) -> Result<(), SimpleStoreSledError> {
+        self.db.flush()?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -506,8 +512,8 @@ where
         todo!()
     }
 
-    async fn flush() -> Result<(), Self::FlushError> {
-        todo!()
+    async fn flush(&self) -> Result<(), Self::FlushError> {
+        self.flush()
     }
 
     // FromSlice is placeholder so we can COMPILE

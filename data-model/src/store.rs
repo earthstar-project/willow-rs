@@ -511,7 +511,7 @@ where
     ) -> impl Future<Output = Vec<PD>>;
 
     /// Forces persistence of all previous mutations
-    fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
+    fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given [`PayloadDigest`], if held.
     fn payload(
