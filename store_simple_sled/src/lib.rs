@@ -1,7 +1,10 @@
 use either::Either;
 use std::{convert::Infallible, marker::PhantomData};
 
-use sled::{Db, Error as SledError, IVec, Result as SledResult, Tree};
+use sled::{
+    transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
+    Transactional, Tree,
+};
 use ufotofu::{
     consumer::IntoVec, producer::FromSlice, BufferedConsumer, BufferedProducer, BulkConsumer,
     BulkProducer, Consumer, Producer,
@@ -111,6 +114,29 @@ where
 
         Ok(None)
     }
+
+    fn next_op_id(&self) -> Result<u64, SimpleStoreSledError> {
+        let tree = self.ops_tree()?;
+
+        let last = tree.last()?;
+
+        match last {
+            Some((key, _)) => Ok(U64BE::sync_decode_from_slice(key.as_ref())
+                .map_err(|_| SimpleStoreSledError {})?
+                .0),
+            None => Ok(0),
+        }
+    }
+
+    fn remove_ops(&self, op_id: u64) -> Result<(), SimpleStoreSledError> {
+        let tree = self.ops_tree()?;
+
+        let op_key = U64BE(op_id).sync_encode_into_vec();
+
+        tree.remove(op_key)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -183,7 +209,7 @@ where
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
 
-        let mut keys_to_prune: Vec<IVec> = Vec::new();
+        let mut keys_and_ops_to_prune: Vec<(IVec, u64)> = Vec::new();
 
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
@@ -196,7 +222,7 @@ where
                 other_payload_length,
                 other_payload_digest,
                 _other_authorisation_token,
-                _operation_id,
+                operation_id,
             ) = decode_entry_values::<PD, AT>(value).await;
 
             let other_entry = Entry::new(
@@ -220,22 +246,54 @@ where
 
             // Prune it!
 
-            keys_to_prune.push(key);
+            keys_and_ops_to_prune.push((key, operation_id));
         }
+
+        let ops_tree = self
+            .ops_tree()
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
-        let value =
-            encode_entry_values(entry.payload_length(), entry.payload_digest(), &token, 0).await;
 
-        let mut batch = sled::Batch::default();
+        let op_id = self
+            .next_op_id()
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
-        for key in keys_to_prune {
-            batch.remove(key);
+        let value = encode_entry_values(
+            entry.payload_length(),
+            entry.payload_digest(),
+            &token,
+            op_id,
+        )
+        .await;
+
+        let mut entry_batch = sled::Batch::default();
+        let mut op_batch = sled::Batch::default();
+
+        for (key, op_id) in keys_and_ops_to_prune {
+            entry_batch.remove(key);
+
+            let op_key = U64BE(op_id).sync_encode_into_vec();
+            op_batch.remove(op_key);
         }
-        batch.insert(key, value);
+        entry_batch.insert(key.clone(), value);
 
-        entry_tree
-            .apply_batch(batch)
+        let op_key = U64BE(op_id).sync_encode_into_vec();
+
+        op_batch.insert(op_key, key);
+
+        (&entry_tree, &ops_tree)
+            .transaction(
+                |(tx_entry, tx_ops): &(TransactionalTree, TransactionalTree)| -> Result<
+                    (),
+                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                > {
+                    tx_entry.apply_batch(&entry_batch)?;
+                    tx_ops.apply_batch(&op_batch)?;
+                    // what
+                    Ok(())
+                },
+            )
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         Ok(EntryIngestionSuccess::Success)
@@ -328,7 +386,7 @@ where
             return Err(PayloadAppendError::NotEntryReference);
         }
 
-        // Digest
+        // Ingest
 
         let mut payload: Vec<u8> = Vec::from(prefix.as_ref());
 
