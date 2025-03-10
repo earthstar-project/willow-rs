@@ -1,5 +1,5 @@
 use either::Either;
-use std::{convert::Infallible, marker::PhantomData};
+use std::{collections::HashMap, convert::Infallible, hash::Hash, marker::PhantomData};
 
 use sled::{
     transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
@@ -30,7 +30,8 @@ where
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
 const OPS_TREE_KEY: [u8; 1] = [0b0000_0001];
 const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0010];
-const MISC_TREE_KEY: [u8; 1] = [0b0000_0011];
+const PAYLOAD_RC_KEY: [u8; 1] = [0b0000_0011];
+const MISC_TREE_KEY: [u8; 1] = [0b0000_0100];
 
 impl<N> StoreSimpleSled<N>
 where
@@ -61,6 +62,10 @@ where
 
     fn payload_tree(&self) -> SledResult<Tree> {
         self.db.open_tree(PAYLOAD_TREE_KEY)
+    }
+
+    fn payload_rc_tree(&self) -> SledResult<Tree> {
+        self.db.open_tree(PAYLOAD_RC_KEY)
     }
 
     fn misc_tree(&self) -> SledResult<Tree> {
@@ -138,6 +143,34 @@ where
         Ok(())
     }
 
+    fn get_payload_ref_count<PD>(
+        &self,
+        digest: &PD,
+        rc_tree: &Tree,
+    ) -> Result<Option<u64>, SimpleStoreSledError>
+    where
+        PD: PayloadDigest + EncodableKnownSize + EncodableSync,
+    {
+        let digest_key = digest.sync_encode_into_vec();
+
+        let result = rc_tree.get(&digest_key)?;
+
+        let count = match result {
+            Some(count) => {
+                U64BE::sync_decode_from_slice(&count)
+                    .map_err(|_| SimpleStoreSledError {})?
+                    .0
+            }
+            None => 0,
+        };
+
+        if count > 0 {
+            Ok(Some(count))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn flush(&self) -> Result<(), SimpleStoreSledError> {
         self.db.flush()?;
 
@@ -161,7 +194,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
-    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable + Hash,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
@@ -217,6 +250,8 @@ where
 
         let mut keys_and_ops_to_prune: Vec<(IVec, u64)> = Vec::new();
 
+        let mut digest_decrements: HashMap<PD, u64> = HashMap::new();
+
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
             .flatten()
@@ -252,13 +287,26 @@ where
 
             // Prune it!
 
-            // TODO: Also prune their payloads!
-
             keys_and_ops_to_prune.push((key, operation_id));
+
+            match digest_decrements.get(other_entry.payload_digest()) {
+                Some(prev) => {
+                    digest_decrements.insert(other_entry.payload_digest().to_owned(), prev + 1)
+                }
+                None => digest_decrements.insert(other_entry.payload_digest().to_owned(), 1),
+            };
         }
 
         let ops_tree = self
             .ops_tree()
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+        let payload_rc_tree = self
+            .payload_rc_tree()
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
@@ -277,6 +325,8 @@ where
 
         let mut entry_batch = sled::Batch::default();
         let mut op_batch = sled::Batch::default();
+        let mut payload_batch = sled::Batch::default();
+        let mut payload_rc_batch = sled::Batch::default();
 
         for (key, op_id) in keys_and_ops_to_prune {
             entry_batch.remove(key);
@@ -290,15 +340,56 @@ where
 
         op_batch.insert(op_key, key);
 
-        (&entry_tree, &ops_tree)
+        let previous_payload_rc = self
+            .get_payload_ref_count(entry.payload_digest(), &payload_rc_tree)
+            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+        let incremented_payload_rc = match previous_payload_rc {
+            Some(prev) => prev + 1,
+            None => 1,
+        };
+
+        payload_rc_batch.insert(
+            entry.payload_digest().sync_encode_into_vec(),
+            U64BE(incremented_payload_rc).sync_encode_into_vec(),
+        );
+
+        for (key, value) in digest_decrements.clone() {
+            let payload_rc = self
+                .get_payload_ref_count(&key, &payload_rc_tree)
+                .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+            let next_count = match payload_rc {
+                Some(prev) => prev.checked_sub(value).expect("Uh-oh"),
+                None => panic!("Uh-oh"),
+            };
+
+            let digest_key = IVec::from(key.sync_encode_into_vec());
+            if next_count == 0 {
+                payload_batch.remove(digest_key.clone());
+                payload_rc_batch.remove(digest_key.clone());
+            } else {
+                payload_rc_batch.insert(digest_key, U64BE(next_count).sync_encode_into_vec());
+            };
+        }
+
+        (&entry_tree, &ops_tree, &payload_tree, &payload_rc_tree)
             .transaction(
-                |(tx_entry, tx_ops): &(TransactionalTree, TransactionalTree)| -> Result<
+                |(tx_entry, tx_ops, tx_payloads, tx_payload_rcs): &(
+                    TransactionalTree,
+                    TransactionalTree,
+                    TransactionalTree,
+                    TransactionalTree,
+                )|
+                 -> Result<
                     (),
                     sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                 > {
                     tx_entry.apply_batch(&entry_batch)?;
                     tx_ops.apply_batch(&op_batch)?;
-                    // what
+                    tx_payloads.apply_batch(&payload_batch)?;
+                    tx_payload_rcs.apply_batch(&payload_rc_batch)?;
+
                     Ok(())
                 },
             )
@@ -417,18 +508,35 @@ where
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
         let entry_tree = self.entry_tree()?;
+        let payload_tree = self.payload_tree()?;
+        let payload_rc_tree = self.payload_rc_tree()?;
 
         for (key, value) in entry_tree.scan_prefix(exact_key).flatten() {
-            // TODO: Ensure no dangling reference to corresponding payload.
+            let (_length, digest, _auth_token, op_id) = decode_entry_values::<PD, AT>(value).await;
+
+            let current_payload_rc = self.get_payload_ref_count(&digest, &payload_rc_tree)?;
+
+            let next_payload_rc = match current_payload_rc {
+                Some(0) | None => {
+                    panic!(
+                        "Store is in an invalid state where payload ref count did not make sense"
+                    )
+                }
+                Some(rc) => rc - 1,
+            };
 
             if traceless {
                 let ops_tree = self.ops_tree()?;
-                let (_length, _digest, _auth_token, op_id) =
-                    decode_entry_values::<PD, AT>(value).await;
 
-                (&entry_tree, &ops_tree)
+                (&entry_tree, &ops_tree, &payload_tree, &payload_rc_tree)
                     .transaction(
-                        |(tx_entry, tx_ops): &(TransactionalTree, TransactionalTree)| -> Result<
+                        |(tx_entry, tx_ops, tx_payloads, tx_payload_rcs): &(
+                            TransactionalTree,
+                            TransactionalTree,
+                            TransactionalTree,
+                            TransactionalTree,
+                        )|
+                         -> Result<
                             (),
                             sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                         > {
@@ -436,11 +544,53 @@ where
                             tx_entry.remove(key.clone())?;
                             tx_ops.remove(op_key)?;
 
+                            let digest_key = IVec::from(digest.sync_encode_into_vec());
+
+                            if next_payload_rc == 0 {
+                                tx_payload_rcs.remove(digest_key.clone())?;
+                                tx_payloads.remove(digest_key)?;
+                            } else {
+                                tx_payload_rcs.insert(
+                                    digest_key,
+                                    U64BE(next_payload_rc).sync_encode_into_vec(),
+                                )?;
+                            }
+
                             Ok(())
                         },
                     )
                     .map_err(|_| SimpleStoreSledError {})?;
             } else {
+                (&entry_tree, &payload_tree, &payload_rc_tree)
+                    .transaction(
+                        |(tx_entry, tx_payloads, tx_payload_rcs): &(
+                            TransactionalTree,
+                            TransactionalTree,
+                            TransactionalTree,
+                        )|
+                         -> Result<
+                            (),
+                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                        > {
+                            tx_entry.remove(key.clone())?;
+
+                            let digest_key = IVec::from(digest.sync_encode_into_vec());
+
+                            if next_payload_rc == 0 {
+                                tx_payload_rcs.remove(digest_key.clone())?;
+                                tx_payloads.remove(digest_key)?;
+                            } else {
+                                tx_payload_rcs.insert(
+                                    digest_key,
+                                    U64BE(next_payload_rc).sync_encode_into_vec(),
+                                )?;
+                            }
+
+                            Ok(())
+                        },
+                    )
+                    .map_err(|_| SimpleStoreSledError {})?;
+
                 entry_tree.remove(key)?;
             }
         }
