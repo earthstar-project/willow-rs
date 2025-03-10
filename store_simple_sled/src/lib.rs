@@ -252,6 +252,8 @@ where
 
             // Prune it!
 
+            // TODO: Also prune their payloads!
+
             keys_and_ops_to_prune.push((key, operation_id));
         }
 
@@ -343,10 +345,7 @@ where
         expected_digest: &PD,
         expected_size: u64,
         payload_source: &mut Producer,
-    ) -> Result<
-        PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
-        PayloadAppendError<Self::OperationsError>,
-    >
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>
     where
         Producer: BulkProducer<Item = u8>,
     {
@@ -370,27 +369,6 @@ where
         } else {
             IVec::from(&[])
         };
-
-        // 2. Check if *any* entry refers to this payload digest - uh-oh.
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
-
-        let mut found_reference = false;
-
-        for (_key, value) in entry_tree.iter().flatten() {
-            let (_payload_length, payload_digest, _authorisation_token, _operation_id) =
-                decode_entry_values::<PD, AT>(value).await;
-
-            if payload_digest == *expected_digest {
-                found_reference = true;
-                break;
-            }
-        }
-
-        if !found_reference {
-            return Err(PayloadAppendError::NotEntryReference);
-        }
 
         // Ingest
 
@@ -422,10 +400,10 @@ where
             // TODO: Check for digest mismatch!
 
             // TODO: Actually add entries referencing this digest.
-            Ok(PayloadAppendSuccess::Completed(Vec::new()))
+            Ok(PayloadAppendSuccess::Completed)
         } else {
             // TODO: Actually add entries referencing this digest.
-            Ok(PayloadAppendSuccess::Appended(Vec::new()))
+            Ok(PayloadAppendSuccess::Appended)
         }
     }
 

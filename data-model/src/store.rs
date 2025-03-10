@@ -169,23 +169,16 @@ impl<
 
 /// Returned when a payload is successfully appended to the [`Store`].
 #[derive(Debug, Clone)]
-pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-{
+pub enum PayloadAppendSuccess {
     /// The payload was appended to but not completed.
-    Appended(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Appended,
     /// The payload was completed by the appendment.
-    Completed(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Completed,
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
 #[derive(Debug, Clone)]
 pub enum PayloadAppendError<OE> {
-    /// None of the entries in the store reference this payload.
-    NotEntryReference,
     /// The payload is already held in storage.
     AlreadyHaveIt,
     /// The payload source produced more bytes than were expected for this payload.
@@ -199,10 +192,6 @@ pub enum PayloadAppendError<OE> {
 impl<OE: Display + Error> Display for PayloadAppendError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PayloadAppendError::NotEntryReference => write!(
-                f,
-                "None of the entries in the soter reference this payload."
-            ),
             PayloadAppendError::AlreadyHaveIt => {
                 write!(f, "The payload is already held in storage.")
             }
@@ -425,12 +414,7 @@ where
         expected_digest: &PD,
         expected_size: u64,
         payload_source: &mut Producer,
-    ) -> impl Future<
-        Output = Result<
-            PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
-            PayloadAppendError<Self::OperationsError>,
-        >,
-    >
+    ) -> impl Future<Output = Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>>
     where
         Producer: BulkProducer<Item = u8>;
 
