@@ -376,6 +376,8 @@ where
 
         let mut received_payload_len = payload.len();
 
+        let mut hasher = PD::hasher();
+
         loop {
             // 3. Too many bytes ingested? Error.
             if received_payload_len as u64 > expected_size {
@@ -390,6 +392,7 @@ where
             match res {
                 Either::Left(byte) => {
                     payload.push(byte);
+                    PD::write(&mut hasher, &[byte]);
                     received_payload_len += 1;
                 }
                 Either::Right(_) => break,
@@ -397,12 +400,14 @@ where
         }
 
         if received_payload_len as u64 == expected_size {
-            // TODO: Check for digest mismatch!
+            let digest = PD::finish(&hasher);
 
-            // TODO: Actually add entries referencing this digest.
+            if digest != *expected_digest {
+                return Err(PayloadAppendError::DigestMismatch);
+            }
+
             Ok(PayloadAppendSuccess::Completed)
         } else {
-            // TODO: Actually add entries referencing this digest.
             Ok(PayloadAppendSuccess::Appended)
         }
     }

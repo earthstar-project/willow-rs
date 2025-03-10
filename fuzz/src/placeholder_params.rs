@@ -1,8 +1,11 @@
+use std::hash::{DefaultHasher, Hasher};
+
 use arbitrary::Arbitrary;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
 };
+use ufotofu_codec_endian::U64BE;
 use willow_data_model::{NamespaceId, PayloadDigest, SubspaceId};
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
@@ -207,4 +210,22 @@ impl EncodableKnownSize for FakePayloadDigest {
 
 impl EncodableSync for FakePayloadDigest {}
 
-impl PayloadDigest for FakePayloadDigest {}
+impl PayloadDigest for FakePayloadDigest {
+    type Hasher = DefaultHasher;
+
+    fn finish(hasher: &Self::Hasher) -> Self {
+        let hashy_numbers = hasher.finish();
+        let bytes = U64BE(hashy_numbers).sync_encode_into_vec();
+        let mut arr = [0x0; 32];
+        arr[..8].clone_from_slice(&bytes);
+        Self(arr)
+    }
+
+    fn write(hasher: &mut Self::Hasher, bytes: &[u8]) {
+        hasher.write(bytes)
+    }
+
+    fn hasher() -> Self::Hasher {
+        DefaultHasher::new()
+    }
+}

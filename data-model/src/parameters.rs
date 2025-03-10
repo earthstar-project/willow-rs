@@ -21,7 +21,13 @@ pub trait SubspaceId: Ord + Default + Clone + Debug {
 
 /// A totally ordered type for [content-addressing](https://en.wikipedia.org/wiki/Content_addressing) the data that Willow stores.
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest).
-pub trait PayloadDigest: Ord + Default + Clone + Debug {}
+pub trait PayloadDigest: Ord + Default + Clone + Debug {
+    type Hasher;
+
+    fn hasher() -> Self::Hasher;
+    fn finish(hasher: &Self::Hasher) -> Self;
+    fn write(hasher: &mut Self::Hasher, bytes: &[u8]);
+}
 
 /// Determines whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
 ///
