@@ -307,37 +307,33 @@ where
         Ok(EntryIngestionSuccess::Success)
     }
 
-    async fn bulk_ingest_entry(
+    async fn bulk_ingest_entry<P>(
         &self,
-        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
+        entry_producer: &mut P,
         prevent_pruning: bool,
-    ) -> Result<
-        Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
-        BulkIngestionError<
-            MCL,
-            MCC,
-            MPL,
-            N,
-            S,
-            PD,
-            AT,
-            Self::BulkIngestionError,
-            Self::OperationsError,
-        >,
-    > {
-        let mut result_vec: Vec<
-            BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
-        > = Vec::new();
+    ) -> Result<(), BulkIngestionError<P::Error, Self::OperationsError>>
+    where
+        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+    {
+        loop {
+            let next = entry_producer
+                .produce()
+                .await
+                .map_err(BulkIngestionError::Producer)?;
 
-        for authed_entry in authorised_entries {
-            let result = self
-                .ingest_entry(authed_entry.clone(), prevent_pruning)
-                .await;
+            match next {
+                Either::Left(authed_entry) => {
+                    let result = self.ingest_entry(authed_entry, prevent_pruning).await;
 
-            result_vec.push((authed_entry.clone(), result))
+                    if let Err(EntryIngestionError::OperationsError(err)) = result {
+                        return Err(BulkIngestionError::OperationsError(err));
+                    }
+                }
+                Either::Right(_) => break,
+            }
         }
 
-        Ok(result_vec)
+        Ok(())
     }
 
     async fn append_payload<Producer>(
