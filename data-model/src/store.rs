@@ -10,7 +10,7 @@ use crate::{
     entry::AuthorisedEntry,
     grouping::{Area, AreaOfInterest},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyAuthorisedEntry, LengthyEntry, Path,
+    LengthyAuthorisedEntry, Path,
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
@@ -117,75 +117,38 @@ pub type BulkIngestionResult<
 
 /// Returned when a bulk ingestion failed due to a consumer error.
 #[derive(Debug, Clone)]
-pub struct BulkIngestionError<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    OE: Error,
-    IngestionError,
-> {
-    pub ingested: Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, OE>>,
-    pub error: IngestionError,
+pub enum BulkIngestionError<PE, OE> {
+    Producer(PE),
+    OperationsError(OE),
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
-        PD: PayloadDigest,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-        OE: Display + Error,
-        IngestionError: Error,
-    > std::fmt::Display for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
-{
+impl<PE, OE> std::fmt::Display for BulkIngestionError<PE, OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "An error stopped bulk ingestion after successfully ingesting {:?} entries",
-            self.ingested.len()
-        )
+        match self {
+            BulkIngestionError::Producer(_) => {
+                write!(f, "A producer error stopped bulk ingestion")
+            }
+            BulkIngestionError::OperationsError(_) => {
+                write!(f, "An operations error stopped bulk ingestion")
+            }
+        }
     }
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId + Debug,
-        S: SubspaceId + Debug,
-        PD: PayloadDigest + Debug,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Debug,
-        OE: Display + Error,
-        IngestionError: Error,
-    > Error for BulkIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE, IngestionError>
-{
-}
+impl<PE: Display + Error, OE: Display + Error> Error for BulkIngestionError<PE, OE> {}
 
 /// Returned when a payload is successfully appended to the [`Store`].
 #[derive(Debug, Clone)]
-pub enum PayloadAppendSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-{
+pub enum PayloadAppendSuccess {
     /// The payload was appended to but not completed.
-    Appended(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Appended,
     /// The payload was completed by the appendment.
-    Completed(Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>>),
+    Completed,
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
 #[derive(Debug, Clone)]
 pub enum PayloadAppendError<OE> {
-    /// None of the entries in the store reference this payload.
-    NotEntryReference,
     /// The payload is already held in storage.
     AlreadyHaveIt,
     /// The payload source produced more bytes than were expected for this payload.
@@ -199,10 +162,6 @@ pub enum PayloadAppendError<OE> {
 impl<OE: Display + Error> Display for PayloadAppendError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PayloadAppendError::NotEntryReference => write!(
-                f,
-                "None of the entries in the soter reference this payload."
-            ),
             PayloadAppendError::AlreadyHaveIt => {
                 write!(f, "The payload is already held in storage.")
             }
@@ -386,29 +345,16 @@ where
         >,
     >;
 
-    /// Attempts to ingest many [`AuthorisedEntry`] in the [`Store`].
+    /// Attempts to ingest many [`AuthorisedEntry`] produced by a given `BulkProducer` into the [`Store`].
     ///
-    /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have returned [`EntryIngestionError`]. The `Err` type of this result is only returned if there was some internal error.
-    fn bulk_ingest_entry(
+    /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have errored. The `Err` type of this result is only returned if there was some internal error.
+    fn bulk_ingest_entry<P>(
         &self,
-        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
+        entry_producer: &mut P,
         prevent_pruning: bool,
-    ) -> impl Future<
-        Output = Result<
-            Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
-            BulkIngestionError<
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                PD,
-                AT,
-                Self::BulkIngestionError,
-                Self::OperationsError,
-            >,
-        >,
-    >;
+    ) -> impl Future<Output = Result<(), BulkIngestionError<P::Error, Self::OperationsError>>>
+    where
+        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
     ///
@@ -425,12 +371,7 @@ where
         expected_digest: &PD,
         expected_size: u64,
         payload_source: &mut Producer,
-    ) -> impl Future<
-        Output = Result<
-            PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
-            PayloadAppendError<Self::OperationsError>,
-        >,
-    >
+    ) -> impl Future<Output = Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>>
     where
         Producer: BulkProducer<Item = u8>;
 
@@ -511,7 +452,7 @@ where
     ) -> impl Future<Output = Vec<PD>>;
 
     /// Forces persistence of all previous mutations
-    fn flush() -> impl Future<Output = Result<(), Self::FlushError>>;
+    fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given [`PayloadDigest`], if held.
     fn payload(

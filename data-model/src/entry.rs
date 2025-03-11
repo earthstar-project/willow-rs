@@ -456,7 +456,21 @@ mod tests {
 
     #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
     struct FakePayloadDigest(usize);
-    impl PayloadDigest for FakePayloadDigest {}
+    impl PayloadDigest for FakePayloadDigest {
+        type Hasher = ();
+
+        fn finish(hasher: &Self::Hasher) -> Self {
+            todo!()
+        }
+
+        fn write(hasher: &mut Self::Hasher, bytes: &[u8]) {
+            todo!()
+        }
+
+        fn hasher() -> Self::Hasher {
+            todo!()
+        }
+    }
 
     const MCL: usize = 8;
     const MCC: usize = 4;
