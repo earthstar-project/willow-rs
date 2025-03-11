@@ -14,6 +14,7 @@ use ufotofu_codec::{
 };
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
+    grouping::{Area, AreaOfInterest, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, BulkIngestionResult, Component, Entry,
     EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path,
     PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
@@ -264,7 +265,7 @@ where
                 other_payload_digest,
                 _other_authorisation_token,
                 operation_id,
-            ) = decode_entry_values::<PD, AT>(value).await;
+            ) = decode_entry_values::<PD, AT>(&value).await;
 
             let other_entry = Entry::new(
                 self.namespace_id.clone(),
@@ -360,8 +361,12 @@ where
                 .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
             let next_count = match payload_rc {
-                Some(prev) => prev.checked_sub(value).expect("Uh-oh"),
-                None => panic!("Uh-oh"),
+                Some(prev) => prev.checked_sub(value).expect(
+                    "Store is in an invalid state where payload ref count did not make sense",
+                ),
+                None => panic!(
+                    "Store is in an invalid state where payload ref count did not make sense"
+                ),
             };
 
             let digest_key = IVec::from(key.sync_encode_into_vec());
@@ -517,9 +522,10 @@ where
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
         let payload_rc_tree = self.payload_rc_tree()?;
+        let ops_tree = self.ops_tree()?;
 
         for (key, value) in entry_tree.scan_prefix(exact_key).flatten() {
-            let (_length, digest, _auth_token, op_id) = decode_entry_values::<PD, AT>(value).await;
+            let (_length, digest, _auth_token, op_id) = decode_entry_values::<PD, AT>(&value).await;
 
             let current_payload_rc = self.get_payload_ref_count(&digest, &payload_rc_tree)?;
 
@@ -532,74 +538,41 @@ where
                 Some(rc) => rc - 1,
             };
 
-            if traceless {
-                let ops_tree = self.ops_tree()?;
+            (&entry_tree, &ops_tree, &payload_tree, &payload_rc_tree)
+                .transaction(
+                    |(tx_entry, tx_ops, tx_payloads, tx_payload_rcs): &(
+                        TransactionalTree,
+                        TransactionalTree,
+                        TransactionalTree,
+                        TransactionalTree,
+                    )|
+                     -> Result<
+                        (),
+                        sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                    > {
+                        tx_entry.remove(key.clone())?;
 
-                (&entry_tree, &ops_tree, &payload_tree, &payload_rc_tree)
-                    .transaction(
-                        |(tx_entry, tx_ops, tx_payloads, tx_payload_rcs): &(
-                            TransactionalTree,
-                            TransactionalTree,
-                            TransactionalTree,
-                            TransactionalTree,
-                        )|
-                         -> Result<
-                            (),
-                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
-                        > {
+                        if traceless {
                             let op_key = U64BE(op_id).sync_encode_into_vec();
-                            tx_entry.remove(key.clone())?;
                             tx_ops.remove(op_key)?;
+                        }
 
-                            let digest_key = IVec::from(digest.sync_encode_into_vec());
+                        let digest_key = IVec::from(digest.sync_encode_into_vec());
 
-                            if next_payload_rc == 0 {
-                                tx_payload_rcs.remove(digest_key.clone())?;
-                                tx_payloads.remove(digest_key)?;
-                            } else {
-                                tx_payload_rcs.insert(
-                                    digest_key,
-                                    U64BE(next_payload_rc).sync_encode_into_vec(),
-                                )?;
-                            }
+                        if next_payload_rc == 0 {
+                            tx_payload_rcs.remove(digest_key.clone())?;
+                            tx_payloads.remove(digest_key)?;
+                        } else {
+                            tx_payload_rcs.insert(
+                                digest_key,
+                                U64BE(next_payload_rc).sync_encode_into_vec(),
+                            )?;
+                        }
 
-                            Ok(())
-                        },
-                    )
-                    .map_err(|_| SimpleStoreSledError {})?;
-            } else {
-                (&entry_tree, &payload_tree, &payload_rc_tree)
-                    .transaction(
-                        |(tx_entry, tx_payloads, tx_payload_rcs): &(
-                            TransactionalTree,
-                            TransactionalTree,
-                            TransactionalTree,
-                        )|
-                         -> Result<
-                            (),
-                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
-                        > {
-                            tx_entry.remove(key.clone())?;
-
-                            let digest_key = IVec::from(digest.sync_encode_into_vec());
-
-                            if next_payload_rc == 0 {
-                                tx_payload_rcs.remove(digest_key.clone())?;
-                                tx_payloads.remove(digest_key)?;
-                            } else {
-                                tx_payload_rcs.insert(
-                                    digest_key,
-                                    U64BE(next_payload_rc).sync_encode_into_vec(),
-                                )?;
-                            }
-
-                            Ok(())
-                        },
-                    )
-                    .map_err(|_| SimpleStoreSledError {})?;
-
-                entry_tree.remove(key)?;
-            }
+                        Ok(())
+                    },
+                )
+                .map_err(|_| SimpleStoreSledError {})?;
         }
 
         Ok(())
@@ -607,11 +580,118 @@ where
 
     async fn forget_area(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
+        area: &Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
-    ) -> Vec<willow_data_model::AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
-        todo!()
+    ) -> Result<u64, Self::OperationsError> {
+        let entry_tree = self.entry_tree()?;
+        let payload_tree = self.payload_tree()?;
+        let payload_rc_tree = self.payload_rc_tree()?;
+        let ops_tree = self.ops_tree()?;
+
+        let mut entry_batch = sled::Batch::default();
+        let mut payload_batch = sled::Batch::default();
+        let mut payload_rc_batch = sled::Batch::default();
+        let mut ops_batch = sled::Batch::default();
+
+        let mut digest_decrements: HashMap<PD, u64> = HashMap::new();
+
+        let mut forgotten_count = 0;
+
+        let entry_iterator = match area.subspace() {
+            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                entry_tree.scan_prefix(&matching_subspace_path).into_iter()
+            }
+        };
+
+        for (key, value) in entry_iterator.flatten() {
+            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+            let (_length, digest, _token, op_id) = decode_entry_values::<PD, AT>(&value).await;
+
+            let prefix_matches = if *area.subspace() == AreaSubspace::Any {
+                path.is_prefixed_by(area.path())
+            } else {
+                // We know the path is a prefix because the iterator we used guarantees it.
+                true
+            };
+
+            let timestamp_included = area.times().includes(&timestamp);
+
+            let is_protected = match &protected {
+                Some(protected_area) => {
+                    protected_area.subspace().includes(&subspace)
+                        && protected_area.path().is_prefix_of(&path)
+                        && protected_area.times().includes(&timestamp)
+                }
+                None => false,
+            };
+
+            if !is_protected && prefix_matches && timestamp_included {
+                // FORGET IT
+                entry_batch.remove(key);
+
+                if traceless {
+                    let op_key = U64BE(op_id).sync_encode_into_vec();
+                    ops_batch.remove(op_key)
+                }
+
+                match digest_decrements.get(&digest) {
+                    Some(prev) => digest_decrements.insert(digest.to_owned(), prev + 1),
+                    None => digest_decrements.insert(digest.to_owned(), 1),
+                };
+
+                forgotten_count += 1;
+            }
+        }
+
+        for (key, value) in digest_decrements.clone() {
+            let payload_rc = self.get_payload_ref_count(&key, &payload_rc_tree)?;
+
+            let next_count = match payload_rc {
+                Some(prev) => prev.checked_sub(value).expect(
+                    "Store is in an invalid state where payload ref count did not make sense",
+                ),
+                None => panic!(
+                    "Store is in an invalid state where payload ref count did not make sense"
+                ),
+            };
+
+            let digest_key = IVec::from(key.sync_encode_into_vec());
+            if next_count == 0 {
+                payload_batch.remove(digest_key.clone());
+                payload_rc_batch.remove(digest_key.clone());
+            } else {
+                payload_rc_batch.insert(digest_key, U64BE(next_count).sync_encode_into_vec());
+            };
+        }
+
+        (&entry_tree, &ops_tree, &payload_tree, &payload_rc_tree)
+            .transaction(
+                |(tx_entry, tx_ops, tx_payloads, tx_payload_rcs): &(
+                    TransactionalTree,
+                    TransactionalTree,
+                    TransactionalTree,
+                    TransactionalTree,
+                )|
+                 -> Result<
+                    (),
+                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                > {
+                    tx_entry.apply_batch(&entry_batch)?;
+                    tx_ops.apply_batch(&ops_batch)?;
+                    tx_payloads.apply_batch(&payload_batch)?;
+                    tx_payload_rcs.apply_batch(&payload_rc_batch)?;
+
+                    Ok(())
+                },
+            )
+            .map_err(|_| SimpleStoreSledError {})?;
+
+        Ok(forgotten_count)
     }
 
     async fn forget_payload(
@@ -878,7 +958,7 @@ where
     consumer.into_vec()
 }
 
-async fn decode_entry_values<PD, AT>(encoded: IVec) -> (u64, PD, AT, u64)
+async fn decode_entry_values<PD, AT>(encoded: &IVec) -> (u64, PD, AT, u64)
 where
     PD: Decodable,
     AT: Decodable,

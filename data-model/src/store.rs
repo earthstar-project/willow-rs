@@ -381,6 +381,8 @@ where
 
     /// Locally forgets an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
     ///
+    /// If the entry in question is the last remaining reference in the store to a particular [`PayloadDigest`], that payload will be forgotten from the store (if present).
+    ///
     /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgotten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
@@ -391,7 +393,9 @@ where
         traceless: bool,
     ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
-    /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all forgotten entries
+    /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
+    ///
+    /// If forgetting many entries causes no there to be no remaining references to certain payload digests, those payloads will be removed (if present).
     ///
     /// If `protected` is `Some`, then all entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
@@ -400,10 +404,10 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
-    ) -> impl Future<Output = Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
+    ) -> impl Future<Output = Result<u64, Self::OperationsError>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
