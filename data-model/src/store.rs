@@ -4,7 +4,7 @@ use std::{
     future::Future,
 };
 
-use ufotofu::{BulkProducer, Producer};
+use ufotofu::{BulkConsumer, BulkProducer, Producer};
 
 use crate::{
     entry::AuthorisedEntry,
@@ -117,9 +117,9 @@ pub type BulkIngestionResult<
 
 /// Returned when a bulk ingestion failed due to a consumer error.
 #[derive(Debug, Clone)]
-pub enum BulkIngestionError<PE, OE> {
+pub enum BulkIngestionError<PE, CE> {
     Producer(PE),
-    OperationsError(OE),
+    Consumer(CE),
 }
 
 impl<PE, OE> std::fmt::Display for BulkIngestionError<PE, OE> {
@@ -128,8 +128,8 @@ impl<PE, OE> std::fmt::Display for BulkIngestionError<PE, OE> {
             BulkIngestionError::Producer(_) => {
                 write!(f, "A producer error stopped bulk ingestion")
             }
-            BulkIngestionError::OperationsError(_) => {
-                write!(f, "An operations error stopped bulk ingestion")
+            BulkIngestionError::Consumer(_) => {
+                write!(f, "A consumer error stopped bulk ingestion")
             }
         }
     }
@@ -348,13 +348,17 @@ where
     /// Attempts to ingest many [`AuthorisedEntry`] produced by a given `BulkProducer` into the [`Store`].
     ///
     /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have errored. The `Err` type of this result is only returned if there was some internal error.
-    fn bulk_ingest_entry<P>(
+    fn bulk_ingest_entry<P, C>(
         &self,
         entry_producer: &mut P,
+        result_consumer: &mut C,
         prevent_pruning: bool,
-    ) -> impl Future<Output = Result<(), BulkIngestionError<P::Error, Self::OperationsError>>>
+    ) -> impl Future<Output = Result<(), BulkIngestionError<P::Error, C::Error>>>
     where
-        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        C: BulkConsumer<
+            Item = BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+        >;
 
     /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
     ///

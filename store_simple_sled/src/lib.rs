@@ -398,13 +398,17 @@ where
         Ok(EntryIngestionSuccess::Success)
     }
 
-    async fn bulk_ingest_entry<P>(
+    async fn bulk_ingest_entry<P, C>(
         &self,
         entry_producer: &mut P,
+        result_consumer: &mut C,
         prevent_pruning: bool,
-    ) -> Result<(), BulkIngestionError<P::Error, Self::OperationsError>>
+    ) -> Result<(), BulkIngestionError<P::Error, C::Error>>
     where
         P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        C: BulkConsumer<
+            Item = BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+        >,
     {
         loop {
             let next = entry_producer
@@ -414,11 +418,14 @@ where
 
             match next {
                 Either::Left(authed_entry) => {
-                    let result = self.ingest_entry(authed_entry, prevent_pruning).await;
+                    let result = self
+                        .ingest_entry(authed_entry.clone(), prevent_pruning)
+                        .await;
 
-                    if let Err(EntryIngestionError::OperationsError(err)) = result {
-                        return Err(BulkIngestionError::OperationsError(err));
-                    }
+                    result_consumer
+                        .consume((authed_entry, result))
+                        .await
+                        .map_err(BulkIngestionError::Consumer)?;
                 }
                 Either::Right(_) => break,
             }
