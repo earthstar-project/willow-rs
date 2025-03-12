@@ -572,11 +572,78 @@ where
 
     async fn forget_area_payloads(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
+        area: &Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
         traceless: bool,
-    ) -> Vec<PD> {
-        todo!()
+    ) -> Result<u64, Self::OperationsError> {
+        let payload_tree = self.payload_tree()?;
+        let ops_tree = self.ops_tree()?;
+
+        let mut payload_batch = sled::Batch::default();
+        let mut ops_batch = sled::Batch::default();
+
+        let mut forgotten_count = 0;
+
+        let entry_iterator = match area.subspace() {
+            AreaSubspace::Any => payload_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                payload_tree.scan_prefix(&matching_subspace_path)
+            }
+        };
+
+        for (key, value) in entry_iterator.flatten() {
+            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+            let (_length, _digest, _token, op_id) = decode_entry_values::<PD, AT>(&value).await;
+
+            let prefix_matches = if *area.subspace() == AreaSubspace::Any {
+                path.is_prefixed_by(area.path())
+            } else {
+                // We know the path is a prefix because the iterator we used guarantees it.
+                true
+            };
+
+            let timestamp_included = area.times().includes(&timestamp);
+
+            let is_protected = match &protected {
+                Some(protected_area) => {
+                    protected_area.subspace().includes(&subspace)
+                        && protected_area.path().is_prefix_of(&path)
+                        && protected_area.times().includes(&timestamp)
+                }
+                None => false,
+            };
+
+            if !is_protected && prefix_matches && timestamp_included {
+                // FORGET IT
+                payload_batch.remove(&key);
+
+                if traceless {
+                    let op_key = U64BE(op_id).sync_encode_into_vec();
+                    ops_batch.remove(op_key)
+                }
+
+                forgotten_count += 1;
+            }
+        }
+
+        (&ops_tree, &payload_tree)
+            .transaction(
+                |(tx_ops, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
+                    (),
+                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                > {
+                    tx_ops.apply_batch(&ops_batch)?;
+                    tx_payloads.apply_batch(&payload_batch)?;
+
+                    Ok(())
+                },
+            )
+            .map_err(|_| SimpleStoreSledError {})?;
+
+        Ok(forgotten_count)
     }
 
     async fn flush(&self) -> Result<(), Self::FlushError> {
