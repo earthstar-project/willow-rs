@@ -6,11 +6,9 @@ use std::{
 };
 
 use meadowcap::SubspaceDelegation;
-use ufotofu::producer::FromSlice;
+use ufotofu::{producer::FromSlice, BulkConsumer, BulkProducer};
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, BulkIngestionError, BulkIngestionResult, Component, Entry,
-    EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadDigest, Store, StoreEvent, SubspaceId, Timestamp,
+    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId, Timestamp
 };
 
 #[derive(Debug)]
@@ -176,40 +174,16 @@ where
         }
     }
 
-    async fn bulk_ingest_entry(
-        &self,
-        authorised_entries: &[AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>],
-        prevent_pruning: bool,
-    ) -> Result<
-        Vec<BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>>,
-        BulkIngestionError<
-            MCL,
-            MCC,
-            MPL,
-            N,
-            S,
-            PD,
-            AT,
-            Self::BulkIngestionError,
-            Self::OperationsError,
-        >,
-    > {
-        todo!()
-    }
-
     async fn append_payload<Producer>(
         &self,
         expected_digest: &PD,
         expected_size: u64,
         payload_source: &mut Producer,
-    ) -> Result<
-        willow_data_model::PayloadAppendSuccess<MCL, MCC, MPL, N, S, PD>,
-        willow_data_model::PayloadAppendError<Self::OperationsError>,
-    >
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>
     where
         Producer: ufotofu::BulkProducer<Item = u8>,
     {
-        self.get_or_create_subspace_store();
+        // self.get_or_create_subspace_store();
         todo!()
     }
 
@@ -224,10 +198,10 @@ where
 
     async fn forget_area(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
         traceless: bool,
-    ) -> Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> Result<u64, Self::OperationsError> {
         todo!()
     }
 
@@ -265,7 +239,7 @@ where
         todo!()
     }
 
-    async fn flush() -> Result<(), Self::FlushError> {
+    async fn flush(&self) -> Result<(), Self::FlushError> {
         todo!()
     }
 
