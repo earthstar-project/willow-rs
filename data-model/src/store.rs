@@ -4,6 +4,7 @@ use std::{
     future::Future,
 };
 
+use either::Either;
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 
 use crate::{
@@ -96,24 +97,6 @@ impl<
     > Error for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
 {
 }
-
-/// A tuple of an [`AuthorisedEntry`] and how a [`Store`] responded to its ingestion.
-pub type BulkIngestionResult<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N,
-    S,
-    PD,
-    AT,
-    OE,
-> = (
-    AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-    Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>,
-    >,
-);
 
 /// Returned when a bulk ingestion failed due to a consumer error.
 #[derive(Debug, Clone)]
@@ -357,8 +340,35 @@ where
     where
         P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         C: BulkConsumer<
-            Item = BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
-        >;
+            Item = Result<
+                EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
+                EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+            >,
+        >,
+    {
+        async move {
+            loop {
+                let next = entry_producer
+                    .produce()
+                    .await
+                    .map_err(BulkIngestionError::Producer)?;
+
+                match next {
+                    Either::Left(authed_entry) => {
+                        let result = self.ingest_entry(authed_entry, prevent_pruning).await;
+
+                        result_consumer
+                            .consume(result)
+                            .await
+                            .map_err(BulkIngestionError::Consumer)?;
+                    }
+                    Either::Right(_) => break,
+                }
+            }
+
+            Ok(())
+        }
+    }
 
     /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
     ///

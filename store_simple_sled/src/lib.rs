@@ -15,9 +15,9 @@ use ufotofu_codec::{
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest, AreaSubspace},
-    AuthorisationToken, AuthorisedEntry, BulkIngestionError, BulkIngestionResult, Component, Entry,
-    EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
+    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
+    PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -401,42 +401,6 @@ where
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         Ok(EntryIngestionSuccess::Success)
-    }
-
-    async fn bulk_ingest_entry<P, C>(
-        &self,
-        entry_producer: &mut P,
-        result_consumer: &mut C,
-        prevent_pruning: bool,
-    ) -> Result<(), BulkIngestionError<P::Error, C::Error>>
-    where
-        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        C: BulkConsumer<
-            Item = BulkIngestionResult<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
-        >,
-    {
-        loop {
-            let next = entry_producer
-                .produce()
-                .await
-                .map_err(BulkIngestionError::Producer)?;
-
-            match next {
-                Either::Left(authed_entry) => {
-                    let result = self
-                        .ingest_entry(authed_entry.clone(), prevent_pruning)
-                        .await;
-
-                    result_consumer
-                        .consume((authed_entry, result))
-                        .await
-                        .map_err(BulkIngestionError::Consumer)?;
-                }
-                Either::Right(_) => break,
-            }
-        }
-
-        Ok(())
     }
 
     async fn append_payload<Producer>(
