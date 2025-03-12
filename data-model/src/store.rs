@@ -38,18 +38,7 @@ pub enum EntryIngestionSuccess<
 
 /// Returned when an entry cannot be ingested into a [`Store`].
 #[derive(Debug, Clone)]
-pub enum EntryIngestionError<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT,
-    OE: Display + Error,
-> {
-    /// The entry belonged to another namespace.
-    WrongNamespace(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+pub enum EntryIngestionError<OE: Display + Error> {
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
     /// The entry's authorisation token is invalid.
@@ -58,22 +47,9 @@ pub enum EntryIngestionError<
     OperationsError(OE),
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
-        PD: PayloadDigest,
-        AT,
-        OE: Display + Error,
-    > Display for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
-{
+impl<OE: Display + Error> Display for EntryIngestionError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EntryIngestionError::WrongNamespace(_) => {
-                write!(f, "Tried to ingest an entry from a different namespace.")
-            }
             EntryIngestionError::PruningPrevented => {
                 write!(f, "Entry ingestion would have triggered undesired pruning.")
             }
@@ -85,18 +61,7 @@ impl<
     }
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId + Debug,
-        S: SubspaceId + Debug,
-        PD: PayloadDigest + Debug,
-        AT: Debug,
-        OE: Display + Error,
-    > Error for EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, OE>
-{
-}
+impl<OE: Display + Error> Error for EntryIngestionError<OE> {}
 
 /// Returned when a bulk ingestion failed due to a consumer error.
 #[derive(Debug, Clone)]
@@ -353,7 +318,7 @@ where
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+            EntryIngestionError<Self::OperationsError>,
         >,
     >;
 
@@ -371,7 +336,7 @@ where
         C: BulkConsumer<
             Item = Result<
                 EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-                EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+                EntryIngestionError<Self::OperationsError>,
             >,
         >,
     {

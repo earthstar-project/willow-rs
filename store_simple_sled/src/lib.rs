@@ -218,9 +218,17 @@ where
         prevent_pruning: bool,
     ) -> Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+        EntryIngestionError<Self::OperationsError>,
     > {
         let (entry, token) = authorised_entry.into_parts();
+
+        if *entry.namespace_id() != self.namespace_id {
+            panic!(
+                "Store for {:?} tried to ingest entry of namespace {:?}",
+                self.namespace_id,
+                entry.namespace_id()
+            )
+        }
 
         if !token.is_authorised_write(&entry) {
             return Err(EntryIngestionError::NotAuthorised);
