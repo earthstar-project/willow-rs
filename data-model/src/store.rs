@@ -265,12 +265,13 @@ impl QueryIgnoreParams {
 
 /// Returned when a payload could not be forgotten.
 #[derive(Debug, Clone)]
-pub enum ForgetPayloadError {
+pub enum ForgetPayloadError<OE: Debug> {
     NoSuchEntry,
     ReferredToByOtherEntries,
+    OperationsError(OE),
 }
 
-impl Display for ForgetPayloadError {
+impl<OE: Debug> Display for ForgetPayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ForgetPayloadError::NoSuchEntry => {
@@ -283,11 +284,39 @@ impl Display for ForgetPayloadError {
                 f,
                 "The payload could not be forgotten because it is referred to by other entries."
             ),
+            ForgetPayloadError::OperationsError(_) => {
+                write!(f, "There store encountered an internal error.")
+            }
         }
     }
 }
 
-impl Error for ForgetPayloadError {}
+impl<OE: Debug> Error for ForgetPayloadError<OE> {}
+
+/// Returned when a payload could not be forgotten.
+#[derive(Debug, Clone)]
+pub enum ForceForgetPayloadError<OE: Debug> {
+    NoSuchEntry,
+    OperationsError(OE),
+}
+
+impl<OE: Debug> Display for ForceForgetPayloadError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForceForgetPayloadError::NoSuchEntry => {
+                write!(
+                    f,
+                    "No entry for the given criteria could be found in this store."
+                )
+            }
+            ForceForgetPayloadError::OperationsError(_) => {
+                write!(f, "There store encountered an internal error.")
+            }
+        }
+    }
+}
+
+impl<OE: Debug> Error for ForceForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,10 +454,11 @@ where
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
+        &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: &S,
         traceless: bool,
-    ) -> impl Future<Output = Result<(), ForgetPayloadError>>;
+    ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::OperationsError>>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store. **The payload will be forgotten even if it corresponds to other entries**.
     ///
@@ -436,10 +466,11 @@ where
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn force_forget_payload(
+        &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: &S,
         traceless: bool,
-    ) -> impl Future<Output = Result<(), NoSuchEntryError>>;
+    ) -> impl Future<Output = Result<(), ForceForgetPayloadError<Self::OperationsError>>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///

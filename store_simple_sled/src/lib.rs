@@ -16,8 +16,9 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
-    PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
+    EntryIngestionSuccess, ForceForgetPayloadError, ForgetPayloadError, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent,
+    SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -101,7 +102,7 @@ where
 
             if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
                 let (payload_length, payload_digest, authorisation_token, _operation_id) =
-                    decode_entry_values(value).await;
+                    decode_entry_values(&value).await;
 
                 let entry = Entry::new(
                     self.namespace_id.clone(),
@@ -659,19 +660,134 @@ where
     }
 
     async fn forget_payload(
+        &self,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: &S,
         traceless: bool,
-    ) -> Result<(), willow_data_model::ForgetPayloadError> {
-        todo!()
+    ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
+        let entry_tree = self
+            .entry_tree()
+            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let payload_rc_tree = self
+            .payload_rc_tree()
+            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+        let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
+
+        for (_key, value) in entry_tree.scan_prefix(exact_key).flatten() {
+            // TODO: It seems like we are not putting in ops for payloads yet. :/
+            let (_length, digest, _auth_token, _op_id) =
+                decode_entry_values::<PD, AT>(&value).await;
+
+            let current_payload_rc = self
+                .get_payload_ref_count(&digest, &payload_rc_tree)
+                .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+            let next_payload_rc = match current_payload_rc {
+                Some(0) | None => {
+                    panic!(
+                        "Store is in an invalid state where payload ref count did not make sense"
+                    )
+                }
+                Some(rc) => rc - 1,
+            };
+
+            if next_payload_rc > 0 {
+                return Err(ForgetPayloadError::ReferredToByOtherEntries);
+            }
+
+            (&payload_tree, &payload_rc_tree)
+                .transaction(
+                    |(tx_payloads, tx_payload_rcs): &(
+                        TransactionalTree,
+                        TransactionalTree,
+                    )|
+                     -> Result<
+                        (),
+                        sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                    > {
+                        let digest_key = IVec::from(digest.sync_encode_into_vec());
+
+                        tx_payload_rcs.remove(digest_key.clone())?;
+                        tx_payloads.remove(digest_key)?;
+
+                        Ok(())
+                    },
+                )
+                .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        }
+
+        Ok(())
     }
 
     async fn force_forget_payload(
+        &self,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-        subspace_id: S,
+        subspace_id: &S,
         traceless: bool,
-    ) -> Result<(), willow_data_model::NoSuchEntryError> {
-        todo!()
+    ) -> Result<(), ForceForgetPayloadError<Self::OperationsError>> {
+        let entry_tree = self
+            .entry_tree()
+            .map_err(|_| ForceForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|_| ForceForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let payload_rc_tree = self
+            .payload_rc_tree()
+            .map_err(|_| ForceForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+        let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
+
+        for (_key, value) in entry_tree.scan_prefix(exact_key).flatten() {
+            // TODO: It seems like we are not putting in ops for payloads yet. :/
+            let (_length, digest, _auth_token, _op_id) =
+                decode_entry_values::<PD, AT>(&value).await;
+
+            let current_payload_rc = self
+                .get_payload_ref_count(&digest, &payload_rc_tree)
+                .map_err(|_| ForceForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+            let next_payload_rc = match current_payload_rc {
+                Some(0) | None => {
+                    panic!(
+                        "Store is in an invalid state where payload ref count did not make sense"
+                    )
+                }
+                Some(rc) => rc - 1,
+            };
+
+            (&payload_tree, &payload_rc_tree)
+                .transaction(
+                    |(tx_payloads, tx_payload_rcs): &(
+                        TransactionalTree,
+                        TransactionalTree,
+                    )|
+                     -> Result<
+                        (),
+                        sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                    > {
+                        let digest_key = IVec::from(digest.sync_encode_into_vec());
+
+                        if next_payload_rc == 0 {
+                            tx_payload_rcs.remove(digest_key.clone())?;
+                            tx_payloads.remove(digest_key)?;
+                        } else {
+                            tx_payload_rcs.insert(
+                                digest_key,
+                                U64BE(next_payload_rc).sync_encode_into_vec(),
+                            )?;
+                        }
+
+                        Ok(())
+                    },
+                )
+                .map_err(|_| ForceForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        }
+
+        Ok(())
     }
 
     async fn forget_area_payloads(
