@@ -14,7 +14,8 @@ use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
     EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
+    SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -140,6 +141,19 @@ where
         self.db.flush()?;
 
         Ok(())
+    }
+
+    /// Returns the next key and value from the given tree after the provided key AND which is prefixed by the given key.
+    fn prefix_gt(
+        &self,
+        tree: &Tree,
+        prefix: &[u8],
+    ) -> Result<Option<(IVec, IVec)>, SimpleStoreSledError> {
+        if let Some((key, value)) = tree.scan_prefix(prefix).flatten().next() {
+            return Ok(Some((key, value)));
+        }
+
+        Ok(None)
     }
 }
 
@@ -341,8 +355,8 @@ where
 
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_entry = entry_tree
-            .get_gt(exact_key)
+        let maybe_entry = self
+            .prefix_gt(&entry_tree, &exact_key)
             .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
         match maybe_entry {
@@ -428,7 +442,7 @@ where
         let payload_tree = self.payload_tree()?;
         let ops_tree = self.ops_tree()?;
 
-        let maybe_entry = entry_tree.get_gt(exact_key)?;
+        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
             let (_length, _digest, _auth_token, op_id) =
@@ -558,8 +572,8 @@ where
             .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let maybe_payload = payload_tree
-            .get_gt(exact_key)
+        let maybe_payload = self
+            .prefix_gt(&payload_tree, &exact_key)
             .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
 
         if let Some((key, _value)) = maybe_payload {
@@ -660,7 +674,7 @@ where
         let payload_tree = self.payload_tree()?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_payload = payload_tree.get_gt(exact_key)?;
+        let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
 
         if let Some((_key, value)) = maybe_payload {
             // Create a producer!
@@ -672,14 +686,64 @@ where
 
     async fn entry(
         &self,
-        path: &willow_data_model::Path<MCL, MCC, MPL>,
+        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
+        ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::OperationsError,
     > {
-        todo!()
+        let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
+
+        let entry_tree = self.entry_tree()?;
+
+        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
+
+        if let Some((key, value)) = maybe_entry {
+            let (subspace, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+            let (length, digest, token, _op) = decode_entry_values::<PD, AT>(&value).await;
+
+            let entry = Entry::new(
+                self.namespace_id.clone(),
+                subspace,
+                path,
+                timestamp,
+                length,
+                digest,
+            );
+
+            let authed_entry = AuthorisedEntry::new_unchecked(entry, token);
+
+            let payload_tree = self.payload_tree()?;
+
+            let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
+
+            let payload_length = match maybe_payload {
+                Some((_key, value)) => value.len(),
+                None => 0,
+            };
+
+            match ignore {
+                Some(params) => {
+                    let is_empty = payload_length == 0;
+                    let is_incomplete = is_empty || (payload_length as u64) < length;
+
+                    if (params.ignore_incomplete_payloads && is_incomplete)
+                        || (params.ignore_empty_payloads && is_empty)
+                    {
+                        return Ok(None);
+                    }
+                }
+                None => {
+                    return Ok(Some(LengthyAuthorisedEntry::new(
+                        authed_entry,
+                        payload_length as u64,
+                    )));
+                }
+            };
+        }
+
+        Ok(None)
     }
 
     fn query_area(
