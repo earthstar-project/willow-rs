@@ -8,7 +8,7 @@ use sled::{
 use ufotofu::{
     consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Consumer, Producer,
 };
-use ufotofu_codec::{Decodable, DecodableSync, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
@@ -27,9 +27,8 @@ where
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
-const OPS_TREE_KEY: [u8; 1] = [0b0000_0001];
-const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0010];
-const MISC_TREE_KEY: [u8; 1] = [0b0000_0100];
+const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0001];
+const MISC_TREE_KEY: [u8; 1] = [0b0000_0010];
 
 impl<N> StoreSimpleSled<N>
 where
@@ -52,10 +51,6 @@ where
 
     fn entry_tree(&self) -> SledResult<Tree> {
         self.db.open_tree(ENTRY_TREE_KEY)
-    }
-
-    fn ops_tree(&self) -> SledResult<Tree> {
-        self.db.open_tree(OPS_TREE_KEY)
     }
 
     fn payload_tree(&self) -> SledResult<Tree> {
@@ -93,7 +88,7 @@ where
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
             if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
-                let (payload_length, payload_digest, authorisation_token, _operation_id) =
+                let (payload_length, payload_digest, authorisation_token) =
                     decode_entry_values(&value).await;
 
                 let entry = Entry::new(
@@ -112,29 +107,6 @@ where
         }
 
         Ok(None)
-    }
-
-    fn next_op_id(&self) -> Result<u64, SimpleStoreSledError> {
-        let tree = self.ops_tree()?;
-
-        let last = tree.last()?;
-
-        match last {
-            Some((key, _)) => Ok(U64BE::sync_decode_from_slice(key.as_ref())
-                .map_err(|_| SimpleStoreSledError {})?
-                .0),
-            None => Ok(0),
-        }
-    }
-
-    fn remove_ops(&self, op_id: u64) -> Result<(), SimpleStoreSledError> {
-        let tree = self.ops_tree()?;
-
-        let op_key = U64BE(op_id).sync_encode_into_vec();
-
-        tree.remove(op_key)?;
-
-        Ok(())
     }
 
     fn flush(&self) -> Result<(), SimpleStoreSledError> {
@@ -235,7 +207,7 @@ where
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
 
-        let mut keys_and_ops_to_prune: Vec<(IVec, u64)> = Vec::new();
+        let mut keys_to_prune: Vec<IVec> = Vec::new();
 
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
@@ -244,12 +216,8 @@ where
             let (other_subspace, other_path, other_timestamp) =
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
-            let (
-                other_payload_length,
-                other_payload_digest,
-                _other_authorisation_token,
-                operation_id,
-            ) = decode_entry_values::<PD, AT>(&value).await;
+            let (other_payload_length, other_payload_digest, _other_authorisation_token) =
+                decode_entry_values::<PD, AT>(&value).await;
 
             let other_entry = Entry::new(
                 self.namespace_id.clone(),
@@ -272,12 +240,8 @@ where
 
             // Prune it!
 
-            keys_and_ops_to_prune.push((key, operation_id));
+            keys_to_prune.push(key);
         }
-
-        let ops_tree = self
-            .ops_tree()
-            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
 
         let payload_tree = self
             .payload_tree()
@@ -285,48 +249,25 @@ where
 
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
 
-        let op_id = self
-            .next_op_id()
-            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
-
-        let value = encode_entry_values(
-            entry.payload_length(),
-            entry.payload_digest(),
-            &token,
-            op_id,
-        )
-        .await;
+        let value =
+            encode_entry_values(entry.payload_length(), entry.payload_digest(), &token).await;
 
         let mut entry_batch = sled::Batch::default();
-        let mut op_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
-        for (key, op_id) in keys_and_ops_to_prune {
+        for key in keys_to_prune {
             entry_batch.remove(&key);
             payload_batch.remove(&key);
-
-            let op_key = U64BE(op_id).sync_encode_into_vec();
-            op_batch.remove(op_key);
         }
         entry_batch.insert(key.clone(), value);
 
-        let op_key = U64BE(op_id).sync_encode_into_vec();
-
-        op_batch.insert(op_key, key);
-
-        (&entry_tree, &ops_tree, &payload_tree)
+        (&entry_tree, &payload_tree)
             .transaction(
-                |(tx_entry, tx_ops, tx_payloads): &(
-                    TransactionalTree,
-                    TransactionalTree,
-                    TransactionalTree,
-                )|
-                 -> Result<
+                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                     (),
                     sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                 > {
                     tx_entry.apply_batch(&entry_batch)?;
-                    tx_ops.apply_batch(&op_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
@@ -361,8 +302,7 @@ where
 
         match maybe_entry {
             Some((key, value)) => {
-                let (length, digest, _auth_token, _op_id) =
-                    decode_entry_values::<PD, AT>(&value).await;
+                let (length, digest, _auth_token) = decode_entry_values::<PD, AT>(&value).await;
 
                 if value.len() as u64 == length {
                     return Err(PayloadAppendError::TooManyBytes);
@@ -434,38 +374,25 @@ where
         &self,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        traceless: bool,
     ) -> Result<(), Self::OperationsError> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
-        let ops_tree = self.ops_tree()?;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
-            let (_length, _digest, _auth_token, op_id) =
-                decode_entry_values::<PD, AT>(&value).await;
+            let (_length, _digest, _auth_token) = decode_entry_values::<PD, AT>(&value).await;
 
-            (&entry_tree, &ops_tree, &payload_tree)
+            (&entry_tree, &payload_tree)
                 .transaction(
-                    |(tx_entry, tx_ops, tx_payloads): &(
-                        TransactionalTree,
-                        TransactionalTree,
-                        TransactionalTree,
-                    )|
-                     -> Result<
+                    |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                         (),
                         sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                     > {
                         tx_entry.remove(&key)?;
                         tx_payloads.remove(&key)?;
-
-                        if traceless {
-                            let op_key = U64BE(op_id).sync_encode_into_vec();
-                            tx_ops.remove(op_key)?;
-                        }
 
                         Ok(())
                     },
@@ -480,15 +407,12 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
     ) -> Result<u64, Self::OperationsError> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
-        let ops_tree = self.ops_tree()?;
 
         let mut entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
-        let mut ops_batch = sled::Batch::default();
 
         let mut forgotten_count = 0;
 
@@ -504,7 +428,7 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (_length, _digest, _token, op_id) = decode_entry_values::<PD, AT>(&value).await;
+            let (_length, _digest, _token) = decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
                 path.is_prefixed_by(area.path())
@@ -529,28 +453,17 @@ where
                 entry_batch.remove(&key);
                 payload_batch.remove(&key);
 
-                if traceless {
-                    let op_key = U64BE(op_id).sync_encode_into_vec();
-                    ops_batch.remove(op_key)
-                }
-
                 forgotten_count += 1;
             }
         }
 
-        (&entry_tree, &ops_tree, &payload_tree)
+        (&entry_tree, &payload_tree)
             .transaction(
-                |(tx_entry, tx_ops, tx_payloads): &(
-                    TransactionalTree,
-                    TransactionalTree,
-                    TransactionalTree,
-                )|
-                 -> Result<
+                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                     (),
                     sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                 > {
                     tx_entry.apply_batch(&entry_batch)?;
-                    tx_ops.apply_batch(&ops_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
@@ -565,7 +478,6 @@ where
         &self,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        traceless: bool,
     ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
         let payload_tree = self
             .payload_tree()
@@ -589,13 +501,10 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
     ) -> Result<u64, Self::OperationsError> {
         let payload_tree = self.payload_tree()?;
-        let ops_tree = self.ops_tree()?;
 
         let mut payload_batch = sled::Batch::default();
-        let mut ops_batch = sled::Batch::default();
 
         let mut forgotten_count = 0;
 
@@ -611,7 +520,7 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (_length, _digest, _token, op_id) = decode_entry_values::<PD, AT>(&value).await;
+            let (_length, _digest, _token) = decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
                 path.is_prefixed_by(area.path())
@@ -635,22 +544,16 @@ where
                 // FORGET IT
                 payload_batch.remove(&key);
 
-                if traceless {
-                    let op_key = U64BE(op_id).sync_encode_into_vec();
-                    ops_batch.remove(op_key)
-                }
-
                 forgotten_count += 1;
             }
         }
 
-        (&ops_tree, &payload_tree)
+        payload_tree
             .transaction(
-                |(tx_ops, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
+                |tx_payloads| -> Result<
                     (),
                     sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                 > {
-                    tx_ops.apply_batch(&ops_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
@@ -701,7 +604,7 @@ where
 
         if let Some((key, value)) = maybe_entry {
             let (subspace, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
-            let (length, digest, token, _op) = decode_entry_values::<PD, AT>(&value).await;
+            let (length, digest, token) = decode_entry_values::<PD, AT>(&value).await;
 
             let entry = Entry::new(
                 self.namespace_id.clone(),
@@ -762,18 +665,6 @@ where
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
     ) -> DummyProducer<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
-        todo!()
-    }
-
-    async fn resume_subscription(
-        &self,
-        progress_id: u64,
-        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Result<
-        DummyProducer<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-        willow_data_model::ResumptionFailedError,
-    > {
         todo!()
     }
 }
@@ -942,7 +833,6 @@ async fn encode_entry_values<PD, AT>(
     payload_length: u64,
     payload_digest: &PD,
     auth_token: &AT,
-    operation_id: u64,
 ) -> Vec<u8>
 where
     PD: Encodable,
@@ -953,12 +843,11 @@ where
     U64BE(payload_length).encode(&mut consumer).await.unwrap();
     payload_digest.encode(&mut consumer).await.unwrap();
     auth_token.encode(&mut consumer).await.unwrap();
-    U64BE(operation_id).encode(&mut consumer).await.unwrap();
 
     consumer.into_vec()
 }
 
-async fn decode_entry_values<PD, AT>(encoded: &IVec) -> (u64, PD, AT, u64)
+async fn decode_entry_values<PD, AT>(encoded: &IVec) -> (u64, PD, AT)
 where
     PD: Decodable,
     AT: Decodable,
@@ -970,9 +859,8 @@ where
     let payload_length = U64BE::decode(&mut producer).await.unwrap().0;
     let payload_digest = PD::decode(&mut producer).await.unwrap();
     let auth_token = AT::decode(&mut producer).await.unwrap();
-    let operation_id = U64BE::decode(&mut producer).await.unwrap().0;
 
-    (payload_length, payload_digest, auth_token, operation_id)
+    (payload_length, payload_digest, auth_token)
 }
 
 impl From<SledError> for SimpleStoreSledError {
