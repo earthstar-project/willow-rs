@@ -447,7 +447,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Option<impl Producer<Item = u8>>>;
+    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::OperationsError>>;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
@@ -455,7 +455,12 @@ where
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Future<Output = Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>;
+    ) -> impl Future<
+        Output = Result<
+            Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+            Self::OperationsError,
+        >,
+    >;
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
     fn query_area(

@@ -651,24 +651,23 @@ where
         self.flush()
     }
 
-    // FromSlice is placeholder so we can COMPILE
-    async fn payload(&self, subspace: &S, path: &Path<MCL, MCC, MPL>) -> Option<FromSlice<u8>> {
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+    #[allow(refining_impl_trait_reachable)]
+    async fn payload(
+        &self,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
+    ) -> Result<Option<PayloadProducer>, Self::OperationsError> {
+        let payload_tree = self.payload_tree()?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_payload = payload_tree
-            .get_gt(exact_key)
-            .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let maybe_payload = payload_tree.get_gt(exact_key)?;
 
-        if let Some((key, _value)) = maybe_payload {
-            payload_tree
-                .remove(key)
-                .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        if let Some((_key, value)) = maybe_payload {
+            // Create a producer!
+            Ok(Some(PayloadProducer::new(value)))
+        } else {
+            Ok(None)
         }
-
-        Ok(())
     }
 
     async fn entry(
@@ -676,7 +675,10 @@ where
         path: &willow_data_model::Path<MCL, MCC, MPL>,
         subspace_id: &S,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> Result<
+        Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        Self::OperationsError,
+    > {
         todo!()
     }
 
@@ -928,5 +930,36 @@ impl<T> Producer for DummyProducer<T> {
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         todo!("You should not actually be *running* this DummyProducer, Dummy.")
+    }
+}
+
+pub struct PayloadProducer {
+    produced: usize,
+    ivec: IVec,
+}
+
+impl PayloadProducer {
+    fn new(ivec: IVec) -> Self {
+        Self { produced: 0, ivec }
+    }
+}
+
+impl Producer for PayloadProducer {
+    type Item = u8;
+
+    type Final = ();
+
+    type Error = Infallible;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        if self.produced < self.ivec.len() {
+            let byte = self.ivec[self.produced];
+
+            Ok(Either::Left(byte))
+        } else if self.produced == self.ivec.len() {
+            return Ok(Either::Right(()));
+        } else {
+            panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool.")
+        }
     }
 }
