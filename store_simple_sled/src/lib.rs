@@ -359,10 +359,6 @@ where
                     .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
                 let prefix = if let Some(payload) = existing_payload {
-                    if payload.len() as u64 == length {
-                        return Err(PayloadAppendError::AlreadyHaveIt);
-                    }
-
                     payload
                 } else {
                     IVec::from(&[])
