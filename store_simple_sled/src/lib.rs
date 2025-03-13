@@ -553,15 +553,16 @@ where
         subspace_id: &S,
         traceless: bool,
     ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
         let payload_tree = self
             .payload_tree()
             .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        for (key, _value) in entry_tree.scan_prefix(exact_key).flatten() {
+        let maybe_payload = payload_tree
+            .get_gt(exact_key)
+            .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+        if let Some((key, _value)) = maybe_payload {
             payload_tree
                 .remove(key)
                 .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
@@ -652,7 +653,22 @@ where
 
     // FromSlice is placeholder so we can COMPILE
     async fn payload(&self, subspace: &S, path: &Path<MCL, MCC, MPL>) -> Option<FromSlice<u8>> {
-        todo!()
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        let exact_key = encode_subspace_path_key(subspace, path, true).await;
+
+        let maybe_payload = payload_tree
+            .get_gt(exact_key)
+            .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+
+        if let Some((key, _value)) = maybe_payload {
+            payload_tree
+                .remove(key)
+                .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+        }
+
+        Ok(())
     }
 
     async fn entry(
