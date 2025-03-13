@@ -376,8 +376,8 @@ where
     /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
     fn append_payload<Producer>(
         &self,
-        expected_digest: &PD,
-        expected_size: u64,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
     ) -> impl Future<Output = Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>>
     where
@@ -425,18 +425,6 @@ where
         traceless: bool,
     ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::OperationsError>>>;
 
-    /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store. **The payload will be forgotten even if it corresponds to other entries**.
-    ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
-    ///
-    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
-    fn force_forget_payload(
-        &self,
-        path: &Path<MCL, MCC, MPL>,
-        subspace_id: &S,
-        traceless: bool,
-    ) -> impl Future<Output = Result<(), ForceForgetPayloadError<Self::OperationsError>>>;
-
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
     /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
@@ -451,27 +439,14 @@ where
         traceless: bool,
     ) -> impl Future<Output = Vec<PD>>;
 
-    /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning all [`PayloadDigest`] of forgotten payloads. **Payloads will be forgotten even if it corresponds to other entries outside the given area**.
-    ///
-    /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
-    ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
-    ///
-    /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
-    fn force_forget_area_payloads(
-        &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
-    ) -> impl Future<Output = Vec<PD>>;
-
     /// Forces persistence of all previous mutations
     fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given [`PayloadDigest`], if held.
     fn payload(
         &self,
-        payload_digest: &PD,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
     ) -> impl Future<Output = Option<impl Producer<Item = u8>>>;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
