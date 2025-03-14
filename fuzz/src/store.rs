@@ -6,15 +6,18 @@ use std::{
 };
 
 use meadowcap::SubspaceDelegation;
-use ufotofu::{producer::FromSlice, BulkConsumer, BulkProducer};
+use ufotofu::{consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer};
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId, Timestamp
+    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
+    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
+    PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
 pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace: N,
     subspaces: RefCell<BTreeMap<S, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>>,
+    payloads: RefCell<BTreeMap<PD, Vec<u8>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -59,7 +62,6 @@ pub struct ControlEntry<PD, AT> {
     payload_length: u64,
     payload_digest: PD,
     authorisation_token: AT,
-    available_payload: Vec<u8>,
 }
 
 impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
@@ -183,6 +185,15 @@ where
     where
         Producer: ufotofu::BulkProducer<Item = u8>,
     {
+        match self.payloads.borrow_mut().get_mut(expected_digest) {
+            None => todo!(),
+            Some(prior_bytes) => {
+                // Good thing this implementation is for testing purposes only...
+                let mut owned_payload = prior_bytes.clone();
+                let mut owned_payload_consumer = IntoVec::from_vec(owned_payload);
+                todo!()
+            }
+        }
         // self.get_or_create_subspace_store();
         todo!()
     }
