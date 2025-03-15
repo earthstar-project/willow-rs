@@ -1,5 +1,5 @@
 use either::Either;
-use std::convert::Infallible;
+use std::{convert::Infallible, marker::PhantomData};
 
 use sled::{
     transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
@@ -11,11 +11,11 @@ use ufotofu::{
 use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
-    grouping::{Area, AreaSubspace},
+    grouping::{Area, AreaOfInterest, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
     EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
-    SubspaceId,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store,
+    StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -649,15 +649,15 @@ where
         Ok(None)
     }
 
-    fn query_area(
+    #[allow(refining_impl_trait)]
+    async fn query_area(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        order: &willow_data_model::QueryOrder,
+        area: &Area<MCL, MCC, MPL, S>,
+        order: &QueryOrder,
         reverse: bool,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-        // FromSlice is placeholder so we can COMPILE
-    ) -> DummyProducer<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
-        todo!()
+    ) -> Result<EntryProducer<MCL, MCC, MPL, N, S, PD, AT>, SimpleStoreSledError> {
+        EntryProducer::new(self, area, order, reverse, ignore).await
     }
 
     fn subscribe_area(
@@ -766,7 +766,7 @@ async fn decode_entry_key<
 where
     S::ErrorReason: core::fmt::Debug,
 {
-    let mut producer = FromSlice::new(&encoded);
+    let mut producer = FromSlice::new(encoded);
 
     let subspace = S::decode(&mut producer).await.unwrap();
 
@@ -854,7 +854,7 @@ where
     PD::ErrorReason: core::fmt::Debug,
     AT::ErrorReason: core::fmt::Debug,
 {
-    let mut producer = FromSlice::new(&encoded);
+    let mut producer = FromSlice::new(encoded);
 
     let payload_length = U64BE::decode(&mut producer).await.unwrap().0;
     let payload_digest = PD::decode(&mut producer).await.unwrap();
@@ -912,6 +912,150 @@ impl Producer for PayloadProducer {
             return Ok(Either::Right(()));
         } else {
             panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool.")
+        }
+    }
+}
+
+pub struct EntryProducer<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + Decodable,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    iter: sled::Iter,
+    store: &'store StoreSimpleSled<N>,
+    ignore: Option<QueryIgnoreParams>,
+    area: Area<MCL, MCC, MPL, S>,
+    reverse: bool,
+    _digest: PhantomData<PD>,
+    _token: PhantomData<AT>,
+}
+
+impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + Decodable,
+    S: SubspaceId + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    async fn new(
+        store: &'store StoreSimpleSled<N>,
+        area: &Area<MCL, MCC, MPL, S>,
+        order: &QueryOrder,
+        reverse: bool,
+        ignore: Option<QueryIgnoreParams>,
+    ) -> Result<Self, SimpleStoreSledError> {
+        let entry_tree = store.entry_tree()?;
+        let payload_tree = store.payload_tree()?;
+
+        let entry_iterator = match area.subspace() {
+            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                entry_tree.scan_prefix(&matching_subspace_path)
+            }
+        };
+
+        Ok(Self {
+            iter: entry_iterator,
+            area: area.clone(),
+            ignore,
+            store,
+            reverse,
+            _digest: PhantomData,
+            _token: PhantomData,
+        })
+    }
+}
+
+impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + Decodable,
+    S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+    S::ErrorReason: std::fmt::Debug,
+    PD::ErrorReason: std::fmt::Debug,
+    AT::ErrorReason: std::fmt::Debug,
+{
+    type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
+
+    type Final = ();
+
+    type Error = SimpleStoreSledError;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        loop {
+            let result = if self.reverse {
+                self.iter.next_back()
+            } else {
+                self.iter.next()
+            };
+
+            match result {
+                Some(Ok((key, value))) => {
+                    let (subspace, path, timestamp) =
+                        decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+                    let (length, digest, token) = decode_entry_values::<PD, AT>(&value).await;
+
+                    let exact_key = encode_subspace_path_key(&subspace, &path, true).await;
+
+                    let entry = Entry::new(
+                        self.store.namespace_id.clone(),
+                        subspace,
+                        path,
+                        timestamp,
+                        length,
+                        digest,
+                    );
+
+                    if !self.area.includes_entry(&entry) {
+                        continue;
+                    }
+
+                    let authed_entry = AuthorisedEntry::new_unchecked(entry, token);
+
+                    let payload_tree = self.store.payload_tree()?;
+
+                    let maybe_payload = self.store.prefix_gt(&payload_tree, &exact_key)?;
+
+                    let payload_length = match maybe_payload {
+                        Some((_key, value)) => value.len(),
+                        None => 0,
+                    };
+
+                    match &self.ignore {
+                        Some(params) => {
+                            let is_empty = payload_length == 0;
+                            let is_incomplete = is_empty || (payload_length as u64) < length;
+
+                            if (params.ignore_incomplete_payloads && is_incomplete)
+                                || (params.ignore_empty_payloads && is_empty)
+                            {
+                                continue;
+                            }
+
+                            return Ok(Either::Left(LengthyAuthorisedEntry::new(
+                                authed_entry,
+                                payload_length as u64,
+                            )));
+                        }
+                        None => {
+                            return Ok(Either::Left(LengthyAuthorisedEntry::new(
+                                authed_entry,
+                                payload_length as u64,
+                            )));
+                        }
+                    };
+                }
+                Some(Err(_err)) => return Err(SimpleStoreSledError {}),
+                None => return Ok(Either::Right(())),
+            }
         }
     }
 }
