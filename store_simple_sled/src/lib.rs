@@ -278,14 +278,14 @@ where
         Ok(EntryIngestionSuccess::Success)
     }
 
-    async fn append_payload<Producer>(
+    async fn append_payload<Producer, PayloadSourceError>(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::OperationsError>>
     where
-        Producer: BulkProducer<Item = u8>,
+        Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
         let entry_tree = self
             .entry_tree()
@@ -332,18 +332,19 @@ where
                         return Err(PayloadAppendError::TooManyBytes);
                     }
 
-                    let res = payload_source
-                        .produce()
-                        .await
-                        .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
-
-                    match res {
-                        Either::Left(byte) => {
+                    match payload_source.produce().await {
+                        Ok(Either::Left(byte)) => {
                             payload.push(byte);
                             PD::write(&mut hasher, &[byte]);
                             received_payload_len += 1;
                         }
-                        Either::Right(_) => break,
+                        Ok(Either::Right(_)) => break,
+                        Err(err) => {
+                            return Err(PayloadAppendError::SourceError {
+                                source_error: err,
+                                total_length_now_available: todo!(),
+                            })
+                        }
                     }
                 }
 
@@ -372,8 +373,8 @@ where
 
     async fn forget_entry(
         &self,
-        path: &willow_data_model::Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &willow_data_model::Path<MCL, MCC, MPL>,
     ) -> Result<(), Self::OperationsError> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
@@ -407,7 +408,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<u64, Self::OperationsError> {
+    ) -> Result<usize, Self::OperationsError> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
@@ -476,8 +477,8 @@ where
 
     async fn forget_payload(
         &self,
-        path: &willow_data_model::Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &willow_data_model::Path<MCL, MCC, MPL>,
     ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
         let payload_tree = self
             .payload_tree()
@@ -501,7 +502,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<u64, Self::OperationsError> {
+    ) -> Result<usize, Self::OperationsError> {
         let payload_tree = self.payload_tree()?;
 
         let mut payload_batch = sled::Batch::default();
@@ -589,8 +590,8 @@ where
 
     async fn entry(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,

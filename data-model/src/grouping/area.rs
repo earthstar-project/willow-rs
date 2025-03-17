@@ -145,9 +145,19 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        self.subspace.includes(entry.subspace_id())
-            && self.path.is_prefix_of(entry.path())
-            && self.times.includes(&entry.timestamp())
+        self.includes_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
+    }
+
+    /// Returns whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) includes an entry with a given subspace_id, path, and timestamp.
+    pub fn includes_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        self.subspace.includes(subspace_id)
+            && self.path.is_prefix_of(path)
+            && self.times.includes(&timestamp)
     }
 
     /// Returns whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].

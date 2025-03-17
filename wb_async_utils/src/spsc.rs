@@ -7,7 +7,7 @@
 //! - It can be backed by arbitrary [`Queue`]s. A common choice would be the [`ufotofu_queues::Fixed`] fixed-capacity queue.
 //! - It is unopinionated where the shared state between sender and receiver lives. Most APIs transparently handle the state by placing it on the heap behind a reference counted pointer. Our implementation lets the programmer supply the shared state as an opaque struct. When knowing the lifetime of the sender and receiver, the state can be stack-allocated instead of heap-allocated.
 //! - It allows closing with arbitrary `Final` values, and the sender has a method for triggering an error on the receiver.
-//! - Dropping the sender or the receiver does not inform the other endpoint about anything.
+//! - Dropping the sender or the receiver does not actively inform the other endpoint about anything (but you can query whether the other endpoint has been dropped whenever you feel like it).
 //!
 //! See [`new_spsc`] for the entrypoint to this module and some examples.
 
@@ -39,6 +39,8 @@ pub struct State<Q, F, E> {
     notify_the_sender: TakeCell<()>,
     // Empty while the receiver cannot make progress.
     notify_the_receiver: TakeCell<()>,
+    // True iff neither endpoint has been dropped yet.
+    nothing_dropped_yet: Cell<bool>,
 }
 
 impl<Q: Queue, F, E> State<Q, F, E> {
@@ -50,6 +52,7 @@ impl<Q: Queue, F, E> State<Q, F, E> {
             last: FairlyUnsafeCell::new(None),
             notify_the_sender: TakeCell::new_with(()),
             notify_the_receiver: TakeCell::new_with(()),
+            nothing_dropped_yet: Cell::new(true),
         }
     }
 }
@@ -119,14 +122,14 @@ where
 
 /// Allows sending data to the SPSC channel via its [`BulkConsumer`] implementation.
 #[derive(Debug)]
-pub struct Sender<R, Q, F, E> {
+pub struct Sender<R: Deref<Target = State<Q, F, E>>, Q, F, E> {
     state: R,
     phantom: PhantomData<(Q, F, E)>,
 }
 
 /// Allows receiving data from the SPSC channel via its [`BulkProducer`] implementation.
 #[derive(Debug)]
-pub struct Receiver<R, Q, F, E> {
+pub struct Receiver<R: Deref<Target = State<Q, F, E>>, Q, F, E> {
     state: R,
     phantom: PhantomData<(Q, F, E)>,
 }
@@ -175,6 +178,17 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Sender<R, Q, F, E> {
         self.state.notify_the_receiver.set(());
 
         Ok(())
+    }
+
+    /// Returns whether the correponding [`Receiver`] has been dropped already.
+    pub fn is_receiver_dropped(&self) -> bool {
+        self.state.nothing_dropped_yet.get()
+    }
+}
+
+impl<R: Deref<Target = State<Q, F, E>>, Q, F, E> Drop for Sender<R, Q, F, E> {
+    fn drop(&mut self) {
+        self.state.nothing_dropped_yet.set(false);
     }
 }
 
@@ -278,6 +292,17 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Receiver<R, Q, F, E> {
     /// Returns whether there are currently no items buffered.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Returns whether the correponding [`Sender`] has been dropped already.
+    pub fn is_receiver_dropped(&self) -> bool {
+        self.state.nothing_dropped_yet.get()
+    }
+}
+
+impl<R: Deref<Target = State<Q, F, E>>, Q, F, E> Drop for Receiver<R, Q, F, E> {
+    fn drop(&mut self) {
+        self.state.nothing_dropped_yet.set(false);
     }
 }
 

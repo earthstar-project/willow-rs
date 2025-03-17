@@ -10,10 +10,11 @@ use either::Either::{Left, Right};
 use meadowcap::SubspaceDelegation;
 use ufotofu::{consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Producer};
 use willow_data_model::{
-    grouping::Area, AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry,
-    EntryIngestionError, EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry,
-    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent,
-    SubspaceId, Timestamp,
+    grouping::{Area, AreaSubspace},
+    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
+    EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
+    Timestamp,
 };
 
 #[derive(Debug)]
@@ -58,7 +59,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, PD, AT>
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ControlEntry<PD, AT> {
     timestamp: Timestamp,
     payload_length: u64,
@@ -236,24 +237,62 @@ where
 
     async fn forget_entry(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
     ) -> Result<(), Self::OperationsError> {
-        todo!()
+        let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
+        subspace_store.entries.remove(path);
+        Ok(())
     }
 
     async fn forget_area(
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-    ) -> Result<u64, Self::OperationsError> {
-        todo!()
+    ) -> Result<usize, Self::OperationsError> {
+        let mut candidates = vec![];
+
+        let mut count = 0;
+
+        match area.subspace() {
+            AreaSubspace::Id(subspace_id) => {
+                let subspace_store = self.get_or_create_subspace_store(subspace_id);
+
+                for path in subspace_store.entries.keys() {
+                    if let Some(entry) = subspace_store.entries.get(path) {
+                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        for candidate in candidates {
+            if let Some(ref prot) = protected {
+                if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
+                    continue;
+                }
+            }
+
+            self.forget_entry(&candidate.0, &candidate.1).await?;
+            count += 1;
+        }
+
+        Ok(count)
     }
 
     async fn forget_payload(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
     ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
         todo!()
     }
@@ -280,8 +319,8 @@ where
 
     async fn entry(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
     ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::OperationsError>
     {
