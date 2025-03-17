@@ -434,14 +434,19 @@ where
         >,
     >;
 
-    /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of [`LengthyAuthorisedEntry`].
+    /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`].
     fn query_area(
         &self,
-        area: &AreaOfInterest<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+            Self::OperationsError,
+        >,
+    >;
 
     /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
