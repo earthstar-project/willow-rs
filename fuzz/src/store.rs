@@ -3,12 +3,17 @@ use std::{
     collections::BTreeMap,
     convert::Infallible,
     ops::{Deref, DerefMut},
+    thread::current,
 };
 
+use either::Either::{Left, Right};
 use meadowcap::SubspaceDelegation;
-use ufotofu::{producer::FromSlice, BulkConsumer, BulkProducer};
+use ufotofu::{consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Producer};
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError, EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId, Timestamp
+    grouping::Area, AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry,
+    EntryIngestionError, EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent,
+    SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -59,7 +64,7 @@ pub struct ControlEntry<PD, AT> {
     payload_length: u64,
     payload_digest: PD,
     authorisation_token: AT,
-    available_payload: Vec<u8>,
+    payload: Vec<u8>,
 }
 
 impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
@@ -115,10 +120,10 @@ where
         prevent_pruning: bool,
     ) -> Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<MCL, MCC, MPL, N, S, PD, AT, Self::OperationsError>,
+        EntryIngestionError<Self::OperationsError>,
     > {
         if self.namespace_id() != authorised_entry.entry().namespace_id() {
-            return Err(EntryIngestionError::WrongNamespace(authorised_entry));
+            panic!("Tried to ingest an entry into a store with a mismatching NamespaceId");
         }
 
         let mut subspace_store =
@@ -174,24 +179,65 @@ where
         }
     }
 
-    async fn append_payload<Producer>(
+    async fn append_payload<Producer, PayloadSourceError>(
         &self,
-        expected_digest: &PD,
-        expected_size: u64,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::OperationsError>>
     where
-        Producer: ufotofu::BulkProducer<Item = u8>,
+        Producer: ufotofu::BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
-        // self.get_or_create_subspace_store();
-        todo!()
+        let mut subspace_store = self.get_or_create_subspace_store(subspace);
+
+        match subspace_store.entries.get_mut(path) {
+            None => panic!("Tried to append a payload for a non-existant entry."),
+            Some(entry) => {
+                let max_length = entry.payload_length;
+                let mut current_length = entry.payload.len() as u64;
+
+                while current_length < max_length {
+                    match payload_source.expose_items().await {
+                        Err(err) => {
+                            return Err(PayloadAppendError::SourceError {
+                                source_error: err,
+                                total_length_now_available: current_length,
+                            });
+                        }
+                        Ok(Left(bytes)) => {
+                            current_length = current_length.saturating_add(bytes.len() as u64);
+                            if current_length > max_length {
+                                break;
+                            }
+
+                            entry.payload.extend_from_slice(bytes);
+                        }
+                        Ok(Right(_fin)) => break,
+                    }
+                }
+
+                if current_length > max_length {
+                    return Err(PayloadAppendError::TooManyBytes);
+                } else if current_length == max_length {
+                    let mut hasher = PD::hasher();
+                    PD::write(&mut hasher, &entry.payload);
+
+                    if PD::finish(&hasher) != entry.payload_digest {
+                        return Err(PayloadAppendError::DigestMismatch);
+                    } else {
+                        return Ok(PayloadAppendSuccess::Completed);
+                    }
+                } else {
+                    return Ok(PayloadAppendSuccess::Appended);
+                }
+            }
+        }
     }
 
     async fn forget_entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        traceless: bool,
     ) -> Result<(), Self::OperationsError> {
         todo!()
     }
@@ -200,42 +246,23 @@ where
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
     ) -> Result<u64, Self::OperationsError> {
         todo!()
     }
 
     async fn forget_payload(
+        &self,
         path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
-        traceless: bool,
-    ) -> Result<(), willow_data_model::ForgetPayloadError> {
-        todo!()
-    }
-
-    async fn force_forget_payload(
-        path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
-        traceless: bool,
-    ) -> Result<(), willow_data_model::NoSuchEntryError> {
+        subspace_id: &S,
+    ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
         todo!()
     }
 
     async fn forget_area_payloads(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
-    ) -> Vec<PD> {
-        todo!()
-    }
-
-    async fn force_forget_area_payloads(
-        &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
-    ) -> Vec<PD> {
+        area: &Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    ) -> Result<usize, Self::OperationsError> {
         todo!()
     }
 
@@ -243,7 +270,11 @@ where
         todo!()
     }
 
-    async fn payload(&self, payload_digest: &PD) -> Option<FromSlice<u8>> {
+    async fn payload(
+        &self,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
+    ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
         todo!()
     }
 
@@ -252,7 +283,8 @@ where
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::OperationsError>
+    {
         todo!()
     }
 
@@ -271,18 +303,6 @@ where
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
     ) -> FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
-        todo!()
-    }
-
-    async fn resume_subscription(
-        &self,
-        progress_id: u64,
-        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Result<
-        FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-        willow_data_model::ResumptionFailedError,
-    > {
         todo!()
     }
 }

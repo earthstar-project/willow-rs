@@ -96,18 +96,26 @@ pub enum PayloadAppendSuccess {
 
 /// Returned when a payload fails to be appended into the [`Store`].
 #[derive(Debug, Clone)]
-pub enum PayloadAppendError<OE> {
+pub enum PayloadAppendError<PayloadSourceError, OE> {
     /// The payload is already held in storage.
     AlreadyHaveIt,
     /// The payload source produced more bytes than were expected for this payload.
     TooManyBytes,
     /// The completed payload's digest is not what was expected.
     DigestMismatch,
+    /// The source that provided the payload bytes emitted an error.
+    SourceError {
+        source_error: PayloadSourceError,
+        /// Returns how many bytes of payload the store now stores for this entry.
+        total_length_now_available: u64,
+    },
     /// Something specific to this store implementation went wrong.
     OperationError(OE),
 }
 
-impl<OE: Display + Error> Display for PayloadAppendError<OE> {
+impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
+    for PayloadAppendError<PayloadSourceError, OE>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PayloadAppendError::AlreadyHaveIt => {
@@ -120,12 +128,18 @@ impl<OE: Display + Error> Display for PayloadAppendError<OE> {
             PayloadAppendError::DigestMismatch => {
                 write!(f, "The complete payload's digest is not what was expected.")
             }
+            PayloadAppendError::SourceError { source_error, .. } => {
+                write!(f, "The payload source emitted an error: {}", source_error)
+            }
             PayloadAppendError::OperationError(err) => std::fmt::Display::fmt(err, f),
         }
     }
 }
 
-impl<OE: Display + Error> Error for PayloadAppendError<OE> {}
+impl<PayloadSourceError: Display + Error, OE: Display + Error> Error
+    for PayloadAppendError<PayloadSourceError, OE>
+{
+}
 
 /// Returned when no entry was found for some criteria.
 #[derive(Debug, Clone)]
@@ -369,14 +383,19 @@ where
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
     /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
-    fn append_payload<Producer>(
+    fn append_payload<Producer, PayloadSourceError>(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> impl Future<Output = Result<PayloadAppendSuccess, PayloadAppendError<Self::OperationsError>>>
+    ) -> impl Future<
+        Output = Result<
+            PayloadAppendSuccess,
+            PayloadAppendError<PayloadSourceError, Self::OperationsError>,
+        >,
+    >
     where
-        Producer: BulkProducer<Item = u8>;
+        Producer: BulkProducer<Item = u8, Error = PayloadSourceError>;
 
     /// Locally forgets an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
     ///
@@ -420,12 +439,12 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<u64, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
 
     /// Forces persistence of all previous mutations
     fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
 
-    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given [`PayloadDigest`], if held.
+    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path.
     fn payload(
         &self,
         subspace: &S,
