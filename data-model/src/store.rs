@@ -168,7 +168,6 @@ where
 }
 
 /// An event which took place within a [`Store`].
-/// Each event includes a *progress ID* which can be used to *resume* a subscription at any point in the future.
 #[derive(Debug, Clone)]
 pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -178,19 +177,15 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     /// A new entry was ingested.
-    Ingested(
-        u64,
-        AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryOrigin,
-    ),
+    Ingested(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, EntryOrigin),
     /// An existing entry received a portion of its corresponding payload.
-    Appended(u64, LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
-    EntryForgotten(u64, (S, Path<MCL, MCC, MPL>)),
+    EntryForgotten((S, Path<MCL, MCC, MPL>)),
     /// A payload was forgotten.
-    PayloadForgotten(u64, PD),
+    PayloadForgotten(PD),
     /// An entry was pruned via prefix pruning.
-    Pruned(u64, PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
+    Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 }
 
 /// Returned when the store chooses to not resume a subscription.
@@ -387,14 +382,11 @@ where
     ///
     /// If the entry in question is the last remaining reference in the store to a particular [`PayloadDigest`], that payload will be forgotten from the store (if present).
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the entry. If `false`, it *may* persist what was forgotten for an arbitrary amount of time.
-    ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        traceless: bool,
     ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
     /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
@@ -403,40 +395,31 @@ where
     ///
     /// If `protected` is `Some`, then all entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten entries. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
-    ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entries back.
     fn forget_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
     ) -> impl Future<Output = Result<u64, Self::OperationsError>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
-    ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the payload. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
         &self,
         path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
-        traceless: bool,
     ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::OperationsError>>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
     /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
-    /// If the `traceless` parameter is `true`, the store will keep no record of ever having had the forgotten payloads. If `false`, it *may* persist what was forgetten for an arbitrary amount of time.
-    ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payloads back.
     fn forget_area_payloads(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
     ) -> impl Future<Output = Result<u64, Self::OperationsError>>;
 
     /// Forces persistence of all previous mutations
@@ -477,17 +460,4 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
-
-    /// Attempts to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
-    fn resume_subscription(
-        &self,
-        progress_id: u64,
-        area: &Area<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-            ResumptionFailedError,
-        >,
-    >;
 }
