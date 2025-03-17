@@ -8,13 +8,17 @@ use std::{
 
 use either::Either::{Left, Right};
 use meadowcap::SubspaceDelegation;
-use ufotofu::{consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Producer};
+use ufotofu::{
+    consumer::IntoVec,
+    producer::{FromBoxedSlice, FromSlice},
+    BulkConsumer, BulkProducer, Producer,
+};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, Store, StoreEvent, SubspaceId,
-    Timestamp,
+    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
+    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store, StoreEvent,
+    SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -293,8 +297,15 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
-        todo!()
+    ) -> Result<(), Self::OperationsError> {
+        let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
+        match subspace_store.entries.get_mut(path) {
+            None => panic!("Tried to forget the payload of an entry we do not have."),
+            Some(entry) => {
+                entry.payload.clear();
+            }
+        }
+        Ok(())
     }
 
     async fn forget_area_payloads(
@@ -302,11 +313,47 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::OperationsError> {
-        todo!()
+        let mut candidates = vec![];
+
+        let mut count = 0;
+
+        match area.subspace() {
+            AreaSubspace::Id(subspace_id) => {
+                let subspace_store = self.get_or_create_subspace_store(subspace_id);
+
+                for path in subspace_store.entries.keys() {
+                    if let Some(entry) = subspace_store.entries.get(path) {
+                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        for candidate in candidates {
+            if let Some(ref prot) = protected {
+                if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
+                    continue;
+                }
+            }
+
+            self.forget_payload(&candidate.0, &candidate.1).await?;
+            count += 1;
+        }
+
+        Ok(count)
     }
 
     async fn flush(&self) -> Result<(), Self::FlushError> {
-        todo!()
+        Ok(())
     }
 
     async fn payload(
@@ -314,34 +361,193 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
     ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
-        todo!()
+        let mut subspace_store = self.get_or_create_subspace_store(subspace);
+        match subspace_store.entries.get_mut(path) {
+            None => Ok(None),
+            Some(entry) => Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone()))),
+        }
     }
 
     async fn entry(
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
+        ignore: Option<QueryIgnoreParams>,
     ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::OperationsError>
     {
-        todo!()
+        let subspace_store = self.get_or_create_subspace_store(subspace_id);
+        match subspace_store.entries.get(path) {
+            None => Ok(None),
+            Some(entry) => {
+                let available = entry.payload.len() as u64;
+
+                if let Some(QueryIgnoreParams {
+                    ignore_incomplete_payloads,
+                    ignore_empty_payloads,
+                }) = ignore
+                {
+                    if (ignore_empty_payloads && available == 0)
+                        || (ignore_incomplete_payloads && available != entry.payload_length)
+                    {
+                        return Ok(None);
+                    }
+                }
+
+                return Ok(Some(LengthyAuthorisedEntry::new(
+                    AuthorisedEntry::new(
+                        Entry::new(
+                            self.namespace.clone(),
+                            subspace_id.clone(),
+                            path.clone(),
+                            entry.timestamp,
+                            entry.payload_length,
+                            entry.payload_digest.clone(),
+                        ),
+                        entry.authorisation_token.clone(),
+                    )
+                    .unwrap(),
+                    available,
+                )));
+            }
+        }
     }
 
-    fn query_area(
+    async fn query_area(
         &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        order: &willow_data_model::QueryOrder,
+        area: &Area<MCL, MCC, MPL, S>,
+        order: &QueryOrder,
         reverse: bool,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> FromSlice<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
-        todo!()
+    ) -> Result<
+        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        Self::OperationsError,
+    > {
+        let mut candidates = vec![];
+
+        match area.subspace() {
+            AreaSubspace::Id(subspace_id) => {
+                let subspace_store = self.get_or_create_subspace_store(subspace_id);
+
+                for path in subspace_store.entries.keys() {
+                    if let Some(entry) = subspace_store.entries.get(path) {
+                        let available = entry.payload.len() as u64;
+
+                        if let Some(QueryIgnoreParams {
+                            ignore_incomplete_payloads,
+                            ignore_empty_payloads,
+                        }) = ignore
+                        {
+                            if (ignore_empty_payloads && available == 0)
+                                || (ignore_incomplete_payloads && available != entry.payload_length)
+                            {
+                                continue;
+                            } else {
+                                candidates.push(LengthyAuthorisedEntry::new(
+                                    AuthorisedEntry::new(
+                                        Entry::new(
+                                            self.namespace.clone(),
+                                            subspace_id.clone(),
+                                            path.clone(),
+                                            entry.timestamp,
+                                            entry.payload_length,
+                                            entry.payload_digest.clone(),
+                                        ),
+                                        entry.authorisation_token.clone(),
+                                    )
+                                    .unwrap(),
+                                    available,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            let available = entry.payload.len() as u64;
+
+                            if let Some(QueryIgnoreParams {
+                                ignore_incomplete_payloads,
+                                ignore_empty_payloads,
+                            }) = ignore
+                            {
+                                if (ignore_empty_payloads && available == 0)
+                                    || (ignore_incomplete_payloads
+                                        && available != entry.payload_length)
+                                {
+                                    continue;
+                                } else {
+                                    candidates.push(LengthyAuthorisedEntry::new(
+                                        AuthorisedEntry::new(
+                                            Entry::new(
+                                                self.namespace.clone(),
+                                                subspace_id.clone(),
+                                                path.clone(),
+                                                entry.timestamp,
+                                                entry.payload_length,
+                                                entry.payload_digest.clone(),
+                                            ),
+                                            entry.authorisation_token.clone(),
+                                        )
+                                        .unwrap(),
+                                        available,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        match order {
+            QueryOrder::Subspace => {
+                candidates.sort_by(|a, b| {
+                    a.entry()
+                        .entry()
+                        .subspace_id()
+                        .cmp(&b.entry().entry().subspace_id())
+                        .then(a.entry().entry().path().cmp(&b.entry().entry().path()))
+                        .then(
+                            a.entry()
+                                .entry()
+                                .timestamp()
+                                .cmp(&b.entry().entry().timestamp()),
+                        )
+                });
+            }
+            QueryOrder::Path => {
+                candidates.sort_by(|a, b| a.entry().entry().path().cmp(&b.entry().entry().path()));
+            }
+            QueryOrder::Timestamp => {
+                candidates.sort_by(|a, b| {
+                    a.entry()
+                        .entry()
+                        .timestamp()
+                        .cmp(&b.entry().entry().timestamp())
+                });
+            }
+            QueryOrder::Arbitrary => {
+                // no-op
+            }
+        }
+
+        if reverse {
+            candidates.reverse();
+        }
+
+        Ok(FromBoxedSlice::from_vec(candidates))
     }
 
     fn subscribe_area(
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>
+// impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
+    {
         todo!()
     }
 }

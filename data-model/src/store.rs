@@ -239,36 +239,6 @@ impl QueryIgnoreParams {
 
 /// Returned when a payload could not be forgotten.
 #[derive(Debug, Clone)]
-pub enum ForgetPayloadError<OE: Debug> {
-    NoSuchEntry,
-    ReferredToByOtherEntries,
-    OperationsError(OE),
-}
-
-impl<OE: Debug> Display for ForgetPayloadError<OE> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ForgetPayloadError::NoSuchEntry => {
-                write!(
-                    f,
-                    "No entry for the given criteria could be found in this store."
-                )
-            }
-            ForgetPayloadError::ReferredToByOtherEntries => write!(
-                f,
-                "The payload could not be forgotten because it is referred to by other entries."
-            ),
-            ForgetPayloadError::OperationsError(_) => {
-                write!(f, "There store encountered an internal error.")
-            }
-        }
-    }
-}
-
-impl<OE: Debug> Error for ForgetPayloadError<OE> {}
-
-/// Returned when a payload could not be forgotten.
-#[derive(Debug, Clone)]
 pub enum ForceForgetPayloadError<OE: Debug> {
     NoSuchEntry,
     OperationsError(OE),
@@ -428,7 +398,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::OperationsError>>>;
+    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
