@@ -17,7 +17,6 @@ use willow_data_model::{
 pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace: N,
     subspaces: RefCell<BTreeMap<S, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>>,
-    payloads: RefCell<BTreeMap<PD, Vec<u8>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -62,6 +61,7 @@ pub struct ControlEntry<PD, AT> {
     payload_length: u64,
     payload_digest: PD,
     authorisation_token: AT,
+    payload: Vec<u8>,
 }
 
 impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
@@ -185,6 +185,11 @@ where
     where
         Producer: ufotofu::BulkProducer<Item = u8>,
     {
+        let mut subspace_store =
+            self.get_or_create_subspace_store(&authorised_entry.entry().subspace_id());
+
+        
+
         match self.payloads.borrow_mut().get_mut(expected_digest) {
             None => todo!(),
             Some(prior_bytes) => {
@@ -224,24 +229,7 @@ where
         todo!()
     }
 
-    async fn force_forget_payload(
-        path: &Path<MCL, MCC, MPL>,
-        subspace_id: S,
-        traceless: bool,
-    ) -> Result<(), willow_data_model::NoSuchEntryError> {
-        todo!()
-    }
-
     async fn forget_area_payloads(
-        &self,
-        area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-        traceless: bool,
-    ) -> Vec<PD> {
-        todo!()
-    }
-
-    async fn force_forget_area_payloads(
         &self,
         area: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
         protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
