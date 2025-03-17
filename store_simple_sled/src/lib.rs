@@ -13,9 +13,8 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
-    SubspaceId,
+    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
+    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>
@@ -479,20 +478,18 @@ where
         &self,
         subspace_id: &S,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-    ) -> Result<(), ForgetPayloadError<Self::OperationsError>> {
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|_| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+    ) -> Result<(), Self::OperationsError> {
+        let payload_tree = self.payload_tree().map_err(|_| SimpleStoreSledError {})?;
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
         let maybe_payload = self
             .prefix_gt(&payload_tree, &exact_key)
-            .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+            .map_err(|_err| SimpleStoreSledError {})?;
 
         if let Some((key, _value)) = maybe_payload {
             payload_tree
                 .remove(key)
-                .map_err(|_err| ForgetPayloadError::OperationsError(SimpleStoreSledError {}))?;
+                .map_err(|_err| SimpleStoreSledError {})?;
         }
 
         Ok(())
@@ -569,12 +566,11 @@ where
         self.flush()
     }
 
-    #[allow(refining_impl_trait_reachable)]
     async fn payload(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<PayloadProducer>, Self::OperationsError> {
+    ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
         let payload_tree = self.payload_tree()?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
