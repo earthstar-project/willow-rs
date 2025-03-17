@@ -13,9 +13,9 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, ForgetPayloadError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store,
-    StoreEvent, SubspaceId,
+    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
+    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store, StoreEvent,
+    SubspaceId,
 };
 
 pub struct StoreSimpleSled<N>

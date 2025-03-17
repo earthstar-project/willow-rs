@@ -412,13 +412,16 @@ where
         }
     }
 
-    fn query_area(
+    async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> Result<
+        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        Self::OperationsError,
+    > {
         let mut candidates = vec![];
 
         match area.subspace() {
@@ -535,7 +538,7 @@ where
             candidates.reverse();
         }
 
-        return FromBoxedSlice::from_vec(candidates);
+        Ok(FromBoxedSlice::from_vec(candidates))
     }
 
     fn subscribe_area(
