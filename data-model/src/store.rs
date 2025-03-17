@@ -404,8 +404,8 @@ where
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
     ) -> impl Future<Output = Result<(), Self::OperationsError>>;
 
     /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
@@ -419,15 +419,15 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<u64, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
     ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::OperationsError>>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
@@ -454,8 +454,8 @@ where
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
         &self,
-        path: &Path<MCL, MCC, MPL>,
         subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<
         Output = Result<
