@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 ufotofu = { version = "0.6.2", features = ["std", "dev"] }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
-ufotofu_queues = { version = "0.5.0", features = ["std"] }
+ufotofu_queues = { version = "0.6.0", features = ["std"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }

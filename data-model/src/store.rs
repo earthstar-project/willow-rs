@@ -202,22 +202,6 @@ where
     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 }
 
-/// Returned when the store chooses to not resume a subscription.
-#[derive(Debug, Clone)]
-pub struct ResumptionFailedError(pub u64);
-
-impl Display for ResumptionFailedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "The subscription with ID {:?} could not be resumed.",
-            self.0
-        )
-    }
-}
-
-impl Error for ResumptionFailedError {}
-
 /// Describes which entries to ignore during a query.
 #[derive(Default, Clone)]
 pub struct QueryIgnoreParams {
@@ -239,28 +223,33 @@ impl QueryIgnoreParams {
 
 /// Returned when a payload could not be forgotten.
 #[derive(Debug, Clone)]
-pub enum ForceForgetPayloadError<OE: Debug> {
+pub enum ForgetPayloadError<OE: Debug> {
     NoSuchEntry,
+    ReferredToByOtherEntries,
     OperationsError(OE),
 }
 
-impl<OE: Debug> Display for ForceForgetPayloadError<OE> {
+impl<OE: Debug> Display for ForgetPayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ForceForgetPayloadError::NoSuchEntry => {
+            ForgetPayloadError::NoSuchEntry => {
                 write!(
                     f,
                     "No entry for the given criteria could be found in this store."
                 )
             }
-            ForceForgetPayloadError::OperationsError(_) => {
+            ForgetPayloadError::ReferredToByOtherEntries => write!(
+                f,
+                "The payload could not be forgotten because it is referred to by other entries."
+            ),
+            ForgetPayloadError::OperationsError(_) => {
                 write!(f, "There store encountered an internal error.")
             }
         }
     }
 }
 
-impl<OE: Debug> Error for ForceForgetPayloadError<OE> {}
+impl<OE: Debug> Error for ForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -270,6 +259,13 @@ pub enum EntryOrigin {
     /// The entry was sourced from another source with an ID assigned by us.
     /// This is useful if you want to suppress the forwarding of entries to the peers from which the entry was originally sourced.
     Remote(u64),
+}
+
+pub enum EventSenderError<OE> {
+    /// The store threw an error.
+    StoreError(OE),
+    /// You failed to process events quickly enough.
+    DoTryToKeepUp,
 }
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
@@ -453,5 +449,8 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Producer<
+        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        Error = EventSenderError<Self::OperationsError>,
+    >;
 }
