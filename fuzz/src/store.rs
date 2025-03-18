@@ -543,11 +543,35 @@ where
 
     fn subscribe_area(
         &self,
-        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>
-// impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
-    {
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: Option<QueryIgnoreParams>,
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
         todo!()
     }
 }
+
+struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
+    area: Area<MCL, MCC, MPL, S>,
+    ignore: Option<QueryIgnoreParams>,
+}
+
+// /// An event which took place within a [`Store`].
+// #[derive(Debug, Clone)]
+// pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+// where
+//     N: NamespaceId,
+//     S: SubspaceId,
+//     PD: PayloadDigest,
+//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+// {
+//     /// A new entry was ingested.
+//     Ingested(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, EntryOrigin),
+//     /// An existing entry received a portion of its corresponding payload.
+//     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+//     /// An entry was forgotten.
+//     EntryForgotten((S, Path<MCL, MCC, MPL>)),
+//     /// A payload was forgotten.
+//     PayloadForgotten(PD),
+//     /// An entry was pruned via prefix pruning.
+//     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
+// }
