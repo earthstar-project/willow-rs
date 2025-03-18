@@ -690,7 +690,9 @@ where
 
         self.event_packs.borrow_mut().push(pack);
 
-        receiver
+        // receiver
+
+        todo!()
     }
 }
 
@@ -1081,7 +1083,7 @@ where
     ignore: Option<QueryIgnoreParams>,
     state: std::rc::Rc<
         State<
-            Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
             (),
             EventSenderError<SimpleStoreSledError>,
         >,
@@ -1090,12 +1092,12 @@ where
     sender: Sender<
         std::rc::Rc<
             State<
-                Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+                Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
                 (),
                 EventSenderError<SimpleStoreSledError>,
             >,
         >,
-        Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+        Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
         (),
         EventSenderError<SimpleStoreSledError>,
     >,
@@ -1115,23 +1117,18 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> (
         Self,
-        Receiver<
-            std::rc::Rc<
-                State<
-                    Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-                    (),
-                    EventSenderError<SimpleStoreSledError>,
-                >,
-            >,
-            Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-            (),
-            EventSenderError<SimpleStoreSledError>,
-        >,
+        impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
     ) {
-        // TODO: Implement default on a wrapper type of StoreEvent
-        let state = State::new(Fixed::<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>::new(256));
+        let state = State::new(Fixed::<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>::new(
+            256,
+        ));
         let state_rc = std::rc::Rc::new(state);
-        let (mut sender, mut receiver) = new_spsc(state_rc);
+        let (sender, receiver) = new_spsc(state_rc.clone());
+
+        let mapped = ufotofu::producer::MapItem::new(
+            receiver,
+            |simple: SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>| simple.event,
+        );
 
         let pack = Self {
             area,
@@ -1140,15 +1137,43 @@ where
             sender,
         };
 
-        (pack, receiver)
+        (pack, mapped)
     }
 
     fn send_event(&self, event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> Result<(), ()> {
         if event.included_by_area(&self.area) {
             // need some trait satisfaction here
-            self.sender.consume()
+            // self.sender.consume()
         }
 
         todo!()
+    }
+}
+
+// We need this just so we can have a `Default` impl
+// So that we can stick it in a ufotofu_queues::fixed
+#[derive(Clone)]
+struct SimpleStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
+    for SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    fn default() -> Self {
+        Self {
+            event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
+        }
     }
 }

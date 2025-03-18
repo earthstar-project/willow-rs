@@ -10,8 +10,8 @@ workspace = true
 sled = "0.34.7"
 willow-data-model = { path = "../data-model", version = "0.1.0" }
 ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
-ufotofu = { version = "0.6.0" }
+ufotofu = { version = "0.6.3" }
 ufotofu_codec_endian = { path = "../ufotofu_codec_endian", version = "0.1.0" }
 either = "1.10.0"
-wb_async_utils = { path = "../wb_async_utils", version = "0.1.0" }
+wb_async_utils = { path = "../wb_async_utils", version = "0.1.0", features = ["ufotofu_utils"] }
 ufotofu_queues = { version = "0.6.0", features = ["std"] }

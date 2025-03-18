@@ -43,7 +43,7 @@ pub trait AuthorisationToken<
     N: NamespaceId,
     S: SubspaceId,
     PD: PayloadDigest,
->
+>: Clone
 {
     /// Determines whether this type (nominally a [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken)) is able to prove write permission for a given [`Entry`].
     fn is_authorised_write(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool;
