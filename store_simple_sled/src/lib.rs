@@ -1,5 +1,7 @@
 use either::Either;
 use std::{convert::Infallible, marker::PhantomData};
+use ufotofu_queues::Fixed;
+use wb_async_utils::spsc::{new_spsc, Receiver, Sender, State};
 
 use sled::{
     transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
@@ -11,28 +13,36 @@ use ufotofu::{
 use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
-    grouping::{Area, AreaOfInterest, AreaSubspace},
+    grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
-    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store, StoreEvent,
-    SubspaceId,
+    EntryIngestionSuccess, EventSenderError, ForgetPayloadError, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams,
+    QueryOrder, Store, StoreEvent, SubspaceId,
 };
 
-pub struct StoreSimpleSled<N>
+pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     namespace_id: N,
     db: Db,
+    event_packs: std::cell::RefCell<Vec<EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
 const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0001];
 const MISC_TREE_KEY: [u8; 1] = [0b0000_0010];
 
-impl<N> StoreSimpleSled<N>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     pub fn new(namespace: &N, db: Db) -> Self
     where
@@ -62,7 +72,7 @@ where
     }
 
     /// Return whether this store contains entries with paths that are prefixes of the given path and newer than the given timestamp
-    async fn is_prefixed_by_newer<const MCL: usize, const MCC: usize, const MPL: usize, S, PD, AT>(
+    async fn is_prefixed_by_newer(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
@@ -141,7 +151,7 @@ impl core::fmt::Display for SimpleStoreSledError {
 impl core::error::Error for SimpleStoreSledError {}
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<N>
+    Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
@@ -658,11 +668,30 @@ where
         EntryProducer::new(self, area, order, reverse, ignore).await
     }
 
+    #[allow(refining_impl_trait)]
     fn subscribe_area(
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> DummyProducer<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> Receiver<
+        std::rc::Rc<
+            State<
+                Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+                (),
+                EventSenderError<SimpleStoreSledError>,
+            >,
+        >,
+        Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+        (),
+        EventSenderError<SimpleStoreSledError>,
+    > {
+        let (pack, receiver) =
+            EventSubscriberPack::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
+
+        self.event_packs.borrow_mut().push(pack);
+
+        // receiver
+
         todo!()
     }
 }
@@ -867,22 +896,6 @@ impl From<SledError> for SimpleStoreSledError {
     }
 }
 
-struct DummyProducer<T> {
-    thing: T,
-}
-
-impl<T> Producer for DummyProducer<T> {
-    type Item = T;
-
-    type Final = ();
-
-    type Error = Infallible;
-
-    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-        todo!("You should not actually be *running* this DummyProducer, Dummy.")
-    }
-}
-
 pub struct PayloadProducer {
     produced: usize,
     ivec: IVec,
@@ -922,7 +935,7 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     iter: sled::Iter,
-    store: &'store StoreSimpleSled<N>,
+    store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
     ignore: Option<QueryIgnoreParams>,
     area: Area<MCL, MCC, MPL, S>,
     reverse: bool,
@@ -939,14 +952,13 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     async fn new(
-        store: &'store StoreSimpleSled<N>,
+        store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<Self, SimpleStoreSledError> {
         let entry_tree = store.entry_tree()?;
-        let payload_tree = store.payload_tree()?;
 
         let entry_iterator = match area.subspace() {
             AreaSubspace::Any => entry_tree.iter(),
@@ -1054,6 +1066,114 @@ where
                 Some(Err(_err)) => return Err(SimpleStoreSledError {}),
                 None => return Ok(Either::Right(())),
             }
+        }
+    }
+}
+
+// Going to store a vec of these in the store
+struct EventSubscriberPack<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    // Use these two to determine if we should send an event here
+    area: Area<MCL, MCC, MPL, S>,
+    ignore: Option<QueryIgnoreParams>,
+    state: std::rc::Rc<
+        State<
+            Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            (),
+            EventSenderError<SimpleStoreSledError>,
+        >,
+    >,
+    // We send events to this thing.
+    sender: Sender<
+        std::rc::Rc<
+            State<
+                Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+                (),
+                EventSenderError<SimpleStoreSledError>,
+            >,
+        >,
+        Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+        (),
+        EventSenderError<SimpleStoreSledError>,
+    >,
+    // No sender here because we give ownership of that to the caller of the function?
+}
+
+impl<'state, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    fn new(
+        area: Area<MCL, MCC, MPL, S>,
+        ignore: Option<QueryIgnoreParams>,
+    ) -> (
+        Self,
+        impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+    ) {
+        let state = State::new(Fixed::<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>::new(
+            256,
+        ));
+        let state_rc = std::rc::Rc::new(state);
+        let (sender, receiver) = new_spsc(state_rc.clone());
+
+        let mapped = ufotofu::producer::MapItem::new(
+            receiver,
+            |simple: SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>| simple.event,
+        );
+
+        let pack = Self {
+            area,
+            ignore,
+            state: state_rc,
+            sender,
+        };
+
+        (pack, mapped)
+    }
+
+    fn send_event(&self, event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> Result<(), ()> {
+        if event.included_by_area(&self.area) {
+            // need some trait satisfaction here
+            // self.sender.consume()
+        }
+
+        todo!()
+    }
+}
+
+// We need this just so we can have a `Default` impl
+// So that we can stick it in a ufotofu_queues::fixed
+#[derive(Clone)]
+struct SimpleStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
+    for SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    fn default() -> Self {
+        Self {
+            event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
         }
     }
 }

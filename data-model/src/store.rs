@@ -175,8 +175,8 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// The subspace ID and path of the entry which was pruned.
-    pub pruned: (S, Path<MCL, MCC, MPL>),
+    /// The subspace ID, path, and timestamp of the entry which was pruned.
+    pub pruned: (S, Path<MCL, MCC, MPL>, u64),
     /// The entry which triggered the pruning.
     pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
 }
@@ -195,28 +195,43 @@ where
     /// An existing entry received a portion of its corresponding payload.
     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
-    EntryForgotten((S, Path<MCL, MCC, MPL>)),
+    EntryForgotten((S, Path<MCL, MCC, MPL>, u64)),
     /// A payload was forgotten.
-    PayloadForgotten(PD),
+    PayloadForgotten(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was pruned via prefix pruning.
     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 }
 
-/// Returned when the store chooses to not resume a subscription.
-#[derive(Debug, Clone)]
-pub struct ResumptionFailedError(pub u64);
-
-impl Display for ResumptionFailedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "The subscription with ID {:?} could not be resumed.",
-            self.0
-        )
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    StoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
+        match self {
+            StoreEvent::Ingested(authorised_entry, _entry_origin) => {
+                area.includes_entry(authorised_entry.entry())
+            }
+            StoreEvent::Appended(lengthy_authorised_entry) => {
+                area.includes_entry(lengthy_authorised_entry.entry().entry())
+            }
+            StoreEvent::EntryForgotten((subspace, path, time)) => {
+                area.subspace().includes(subspace)
+                    && area.path().is_prefix_of(path)
+                    && area.times().includes(time)
+            }
+            StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
+            StoreEvent::Pruned(prune_event) => {
+                area.subspace().includes(&prune_event.pruned.0)
+                    && area.path().is_prefix_of(&prune_event.pruned.1)
+                    && area.times().includes(&prune_event.pruned.2)
+            }
+        }
     }
 }
-
-impl Error for ResumptionFailedError {}
 
 /// Describes which entries to ignore during a query.
 #[derive(Default, Clone)]
@@ -239,28 +254,33 @@ impl QueryIgnoreParams {
 
 /// Returned when a payload could not be forgotten.
 #[derive(Debug, Clone)]
-pub enum ForceForgetPayloadError<OE: Debug> {
+pub enum ForgetPayloadError<OE: Debug> {
     NoSuchEntry,
+    ReferredToByOtherEntries,
     OperationsError(OE),
 }
 
-impl<OE: Debug> Display for ForceForgetPayloadError<OE> {
+impl<OE: Debug> Display for ForgetPayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ForceForgetPayloadError::NoSuchEntry => {
+            ForgetPayloadError::NoSuchEntry => {
                 write!(
                     f,
                     "No entry for the given criteria could be found in this store."
                 )
             }
-            ForceForgetPayloadError::OperationsError(_) => {
+            ForgetPayloadError::ReferredToByOtherEntries => write!(
+                f,
+                "The payload could not be forgotten because it is referred to by other entries."
+            ),
+            ForgetPayloadError::OperationsError(_) => {
                 write!(f, "There store encountered an internal error.")
             }
         }
     }
 }
 
-impl<OE: Debug> Error for ForceForgetPayloadError<OE> {}
+impl<OE: Debug> Error for ForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -270,6 +290,13 @@ pub enum EntryOrigin {
     /// The entry was sourced from another source with an ID assigned by us.
     /// This is useful if you want to suppress the forwarding of entries to the peers from which the entry was originally sourced.
     Remote(u64),
+}
+
+pub enum EventSenderError<OE> {
+    /// The store threw an error.
+    StoreError(OE),
+    /// You failed to process events quickly enough.
+    DoTryToKeepUp,
 }
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
@@ -453,5 +480,8 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
+    ) -> impl Producer<
+        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        Error = EventSenderError<Self::OperationsError>,
+    >;
 }

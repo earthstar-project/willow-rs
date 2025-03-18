@@ -11,7 +11,7 @@ ufotofu_utils = ["ufotofu", "ufotofu_queues", "either"]
 [dependencies]
 ufotofu = { version = "0.6.1", features = ["std", "dev"], optional = true }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"], optional = true }
-ufotofu_queues = { version = "0.5.0", features = ["std"], optional = true }
+ufotofu_queues = { version = "0.6.0", features = ["std"], optional = true }
 either = { version = "1.10.0", optional = true }
 fairly_unsafe_cell = { path = "../fairly_unsafe_cell", version = "0.1.0" }
 
