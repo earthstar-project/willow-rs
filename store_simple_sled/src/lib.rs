@@ -701,14 +701,16 @@ where
         Ok(None)
     }
 
-    #[allow(refining_impl_trait)]
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Result<EntryProducer<MCL, MCC, MPL, N, S, PD, AT>, SimpleStoreSledError> {
+        ignore: Option<QueryIgnoreParams>,
+    ) -> Result<
+        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        Self::OperationsError,
+    > {
         EntryProducer::new(self, area, order, reverse, ignore).await
     }
 

@@ -337,6 +337,7 @@ where
         entry_producer: &mut P,
         result_consumer: &mut C,
         prevent_pruning: bool,
+        origin: EntryOrigin,
     ) -> impl Future<Output = Result<(), BulkIngestionError<P::Error, C::Error>>>
     where
         P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
@@ -356,7 +357,9 @@ where
 
                 match next {
                     Either::Left(authed_entry) => {
-                        let result = self.ingest_entry(authed_entry, prevent_pruning).await;
+                        let result = self
+                            .ingest_entry(authed_entry, prevent_pruning, origin.clone())
+                            .await;
 
                         result_consumer
                             .consume(result)
