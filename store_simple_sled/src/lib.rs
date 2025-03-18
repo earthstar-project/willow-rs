@@ -1104,7 +1104,7 @@ where
     // No sender here because we give ownership of that to the caller of the function?
 }
 
-impl<'state, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -1140,13 +1140,41 @@ where
         (pack, mapped)
     }
 
-    fn send_event(&self, event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> Result<(), ()> {
-        if event.included_by_area(&self.area) {
-            // need some trait satisfaction here
-            // self.sender.consume()
+    /// Error indicates that sender was dropped.
+    async fn send_event(
+        &mut self,
+        event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        complete_length: u64,
+        length_in_possession: u64,
+    ) -> Result<(), ()> {
+        if self.sender.is_receiver_dropped() {
+            return Err(());
         }
 
-        todo!()
+        let should_send = if event.included_by_area(&self.area) {
+            match &self.ignore {
+                Some(params) => {
+                    let is_empty = length_in_possession == 0;
+                    let is_incomplete = is_empty || length_in_possession < complete_length;
+
+                    !((params.ignore_incomplete_payloads && is_incomplete)
+                        || (params.ignore_empty_payloads && is_empty))
+                }
+                None => true,
+            }
+        } else {
+            false
+        };
+
+        if should_send {
+            // We can unwrap because sender is infallible, apparently.
+            self.sender
+                .consume(SimpleStoreEvent { event })
+                .await
+                .unwrap();
+        }
+
+        Ok(())
     }
 }
 
