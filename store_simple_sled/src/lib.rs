@@ -1,7 +1,7 @@
 use either::Either;
-use std::{convert::Infallible, marker::PhantomData};
+use std::{collections::BTreeMap, convert::Infallible};
 use ufotofu_queues::Fixed;
-use wb_async_utils::spsc::{new_spsc, Receiver, Sender, State};
+use wb_async_utils::spsc::{new_spsc, Sender, State};
 
 use sled::{
     transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
@@ -15,9 +15,9 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, EventSenderError, ForgetPayloadError, LengthyAuthorisedEntry,
-    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams,
-    QueryOrder, Store, StoreEvent, SubspaceId,
+    EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
+    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder,
+    Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -29,7 +29,8 @@ where
 {
     namespace_id: N,
     db: Db,
-    event_packs: std::cell::RefCell<Vec<EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>>>,
+    event_packs:
+        std::cell::RefCell<BTreeMap<u64, EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
@@ -137,6 +138,29 @@ where
 
         Ok(None)
     }
+
+    /// Regarding `completeness`: This should be the maximum amount of payload completeness from all entries related to this event.
+    async fn send_event(
+        &mut self,
+        event: &StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+
+        completeness: PayloadCompleteness,
+    ) -> () {
+        let mut packs = self.event_packs.borrow_mut();
+
+        let mut dropped = Vec::<u64>::new();
+
+        for (key, pack) in packs.iter_mut() {
+            match pack.send_event(event, &completeness).await {
+                Ok(_) => {}
+                Err(_) => dropped.push(*key),
+            }
+        }
+
+        for key in dropped {
+            packs.remove(&key);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -175,6 +199,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        origin: EntryOrigin,
     ) -> Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
         EntryIngestionError<Self::OperationsError>,
@@ -218,6 +243,7 @@ where
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
 
         let mut keys_to_prune: Vec<IVec> = Vec::new();
+        let mut least_completeness = PayloadCompleteness::Empty;
 
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
@@ -284,6 +310,14 @@ where
                 },
             )
             .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+
+        self.send_event(
+            StoreEvent::Ingested(entry, origin),
+            PayloadCompleteness::Empty,
+        )
+        .await;
+
+        // TODO: Send prune event if any pruning occurred.
 
         Ok(EntryIngestionSuccess::Success)
     }
@@ -376,6 +410,8 @@ where
                         .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
                     Ok(PayloadAppendSuccess::Appended)
                 }
+
+                // TODO: Send StoreEvent::Appended
             }
             None => panic!("Tried to append a payload to an entry we do not have in the store."),
         }
@@ -409,6 +445,8 @@ where
                     },
                 )
                 .map_err(|_| SimpleStoreSledError {})?;
+
+            // Send StoreEvent::EntryForgotten
         }
 
         Ok(())
@@ -482,6 +520,8 @@ where
             )
             .map_err(|_| SimpleStoreSledError {})?;
 
+        // Send StoreEvent::EntryForgotten for each forgotten entry.
+
         Ok(forgotten_count)
     }
 
@@ -501,6 +541,8 @@ where
             payload_tree
                 .remove(key)
                 .map_err(|_err| SimpleStoreSledError {})?;
+
+            // Send StoreEvent::PayloadForgotten
         }
 
         Ok(())
@@ -569,6 +611,8 @@ where
                 },
             )
             .map_err(|_| SimpleStoreSledError {})?;
+
+        // Send StoreEvent::PayloadForgotten for each forgotten entry.
 
         Ok(forgotten_count)
     }
@@ -668,31 +712,27 @@ where
         EntryProducer::new(self, area, order, reverse, ignore).await
     }
 
-    #[allow(refining_impl_trait)]
     fn subscribe_area(
         &self,
-        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
+        area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> Receiver<
-        std::rc::Rc<
-            State<
-                Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-                (),
-                EventSenderError<SimpleStoreSledError>,
-            >,
-        >,
-        Fixed<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-        (),
-        EventSenderError<SimpleStoreSledError>,
+    ) -> impl Producer<
+        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        Error = EventSenderError<Self::OperationsError>,
     > {
         let (pack, receiver) =
             EventSubscriberPack::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
 
-        self.event_packs.borrow_mut().push(pack);
+        match self.event_packs.borrow().last_key_value() {
+            Some((highest_key, _whatever)) => {
+                self.event_packs.borrow_mut().insert(highest_key + 1, pack);
+            }
+            None => {
+                self.event_packs.borrow_mut().insert(0, pack);
+            }
+        }
 
-        // receiver
-
-        todo!()
+        receiver
     }
 }
 
@@ -939,8 +979,6 @@ where
     ignore: Option<QueryIgnoreParams>,
     area: Area<MCL, MCC, MPL, S>,
     reverse: bool,
-    _digest: PhantomData<PD>,
-    _token: PhantomData<AT>,
 }
 
 impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -976,8 +1014,6 @@ where
             ignore,
             store,
             reverse,
-            _digest: PhantomData,
-            _token: PhantomData,
         })
     }
 }
@@ -1117,7 +1153,10 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> (
         Self,
-        impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+        impl Producer<
+            Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+            Error = EventSenderError<SimpleStoreSledError>,
+        >,
     ) {
         let state = State::new(Fixed::<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>::new(
             256,
@@ -1143,24 +1182,30 @@ where
     /// Error indicates that sender was dropped.
     async fn send_event(
         &mut self,
-        event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        complete_length: u64,
-        length_in_possession: u64,
+        event: &StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        completeness: &PayloadCompleteness,
     ) -> Result<(), ()> {
         if self.sender.is_receiver_dropped() {
             return Err(());
         }
 
         let should_send = if event.included_by_area(&self.area) {
-            match &self.ignore {
-                Some(params) => {
-                    let is_empty = length_in_possession == 0;
-                    let is_incomplete = is_empty || length_in_possession < complete_length;
-
-                    !((params.ignore_incomplete_payloads && is_incomplete)
-                        || (params.ignore_empty_payloads && is_empty))
+            match completeness {
+                PayloadCompleteness::Empty => {
+                    if let Some(params) = &self.ignore {
+                        !params.ignore_empty_payloads
+                    } else {
+                        true
+                    }
                 }
-                None => true,
+                PayloadCompleteness::Incomplete => {
+                    if let Some(params) = &self.ignore {
+                        !params.ignore_incomplete_payloads
+                    } else {
+                        true
+                    }
+                }
+                PayloadCompleteness::Complete => true,
             }
         } else {
             false
@@ -1169,13 +1214,22 @@ where
         if should_send {
             // We can unwrap because sender is infallible, apparently.
             self.sender
-                .consume(SimpleStoreEvent { event })
+                .consume(SimpleStoreEvent {
+                    event: event.clone(),
+                })
                 .await
                 .unwrap();
         }
 
         Ok(())
     }
+}
+
+#[derive(Ord)]
+enum PayloadCompleteness {
+    Empty,
+    Incomplete,
+    Complete,
 }
 
 // We need this just so we can have a `Default` impl

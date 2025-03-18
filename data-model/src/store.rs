@@ -321,6 +321,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        origin: EntryOrigin,
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
