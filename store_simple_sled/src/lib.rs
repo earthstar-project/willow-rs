@@ -668,6 +668,7 @@ where
         EntryProducer::new(self, area, order, reverse, ignore).await
     }
 
+    #[allow(refining_impl_trait)]
     fn subscribe_area(
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
@@ -1140,5 +1141,14 @@ where
         };
 
         (pack, receiver)
+    }
+
+    fn send_event(&self, event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> Result<(), ()> {
+        if event.included_by_area(&self.area) {
+            // need some trait satisfaction here
+            self.sender.consume()
+        }
+
+        todo!()
     }
 }

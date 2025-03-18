@@ -175,8 +175,8 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// The subspace ID and path of the entry which was pruned.
-    pub pruned: (S, Path<MCL, MCC, MPL>),
+    /// The subspace ID, path, and timestamp of the entry which was pruned.
+    pub pruned: (S, Path<MCL, MCC, MPL>, u64),
     /// The entry which triggered the pruning.
     pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
 }
@@ -195,11 +195,42 @@ where
     /// An existing entry received a portion of its corresponding payload.
     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
-    EntryForgotten((S, Path<MCL, MCC, MPL>)),
+    EntryForgotten((S, Path<MCL, MCC, MPL>, u64)),
     /// A payload was forgotten.
-    PayloadForgotten(PD),
+    PayloadForgotten(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was pruned via prefix pruning.
     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    StoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
+        match self {
+            StoreEvent::Ingested(authorised_entry, _entry_origin) => {
+                area.includes_entry(authorised_entry.entry())
+            }
+            StoreEvent::Appended(lengthy_authorised_entry) => {
+                area.includes_entry(lengthy_authorised_entry.entry().entry())
+            }
+            StoreEvent::EntryForgotten((subspace, path, time)) => {
+                area.subspace().includes(subspace)
+                    && area.path().is_prefix_of(path)
+                    && area.times().includes(time)
+            }
+            StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
+            StoreEvent::Pruned(prune_event) => {
+                area.subspace().includes(&prune_event.pruned.0)
+                    && area.path().is_prefix_of(&prune_event.pruned.1)
+                    && area.times().includes(&prune_event.pruned.2)
+            }
+        }
+    }
 }
 
 /// Describes which entries to ignore during a query.
