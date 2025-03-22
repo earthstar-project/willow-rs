@@ -9,7 +9,7 @@ use ufotofu::{BulkConsumer, BulkProducer, Producer};
 
 use crate::{
     entry::AuthorisedEntry,
-    grouping::{Area, AreaOfInterest},
+    grouping::Area,
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     LengthyAuthorisedEntry, Path,
 };
@@ -166,6 +166,45 @@ pub enum QueryOrder {
     Arbitrary,
 }
 
+/// Describes an [`AuthorisedEntry`] which was successfully ingested into the store, and a [`EntryOrigin`] describing where the entry came from.
+#[derive(Debug, Clone)]
+pub struct IngestEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    /// The entry which was ingested
+    pub ingested: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    /// The origin of the ingestion
+    pub origin: EntryOrigin,
+}
+
+/// Describes a forgotten entry by its subspace, path, and timestamp.
+#[derive(Debug, Clone)]
+pub struct EntryForgottenEvent<const MCL: usize, const MCC: usize, const MPL: usize, S>
+where
+    S: SubspaceId,
+{
+    subspace: S,
+    path: Path<MCL, MCC, MPL>,
+    timestamp: u64,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> EntryForgottenEvent<MCL, MCC, MPL, S>
+where
+    S: SubspaceId,
+{
+    pub fn new(subspace: S, path: Path<MCL, MCC, MPL>, timestamp: u64) -> Self {
+        Self {
+            subspace,
+            path,
+            timestamp,
+        }
+    }
+}
+
 /// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
 #[derive(Debug, Clone)]
 pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -191,11 +230,11 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     /// A new entry was ingested.
-    Ingested(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, EntryOrigin),
+    Ingested(IngestEvent<MCL, MCC, MPL, N, S, PD, AT>),
     /// An existing entry received a portion of its corresponding payload.
     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was forgotten.
-    EntryForgotten((S, Path<MCL, MCC, MPL>, u64)),
+    EntryForgotten(EntryForgottenEvent<MCL, MCC, MPL, S>),
     /// A payload was forgotten.
     PayloadForgotten(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// An entry was pruned via prefix pruning.
@@ -212,16 +251,14 @@ where
 {
     pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         match self {
-            StoreEvent::Ingested(authorised_entry, _entry_origin) => {
-                area.includes_entry(authorised_entry.entry())
-            }
+            StoreEvent::Ingested(event) => area.includes_entry(event.ingested.entry()),
             StoreEvent::Appended(lengthy_authorised_entry) => {
                 area.includes_entry(lengthy_authorised_entry.entry().entry())
             }
-            StoreEvent::EntryForgotten((subspace, path, time)) => {
-                area.subspace().includes(subspace)
-                    && area.path().is_prefix_of(path)
-                    && area.times().includes(time)
+            StoreEvent::EntryForgotten(event) => {
+                area.subspace().includes(&event.subspace)
+                    && area.path().is_prefix_of(&event.path)
+                    && area.times().includes(&event.timestamp)
             }
             StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
             StoreEvent::Pruned(prune_event) => {
