@@ -983,14 +983,13 @@ where
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::OperationsError,
     > {
-        EntryProducer::new(self, area, order, reverse, ignore).await
+        EntryProducer::new(self, area, reverse, ignore).await
     }
 
     async fn subscribe_area(
@@ -1311,8 +1310,6 @@ where
     async fn new(
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
-        // TODO: discuss order with aljoscha again
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<Self, SimpleStoreSledError> {
