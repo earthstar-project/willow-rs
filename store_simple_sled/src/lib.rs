@@ -378,6 +378,10 @@ where
             all_payloads_incomplete: true,
         });
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_emit {
             self.send_event(&event).await;
         }
@@ -732,6 +736,10 @@ where
                 },
             )?;
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_send {
             self.send_event(&event).await;
         }
@@ -889,6 +897,10 @@ where
             },
         )?;
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_send {
             self.send_event(&event).await;
         }
@@ -1421,10 +1433,9 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    // Use these two to determine if we should send an event here
+    id: u64,
     area: Area<MCL, MCC, MPL, S>,
     ignore: Option<QueryIgnoreParams>,
-    // TODO: Use an WB mutex instead of a refcell here.
     sender: Mutex<
         Sender<
             std::rc::Rc<
@@ -1439,7 +1450,6 @@ where
             EventSenderError<SimpleStoreSledError>,
         >,
     >,
-    // No sender here because we give ownership of that to the caller of the function?
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
