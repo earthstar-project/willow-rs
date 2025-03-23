@@ -4,8 +4,8 @@ use ufotofu_queues::Fixed;
 use wb_async_utils::spsc::{new_spsc, Sender, State};
 
 use sled::{
-    transaction::TransactionalTree, Db, Error as SledError, IVec, Result as SledResult,
-    Transactional, Tree,
+    transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
+    Db, Error as SledError, IVec, Result as SledResult, Transactional, Tree,
 };
 use ufotofu::{
     consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Consumer, Producer,
@@ -71,9 +71,7 @@ where
             event_packs: std::cell::RefCell::new(BTreeMap::new()),
         };
 
-        let misc_tree = store
-            .misc_tree()
-            .map_err(|_err| NewStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+        let misc_tree = store.misc_tree()?;
 
         if !misc_tree.is_empty() {
             return Err(NewStoreSimpleSledError::DbNotClean);
@@ -81,21 +79,16 @@ where
 
         let namespace_encoded = namespace.sync_encode_into_vec();
 
-        misc_tree
-            .insert(NAMESPACE_ID_KEY, namespace_encoded)
-            .map_err(|_err| NewStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+        misc_tree.insert(NAMESPACE_ID_KEY, namespace_encoded)?;
 
         Ok(store)
     }
 
     pub fn from_existing(db: Db) -> Result<Self, ExistingStoreSimpleSledError> {
-        let misc_tree = db
-            .open_tree(MISC_TREE_KEY)
-            .map_err(|_err| ExistingStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+        let misc_tree = db.open_tree(MISC_TREE_KEY)?;
 
         let namespace_encoded = misc_tree
-            .get(NAMESPACE_ID_KEY)
-            .map_err(|_err| ExistingStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?
+            .get(NAMESPACE_ID_KEY)?
             .ok_or(ExistingStoreSimpleSledError::MalformedDb)?;
 
         let namespace_id = N::sync_decode_from_slice(&namespace_encoded)
@@ -210,7 +203,11 @@ where
 }
 
 #[derive(Debug)]
-pub struct SimpleStoreSledError {}
+pub enum SimpleStoreSledError {
+    Sled(SledError),
+    Transaction(TransactionError<()>),
+    ConflictableTransaction(ConflictableTransactionError<()>),
+}
 
 impl core::fmt::Display for SimpleStoreSledError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -281,9 +278,7 @@ where
             }
         }
 
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
 
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
@@ -344,9 +339,7 @@ where
             keys_to_prune.push(key);
         }
 
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
 
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
 
@@ -366,7 +359,7 @@ where
             .transaction(
                 |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                     (),
-                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                    ConflictableTransactionError<()>,
                 > {
                     tx_entry.apply_batch(&entry_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
@@ -374,7 +367,7 @@ where
                     Ok(())
                 },
             )
-            .map_err(|_| EntryIngestionError::OperationsError(SimpleStoreSledError {}))?;
+            .map_err(SimpleStoreSledError::from)?;
 
         events_to_emit.push(SimpleStoreEvent {
             event: StoreEvent::Ingested(IngestEvent {
@@ -401,18 +394,12 @@ where
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
 
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_entry = self
-            .prefix_gt(&entry_tree, &exact_key)
-            .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         match maybe_entry {
             Some((entry_key, value)) => {
@@ -425,7 +412,7 @@ where
 
                 let existing_payload = payload_tree
                     .get(&payload_key)
-                    .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+                    .map_err(SimpleStoreSledError::from)?;
 
                 let prefix = if let Some(payload) = existing_payload {
                     payload
@@ -479,9 +466,7 @@ where
                                     )|
                                      -> Result<
                                         (),
-                                        sled::transaction::ConflictableTransactionError<
-                                            SimpleStoreSledError,
-                                        >,
+                                        sled::transaction::ConflictableTransactionError<()>,
                                     > {
                                         tx_entry.apply_batch(&entry_batch)?;
                                         tx_payloads.apply_batch(&payload_batch)?;
@@ -489,9 +474,7 @@ where
                                         Ok(())
                                     },
                                 )
-                                .map_err(|_| {
-                                    PayloadAppendError::OperationError(SimpleStoreSledError {})
-                                })?;
+                                .map_err(SimpleStoreSledError::from)?;
 
                             let authed_entry = AuthorisedEntry::new_unchecked(
                                 Entry::new(
@@ -570,7 +553,7 @@ where
                          -> Result<
                             (),
                             sled::transaction::ConflictableTransactionError<
-                                SimpleStoreSledError,
+                                (),
                             >,
                         > {
                             tx_entry.apply_batch(&entry_batch)?;
@@ -578,8 +561,8 @@ where
                             Ok(())
                         },
                     )
-                    .map_err(|_| {
-                        PayloadAppendError::OperationError(SimpleStoreSledError {})
+                    .map_err(|err| {
+                        SimpleStoreSledError::from(err)
                     })?;
 
                     self.send_event(&SimpleStoreEvent {
@@ -599,17 +582,15 @@ where
                         )|
                          -> Result<
                             (),
-                            sled::transaction::ConflictableTransactionError<
-                                SimpleStoreSledError,
-                            >,
+                            sled::transaction::ConflictableTransactionError<()>,
                         > {
                             tx_entry.apply_batch(&entry_batch)?;
                             tx_payloads.apply_batch(&payload_batch)?;
                             Ok(())
                         },
                     )
-                    .map_err(|_| {
-                        PayloadAppendError::OperationError(SimpleStoreSledError {})
+                    .map_err(|err| {
+                        SimpleStoreSledError::from(err)
                     })?;
 
                     self.send_event(&SimpleStoreEvent {
@@ -647,15 +628,14 @@ where
                 .transaction(
                     |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                         (),
-                        sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                        sled::transaction::ConflictableTransactionError<()>,
                     > {
                         tx_entry.remove(&key)?;
                         tx_payloads.remove(&key)?;
 
                         Ok(())
                     },
-                )
-                .map_err(|_| SimpleStoreSledError {})?;
+                )?;
 
             self.send_event(&SimpleStoreEvent {
                 event: StoreEvent::EntryForgotten(EntryForgottenEvent {
@@ -743,15 +723,14 @@ where
             .transaction(
                 |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                     (),
-                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                    sled::transaction::ConflictableTransactionError<()>,
                 > {
                     tx_entry.apply_batch(&entry_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
                 },
-            )
-            .map_err(|_| SimpleStoreSledError {})?;
+            )?;
 
         for event in events_to_send {
             self.send_event(&event).await;
@@ -763,17 +742,15 @@ where
     async fn forget_payload(
         &self,
         subspace_id: &S,
-        path: &willow_data_model::Path<MCL, MCC, MPL>,
+        path: &Path<MCL, MCC, MPL>,
     ) -> Result<(), Self::OperationsError> {
-        let payload_tree = self.payload_tree().map_err(|_| SimpleStoreSledError {})?;
+        let payload_tree = self.payload_tree()?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
 
-        let maybe_payload = self
-            .prefix_gt(&payload_tree, &payload_key)
-            .map_err(|_err| SimpleStoreSledError {})?;
+        let maybe_payload = self.prefix_gt(&payload_tree, &payload_key)?;
 
-        let entry_tree = self.entry_tree().map_err(|_| SimpleStoreSledError {})?;
+        let entry_tree = self.entry_tree()?;
 
         let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
         let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
@@ -786,19 +763,17 @@ where
 
                 let new_key_value = encode_entry_values(length, &digest, &token, 0).await;
 
-                (&entry_tree, &payload_tree)
-                    .transaction(
-                        |(entry_tx, payload_tx): &(TransactionalTree, TransactionalTree)| -> Result<
-                            (),
-                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
-                        > {
-                            payload_tx.remove(&payload_key)?;
-                            entry_tx.insert(&entry_key, new_key_value.clone())?;
+                (&entry_tree, &payload_tree).transaction(
+                    |(entry_tx, payload_tx): &(TransactionalTree, TransactionalTree)| -> Result<
+                        (),
+                        sled::transaction::ConflictableTransactionError<()>,
+                    > {
+                        payload_tx.remove(&payload_key)?;
+                        entry_tx.insert(&entry_key, new_key_value.clone())?;
 
-                            Ok(())
-                        },
-                    )
-                    .map_err(|_| SimpleStoreSledError {})?;
+                        Ok(())
+                    },
+                )?;
 
                 let entry = Entry::new(
                     self.namespace_id().clone(),
@@ -902,19 +877,17 @@ where
             }
         }
 
-        (&entry_tree, &payload_tree)
-            .transaction(
-                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
-                    (),
-                    sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
-                > {
-                    tx_entry.apply_batch(&entry_batch)?;
-                    tx_payloads.apply_batch(&payload_batch)?;
+        (&entry_tree, &payload_tree).transaction(
+            |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
+                (),
+                sled::transaction::ConflictableTransactionError<()>,
+            > {
+                tx_entry.apply_batch(&entry_batch)?;
+                tx_payloads.apply_batch(&payload_batch)?;
 
-                    Ok(())
-                },
-            )
-            .map_err(|_| SimpleStoreSledError {})?;
+                Ok(())
+            },
+        )?;
 
         for event in events_to_send {
             self.send_event(&event).await;
@@ -1242,8 +1215,44 @@ where
 }
 
 impl From<SledError> for SimpleStoreSledError {
-    fn from(_value: SledError) -> Self {
-        SimpleStoreSledError {}
+    fn from(value: SledError) -> Self {
+        SimpleStoreSledError::Sled(value)
+    }
+}
+
+impl From<ConflictableTransactionError<()>> for SimpleStoreSledError {
+    fn from(value: ConflictableTransactionError<()>) -> Self {
+        SimpleStoreSledError::ConflictableTransaction(value)
+    }
+}
+
+impl From<TransactionError<()>> for SimpleStoreSledError {
+    fn from(value: TransactionError<()>) -> Self {
+        SimpleStoreSledError::Transaction(value)
+    }
+}
+
+impl From<SledError> for NewStoreSimpleSledError {
+    fn from(value: SledError) -> Self {
+        Self::StoreError(SimpleStoreSledError::from(value))
+    }
+}
+
+impl From<SledError> for ExistingStoreSimpleSledError {
+    fn from(value: SledError) -> Self {
+        Self::StoreError(SimpleStoreSledError::from(value))
+    }
+}
+
+impl From<SimpleStoreSledError> for EntryIngestionError<SimpleStoreSledError> {
+    fn from(val: SimpleStoreSledError) -> Self {
+        EntryIngestionError::OperationsError(val)
+    }
+}
+
+impl<PSE> From<SimpleStoreSledError> for PayloadAppendError<PSE, SimpleStoreSledError> {
+    fn from(val: SimpleStoreSledError) -> Self {
+        PayloadAppendError::OperationError(val)
     }
 }
 
@@ -1266,14 +1275,13 @@ impl Producer for PayloadProducer {
     type Error = Infallible;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-        if self.produced < self.ivec.len() {
-            let byte = self.ivec[self.produced];
-
-            Ok(Either::Left(byte))
-        } else if self.produced == self.ivec.len() {
-            return Ok(Either::Right(()));
-        } else {
-            panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool.")
+        match self.produced.cmp(&self.ivec.len()) {
+            std::cmp::Ordering::Less => {
+                let byte = self.ivec[self.produced];
+                Ok(Either::Left(byte))
+            },
+            std::cmp::Ordering::Equal =>  Ok(Either::Right(())),
+            std::cmp::Ordering::Greater => panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool."),
         }
     }
 }
@@ -1380,7 +1388,7 @@ where
                     match &self.ignore {
                         Some(params) => {
                             let is_empty_string = length == 0;
-                            let is_incomplete = (local_length as u64) < length;
+                            let is_incomplete = local_length < length;
 
                             if (params.ignore_incomplete_payloads && is_incomplete)
                                 || (params.ignore_empty_payloads && is_empty_string)
@@ -1390,18 +1398,18 @@ where
 
                             return Ok(Either::Left(LengthyAuthorisedEntry::new(
                                 authed_entry,
-                                local_length as u64,
+                                local_length,
                             )));
                         }
                         None => {
                             return Ok(Either::Left(LengthyAuthorisedEntry::new(
                                 authed_entry,
-                                local_length as u64,
+                                local_length,
                             )));
                         }
                     };
                 }
-                Some(Err(_err)) => return Err(SimpleStoreSledError {}),
+                Some(Err(err)) => return Err(SimpleStoreSledError::from(err)),
                 None => return Ok(Either::Right(())),
             }
         }
