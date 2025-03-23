@@ -378,3 +378,36 @@ pub struct ServerHandle<Q> {
     pub droppings_to_announce: DroppingsToAnnounce,
     pub received_data: ReceivedData<Q>,
 }
+
+pub enum IngestionError<ProducerFinal, ProducerError> {
+    Producer(ProducerError),
+    UnexpectedEndOfInput(ProducerFinal),
+}
+
+/// A trait for types that can accept incoming channel message bytes.
+pub trait BufferIn: BulkConsumer<Item = u8, Error = Infallible> {
+    /// Returns how many guarantees the server can give for this channel at connection start.
+    fn initial_guarantees_to_give(&self) -> u64;
+
+    /// Synchronously accepts a notification that no more bytes will ever be put into this.
+    fn no_more_bytes_will_arrive(&mut self);
+
+    /// Synchronously accepts a notification that the client violated a voluntary bound on how many bytes it claimed to send in the future.
+    fn bound_was_violated(&mut self);
+
+    /// Attempts to ingest exactly `length` many bytes drawn from the given `producer`.
+    ///
+    /// Returns `Err(IngestionError::Producer(err))` if the producer emits an error `err`.
+    /// Returns `Err(IngestionError::UnexpectedEndOfInput(fin))` if the producer emits its final value `fin` before emitting `length` many bytes.
+    /// Returns `Ok(true)` if ingesting `length` many bytes worked.
+    /// Returns `Ok(false)` otherwise (if this endpoint could not store/process the bytes).
+    async fn accept_bytes<P>(
+        &mut self,
+        length: usize,
+        producer: P,
+    ) -> Result<bool, IngestionError<P::Final, P::Error>>
+    where
+        P: BulkProducer<Item = u8>;
+}
+
+// There is no corresponding BufferOut. But whichever thing works with incoming data must call `SharedState::increase_guarantees_to_give` somehow whenever it has processed data or can otherwise give out guarantees.

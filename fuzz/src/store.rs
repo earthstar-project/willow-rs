@@ -1,8 +1,9 @@
 use std::{
     cell::{RefCell, RefMut},
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     convert::Infallible,
     ops::{Deref, DerefMut},
+    rc::Rc,
     thread::current,
 };
 
@@ -13,18 +14,21 @@ use ufotofu::{
     producer::{FromBoxedSlice, FromSlice},
     BulkConsumer, BulkProducer, Producer,
 };
+use ufotofu_queues::Fixed;
+use wb_async_utils::spsc::{Sender, State};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
-    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store, StoreEvent,
-    SubspaceId, Timestamp,
+    EntryIngestionSuccess, EventSenderError, LengthyAuthorisedEntry, NamespaceId, Path,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store,
+    StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
 pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace: N,
     subspaces: RefCell<BTreeMap<S, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>>,
+    subscriptions: RefCell<BTreeSet<Subscription<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -417,7 +421,7 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         order: &QueryOrder,
         reverse: bool,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
+        ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::OperationsError,
@@ -545,14 +549,43 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
+    ) -> impl Producer<
+        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        Error = EventSenderError<Self::OperationsError>,
+    > {
         todo!()
     }
 }
 
-struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
     area: Area<MCL, MCC, MPL, S>,
     ignore: Option<QueryIgnoreParams>,
+    state: Rc<
+        State<
+            Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+            Infallible,
+            EventSenderError<Infallible>,
+        >,
+    >,
+    sender: Sender<
+        Rc<
+            State<
+                Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+                Infallible,
+                EventSenderError<Infallible>,
+            >,
+        >,
+        Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+        Infallible,
+        EventSenderError<Infallible>,
+    >,
 }
 
 // /// An event which took place within a [`Store`].
@@ -575,3 +608,33 @@ struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, S: Sub
 //     /// An entry was pruned via prefix pruning.
 //     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 // }
+
+// We need this just so we can have a `Default` impl
+// So that we can stick it in a ufotofu_queues::fixed
+#[derive(Clone)]
+struct WrappedStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+    available_bytes: u64,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
+    for WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    fn default() -> Self {
+        Self {
+            event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
+            available_bytes: 0,
+        }
+    }
+}
