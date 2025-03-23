@@ -10,7 +10,7 @@ use sled::{
 use ufotofu::{
     consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, Consumer, Producer,
 };
-use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{Decodable, DecodableSync, Encodable, EncodableKnownSize, EncodableSync};
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
@@ -37,27 +37,75 @@ const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
 const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0001];
 const MISC_TREE_KEY: [u8; 1] = [0b0000_0010];
 
+const NAMESPACE_ID_KEY: [u8; 1] = [0b0000_0000];
+
+#[derive(Debug)]
+pub enum NewStoreSimpleSledError {
+    // The DB has already been configured for another namespace.
+    DbNotClean,
+    StoreError(SimpleStoreSledError),
+}
+
+#[derive(Debug)]
+pub enum ExistingStoreSimpleSledError {
+    // The DB is not correctly configured for use.
+    MalformedDb,
+    StoreError(SimpleStoreSledError),
+}
+
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + EncodableKnownSize + Decodable,
+    N: NamespaceId + EncodableKnownSize + Decodable + DecodableSync,
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    pub fn new(namespace: &N, db: Db) -> Self
+    pub fn new(namespace: &N, db: Db) -> Result<Self, NewStoreSimpleSledError>
     where
         N: NamespaceId + EncodableKnownSize + EncodableSync,
     {
-        // Write the namespace to the misc tree
-        // Fail if there's already something there.
-        todo!()
+        let store = Self {
+            db,
+            namespace_id: namespace.clone(),
+            event_packs: std::cell::RefCell::new(BTreeMap::new()),
+        };
+
+        let misc_tree = store
+            .misc_tree()
+            .map_err(|_err| NewStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+
+        if !misc_tree.is_empty() {
+            return Err(NewStoreSimpleSledError::DbNotClean);
+        }
+
+        let namespace_encoded = namespace.sync_encode_into_vec();
+
+        misc_tree
+            .insert(NAMESPACE_ID_KEY, namespace_encoded)
+            .map_err(|_err| NewStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+
+        Ok(store)
     }
 
-    pub fn from_existing(db: Db) -> Self {
-        // Check namespace from misc tree
-        // Fail if there's nothing there
-        todo!()
+    pub fn from_existing(db: Db) -> Result<Self, ExistingStoreSimpleSledError> {
+        let misc_tree = db
+            .open_tree(MISC_TREE_KEY)
+            .map_err(|_err| ExistingStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?;
+
+        let namespace_encoded = misc_tree
+            .get(NAMESPACE_ID_KEY)
+            .map_err(|_err| ExistingStoreSimpleSledError::StoreError(SimpleStoreSledError {}))?
+            .ok_or(ExistingStoreSimpleSledError::MalformedDb)?;
+
+        let namespace_id = N::sync_decode_from_slice(&namespace_encoded)
+            .map_err(|_err| ExistingStoreSimpleSledError::MalformedDb)?;
+
+        Ok(Self {
+            namespace_id,
+            db,
+            event_packs: std::cell::RefCell::new(BTreeMap::new()),
+        })
     }
 
     fn entry_tree(&self) -> SledResult<Tree> {
@@ -1326,7 +1374,6 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    // TODO: Contain all info needed for store event
     event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
     /// Are all payloads pertaining to this event empty?
     all_payloads_empty: bool,
