@@ -99,7 +99,7 @@ where
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
             if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
-                let (payload_length, payload_digest, authorisation_token) =
+                let (payload_length, payload_digest, authorisation_token, _local_length) =
                     decode_entry_values(&value).await;
 
                 let entry = Entry::new(
@@ -140,7 +140,10 @@ where
     }
 
     /// Regarding `completeness`: This should be the maximum amount of payload completeness from all entries related to this event.
-    async fn send_event(&mut self, event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> () {
+    async fn send_event(&self, event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> () {
+        // Seems like this approach may not work.
+        // This only needs to be async because sending events is async,
+        // and that is async because consumers consuming is async.
         let mut packs = self.event_packs.borrow_mut();
 
         let mut dropped = Vec::<u64>::new();
@@ -335,7 +338,6 @@ where
         });
 
         for event in events_to_emit {
-            // TODO: Interior mutability something something.
             self.send_event(&event).await;
         }
 
@@ -441,7 +443,6 @@ where
                         .insert(key, payload)
                         .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
-                    // TODO: Send StoreEvent::Appended
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
                         all_payloads_empty: false,
@@ -455,7 +456,6 @@ where
                         .insert(key, payload)
                         .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
-                    // TODO: Send StoreEvent::Appended
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
                         all_payloads_empty: false,
@@ -483,7 +483,8 @@ where
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
-            let (_length, _digest, _auth_token, _local_length) =
+            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+            let (length, _digest, _auth_token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             (&entry_tree, &payload_tree)
@@ -500,7 +501,16 @@ where
                 )
                 .map_err(|_| SimpleStoreSledError {})?;
 
-            // TODO: Send StoreEvent::EntryForgotten
+            self.send_event(&SimpleStoreEvent {
+                event: StoreEvent::EntryForgotten(EntryForgottenEvent {
+                    subspace,
+                    path,
+                    timestamp,
+                }),
+                all_payloads_empty: length == 0,
+                all_payloads_incomplete: true,
+            })
+            .await;
         }
 
         Ok(())
@@ -529,9 +539,11 @@ where
             }
         };
 
+        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (_length, _digest, _token, _local_length) =
+            let (length, _digest, _token, local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
@@ -558,6 +570,16 @@ where
                 payload_batch.remove(&key);
 
                 forgotten_count += 1;
+
+                events_to_send.push(SimpleStoreEvent {
+                    event: StoreEvent::EntryForgotten(EntryForgottenEvent {
+                        subspace,
+                        path,
+                        timestamp,
+                    }),
+                    all_payloads_empty: length == 0,
+                    all_payloads_incomplete: local_length < length,
+                });
             }
         }
 
@@ -575,7 +597,9 @@ where
             )
             .map_err(|_| SimpleStoreSledError {})?;
 
-        // TODO: Send StoreEvent::EntryForgotten for each forgotten entry.
+        for event in events_to_send {
+            self.send_event(&event).await;
+        }
 
         Ok(forgotten_count)
     }
@@ -592,12 +616,33 @@ where
             .prefix_gt(&payload_tree, &exact_key)
             .map_err(|_err| SimpleStoreSledError {})?;
 
-        if let Some((key, _value)) = maybe_payload {
+        if let Some((key, value)) = maybe_payload {
+            // TODO: Refactor to transaction, update local length of entry!
             payload_tree
-                .remove(key)
+                .remove(&key)
                 .map_err(|_err| SimpleStoreSledError {})?;
 
-            // TODO: Send StoreEvent::PayloadForgotten
+            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+            let (length, digest, token, _local_length) = decode_entry_values(&value).await;
+
+            let entry = Entry::new(
+                self.namespace_id().clone(),
+                subspace,
+                path,
+                timestamp,
+                length,
+                digest,
+            );
+
+            // We can do this because the entry was stored, indicating its authenticity.
+            let authed = AuthorisedEntry::new_unchecked(entry, token);
+
+            self.send_event(&SimpleStoreEvent {
+                event: StoreEvent::PayloadForgotten(authed),
+                all_payloads_empty: length == 0,
+                all_payloads_incomplete: true,
+            })
+            .await;
         }
 
         Ok(())
@@ -614,6 +659,8 @@ where
 
         let mut forgotten_count = 0;
 
+        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+
         let entry_iterator = match area.subspace() {
             AreaSubspace::Any => payload_tree.iter(),
             AreaSubspace::Id(subspace) => {
@@ -626,7 +673,7 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (_length, _digest, _token, _local_length) =
+            let (length, digest, token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
@@ -651,12 +698,29 @@ where
                 // FORGET IT
                 payload_batch.remove(&key);
 
+                let entry = Entry::new(
+                    self.namespace_id().clone(),
+                    subspace,
+                    path,
+                    timestamp,
+                    length,
+                    digest,
+                );
+
+                // We can do this because the entry was stored, indicating its authenticity.
+                let authed = AuthorisedEntry::new_unchecked(entry, token);
+
+                events_to_send.push(SimpleStoreEvent {
+                    event: StoreEvent::PayloadForgotten(authed),
+                    all_payloads_empty: length == 0,
+                    all_payloads_incomplete: true,
+                });
+
                 forgotten_count += 1;
             }
         }
 
-        // TODO: Set local length to 0.
-
+        // TODO: Set local length to 0 for each entry!
         payload_tree
             .transaction(
                 |tx_payloads| -> Result<
@@ -670,7 +734,9 @@ where
             )
             .map_err(|_| SimpleStoreSledError {})?;
 
-        // TODO: Send StoreEvent::PayloadForgotten for each forgotten entry.
+        for event in events_to_send {
+            self.send_event(&event).await;
+        }
 
         Ok(forgotten_count)
     }

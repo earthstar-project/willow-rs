@@ -187,9 +187,9 @@ pub struct EntryForgottenEvent<const MCL: usize, const MCC: usize, const MPL: us
 where
     S: SubspaceId,
 {
-    subspace: S,
-    path: Path<MCL, MCC, MPL>,
-    timestamp: u64,
+    pub subspace: S,
+    pub path: Path<MCL, MCC, MPL>,
+    pub timestamp: u64,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S> EntryForgottenEvent<MCL, MCC, MPL, S>
