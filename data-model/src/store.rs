@@ -502,11 +502,10 @@ where
         >,
     >;
 
-    /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`].
+    /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`] **produced in an arbitrary order decided by the store implementation**.
     fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<
@@ -521,8 +520,10 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<
-        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::OperationsError>,
+    ) -> impl Future<
+        Output = impl Producer<
+            Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+            Error = EventSenderError<Self::OperationsError>,
+        >,
     >;
 }

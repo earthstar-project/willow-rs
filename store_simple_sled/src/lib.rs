@@ -2,6 +2,7 @@ use either::Either;
 use std::{collections::BTreeMap, convert::Infallible};
 use ufotofu_queues::Fixed;
 use wb_async_utils::spsc::{new_spsc, Sender, State};
+use wb_async_utils::Mutex;
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -29,8 +30,7 @@ where
 {
     namespace_id: N,
     db: Db,
-    event_packs:
-        std::cell::RefCell<BTreeMap<u64, EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>>>,
+    subscriptions: Mutex<BTreeMap<u64, EventSubscription<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
@@ -68,7 +68,7 @@ where
         let store = Self {
             db,
             namespace_id: namespace.clone(),
-            event_packs: std::cell::RefCell::new(BTreeMap::new()),
+            subscriptions: Mutex::new(BTreeMap::new()),
         };
 
         let misc_tree = store.misc_tree()?;
@@ -97,7 +97,7 @@ where
         Ok(Self {
             namespace_id,
             db,
-            event_packs: std::cell::RefCell::new(BTreeMap::new()),
+            subscriptions: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -185,19 +185,19 @@ where
         // Seems like this approach may not work.
         // This only needs to be async because sending events is async,
         // and that is async because consumers consuming is async.
-        let mut packs = self.event_packs.borrow_mut();
+        let mut subs = self.subscriptions.write().await;
 
         let mut dropped = Vec::<u64>::new();
 
-        for (key, pack) in packs.iter_mut() {
-            match pack.send_event(&event).await {
+        for (key, sub) in subs.iter() {
+            match sub.send_event(event).await {
                 Ok(_) => {}
                 Err(_) => dropped.push(*key),
             }
         }
 
         for key in dropped {
-            packs.remove(&key);
+            subs.remove(&key);
         }
     }
 }
@@ -378,6 +378,10 @@ where
             all_payloads_incomplete: true,
         });
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_emit {
             self.send_event(&event).await;
         }
@@ -732,6 +736,10 @@ where
                 },
             )?;
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_send {
             self.send_event(&event).await;
         }
@@ -889,6 +897,10 @@ where
             },
         )?;
 
+        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
+        // this is a consequence of us using a channel per subscription.
+        // it can be fixed by maintaining a single event queue which subscribers work through independently
+        //    and, incidentally, subscribers that straggle behind can be offed.
         for event in events_to_send {
             self.send_event(&event).await;
         }
@@ -983,17 +995,16 @@ where
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::OperationsError,
     > {
-        EntryProducer::new(self, area, order, reverse, ignore).await
+        EntryProducer::new(self, area, reverse, ignore).await
     }
 
-    fn subscribe_area(
+    async fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
@@ -1002,16 +1013,16 @@ where
         Error = EventSenderError<Self::OperationsError>,
     > {
         let (pack, receiver) =
-            EventSubscriberPack::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
+            EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
 
-        match self.event_packs.borrow().last_key_value() {
-            Some((highest_key, _whatever)) => {
-                self.event_packs.borrow_mut().insert(highest_key + 1, pack);
-            }
-            None => {
-                self.event_packs.borrow_mut().insert(0, pack);
-            }
-        }
+        let mut subs = self.subscriptions.write().await;
+
+        let next_key = match subs.last_key_value() {
+            Some((highest_key, _whatever)) => highest_key + 1,
+            None => 0,
+        };
+
+        subs.insert(next_key, pack);
 
         receiver
     }
@@ -1311,8 +1322,6 @@ where
     async fn new(
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
-        // TODO: discuss order with aljoscha again
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<Self, SimpleStoreSledError> {
@@ -1417,41 +1426,34 @@ where
 }
 
 // Going to store a vec of these in the store
-struct EventSubscriberPack<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+struct EventSubscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
     S: SubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    // Use these two to determine if we should send an event here
+    id: u64,
     area: Area<MCL, MCC, MPL, S>,
     ignore: Option<QueryIgnoreParams>,
-    state: std::rc::Rc<
-        State<
+    sender: Mutex<
+        Sender<
+            std::rc::Rc<
+                State<
+                    Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+                    (),
+                    EventSenderError<SimpleStoreSledError>,
+                >,
+            >,
             Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
             (),
             EventSenderError<SimpleStoreSledError>,
         >,
     >,
-    // We send events to this thing.
-    sender: Sender<
-        std::rc::Rc<
-            State<
-                Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-                (),
-                EventSenderError<SimpleStoreSledError>,
-            >,
-        >,
-        Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-        (),
-        EventSenderError<SimpleStoreSledError>,
-    >,
-    // No sender here because we give ownership of that to the caller of the function?
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    EventSubscriberPack<MCL, MCC, MPL, N, S, PD, AT>
+    EventSubscription<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId,
     S: SubspaceId,
@@ -1472,7 +1474,7 @@ where
             256,
         ));
         let state_rc = std::rc::Rc::new(state);
-        let (sender, receiver) = new_spsc(state_rc.clone());
+        let (sender, receiver) = new_spsc(state_rc);
 
         let mapped = ufotofu::producer::MapItem::new(
             receiver,
@@ -1482,8 +1484,7 @@ where
         let pack = Self {
             area,
             ignore,
-            state: state_rc,
-            sender,
+            sender: Mutex::new(sender),
         };
 
         (pack, mapped)
@@ -1491,16 +1492,18 @@ where
 
     /// Error indicates that sender was dropped.
     async fn send_event(
-        &mut self,
+        &self,
         event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
     ) -> Result<(), ()> {
-        if self.sender.is_receiver_dropped() {
+        let mut handle = self.sender.write().await;
+
+        if handle.is_receiver_dropped() {
             return Err(());
         }
 
         if event.should_send(&self.area, &self.ignore) {
             // We can unwrap because sender is infallible, apparently.
-            self.sender.consume(event.clone()).await.unwrap();
+            handle.consume(event.clone()).await.unwrap();
         }
 
         Ok(())
