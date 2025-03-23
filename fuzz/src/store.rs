@@ -557,36 +557,36 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    area: Area<MCL, MCC, MPL, S>,
-    ignore: Option<QueryIgnoreParams>,
-    state: Rc<
-        State<
-            Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-            Infallible,
-            EventSenderError<Infallible>,
-        >,
-    >,
-    sender: Sender<
-        Rc<
-            State<
-                Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-                Infallible,
-                EventSenderError<Infallible>,
-            >,
-        >,
-        Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-        Infallible,
-        EventSenderError<Infallible>,
-    >,
-}
+// #[derive(Debug, PartialEq, Eq, Clone)]
+// struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+// where
+//     N: NamespaceId,
+//     S: SubspaceId,
+//     PD: PayloadDigest,
+//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+// {
+//     area: Area<MCL, MCC, MPL, S>,
+//     ignore: Option<QueryIgnoreParams>,
+//     state: Rc<
+//         State<
+//             Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+//             Infallible,
+//             EventSenderError<Infallible>,
+//         >,
+//     >,
+//     sender: Sender<
+//         Rc<
+//             State<
+//                 Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+//                 Infallible,
+//                 EventSenderError<Infallible>,
+//             >,
+//         >,
+//         Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
+//         Infallible,
+//         EventSenderError<Infallible>,
+//     >,
+// }
 
 // /// An event which took place within a [`Store`].
 // #[derive(Debug, Clone)]
@@ -609,32 +609,32 @@ where
 //     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
 // }
 
-// We need this just so we can have a `Default` impl
-// So that we can stick it in a ufotofu_queues::fixed
-#[derive(Clone)]
-struct WrappedStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-    available_bytes: u64,
-}
+// // We need this just so we can have a `Default` impl
+// // So that we can stick it in a ufotofu_queues::fixed
+// #[derive(Clone)]
+// struct WrappedStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+// where
+//     N: NamespaceId,
+//     S: SubspaceId,
+//     PD: PayloadDigest,
+//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+// {
+//     event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+//     available_bytes: u64,
+// }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
-    for WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    fn default() -> Self {
-        Self {
-            event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
-            available_bytes: 0,
-        }
-    }
-}
+// impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
+//     for WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
+// where
+//     N: NamespaceId,
+//     S: SubspaceId,
+//     PD: PayloadDigest,
+//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+// {
+//     fn default() -> Self {
+//         Self {
+//             event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
+//             available_bytes: 0,
+//         }
+//     }
+// }
