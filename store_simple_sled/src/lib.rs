@@ -993,7 +993,7 @@ where
         EntryProducer::new(self, area, order, reverse, ignore).await
     }
 
-    fn subscribe_area(
+    async fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<willow_data_model::QueryIgnoreParams>,
@@ -1004,16 +1004,14 @@ where
         let (pack, receiver) =
             EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
 
-        let subs = self.subscriptions.write().await;
+        let mut subs = self.subscriptions.write().await;
 
-        match subs.last_key_value() {
-            Some((highest_key, _whatever)) => {
-                subs.insert(highest_key + 1, pack);
-            }
-            None => {
-                subs.insert(0, pack);
-            }
-        }
+        let next_key = match subs.last_key_value() {
+            Some((highest_key, _whatever)) => highest_key + 1,
+            None => 0,
+        };
+
+        subs.insert(next_key, pack);
 
         receiver
     }

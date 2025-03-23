@@ -521,8 +521,10 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> impl Producer<
-        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::OperationsError>,
+    ) -> impl Future<
+        Output = impl Producer<
+            Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+            Error = EventSenderError<Self::OperationsError>,
+        >,
     >;
 }
