@@ -188,7 +188,7 @@ where
     }
 
     /// Regarding `completeness`: This should be the maximum amount of payload completeness from all entries related to this event.
-    async fn send_event(&self, event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>) -> () {
+    async fn send_event(&self, event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>) {
         // Seems like this approach may not work.
         // This only needs to be async because sending events is async,
         // and that is async because consumers consuming is async.
@@ -223,7 +223,7 @@ impl core::error::Error for SimpleStoreSledError {}
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + EncodableKnownSize + Decodable,
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
@@ -414,19 +414,17 @@ where
             .prefix_gt(&entry_tree, &exact_key)
             .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
-        // TODO: This is fucked, Aljoscha found a bug here.
         match maybe_entry {
-            Some((key, value)) => {
-                let (subspace, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
-                let (length, digest, auth_token, local_length) =
+            Some((entry_key, value)) => {
+                let (subspace, path, timestamp) =
+                    decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
+                let (length, digest, auth_token, _local_length) =
                     decode_entry_values::<PD, AT>(&value).await;
 
-                if value.len() as u64 == length {
-                    return Err(PayloadAppendError::TooManyBytes);
-                }
+                let payload_key = encode_subspace_path_key(&subspace, &path, false).await;
 
                 let existing_payload = payload_tree
-                    .get(&key)
+                    .get(&payload_key)
                     .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
 
                 let prefix = if let Some(payload) = existing_payload {
@@ -435,13 +433,14 @@ where
                     IVec::from(&[])
                 };
 
-                // Ingest
+                // Append the payload
 
                 let mut payload: Vec<u8> = Vec::from(prefix.as_ref());
-
                 let mut received_payload_len = payload.len();
-
                 let mut hasher = PD::hasher();
+
+                // Make sure the prefix is hashed too.
+                PD::write(&mut hasher, &prefix);
 
                 loop {
                     // 3. Too many bytes ingested? Error.
@@ -457,10 +456,71 @@ where
                         }
                         Ok(Either::Right(_)) => break,
                         Err(err) => {
+                            // Update with what we were able to produce.
+                            let new_value = encode_entry_values(
+                                length,
+                                &digest,
+                                &auth_token,
+                                received_payload_len as u64,
+                            )
+                            .await;
+
+                            let mut entry_batch = sled::Batch::default();
+                            let mut payload_batch = sled::Batch::default();
+
+                            entry_batch.insert(entry_key, new_value);
+                            payload_batch.insert(payload_key, payload);
+
+                            (&entry_tree, &payload_tree)
+                                .transaction(
+                                    |(tx_entry, tx_payloads): &(
+                                        TransactionalTree,
+                                        TransactionalTree,
+                                    )|
+                                     -> Result<
+                                        (),
+                                        sled::transaction::ConflictableTransactionError<
+                                            SimpleStoreSledError,
+                                        >,
+                                    > {
+                                        tx_entry.apply_batch(&entry_batch)?;
+                                        tx_payloads.apply_batch(&payload_batch)?;
+
+                                        Ok(())
+                                    },
+                                )
+                                .map_err(|_| {
+                                    PayloadAppendError::OperationError(SimpleStoreSledError {})
+                                })?;
+
+                            let authed_entry = AuthorisedEntry::new_unchecked(
+                                Entry::new(
+                                    self.namespace_id.clone(),
+                                    subspace,
+                                    path,
+                                    timestamp,
+                                    length,
+                                    digest.clone(),
+                                ),
+                                auth_token,
+                            );
+
+                            let lengthy_entry = LengthyAuthorisedEntry::new(
+                                authed_entry,
+                                received_payload_len as u64,
+                            );
+
+                            self.send_event(&SimpleStoreEvent {
+                                event: StoreEvent::Appended(lengthy_entry),
+                                all_payloads_empty: false,
+                                all_payloads_incomplete: true,
+                            })
+                            .await;
+
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
                                 total_length_now_available: received_payload_len as u64,
-                            })
+                            });
                         }
                     }
                 }
@@ -472,7 +532,7 @@ where
                         path,
                         timestamp,
                         length,
-                        digest.clone(),
+                        digest,
                     ),
                     auth_token,
                 );
@@ -480,16 +540,47 @@ where
                 let lengthy_entry =
                     LengthyAuthorisedEntry::new(authed_entry, received_payload_len as u64);
 
+                let new_value = encode_entry_values(
+                    length,
+                    lengthy_entry.entry().entry().payload_digest(),
+                    lengthy_entry.entry().token(),
+                    received_payload_len as u64,
+                )
+                .await;
+
+                let mut entry_batch = sled::Batch::default();
+                let mut payload_batch = sled::Batch::default();
+
+                entry_batch.insert(entry_key, new_value);
+                payload_batch.insert(payload_key, payload);
+
                 if received_payload_len as u64 == length {
                     let computed_digest = PD::finish(&hasher);
 
-                    if computed_digest != digest {
+                    if computed_digest != *lengthy_entry.entry().entry().payload_digest() {
                         return Err(PayloadAppendError::DigestMismatch);
                     }
 
-                    payload_tree
-                        .insert(key, payload)
-                        .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+                    (&entry_tree, &payload_tree)
+                    .transaction(
+                        |(tx_entry, tx_payloads): &(
+                            TransactionalTree,
+                            TransactionalTree,
+                        )|
+                         -> Result<
+                            (),
+                            sled::transaction::ConflictableTransactionError<
+                                SimpleStoreSledError,
+                            >,
+                        > {
+                            tx_entry.apply_batch(&entry_batch)?;
+                            tx_payloads.apply_batch(&payload_batch)?;
+                            Ok(())
+                        },
+                    )
+                    .map_err(|_| {
+                        PayloadAppendError::OperationError(SimpleStoreSledError {})
+                    })?;
 
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
@@ -500,9 +591,26 @@ where
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
-                    payload_tree
-                        .insert(key, payload)
-                        .map_err(|_| PayloadAppendError::OperationError(SimpleStoreSledError {}))?;
+                    (&entry_tree, &payload_tree)
+                    .transaction(
+                        |(tx_entry, tx_payloads): &(
+                            TransactionalTree,
+                            TransactionalTree,
+                        )|
+                         -> Result<
+                            (),
+                            sled::transaction::ConflictableTransactionError<
+                                SimpleStoreSledError,
+                            >,
+                        > {
+                            tx_entry.apply_batch(&entry_batch)?;
+                            tx_payloads.apply_batch(&payload_batch)?;
+                            Ok(())
+                        },
+                    )
+                    .map_err(|_| {
+                        PayloadAppendError::OperationError(SimpleStoreSledError {})
+                    })?;
 
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
@@ -658,42 +766,64 @@ where
         path: &willow_data_model::Path<MCL, MCC, MPL>,
     ) -> Result<(), Self::OperationsError> {
         let payload_tree = self.payload_tree().map_err(|_| SimpleStoreSledError {})?;
-        let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
+
+        let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
 
         let maybe_payload = self
-            .prefix_gt(&payload_tree, &exact_key)
+            .prefix_gt(&payload_tree, &payload_key)
             .map_err(|_err| SimpleStoreSledError {})?;
 
-        if let Some((key, value)) = maybe_payload {
-            // TODO: Refactor to transaction, update local length of entry!
-            payload_tree
-                .remove(&key)
-                .map_err(|_err| SimpleStoreSledError {})?;
+        let entry_tree = self.entry_tree().map_err(|_| SimpleStoreSledError {})?;
 
-            let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (length, digest, token, _local_length) = decode_entry_values(&value).await;
+        let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
+        let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
 
-            let entry = Entry::new(
-                self.namespace_id().clone(),
-                subspace,
-                path,
-                timestamp,
-                length,
-                digest,
-            );
+        match (maybe_entry, maybe_payload) {
+            (Some((entry_key, entry_value)), Some((payload_key, _payload_value))) => {
+                let (subspace, path, timestamp) = decode_entry_key(&entry_key).await;
+                let (length, digest, token, _local_length) =
+                    decode_entry_values(&entry_value).await;
 
-            // We can do this because the entry was stored, indicating its authenticity.
-            let authed = AuthorisedEntry::new_unchecked(entry, token);
+                let new_key_value = encode_entry_values(length, &digest, &token, 0).await;
 
-            self.send_event(&SimpleStoreEvent {
-                event: StoreEvent::PayloadForgotten(authed),
-                all_payloads_empty: length == 0,
-                all_payloads_incomplete: true,
-            })
-            .await;
+                (&entry_tree, &payload_tree)
+                    .transaction(
+                        |(entry_tx, payload_tx): &(TransactionalTree, TransactionalTree)| -> Result<
+                            (),
+                            sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
+                        > {
+                            payload_tx.remove(&payload_key)?;
+                            entry_tx.insert(&entry_key, new_key_value.clone())?;
+
+                            Ok(())
+                        },
+                    )
+                    .map_err(|_| SimpleStoreSledError {})?;
+
+                let entry = Entry::new(
+                    self.namespace_id().clone(),
+                    subspace,
+                    path,
+                    timestamp,
+                    length,
+                    digest,
+                );
+
+                // We can do this because the entry was successfully stored (and thus deemed authentic) before.
+                let authed = AuthorisedEntry::new_unchecked(entry, token);
+
+                self.send_event(&SimpleStoreEvent {
+                    event: StoreEvent::PayloadForgotten(authed),
+                    all_payloads_empty: length == 0,
+                    all_payloads_incomplete: true,
+                })
+                .await;
+
+                Ok(())
+            }
+            (None, Some(_)) => panic!("Storing a payload for which we have no entry, that is bad!"),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     async fn forget_area_payloads(
@@ -701,23 +831,25 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::OperationsError> {
+        let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
+        let mut entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
         let mut forgotten_count = 0;
 
-        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
-
         let entry_iterator = match area.subspace() {
-            AreaSubspace::Any => payload_tree.iter(),
+            AreaSubspace::Any => entry_tree.iter(),
             AreaSubspace::Id(subspace) => {
                 let matching_subspace_path =
                     encode_subspace_path_key(subspace, area.path(), false).await;
 
-                payload_tree.scan_prefix(&matching_subspace_path)
+                entry_tree.scan_prefix(&matching_subspace_path)
             }
         };
+
+        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
@@ -743,8 +875,12 @@ where
             };
 
             if !is_protected && prefix_matches && timestamp_included {
-                // FORGET IT
+                let entry_values = encode_entry_values(length, &digest, &token, 0).await;
+
+                entry_batch.insert(&key, entry_values);
                 payload_batch.remove(&key);
+
+                forgotten_count += 1;
 
                 let entry = Entry::new(
                     self.namespace_id().clone(),
@@ -755,7 +891,7 @@ where
                     digest,
                 );
 
-                // We can do this because the entry was stored, indicating its authenticity.
+                // We can do this because the entry was successfully stored (and thus deemed authentic) before.
                 let authed = AuthorisedEntry::new_unchecked(entry, token);
 
                 events_to_send.push(SimpleStoreEvent {
@@ -763,18 +899,16 @@ where
                     all_payloads_empty: length == 0,
                     all_payloads_incomplete: true,
                 });
-
-                forgotten_count += 1;
             }
         }
 
-        // TODO: Set local length to 0 for each entry!
-        payload_tree
+        (&entry_tree, &payload_tree)
             .transaction(
-                |tx_payloads| -> Result<
+                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
                     (),
                     sled::transaction::ConflictableTransactionError<SimpleStoreSledError>,
                 > {
+                    tx_entry.apply_batch(&entry_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
@@ -1161,7 +1295,7 @@ where
 impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + EncodableKnownSize + Decodable,
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SubspaceId + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
@@ -1169,6 +1303,7 @@ where
     async fn new(
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
+        // TODO: discuss order with aljoscha again
         order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
@@ -1403,10 +1538,8 @@ where
     pub fn should_ignore(&self, params: &QueryIgnoreParams) -> bool {
         if params.ignore_empty_payloads && self.all_payloads_empty {
             true
-        } else if params.ignore_incomplete_payloads && self.all_payloads_incomplete {
-            true
         } else {
-            false
+            params.ignore_incomplete_payloads && self.all_payloads_incomplete
         }
     }
 }
