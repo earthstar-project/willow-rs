@@ -1433,7 +1433,6 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    id: u64,
     area: Area<MCL, MCC, MPL, S>,
     ignore: Option<QueryIgnoreParams>,
     sender: Mutex<
