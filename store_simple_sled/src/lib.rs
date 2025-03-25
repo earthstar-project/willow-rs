@@ -228,11 +228,7 @@ where
     PD::ErrorReason: core::fmt::Debug,
     AT::ErrorReason: core::fmt::Debug,
 {
-    type FlushError = SimpleStoreSledError;
-
-    type BulkIngestionError = SimpleStoreSledError;
-
-    type OperationsError = SimpleStoreSledError;
+    type Error = SimpleStoreSledError;
 
     fn namespace_id(&self) -> &N {
         &self.namespace_id
@@ -243,10 +239,8 @@ where
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
         origin: EntryOrigin,
-    ) -> Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<Self::OperationsError>,
-    > {
+    ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
+    {
         let (entry, token) = authorised_entry.into_parts();
 
         if *entry.namespace_id() != self.namespace_id {
@@ -396,7 +390,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::OperationsError>>
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
@@ -617,7 +611,7 @@ where
         &self,
         subspace_id: &S,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
         let entry_tree = self.entry_tree()?;
@@ -662,7 +656,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
@@ -757,7 +751,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let payload_tree = self.payload_tree()?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
@@ -819,7 +813,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
@@ -909,7 +903,7 @@ where
         Ok(forgotten_count)
     }
 
-    async fn flush(&self) -> Result<(), Self::FlushError> {
+    async fn flush(&self) -> Result<(), Self::Error> {
         self.flush()
     }
 
@@ -917,7 +911,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
+    ) -> Result<Option<impl Producer<Item = u8>>, Self::Error> {
         let payload_tree = self.payload_tree()?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
@@ -938,7 +932,7 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        Self::OperationsError,
+        Self::Error,
     > {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
@@ -1000,7 +994,7 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        Self::OperationsError,
+        Self::Error,
     > {
         EntryProducer::new(self, area, reverse, ignore).await
     }
@@ -1011,7 +1005,7 @@ where
         ignore: Option<willow_data_model::QueryIgnoreParams>,
     ) -> impl Producer<
         Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::OperationsError>,
+        Error = EventSenderError<Self::Error>,
     > {
         let (pack, receiver) =
             EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);

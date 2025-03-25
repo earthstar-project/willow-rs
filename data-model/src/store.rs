@@ -361,9 +361,7 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    type FlushError: Display + Error;
-    type BulkIngestionError: Display + Error;
-    type OperationsError: Display + Error;
+    type Error: Display + Error;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id(&self) -> &N;
@@ -379,7 +377,7 @@ where
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<Self::OperationsError>,
+            EntryIngestionError<Self::Error>,
         >,
     >;
 
@@ -398,7 +396,7 @@ where
         C: BulkConsumer<
             Item = Result<
                 EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-                EntryIngestionError<Self::OperationsError>,
+                EntryIngestionError<Self::Error>,
             >,
         >,
     {
@@ -444,10 +442,7 @@ where
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
     ) -> impl Future<
-        Output = Result<
-            PayloadAppendSuccess,
-            PayloadAppendError<PayloadSourceError, Self::OperationsError>,
-        >,
+        Output = Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>,
     >
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>;
@@ -461,7 +456,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
+    ) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
     ///
@@ -474,7 +469,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::Error>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
@@ -483,7 +478,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
+    ) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
@@ -494,17 +489,17 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::Error>>;
 
     /// Forces persistence of all previous mutations
-    fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
+    fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path.
     fn payload(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::Error>>;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
@@ -513,10 +508,7 @@ where
         path: &Path<MCL, MCC, MPL>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<
-        Output = Result<
-            Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-            Self::OperationsError,
-        >,
+        Output = Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::Error>,
     >;
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`] **produced in an arbitrary order decided by the store implementation**.
@@ -528,7 +520,7 @@ where
     ) -> impl Future<
         Output = Result<
             impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-            Self::OperationsError,
+            Self::Error,
         >,
     >;
 
@@ -540,7 +532,7 @@ where
     ) -> impl Future<
         Output = impl Producer<
             Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-            Error = EventSenderError<Self::OperationsError>,
+            Error = EventSenderError<Self::Error>,
         >,
     >;
 }
