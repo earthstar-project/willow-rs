@@ -112,10 +112,6 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone,
 {
-    type FlushError = Infallible;
-
-    type BulkIngestionError = Infallible;
-
     type Error = Infallible;
 
     fn namespace_id(&self) -> &N {
@@ -354,7 +350,7 @@ where
         Ok(count)
     }
 
-    async fn flush(&self) -> Result<(), Self::FlushError> {
+    async fn flush(&self) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -515,16 +511,111 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<
         Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::OperationsError>,
+        Error = EventSenderError<Self::Error>,
     > {
-        FromBoxedSlice::from_vec(vec![])
+        panic!()
+        // FromBoxedSlice::from_vec(vec![])
     }
 }
 
-pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, OperationsError> {
+pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone,
+{
     IngestEntry {
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
         origin: EntryOrigin,
     },
+    BulkIngestEntry {
+        ingested: Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        prevent_pruning: bool,
+        origin: EntryOrigin,
+    },
+    AppendPayload {
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
+        data: Vec<u8>,
+    },
+    ForgetEntry {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    ForgetArea {
+        area: Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
+    ForgetPayload {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    ForgetAreaPayloads {
+        area: Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
+    GetPayload {
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    GetEntry {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+        ignore: Option<QueryIgnoreParams>,
+    },
+    QueryArea {
+        area: Area<MCL, MCC, MPL, S>,
+        ignore: Option<QueryIgnoreParams>,
+    },
+}
+
+/// Panics if and only if the two stores do not exhibit equivalent behaviour upon executing the given `ops`.
+pub async fn check_store_equality<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    Store1,
+    Store2,
+>(
+    store1: &mut Store1,
+    store2: &mut Store2,
+    ops: &[StoreOp<MCL, MCC, MPL, N, S, PD, AT>],
+) where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone + std::fmt::Debug,
+    Store1: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    Store2: Store<MCL, MCC, MPL, N, S, PD, AT>,
+{
+    let namespace_id = store1.namespace_id();
+    assert_eq!(namespace_id, store2.namespace_id());
+
+    for op in ops.iter() {
+        match op {
+            StoreOp::IngestEntry {
+                authorised_entry,
+                prevent_pruning,
+                origin,
+            } => {
+                if authorised_entry.entry().namespace_id() != namespace_id {
+                    continue;
+                } else {
+                    match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
+                        (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
+                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented)) | (Err(EntryIngestionError::NotAuthorised), Err(EntryIngestionError::NotAuthorised)) | (Err(EntryIngestionError::OperationsError(_)), Err(EntryIngestionError::OperationsError(_))) => continue,
+                        (res1, res2) => panic!("IngestEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
+                        _ => todo!(),
+                    }
+                }
+            }
+            _ => todo!(),
+        }
+    }
 }

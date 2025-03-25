@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EntryIngestionSuccess<
     const MCL: usize,
     const MCC: usize,
@@ -337,7 +337,7 @@ impl<OE: Debug> Display for ForgetPayloadError<OE> {
 impl<OE: Debug> Error for ForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryOrigin {
     /// The entry was probably created on this machine.
     Local,
