@@ -44,7 +44,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 }
 
 /// An [`AuthorisedEntry`] together with information about how much of its payload a given [`Store`] holds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LengthyAuthorisedEntry<
     const MCL: usize,
     const MCC: usize,

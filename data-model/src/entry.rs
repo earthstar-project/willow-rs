@@ -284,7 +284,7 @@ impl std::error::Error for UnauthorisedWriteError {}
 /// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
     Entry<MCL, MCC, MPL, N, S, PD>,
     AT,
