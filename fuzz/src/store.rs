@@ -19,16 +19,15 @@ use wb_async_utils::spsc::{Sender, State};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, EventSenderError, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store,
-    StoreEvent, SubspaceId, Timestamp,
+    EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
+    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder,
+    Store, StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
 pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace: N,
     subspaces: RefCell<BTreeMap<S, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>>,
-    subscriptions: RefCell<BTreeSet<Subscription<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -127,6 +126,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        origin: EntryOrigin,
     ) -> Result<
         EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
         EntryIngestionError<Self::OperationsError>,
@@ -419,7 +419,6 @@ where
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        order: &QueryOrder,
         reverse: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
@@ -506,38 +505,6 @@ where
             }
         }
 
-        match order {
-            QueryOrder::Subspace => {
-                candidates.sort_by(|a, b| {
-                    a.entry()
-                        .entry()
-                        .subspace_id()
-                        .cmp(&b.entry().entry().subspace_id())
-                        .then(a.entry().entry().path().cmp(&b.entry().entry().path()))
-                        .then(
-                            a.entry()
-                                .entry()
-                                .timestamp()
-                                .cmp(&b.entry().entry().timestamp()),
-                        )
-                });
-            }
-            QueryOrder::Path => {
-                candidates.sort_by(|a, b| a.entry().entry().path().cmp(&b.entry().entry().path()));
-            }
-            QueryOrder::Timestamp => {
-                candidates.sort_by(|a, b| {
-                    a.entry()
-                        .entry()
-                        .timestamp()
-                        .cmp(&b.entry().entry().timestamp())
-                });
-            }
-            QueryOrder::Arbitrary => {
-                // no-op
-            }
-        }
-
         if reverse {
             candidates.reverse();
         }
@@ -545,7 +512,7 @@ where
         Ok(FromBoxedSlice::from_vec(candidates))
     }
 
-    fn subscribe_area(
+    async fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
@@ -553,88 +520,14 @@ where
         Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
         Error = EventSenderError<Self::OperationsError>,
     > {
-        todo!()
+        FromBoxedSlice::from_vec(vec![])
     }
 }
 
-// #[derive(Debug, PartialEq, Eq, Clone)]
-// struct Subscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-// where
-//     N: NamespaceId,
-//     S: SubspaceId,
-//     PD: PayloadDigest,
-//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-// {
-//     area: Area<MCL, MCC, MPL, S>,
-//     ignore: Option<QueryIgnoreParams>,
-//     state: Rc<
-//         State<
-//             Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-//             Infallible,
-//             EventSenderError<Infallible>,
-//         >,
-//     >,
-//     sender: Sender<
-//         Rc<
-//             State<
-//                 Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-//                 Infallible,
-//                 EventSenderError<Infallible>,
-//             >,
-//         >,
-//         Fixed<WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-//         Infallible,
-//         EventSenderError<Infallible>,
-//     >,
-// }
-
-// /// An event which took place within a [`Store`].
-// #[derive(Debug, Clone)]
-// pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-// where
-//     N: NamespaceId,
-//     S: SubspaceId,
-//     PD: PayloadDigest,
-//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-// {
-//     /// A new entry was ingested.
-//     Ingested(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, EntryOrigin),
-//     /// An existing entry received a portion of its corresponding payload.
-//     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
-//     /// An entry was forgotten.
-//     EntryForgotten((S, Path<MCL, MCC, MPL>)),
-//     /// A payload was forgotten.
-//     PayloadForgotten(PD),
-//     /// An entry was pruned via prefix pruning.
-//     Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
-// }
-
-// // We need this just so we can have a `Default` impl
-// // So that we can stick it in a ufotofu_queues::fixed
-// #[derive(Clone)]
-// struct WrappedStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-// where
-//     N: NamespaceId,
-//     S: SubspaceId,
-//     PD: PayloadDigest,
-//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-// {
-//     event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-//     available_bytes: u64,
-// }
-
-// impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
-//     for WrappedStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
-// where
-//     N: NamespaceId,
-//     S: SubspaceId,
-//     PD: PayloadDigest,
-//     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-// {
-//     fn default() -> Self {
-//         Self {
-//             event: StoreEvent::EntryForgotten((S::default(), Path::new_empty(), 0)),
-//             available_bytes: 0,
-//         }
-//     }
-// }
+pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, OperationsError> {
+    IngestEntry {
+        authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        prevent_pruning: bool,
+        origin: EntryOrigin,
+    },
+}

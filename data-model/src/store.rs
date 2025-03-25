@@ -11,7 +11,7 @@ use crate::{
     entry::AuthorisedEntry,
     grouping::Area,
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyAuthorisedEntry, Path,
+    LengthyAuthorisedEntry, Path, Timestamp,
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
