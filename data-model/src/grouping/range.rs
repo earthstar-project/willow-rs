@@ -7,15 +7,16 @@ use arbitrary::{Arbitrary, Error as ArbitraryError};
 use crate::path::Path;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 /// Determines whether a [`Range`] is _closed_ or _open_.
-pub enum RangeEnd<T: Ord> {
+pub enum RangeEnd<T> {
     /// A [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) consists of a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and an [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value).
     Closed(T),
     /// An [open range](https://willowprotocol.org/specs/grouping-entries/index.html#open_range) consists only of a [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value).
     Open,
 }
 
-impl<T: Ord> RangeEnd<T> {
+impl<T: PartialOrd> RangeEnd<T> {
     /// Return if the [`RangeEnd`] is greater than the given value.
     pub fn gt_val(&self, val: &T) -> bool {
         match self {
@@ -49,15 +50,24 @@ impl<T: Ord> Ord for RangeEnd<T> {
     }
 }
 
-impl<T: Ord> PartialOrd for RangeEnd<T> {
+impl<T: PartialOrd> PartialOrd for RangeEnd<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        match self {
+            RangeEnd::Closed(end_value) => match other {
+                RangeEnd::Closed(other_end_value) => end_value.partial_cmp(other_end_value),
+                RangeEnd::Open => Some(Ordering::Less),
+            },
+            RangeEnd::Open => match other {
+                RangeEnd::Closed(_) => Some(Ordering::Greater),
+                RangeEnd::Open => Some(Ordering::Equal),
+            },
+        }
     }
 }
 
 impl<T> PartialEq<T> for RangeEnd<T>
 where
-    T: Eq + Ord,
+    T: PartialEq,
 {
     fn eq(&self, other: &T) -> bool {
         match self {
@@ -69,7 +79,7 @@ where
 
 impl<T> PartialOrd<T> for RangeEnd<T>
 where
-    T: Ord,
+    T: PartialOrd,
 {
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
         match self {
@@ -119,39 +129,18 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd<RangeEnd<P
     }
 }
 
-#[cfg(feature = "dev")]
-impl<'a, T> Arbitrary<'a> for RangeEnd<T>
-where
-    T: Arbitrary<'a> + Ord,
-{
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let is_open: bool = Arbitrary::arbitrary(u)?;
-
-        if !is_open {
-            let value: T = Arbitrary::arbitrary(u)?;
-
-            return Ok(Self::Closed(value));
-        }
-
-        Ok(Self::Open)
-    }
-}
-
 /// One-dimensional grouping over a type of value.
 ///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#range)
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct Range<T: Ord> {
+pub struct Range<T> {
     /// A range [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) all values greater than or equal to its [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) **and** less than its [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value)
     pub start: T,
     /// A range [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) all values strictly less than its end value (if it is not open) **and** greater than or equal to its [start value](https://willowprotocol.org/specs/grouping-entries/index.html#start_value).
     pub end: RangeEnd<T>,
 }
 
-impl<T> Range<T>
-where
-    T: Ord + Clone,
-{
+impl<T> Range<T> {
     /// Returns a new [`Range`].
     pub fn new(start: T, end: RangeEnd<T>) -> Self {
         Self { start, end }
@@ -164,7 +153,12 @@ where
             end: RangeEnd::Open,
         }
     }
+}
 
+impl<T> Range<T>
+where
+    T: PartialOrd,
+{
     /// Returns a new [closed range](https://willowprotocol.org/specs/grouping-entries/index.html#closed_range) from a [start](https://willowprotocol.org/specs/grouping-entries/index.html#start_value) and [end_value](https://willowprotocol.org/specs/grouping-entries/index.html#end_value), or [`None`] if the resulting range would never [include](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) any values.
     pub fn new_closed(start: T, end: T) -> Option<Self> {
         if start < end {
@@ -186,7 +180,11 @@ where
     pub fn includes_range(&self, other: &Range<T>) -> bool {
         self.start <= other.start && self.end >= other.end
     }
-
+}
+impl<T> Range<T>
+where
+    T: Ord + Clone,
+{
     /// Creates the [intersection](https://willowprotocol.org/specs/grouping-entries/index.html#range_intersection) between this [`Range`] and another `Range`, if any.
     pub fn intersection(&self, other: &Self) -> Option<Self> {
         let start = cmp::max(&self.start, &other.start);
@@ -206,20 +204,14 @@ where
     }
 }
 
-impl<T: Default> Range<T>
-where
-    T: Ord + Clone,
-{
-    /// Creates a new range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) everything.
+impl<T: Default> Range<T> {
+    /// Creates a new range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) everything. This requires `Default::default()` to return the minimal value of type `T` in order to be correct.
     pub fn full() -> Self {
         Self::new_open(T::default())
     }
 }
 
-impl<T: Default> Default for Range<T>
-where
-    T: Ord + Clone,
-{
+impl<T: Default> Default for Range<T> {
     fn default() -> Self {
         Self::full()
     }
@@ -235,16 +227,21 @@ impl<T: Ord> Ord for Range<T> {
     }
 }
 
-impl<T: Ord> PartialOrd for Range<T> {
+impl<T: PartialOrd> PartialOrd for Range<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        match self.start.partial_cmp(&other.start) {
+            None => None,
+            Some(Ordering::Less) => Some(Ordering::Less),
+            Some(Ordering::Equal) => Some(Ordering::Equal),
+            Some(Ordering::Greater) => self.end.partial_cmp(&other.end),
+        }
     }
 }
 
 #[cfg(feature = "dev")]
 impl<'a, T> Arbitrary<'a> for Range<T>
 where
-    T: Arbitrary<'a> + Ord,
+    T: Arbitrary<'a> + PartialOrd,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let start: T = Arbitrary::arbitrary(u)?;

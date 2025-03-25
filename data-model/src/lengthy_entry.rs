@@ -1,15 +1,10 @@
-use crate::{AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, PayloadDigest, SubspaceId};
+use crate::{AuthorisedEntry, Entry};
 
 /// An [`Entry`] together with information about how much of its payload a given [`Store`] holds.
 ///
 /// [Definition](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#LengthyEntry)
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LengthyEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-{
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LengthyEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> {
     /// The Entry in question.
     entry: Entry<MCL, MCC, MPL, N, S, PD>,
     /// The number of consecutive bytes from the start of the entry’s payload that the peer holds.
@@ -18,10 +13,6 @@ where
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     LengthyEntry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
 {
     /// Returns a new lengthy entry from a given [`Entry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
     pub fn new(entry: Entry<MCL, MCC, MPL, N, S, PD>, available: u64) -> Self {
@@ -46,10 +37,6 @@ where
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     AsRef<Entry<MCL, MCC, MPL, N, S, PD>> for LengthyEntry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
 {
     fn as_ref(&self) -> &Entry<MCL, MCC, MPL, N, S, PD> {
         &self.entry
@@ -66,12 +53,7 @@ pub struct LengthyAuthorisedEntry<
     S,
     PD,
     AT,
-> where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
+> {
     /// The Entry in question.
     entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     /// The number of consecutive bytes from the start of the entry’s payload that the peer holds.
@@ -80,11 +62,6 @@ pub struct LengthyAuthorisedEntry<
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     /// Returns a new lengthy entry from a given [`AuthorisedEntry`] and the number of consecutive bytes from the start of the entry’s payload that are held.
     pub fn new(entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, available: u64) -> Self {
@@ -110,11 +87,6 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     AsRef<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
     for LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     fn as_ref(&self) -> &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
         &self.entry

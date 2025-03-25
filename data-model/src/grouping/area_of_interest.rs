@@ -1,10 +1,10 @@
-use crate::{grouping::area::Area, parameters::SubspaceId};
+use crate::grouping::area::Area;
 
 /// A grouping of [`crate::Entry`]s that are among the newest in some [store](https://willowprotocol.org/specs/data-model/index.html#store).
 ///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aois).
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// To be included in this [`AreaOfInterest`], an [`crate::Entry`] must be included in the [`Area`].
     pub area: Area<MCL, MCC, MPL, S>,
     /// To be included in this AreaOfInterest, an Entry’s timestamp must be among the max_count greatest Timestamps, unless max_count is zero.
@@ -13,9 +13,7 @@ pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, 
     pub max_size: u64,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
-    AreaOfInterest<MCL, MCC, MPL, S>
-{
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> AreaOfInterest<MCL, MCC, MPL, S> {
     /// Creates a new [`AreaOfInterest`].
     pub fn new(area: Area<MCL, MCC, MPL, S>, max_count: u64, max_size: u64) -> Self {
         Self {
@@ -24,7 +22,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
             max_size,
         }
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> AreaOfInterest<MCL, MCC, MPL, S>
+where
+    S: PartialOrd + Clone,
+{
     /// Returns the intersection of this [`AreaOfInterest`] with another.
     ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#aoi_intersection).
