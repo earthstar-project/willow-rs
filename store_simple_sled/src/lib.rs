@@ -15,10 +15,10 @@ use ufotofu_codec::{Decodable, DecodableSync, Encodable, EncodableKnownSize, Enc
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryForgottenEvent,
-    EntryIngestionError, EntryIngestionSuccess, EntryOrigin, EventSenderError, IngestEvent,
-    LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess,
-    PayloadDigest, PruneEvent, QueryIgnoreParams, QueryOrder, Store, StoreEvent, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
+    EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
+    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder,
+    Store, StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -228,11 +228,7 @@ where
     PD::ErrorReason: core::fmt::Debug,
     AT::ErrorReason: core::fmt::Debug,
 {
-    type FlushError = SimpleStoreSledError;
-
-    type BulkIngestionError = SimpleStoreSledError;
-
-    type OperationsError = SimpleStoreSledError;
+    type Error = SimpleStoreSledError;
 
     fn namespace_id(&self) -> &N {
         &self.namespace_id
@@ -243,10 +239,8 @@ where
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
         origin: EntryOrigin,
-    ) -> Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<Self::OperationsError>,
-    > {
+    ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
+    {
         let (entry, token) = authorised_entry.into_parts();
 
         if *entry.namespace_id() != self.namespace_id {
@@ -285,7 +279,8 @@ where
 
         let mut keys_to_prune: Vec<IVec> = Vec::new();
 
-        let mut events_to_emit: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+        let mut prune_all_payloads_empty = true;
+        let mut prune_all_payloads_incomplete = true;
 
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
@@ -320,21 +315,14 @@ where
                 return Err(EntryIngestionError::PruningPrevented);
             }
 
-            events_to_emit.push(SimpleStoreEvent {
-                event: StoreEvent::Pruned(PruneEvent {
-                    pruned: (
-                        other_entry.subspace_id().clone(),
-                        other_entry.path().clone(),
-                        other_timestamp,
-                    ),
-                    // We can use new_unchecked here because we checked the token earlier.
-                    by: AuthorisedEntry::new_unchecked(entry.clone(), token.clone()),
-                }),
-                all_payloads_empty: entry.payload_length() == 0 && other_payload_length == 0,
-                all_payloads_incomplete: other_local_length < other_payload_length,
-            });
-
             // Prune it!
+            if other_payload_length > 0 {
+                prune_all_payloads_empty = false
+            }
+
+            if other_local_length == other_payload_length {
+                prune_all_payloads_incomplete = false
+            }
 
             keys_to_prune.push(key);
         }
@@ -348,6 +336,8 @@ where
 
         let mut entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
+
+        let dispatch_prune = !keys_to_prune.is_empty();
 
         for key in keys_to_prune {
             entry_batch.remove(&key);
@@ -369,21 +359,27 @@ where
             )
             .map_err(SimpleStoreSledError::from)?;
 
-        events_to_emit.push(SimpleStoreEvent {
-            event: StoreEvent::Ingested(IngestEvent {
-                ingested: AuthorisedEntry::new_unchecked(entry.clone(), token.clone()),
+        self.send_event(&SimpleStoreEvent {
+            event: StoreEvent::Ingested {
+                entry: AuthorisedEntry::new_unchecked(entry.clone(), token.clone()),
                 origin,
-            }),
+            },
             all_payloads_empty: entry.payload_length() == 0,
             all_payloads_incomplete: true,
-        });
+        })
+        .await;
 
-        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
-        // this is a consequence of us using a channel per subscription.
-        // it can be fixed by maintaining a single event queue which subscribers work through independently
-        //    and, incidentally, subscribers that straggle behind can be offed.
-        for event in events_to_emit {
-            self.send_event(&event).await;
+        if dispatch_prune {
+            self.send_event(&SimpleStoreEvent {
+                event: StoreEvent::Pruned {
+                    subspace_id: entry.subspace_id().clone(),
+                    path: entry.path().clone(),
+                    timestamp: entry.timestamp(),
+                },
+                all_payloads_empty: entry.payload_length() == 0 && prune_all_payloads_empty,
+                all_payloads_incomplete: prune_all_payloads_incomplete,
+            })
+            .await;
         }
 
         Ok(EntryIngestionSuccess::Success)
@@ -394,7 +390,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::OperationsError>>
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
@@ -615,7 +611,7 @@ where
         &self,
         subspace_id: &S,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
         let entry_tree = self.entry_tree()?;
@@ -624,7 +620,7 @@ where
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
-            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+            let (subspace_id, path, timestamp) = decode_entry_key(&key).await;
             let (length, _digest, _auth_token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
@@ -642,11 +638,11 @@ where
                 )?;
 
             self.send_event(&SimpleStoreEvent {
-                event: StoreEvent::EntryForgotten(EntryForgottenEvent {
-                    subspace,
+                event: StoreEvent::EntryForgotten {
+                    subspace_id,
                     path,
                     timestamp,
-                }),
+                },
                 all_payloads_empty: length == 0,
                 all_payloads_incomplete: true,
             })
@@ -660,7 +656,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
@@ -680,6 +676,9 @@ where
         };
 
         let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+
+        let mut all_payloads_empty = true;
+        let mut all_payloads_incomplete = true;
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
@@ -709,17 +708,15 @@ where
                 entry_batch.remove(&key);
                 payload_batch.remove(&key);
 
-                forgotten_count += 1;
+                if length > 0 {
+                    all_payloads_empty = false;
+                }
 
-                events_to_send.push(SimpleStoreEvent {
-                    event: StoreEvent::EntryForgotten(EntryForgottenEvent {
-                        subspace,
-                        path,
-                        timestamp,
-                    }),
-                    all_payloads_empty: length == 0,
-                    all_payloads_incomplete: local_length < length,
-                });
+                if local_length == length {
+                    all_payloads_incomplete = false
+                }
+
+                forgotten_count += 1;
             }
         }
 
@@ -736,12 +733,15 @@ where
                 },
             )?;
 
-        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
-        // this is a consequence of us using a channel per subscription.
-        // it can be fixed by maintaining a single event queue which subscribers work through independently
-        //    and, incidentally, subscribers that straggle behind can be offed.
-        for event in events_to_send {
-            self.send_event(&event).await;
+        if forgotten_count > 0 {
+            events_to_send.push(SimpleStoreEvent {
+                event: StoreEvent::AreaForgotten {
+                    area: area.clone(),
+                    protected: protected.clone(),
+                },
+                all_payloads_empty,
+                all_payloads_incomplete,
+            });
         }
 
         Ok(forgotten_count)
@@ -751,7 +751,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let payload_tree = self.payload_tree()?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
@@ -813,7 +813,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
@@ -834,10 +834,12 @@ where
 
         let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
 
+        let mut all_payloads_empty = true;
+        let mut all_payloads_incomplete = true;
+
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (length, digest, token, _local_length) =
-                decode_entry_values::<PD, AT>(&value).await;
+            let (length, digest, token, local_length) = decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
                 path.is_prefixed_by(area.path())
@@ -865,23 +867,13 @@ where
 
                 forgotten_count += 1;
 
-                let entry = Entry::new(
-                    self.namespace_id().clone(),
-                    subspace,
-                    path,
-                    timestamp,
-                    length,
-                    digest,
-                );
+                if length > 0 {
+                    all_payloads_empty = false
+                }
 
-                // We can do this because the entry was successfully stored (and thus deemed authentic) before.
-                let authed = AuthorisedEntry::new_unchecked(entry, token);
-
-                events_to_send.push(SimpleStoreEvent {
-                    event: StoreEvent::PayloadForgotten(authed),
-                    all_payloads_empty: length == 0,
-                    all_payloads_incomplete: true,
-                });
+                if local_length == length {
+                    all_payloads_incomplete = false
+                }
             }
         }
 
@@ -897,18 +889,21 @@ where
             },
         )?;
 
-        // we would like a big queue, but instead we’ve got many queues for each subscription, which is why things block here. anything that blocks here blocks the whole store.
-        // this is a consequence of us using a channel per subscription.
-        // it can be fixed by maintaining a single event queue which subscribers work through independently
-        //    and, incidentally, subscribers that straggle behind can be offed.
-        for event in events_to_send {
-            self.send_event(&event).await;
+        if forgotten_count > 0 {
+            events_to_send.push(SimpleStoreEvent {
+                event: StoreEvent::AreaPayloadsForgotten {
+                    area: area.clone(),
+                    protected: protected.clone(),
+                },
+                all_payloads_empty,
+                all_payloads_incomplete,
+            });
         }
 
         Ok(forgotten_count)
     }
 
-    async fn flush(&self) -> Result<(), Self::FlushError> {
+    async fn flush(&self) -> Result<(), Self::Error> {
         self.flush()
     }
 
@@ -916,7 +911,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
+    ) -> Result<Option<impl Producer<Item = u8>>, Self::Error> {
         let payload_tree = self.payload_tree()?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
@@ -937,7 +932,7 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        Self::OperationsError,
+        Self::Error,
     > {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
@@ -999,7 +994,7 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        Self::OperationsError,
+        Self::Error,
     > {
         EntryProducer::new(self, area, reverse, ignore).await
     }
@@ -1010,7 +1005,7 @@ where
         ignore: Option<willow_data_model::QueryIgnoreParams>,
     ) -> impl Producer<
         Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::OperationsError>,
+        Error = EventSenderError<Self::Error>,
     > {
         let (pack, receiver) =
             EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
@@ -1433,7 +1428,6 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    id: u64,
     area: Area<MCL, MCC, MPL, S>,
     ignore: Option<QueryIgnoreParams>,
     sender: Mutex<
@@ -1565,11 +1559,11 @@ where
 {
     fn default() -> Self {
         Self {
-            event: StoreEvent::EntryForgotten(EntryForgottenEvent::new(
-                S::default(),
-                Path::new_empty(),
-                0,
-            )),
+            event: StoreEvent::EntryForgotten {
+                subspace_id: S::default(),
+                path: Path::new_empty(),
+                timestamp: 0,
+            },
             all_payloads_empty: true,
             all_payloads_incomplete: true,
         }

@@ -9,7 +9,7 @@ use ufotofu::{BulkConsumer, BulkProducer, Producer};
 
 use crate::{
     entry::AuthorisedEntry,
-    grouping::Area,
+    grouping::{Area, AreaSubspace, Range},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
     LengthyAuthorisedEntry, Path, Timestamp,
 };
@@ -166,61 +166,11 @@ pub enum QueryOrder {
     Arbitrary,
 }
 
-/// Describes an [`AuthorisedEntry`] which was successfully ingested into the store, and a [`EntryOrigin`] describing where the entry came from.
-#[derive(Debug, Clone)]
-pub struct IngestEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    /// The entry which was ingested
-    pub ingested: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-    /// The origin of the ingestion
-    pub origin: EntryOrigin,
-}
-
-/// Describes a forgotten entry by its subspace, path, and timestamp.
-#[derive(Debug, Clone)]
-pub struct EntryForgottenEvent<const MCL: usize, const MCC: usize, const MPL: usize, S>
-where
-    S: SubspaceId,
-{
-    pub subspace: S,
-    pub path: Path<MCL, MCC, MPL>,
-    pub timestamp: u64,
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S> EntryForgottenEvent<MCL, MCC, MPL, S>
-where
-    S: SubspaceId,
-{
-    pub fn new(subspace: S, path: Path<MCL, MCC, MPL>, timestamp: u64) -> Self {
-        Self {
-            subspace,
-            path,
-            timestamp,
-        }
-    }
-}
-
-/// Describes an [`AuthorisedEntry`] which was pruned and the [`AuthorisedEntry`] which triggered the pruning.
-#[derive(Debug, Clone)]
-pub struct PruneEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    /// The subspace ID, path, and timestamp of the entry which was pruned.
-    pub pruned: (S, Path<MCL, MCC, MPL>, u64),
-    /// The entry which triggered the pruning.
-    pub by: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-}
-
-/// An event which took place within a [`Store`].
+/// A notification about changes in a [`Store`]. You can obtain a producer of these via the [`Store::subscribe_area`] method.
+///
+/// An event subscription takes two parameters: the [`Area`] within events should be reported (any store mutations outside that area will not be reported to that subscription), and some optional `QueryIgnoreParams` for optionally filtering events based on whether they correspond to entries whose payload is the empty string and/or whose payload is not fully available in the local store. A more detailed description of how these ignore options impact events is given in the docs for each enum variant, but the general intuition is for the subscription to act as if it was on a store that did not inlcude ignored entries in the first place.
+///
+/// In the description of the enum variants, we write `sub_area` for the area of the subscription, and `ignores` for the subscription `QueryIgnoreParams`.
 #[derive(Debug, Clone)]
 pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -229,16 +179,59 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// A new entry was ingested.
-    Ingested(IngestEvent<MCL, MCC, MPL, N, S, PD, AT>),
-    /// An existing entry received a portion of its corresponding payload.
+    /// Emitted when an entry is inserted in `area`.
+    ///
+    /// - If `ignores.ignore_empty_payloads`, this is not emitted if the payload of the entry is the empty payload.
+    /// - If `ignores.ignore_incomplete_payloads`, this event is not emitted upon entry insertion, but only once its payload has been fully added to the store. In this case, the ingestion event is guaranteed to be emitted *before* the corresponding payload append event.
+    Ingested {
+        /// The entry that was inserted.
+        entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        /// A tag that determines whether we ourselves *created* this entry, or whether it arrived from some other data source. In the latter case, the data source is identified by a u64 id. This is not necessarily intented for application-dev-facing APIs, but rather for efficiently implementing replication services (where you want to forward new entries to other peers, but not to those from which you have just received them).
+        origin: EntryOrigin,
+    },
+    /// Emitted whenever one or more entries are removed from `area` (via prefix pruning) because of an insertion that did not itself happen inside `area`. Example: `area.path` is `["blog", "recipes"]`, and a new entry is written to `[blog]`, thus deleting all old recipes.
+    ///
+    /// Of the "one or more entries", at least one must not have been ignored by the `ignores`. If all deleted entries are ignored, no corresponding `Pruned` event is emitted.
+    ///
+    /// Note that no such event is emitted when the insertion falls *into* `area`; subscribers must monitor `StoreEvent::Ingested` events and infer any deletions from those.
+    Pruned {
+        /// The path of the entry that caused the pruning.
+        path: Path<MCL, MCC, MPL>,
+        /// The subspace_id of the entry that caused the pruning.
+        subspace_id: S,
+        /// The timestamp of the entry that caused the pruning.
+        timestamp: u64,
+    },
+    /// An existing entry inside `area` received a portion of its corresponding payload.
+    ///
+    /// If `ignores.ignore_incomplete_payloads`, this is only emitted when the payload is now fully available. In this case, the corresponding `Ingested` event is guaranteed to be emitted before this `Appended` event.
     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
-    /// An entry was forgotten.
-    EntryForgotten(EntryForgottenEvent<MCL, MCC, MPL, S>),
-    /// A payload was forgotten.
+    /// Emitted whenever a non-ignored entry in `area` is forgotten via `Store::forget_entry`. No corresponding `PayloadForgotten` event is emitted in this case.
+    EntryForgotten {
+        /// The path of the forgotten entry.
+        path: Path<MCL, MCC, MPL>,
+        /// The subspace_id of the forgotten entry.
+        subspace_id: S,
+        /// The timestamp of the forgotten entry.
+        timestamp: u64,
+        // TODO authorised entry instead? Also the payload maybe? Apps might need to retrieve the payload in order to "undo" operations encoded therein, but also the whole point is to get rid of the payload, not to store it for event consumers. Will probably keep things without the payload for now, but there might be a future API that enables payload access.
+    },
+    /// Emitted whenever a call to `Store::forget_area` forgets at least one non-ignored entry in `area`. No corresponding `AreaPayloadForgotten` event is emitted in this case.
+    AreaForgotten {
+        /// The area that was forgotten.
+        area: Area<MCL, MCC, MPL, S>,
+        /// A subarea that was retained (if any).
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
+    /// Emitted whenever the payload of a non-ignored entry in `area` is forgotten via `Store::forget_payload`. Emitted even if no payload bytes had been available to forget in the first place.
     PayloadForgotten(AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
-    /// An entry was pruned via prefix pruning.
-    Pruned(PruneEvent<MCL, MCC, MPL, N, S, PD, AT>),
+    /// Emitted whenever the payload of at least one non-ignored entry in `area` is forgotten via `Store::forget_area_payloads` Emitted even if no payload bytes had been available to forget in the first place.
+    AreaPayloadsForgotten {
+        /// The area whose payloads were forgotten.
+        area: Area<MCL, MCC, MPL, S>,
+        /// A subarea whose payloads were retained (if any).
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -251,21 +244,45 @@ where
 {
     pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         match self {
-            StoreEvent::Ingested(event) => area.includes_entry(event.ingested.entry()),
+            StoreEvent::Ingested { entry, origin: _ } => area.includes_entry(entry.entry()),
             StoreEvent::Appended(lengthy_authorised_entry) => {
                 area.includes_entry(lengthy_authorised_entry.entry().entry())
             }
-            StoreEvent::EntryForgotten(event) => {
-                area.subspace().includes(&event.subspace)
-                    && area.path().is_prefix_of(&event.path)
-                    && area.times().includes(&event.timestamp)
+            StoreEvent::EntryForgotten {
+                path,
+                subspace_id,
+                timestamp,
+            } => {
+                area.subspace().includes(subspace_id)
+                    && area.path().is_prefix_of(path)
+                    && area.times().includes(timestamp)
             }
             StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
-            StoreEvent::Pruned(prune_event) => {
-                area.subspace().includes(&prune_event.pruned.0)
-                    && area.path().is_prefix_of(&prune_event.pruned.1)
-                    && area.times().includes(&prune_event.pruned.2)
+            StoreEvent::Pruned {
+                subspace_id,
+                path,
+                timestamp,
+            } => {
+                // To be included by an area,
+                // The originating entry must exist OUTSIDE the area
+                // AND the area pruned by that entry must intersect with the given area
+                !area.includes_triplet(subspace_id, path, *timestamp)
+                    && Area::new(
+                        AreaSubspace::Id(subspace_id.clone()),
+                        path.clone(),
+                        Range::new_closed(0, *timestamp).unwrap(),
+                    )
+                    .intersection(area)
+                    .is_some()
             }
+            StoreEvent::AreaForgotten {
+                area: forgotten_area,
+                protected: _,
+            } => area.intersection(forgotten_area).is_some(),
+            StoreEvent::AreaPayloadsForgotten {
+                area: forgotten_area,
+                protected: _,
+            } => area.intersection(forgotten_area).is_some(),
         }
     }
 }
@@ -344,9 +361,7 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    type FlushError: Display + Error;
-    type BulkIngestionError: Display + Error;
-    type OperationsError: Display + Error;
+    type Error: Display + Error;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id(&self) -> &N;
@@ -362,7 +377,7 @@ where
     ) -> impl Future<
         Output = Result<
             EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-            EntryIngestionError<Self::OperationsError>,
+            EntryIngestionError<Self::Error>,
         >,
     >;
 
@@ -381,7 +396,7 @@ where
         C: BulkConsumer<
             Item = Result<
                 EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-                EntryIngestionError<Self::OperationsError>,
+                EntryIngestionError<Self::Error>,
             >,
         >,
     {
@@ -427,10 +442,7 @@ where
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
     ) -> impl Future<
-        Output = Result<
-            PayloadAppendSuccess,
-            PayloadAppendError<PayloadSourceError, Self::OperationsError>,
-        >,
+        Output = Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>,
     >
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>;
@@ -444,7 +456,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
+    ) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
     ///
@@ -457,7 +469,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::Error>>;
 
     /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
     ///
@@ -466,7 +478,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::OperationsError>>;
+    ) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
@@ -477,17 +489,17 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> impl Future<Output = Result<usize, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<usize, Self::Error>>;
 
     /// Forces persistence of all previous mutations
-    fn flush(&self) -> impl Future<Output = Result<(), Self::FlushError>>;
+    fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path.
     fn payload(
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::OperationsError>>;
+    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::Error>>;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
@@ -496,10 +508,7 @@ where
         path: &Path<MCL, MCC, MPL>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Future<
-        Output = Result<
-            Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-            Self::OperationsError,
-        >,
+        Output = Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::Error>,
     >;
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`] **produced in an arbitrary order decided by the store implementation**.
@@ -511,7 +520,7 @@ where
     ) -> impl Future<
         Output = Result<
             impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-            Self::OperationsError,
+            Self::Error,
         >,
     >;
 
@@ -523,7 +532,7 @@ where
     ) -> impl Future<
         Output = impl Producer<
             Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-            Error = EventSenderError<Self::OperationsError>,
+            Error = EventSenderError<Self::Error>,
         >,
     >;
 }

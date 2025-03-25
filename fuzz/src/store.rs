@@ -116,7 +116,7 @@ where
 
     type BulkIngestionError = Infallible;
 
-    type OperationsError = Infallible;
+    type Error = Infallible;
 
     fn namespace_id(&self) -> &N {
         &self.namespace
@@ -127,10 +127,8 @@ where
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
         origin: EntryOrigin,
-    ) -> Result<
-        EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-        EntryIngestionError<Self::OperationsError>,
-    > {
+    ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
+    {
         if self.namespace_id() != authorised_entry.entry().namespace_id() {
             panic!("Tried to ingest an entry into a store with a mismatching NamespaceId");
         }
@@ -193,7 +191,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
-    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::OperationsError>>
+    ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
         Producer: ufotofu::BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
@@ -247,7 +245,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
         subspace_store.entries.remove(path);
         Ok(())
@@ -257,7 +255,7 @@ where
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
         protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let mut candidates = vec![];
 
         let mut count = 0;
@@ -301,7 +299,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::OperationsError> {
+    ) -> Result<(), Self::Error> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get_mut(path) {
             None => panic!("Tried to forget the payload of an entry we do not have."),
@@ -316,7 +314,7 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
-    ) -> Result<usize, Self::OperationsError> {
+    ) -> Result<usize, Self::Error> {
         let mut candidates = vec![];
 
         let mut count = 0;
@@ -364,7 +362,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<impl Producer<Item = u8>>, Self::OperationsError> {
+    ) -> Result<Option<impl Producer<Item = u8>>, Self::Error> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
         match subspace_store.entries.get_mut(path) {
             None => Ok(None),
@@ -377,8 +375,7 @@ where
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
         ignore: Option<QueryIgnoreParams>,
-    ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::OperationsError>
-    {
+    ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::Error> {
         let subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get(path) {
             None => Ok(None),
@@ -423,7 +420,7 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        Self::OperationsError,
+        Self::Error,
     > {
         let mut candidates = vec![];
 
