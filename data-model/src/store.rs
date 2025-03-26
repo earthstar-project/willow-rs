@@ -55,7 +55,7 @@ impl<OE: Display + Error> Display for EntryIngestionError<OE> {
 
 impl<OE: Display + Error> Error for EntryIngestionError<OE> {}
 
-/// Returned when a bulk ingestion failed due to a consumer error.
+/// Returned when a bulk ingestion failed due to a producer or a consumer error.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum BulkIngestionError<PE, CE> {
     Producer(PE),
@@ -89,6 +89,8 @@ pub enum PayloadAppendSuccess {
 /// Returned when a payload fails to be appended into the [`Store`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadAppendError<PayloadSourceError, OE> {
+    /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
+    WrongEntry,
     /// The payload is already held in storage.
     AlreadyHaveIt,
     /// The payload source produced more bytes than were expected for this payload.
@@ -110,6 +112,12 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PayloadAppendError::WrongEntry => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
             PayloadAppendError::AlreadyHaveIt => {
                 write!(f, "The payload is already held in storage.")
             }
@@ -132,6 +140,81 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Error
     for PayloadAppendError<PayloadSourceError, OE>
 {
 }
+
+/// Returned when forgetting an entry fails.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+pub enum ForgetEntryError<OE> {
+    /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
+    WrongEntry,
+    /// Something specific to this store implementation went wrong.
+    OperationError(OE),
+}
+
+impl<OE: Display + Error> Display for ForgetEntryError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForgetEntryError::WrongEntry => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
+            ForgetEntryError::OperationError(err) => std::fmt::Display::fmt(err, f),
+        }
+    }
+}
+
+impl<OE: Display + Error> Error for ForgetEntryError<OE> {}
+
+/// Returned when forgetting a payload fails.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+pub enum ForgetPayloadError<OE> {
+    /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
+    WrongEntry,
+    /// Something specific to this store implementation went wrong.
+    OperationError(OE),
+}
+
+impl<OE: Display + Error> Display for ForgetPayloadError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForgetPayloadError::WrongEntry => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
+            ForgetPayloadError::OperationError(err) => std::fmt::Display::fmt(err, f),
+        }
+    }
+}
+
+impl<OE: Display + Error> Error for ForgetPayloadError<OE> {}
+
+/// Returned when retrieving a payload fails.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+pub enum PayloadError<OE> {
+    /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
+    WrongEntry,
+    /// Something specific to this store implementation went wrong.
+    OperationError(OE),
+}
+
+impl<OE: Display + Error> Display for PayloadError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PayloadError::WrongEntry => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
+            PayloadError::OperationError(err) => std::fmt::Display::fmt(err, f),
+        }
+    }
+}
+
+impl<OE: Display + Error> Error for PayloadError<OE> {}
 
 /// A notification about changes in a [`Store`]. You can obtain a producer of these via the [`Store::subscribe_area`] method.
 ///
@@ -156,12 +239,8 @@ pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, 
     ///
     /// Note that no such event is emitted when the insertion falls *into* `area`; subscribers must monitor `StoreEvent::Ingested` events and infer any deletions from those.
     Pruned {
-        /// The path of the entry that caused the pruning.
-        path: Path<MCL, MCC, MPL>,
-        /// The subspace_id of the entry that caused the pruning.
-        subspace_id: S,
-        /// The timestamp of the entry that caused the pruning.
-        timestamp: u64,
+        /// The entry that caused the pruning.
+        cause: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     },
     /// An existing entry inside `area` received a portion of its corresponding payload.
     ///
@@ -169,13 +248,8 @@ pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, 
     Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
     /// Emitted whenever a non-ignored entry in `area` is forgotten via `Store::forget_entry`. No corresponding `PayloadForgotten` event is emitted in this case.
     EntryForgotten {
-        /// The path of the forgotten entry.
-        path: Path<MCL, MCC, MPL>,
-        /// The subspace_id of the forgotten entry.
-        subspace_id: S,
-        /// The timestamp of the forgotten entry.
-        timestamp: u64,
-        // TODO authorised entry instead? Also the payload maybe? Apps might need to retrieve the payload in order to "undo" operations encoded therein, but also the whole point is to get rid of the payload, not to store it for event consumers. Will probably keep things without the payload for now, but there might be a future API that enables payload access.
+        /// The entry that was forgotten.
+        entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     },
     /// Emitted whenever a call to `Store::forget_area` forgets at least one non-ignored entry in `area`. No corresponding `AreaPayloadForgotten` event is emitted in this case.
     AreaForgotten {
@@ -207,24 +281,18 @@ where
                 area.includes_entry(lengthy_authorised_entry.entry().entry())
             }
             StoreEvent::EntryForgotten {
-                path,
-                subspace_id,
-                timestamp,
+                entry
             } => {
-                area.subspace().includes(subspace_id)
-                    && area.path().is_prefix_of(path)
-                    && area.times().includes(timestamp)
+                area.includes_entry(entry.entry())
             }
             StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
             StoreEvent::Pruned {
-                subspace_id,
-                path,
-                timestamp,
+                cause
             } => {
                 // To be included by an area,
                 // The originating entry must exist OUTSIDE the area
                 // AND the area pruned by that entry must intersect with the given area
-                !area.includes_triplet(subspace_id, path, *timestamp)
+                !area.includes_entry(cause.entry())
                     && Area::new(
                         AreaSubspace::Id(subspace_id.clone()),
                         path.clone(),
@@ -264,36 +332,6 @@ impl Default for QueryIgnoreParams {
         }
     }
 }
-
-/// Returned when a payload could not be forgotten.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
-pub enum ForgetPayloadError<OE: Debug> {
-    NoSuchEntry,
-    ReferredToByOtherEntries,
-    OperationsError(OE),
-}
-
-impl<OE: Debug> Display for ForgetPayloadError<OE> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ForgetPayloadError::NoSuchEntry => {
-                write!(
-                    f,
-                    "No entry for the given criteria could be found in this store."
-                )
-            }
-            ForgetPayloadError::ReferredToByOtherEntries => write!(
-                f,
-                "The payload could not be forgotten because it is referred to by other entries."
-            ),
-            ForgetPayloadError::OperationsError(_) => {
-                write!(f, "There store encountered an internal error.")
-            }
-        }
-    }
-}
-
-impl<OE: Debug> Error for ForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
@@ -396,6 +434,8 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
     ///
     /// Will fail if:
+    ///
+    /// - The payload digest of the entry at the given subspace_id and path does not have the supplied `expected_digest` (if one was supplied).
     /// - The payload digest is not referred to by any of the store's entries.
     /// - A complete payload with the same digest is already held in storage.
     /// - The payload source produced more bytes than were expected for this payload.
@@ -407,6 +447,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
         payload_source: &mut Producer,
     ) -> impl Future<
         Output = Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>,
@@ -414,7 +455,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>;
 
-    /// Locally forgets an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store.
+    /// Locally forgets an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports an `ForgetEntryError::WrongEntry` error.
     ///
     /// If the entry in question is the last remaining reference in the store to a particular [`PayloadDigest`], that payload will be forgotten from the store (if present).
     ///
@@ -423,7 +464,8 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::Error>>;
+        expected_digest: Option<PD>,
+    ) -> impl Future<Output = Result<(), ForgetEntryError<Self::Error>>>;
 
     /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
     ///
@@ -438,14 +480,15 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         protected: Option<Area<MCL, MCC, MPL, S>>,
     ) -> impl Future<Output = Result<usize, Self::Error>>;
 
-    /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries.
+    /// Locally forgets the corresponding payload of the entry with a given path and subspace, or an error if no entry with that path and subspace ID is held by this store or if the entry's payload corresponds to other entries. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `ForgetPayloadError::WrongEntry` error.
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten payload back.
     fn forget_payload(
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<(), Self::Error>>;
+        expected_digest: Option<PD>,
+    ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::Error>>>;
 
     /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
@@ -461,12 +504,13 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     /// Forces persistence of all previous mutations
     fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
-    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path.
+    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `PayloadError::WrongEntry` error.
     fn payload(
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::Error>>;
+        expected_digest: Option<PD>,
+    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, PayloadError<Self::Error>>>;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
