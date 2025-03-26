@@ -121,8 +121,29 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Default> Default
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     From<Area<MCL, MCC, MPL, S>> for Range3d<MCL, MCC, MPL, S>
 {
-    fn from(_value: Area<MCL, MCC, MPL, S>) -> Self {
-        todo!("Need to add successor fns to SubspaceId and Paths first.")
+    fn from(value: Area<MCL, MCC, MPL, S>) -> Self {
+        let subspaces = match value.subspace() {
+            super::AreaSubspace::Any => Range::new_open(S::default()),
+            super::AreaSubspace::Id(id) => match id.successor() {
+                Some(successor) => {
+                    super::Range::new(id.clone(), super::RangeEnd::Closed(successor))
+                }
+                None => super::Range::new_open(id.clone()),
+            },
+        };
+
+        let paths = match value.path().successor() {
+            Some(succesor) => {
+                super::Range::new(value.path().clone(), super::RangeEnd::Closed(succesor))
+            }
+            None => super::Range::new_open(value.path().clone()),
+        };
+
+        Self {
+            subspaces,
+            paths,
+            times: *value.times(),
+        }
     }
 }
 
