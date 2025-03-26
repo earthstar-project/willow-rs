@@ -11,20 +11,12 @@ use crate::{
     entry::AuthorisedEntry,
     grouping::{Area, AreaSubspace, Range},
     parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyAuthorisedEntry, Path,
+    LengthyAuthorisedEntry, Path, Timestamp,
 };
 
 /// Returned when an entry could be ingested into a [`Store`].
-#[derive(Debug, Clone)]
-pub enum EntryIngestionSuccess<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EntryIngestionSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     /// The entry was successfully ingested.
     Success,
     /// The entry was not ingested because a newer entry with same
@@ -37,8 +29,8 @@ pub enum EntryIngestionSuccess<
 }
 
 /// Returned when an entry cannot be ingested into a [`Store`].
-#[derive(Debug, Clone)]
-pub enum EntryIngestionError<OE: Display + Error> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EntryIngestionError<OE> {
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
     /// The entry's authorisation token is invalid.
@@ -64,20 +56,20 @@ impl<OE: Display + Error> Display for EntryIngestionError<OE> {
 impl<OE: Display + Error> Error for EntryIngestionError<OE> {}
 
 /// Returned when a bulk ingestion failed due to a consumer error.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum BulkIngestionError<PE, CE> {
     Producer(PE),
     Consumer(CE),
 }
 
-impl<PE, OE> std::fmt::Display for BulkIngestionError<PE, OE> {
+impl<PE: Display + Error, OE: Display + Error> std::fmt::Display for BulkIngestionError<PE, OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BulkIngestionError::Producer(_) => {
-                write!(f, "A producer error stopped bulk ingestion")
+            BulkIngestionError::Producer(err) => {
+                write!(f, "A producer error stopped bulk ingestion: {}", err)
             }
-            BulkIngestionError::Consumer(_) => {
-                write!(f, "A consumer error stopped bulk ingestion")
+            BulkIngestionError::Consumer(err) => {
+                write!(f, "A consumer error stopped bulk ingestion: {}", err)
             }
         }
     }
@@ -86,7 +78,7 @@ impl<PE, OE> std::fmt::Display for BulkIngestionError<PE, OE> {
 impl<PE: Display + Error, OE: Display + Error> Error for BulkIngestionError<PE, OE> {}
 
 /// Returned when a payload is successfully appended to the [`Store`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadAppendSuccess {
     /// The payload was appended to but not completed.
     Appended,
@@ -95,7 +87,7 @@ pub enum PayloadAppendSuccess {
 }
 
 /// Returned when a payload fails to be appended into the [`Store`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadAppendError<PayloadSourceError, OE> {
     /// The payload is already held in storage.
     AlreadyHaveIt,
@@ -141,44 +133,13 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Error
 {
 }
 
-/// Returned when no entry was found for some criteria.
-#[derive(Debug, Clone)]
-pub struct NoSuchEntryError;
-
-impl Display for NoSuchEntryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "No entry was found for the given criteria.")
-    }
-}
-
-impl Error for NoSuchEntryError {}
-
-/// The order by which entries should be returned for a given query.
-#[derive(Debug, Clone)]
-pub enum QueryOrder {
-    /// Ordered by subspace, then path, then timestamp.
-    Subspace,
-    /// Ordered by path, then by an arbitrary order determined by the implementation.
-    Path,
-    /// Ordered by timestamp, then by an arbitrary order determined by the implementation.
-    Timestamp,
-    /// An arbitrary order chosen by the implementation, hopefully the most efficient one.
-    Arbitrary,
-}
-
 /// A notification about changes in a [`Store`]. You can obtain a producer of these via the [`Store::subscribe_area`] method.
 ///
 /// An event subscription takes two parameters: the [`Area`] within events should be reported (any store mutations outside that area will not be reported to that subscription), and some optional `QueryIgnoreParams` for optionally filtering events based on whether they correspond to entries whose payload is the empty string and/or whose payload is not fully available in the local store. A more detailed description of how these ignore options impact events is given in the docs for each enum variant, but the general intuition is for the subscription to act as if it was on a store that did not inlcude ignored entries in the first place.
 ///
 /// In the description of the enum variants, we write `sub_area` for the area of the subscription, and `ignores` for the subscription `QueryIgnoreParams`.
-#[derive(Debug, Clone)]
-pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     /// Emitted when an entry is inserted in `area`.
     ///
     /// - If `ignores.ignore_empty_payloads`, this is not emitted if the payload of the entry is the empty payload.
@@ -237,10 +198,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     StoreEvent<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    S: PartialEq + Clone,
 {
     pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         match self {
@@ -288,7 +246,9 @@ where
 }
 
 /// Describes which entries to ignore during a query.
-#[derive(Default, Clone)]
+///
+/// The `Default::default()` ignores nothing.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub struct QueryIgnoreParams {
     /// Omit entries with locally incomplete corresponding payloads.
     pub ignore_incomplete_payloads: bool,
@@ -296,18 +256,17 @@ pub struct QueryIgnoreParams {
     pub ignore_empty_payloads: bool,
 }
 
-impl QueryIgnoreParams {
-    pub fn ignore_incomplete_payloads(&mut self) {
-        self.ignore_incomplete_payloads = true;
-    }
-
-    pub fn ignore_empty_payloads(&mut self) {
-        self.ignore_empty_payloads = true;
+impl Default for QueryIgnoreParams {
+    fn default() -> Self {
+        Self {
+            ignore_incomplete_payloads: false,
+            ignore_empty_payloads: false,
+        }
     }
 }
 
 /// Returned when a payload could not be forgotten.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum ForgetPayloadError<OE: Debug> {
     NoSuchEntry,
     ReferredToByOtherEntries,
@@ -337,7 +296,7 @@ impl<OE: Debug> Display for ForgetPayloadError<OE> {
 impl<OE: Debug> Error for ForgetPayloadError<OE> {}
 
 /// The origin of an entry ingestion event.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum EntryOrigin {
     /// The entry was probably created on this machine.
     Local,
@@ -346,6 +305,7 @@ pub enum EntryOrigin {
     Remote(u64),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EventSenderError<OE> {
     /// The store threw an error.
     StoreError(OE),
@@ -353,14 +313,21 @@ pub enum EventSenderError<OE> {
     DoTryToKeepUp,
 }
 
+impl<OE: Display + Error> Display for EventSenderError<OE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventSenderError::DoTryToKeepUp => {
+                write!(f, "Had to terminate an event subscription because the subscriber could not keep up.")
+            }
+            EventSenderError::StoreError(err) => Display::fmt(err, f),
+        }
+    }
+}
+
+impl<OE: Display + Error> Error for EventSenderError<OE> {}
+
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
-pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
+pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     type Error: Display + Error;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
@@ -438,7 +405,7 @@ where
     /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
     fn append_payload<Producer, PayloadSourceError>(
         &self,
-        subspace: &S,
+        subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
         payload_source: &mut Producer,
     ) -> impl Future<
@@ -497,7 +464,7 @@ where
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path.
     fn payload(
         &self,
-        subspace: &S,
+        subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
     ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, Self::Error>>;
 
@@ -506,7 +473,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::Error>,
     >;
@@ -515,8 +482,7 @@ where
     fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        reverse: bool,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = Result<
             impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
@@ -528,7 +494,7 @@ where
     fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = impl Producer<
             Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,

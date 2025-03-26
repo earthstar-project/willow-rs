@@ -17,8 +17,8 @@ use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
     EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
-    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder,
-    Store, StoreEvent, SubspaceId,
+    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store,
+    StoreEvent, SubspaceId,
 };
 
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -152,7 +152,7 @@ where
                     payload_digest,
                 );
 
-                let authed = AuthorisedEntry::new_unchecked(entry, authorisation_token);
+                let authed = unsafe { AuthorisedEntry::new_unchecked(entry, authorisation_token) };
 
                 return Ok(Some(authed));
             }
@@ -262,7 +262,7 @@ where
         {
             Ok(Some(newer)) => {
                 return Ok(EntryIngestionSuccess::Obsolete {
-                    obsolete: AuthorisedEntry::new_unchecked(entry, token),
+                    obsolete: unsafe { AuthorisedEntry::new_unchecked(entry, token) },
                     newer,
                 })
             }
@@ -361,7 +361,7 @@ where
 
         self.send_event(&SimpleStoreEvent {
             event: StoreEvent::Ingested {
-                entry: AuthorisedEntry::new_unchecked(entry.clone(), token.clone()),
+                entry: unsafe { AuthorisedEntry::new_unchecked(entry.clone(), token.clone()) },
                 origin,
             },
             all_payloads_empty: entry.payload_length() == 0,
@@ -476,17 +476,19 @@ where
                                 )
                                 .map_err(SimpleStoreSledError::from)?;
 
-                            let authed_entry = AuthorisedEntry::new_unchecked(
-                                Entry::new(
-                                    self.namespace_id.clone(),
-                                    subspace,
-                                    path,
-                                    timestamp,
-                                    length,
-                                    digest.clone(),
-                                ),
-                                auth_token,
-                            );
+                            let authed_entry = unsafe {
+                                AuthorisedEntry::new_unchecked(
+                                    Entry::new(
+                                        self.namespace_id.clone(),
+                                        subspace,
+                                        path,
+                                        timestamp,
+                                        length,
+                                        digest.clone(),
+                                    ),
+                                    auth_token,
+                                )
+                            };
 
                             let lengthy_entry = LengthyAuthorisedEntry::new(
                                 authed_entry,
@@ -508,17 +510,19 @@ where
                     }
                 }
 
-                let authed_entry = AuthorisedEntry::new_unchecked(
-                    Entry::new(
-                        self.namespace_id.clone(),
-                        subspace,
-                        path,
-                        timestamp,
-                        length,
-                        digest,
-                    ),
-                    auth_token,
-                );
+                let authed_entry = unsafe {
+                    AuthorisedEntry::new_unchecked(
+                        Entry::new(
+                            self.namespace_id.clone(),
+                            subspace,
+                            path,
+                            timestamp,
+                            length,
+                            digest,
+                        ),
+                        auth_token,
+                    )
+                };
 
                 let lengthy_entry =
                     LengthyAuthorisedEntry::new(authed_entry, received_payload_len as u64);
@@ -793,7 +797,7 @@ where
                 );
 
                 // We can do this because the entry was successfully stored (and thus deemed authentic) before.
-                let authed = AuthorisedEntry::new_unchecked(entry, token);
+                let authed = unsafe { AuthorisedEntry::new_unchecked(entry, token) };
 
                 self.send_event(&SimpleStoreEvent {
                     event: StoreEvent::PayloadForgotten(authed),
@@ -929,7 +933,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> Result<
         Option<willow_data_model::LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::Error,
@@ -953,7 +957,7 @@ where
                 digest,
             );
 
-            let authed_entry = AuthorisedEntry::new_unchecked(entry, token);
+            let authed_entry = unsafe { AuthorisedEntry::new_unchecked(entry, token) };
 
             let payload_tree = self.payload_tree()?;
 
@@ -964,24 +968,19 @@ where
                 None => 0,
             };
 
-            match ignore {
-                Some(params) => {
-                    let payload_is_empty_string = local_length == 0;
-                    let is_incomplete = (payload_length as u64) < length;
+            let payload_is_empty_string = local_length == 0;
+            let is_incomplete = (payload_length as u64) < length;
 
-                    if (params.ignore_incomplete_payloads && is_incomplete)
-                        || (params.ignore_empty_payloads && payload_is_empty_string)
-                    {
-                        return Ok(None);
-                    }
-                }
-                None => {
-                    return Ok(Some(LengthyAuthorisedEntry::new(
-                        authed_entry,
-                        payload_length as u64,
-                    )));
-                }
-            };
+            if (ignore.ignore_incomplete_payloads && is_incomplete)
+                || (ignore.ignore_empty_payloads && payload_is_empty_string)
+            {
+                return Ok(None);
+            } else {
+                return Ok(Some(LengthyAuthorisedEntry::new(
+                    authed_entry,
+                    payload_length as u64,
+                )));
+            }
         }
 
         Ok(None)
@@ -990,19 +989,18 @@ where
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        reverse: bool,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::Error,
     > {
-        EntryProducer::new(self, area, reverse, ignore).await
+        EntryProducer::new(self, area, ignore).await
     }
 
     async fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Producer<
         Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
         Error = EventSenderError<Self::Error>,
@@ -1301,9 +1299,8 @@ where
 {
     iter: sled::Iter,
     store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
-    ignore: Option<QueryIgnoreParams>,
+    ignore: QueryIgnoreParams,
     area: Area<MCL, MCC, MPL, S>,
-    reverse: bool,
 }
 
 impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -1317,8 +1314,7 @@ where
     async fn new(
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
-        reverse: bool,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> Result<Self, SimpleStoreSledError> {
         let entry_tree = store.entry_tree()?;
 
@@ -1337,7 +1333,6 @@ where
             area: area.clone(),
             ignore,
             store,
-            reverse,
         })
     }
 }
@@ -1361,11 +1356,7 @@ where
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         loop {
-            let result = if self.reverse {
-                self.iter.next_back()
-            } else {
-                self.iter.next()
-            };
+            let result = self.iter.next();
 
             match result {
                 Some(Ok((key, value))) => {
@@ -1387,31 +1378,21 @@ where
                         continue;
                     }
 
-                    let authed_entry = AuthorisedEntry::new_unchecked(entry, token);
+                    let authed_entry = unsafe { AuthorisedEntry::new_unchecked(entry, token) };
 
-                    match &self.ignore {
-                        Some(params) => {
-                            let is_empty_string = length == 0;
-                            let is_incomplete = local_length < length;
+                    let is_empty_string = length == 0;
+                    let is_incomplete = local_length < length;
 
-                            if (params.ignore_incomplete_payloads && is_incomplete)
-                                || (params.ignore_empty_payloads && is_empty_string)
-                            {
-                                continue;
-                            }
+                    if (self.ignore.ignore_incomplete_payloads && is_incomplete)
+                        || (self.ignore.ignore_empty_payloads && is_empty_string)
+                    {
+                        continue;
+                    }
 
-                            return Ok(Either::Left(LengthyAuthorisedEntry::new(
-                                authed_entry,
-                                local_length,
-                            )));
-                        }
-                        None => {
-                            return Ok(Either::Left(LengthyAuthorisedEntry::new(
-                                authed_entry,
-                                local_length,
-                            )));
-                        }
-                    };
+                    return Ok(Either::Left(LengthyAuthorisedEntry::new(
+                        authed_entry,
+                        local_length,
+                    )));
                 }
                 Some(Err(err)) => return Err(SimpleStoreSledError::from(err)),
                 None => return Ok(Either::Right(())),
@@ -1429,7 +1410,7 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     area: Area<MCL, MCC, MPL, S>,
-    ignore: Option<QueryIgnoreParams>,
+    ignore: QueryIgnoreParams,
     sender: Mutex<
         Sender<
             std::rc::Rc<
@@ -1456,7 +1437,7 @@ where
 {
     fn new(
         area: Area<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> (
         Self,
         impl Producer<
@@ -1529,15 +1510,8 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    pub fn should_send(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
-        params: &Option<QueryIgnoreParams>,
-    ) -> bool {
-        match params {
-            Some(p) => self.event.included_by_area(area) && !self.should_ignore(p),
-            None => self.event.included_by_area(area),
-        }
+    pub fn should_send(&self, area: &Area<MCL, MCC, MPL, S>, params: &QueryIgnoreParams) -> bool {
+        self.event.included_by_area(area) && !self.should_ignore(params)
     }
 
     pub fn should_ignore(&self, params: &QueryIgnoreParams) -> bool {

@@ -1,8 +1,9 @@
 use std::{
     cell::{RefCell, RefMut},
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     convert::Infallible,
     ops::{Deref, DerefMut},
+    rc::Rc,
     thread::current,
 };
 
@@ -13,12 +14,14 @@ use ufotofu::{
     producer::{FromBoxedSlice, FromSlice},
     BulkConsumer, BulkProducer, Producer,
 };
+use ufotofu_queues::Fixed;
+use wb_async_utils::spsc::{Sender, State};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError,
-    PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, QueryOrder, Store, StoreEvent,
-    SubspaceId, Timestamp,
+    EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
+    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store,
+    StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -109,10 +112,6 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone,
 {
-    type FlushError = Infallible;
-
-    type BulkIngestionError = Infallible;
-
     type Error = Infallible;
 
     fn namespace_id(&self) -> &N {
@@ -123,6 +122,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        origin: EntryOrigin,
     ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
     {
         if self.namespace_id() != authorised_entry.entry().namespace_id() {
@@ -350,7 +350,7 @@ where
         Ok(count)
     }
 
-    async fn flush(&self) -> Result<(), Self::FlushError> {
+    async fn flush(&self) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -370,7 +370,7 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> Result<Option<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, Self::Error> {
         let subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get(path) {
@@ -378,16 +378,10 @@ where
             Some(entry) => {
                 let available = entry.payload.len() as u64;
 
-                if let Some(QueryIgnoreParams {
-                    ignore_incomplete_payloads,
-                    ignore_empty_payloads,
-                }) = ignore
+                if (ignore.ignore_empty_payloads && available == 0)
+                    || (ignore.ignore_incomplete_payloads && available != entry.payload_length)
                 {
-                    if (ignore_empty_payloads && available == 0)
-                        || (ignore_incomplete_payloads && available != entry.payload_length)
-                    {
-                        return Ok(None);
-                    }
+                    return Ok(None);
                 }
 
                 return Ok(Some(LengthyAuthorisedEntry::new(
@@ -412,9 +406,7 @@ where
     async fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        order: &QueryOrder,
-        reverse: bool,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
         Self::Error,
@@ -429,13 +421,40 @@ where
                     if let Some(entry) = subspace_store.entries.get(path) {
                         let available = entry.payload.len() as u64;
 
-                        if let Some(QueryIgnoreParams {
-                            ignore_incomplete_payloads,
-                            ignore_empty_payloads,
-                        }) = ignore
+                        if (ignore.ignore_empty_payloads && available == 0)
+                            || (ignore.ignore_incomplete_payloads
+                                && available != entry.payload_length)
                         {
-                            if (ignore_empty_payloads && available == 0)
-                                || (ignore_incomplete_payloads && available != entry.payload_length)
+                            continue;
+                        } else {
+                            candidates.push(LengthyAuthorisedEntry::new(
+                                AuthorisedEntry::new(
+                                    Entry::new(
+                                        self.namespace.clone(),
+                                        subspace_id.clone(),
+                                        path.clone(),
+                                        entry.timestamp,
+                                        entry.payload_length,
+                                        entry.payload_digest.clone(),
+                                    ),
+                                    entry.authorisation_token.clone(),
+                                )
+                                .unwrap(),
+                                available,
+                            ));
+                        }
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            let available = entry.payload.len() as u64;
+
+                            if (ignore.ignore_empty_payloads && available == 0)
+                                || (ignore.ignore_incomplete_payloads
+                                    && available != entry.payload_length)
                             {
                                 continue;
                             } else {
@@ -459,92 +478,122 @@ where
                     }
                 }
             }
-            AreaSubspace::Any => {
-                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
-                    for path in subspace_store.entries.keys() {
-                        if let Some(entry) = subspace_store.entries.get(path) {
-                            let available = entry.payload.len() as u64;
-
-                            if let Some(QueryIgnoreParams {
-                                ignore_incomplete_payloads,
-                                ignore_empty_payloads,
-                            }) = ignore
-                            {
-                                if (ignore_empty_payloads && available == 0)
-                                    || (ignore_incomplete_payloads
-                                        && available != entry.payload_length)
-                                {
-                                    continue;
-                                } else {
-                                    candidates.push(LengthyAuthorisedEntry::new(
-                                        AuthorisedEntry::new(
-                                            Entry::new(
-                                                self.namespace.clone(),
-                                                subspace_id.clone(),
-                                                path.clone(),
-                                                entry.timestamp,
-                                                entry.payload_length,
-                                                entry.payload_digest.clone(),
-                                            ),
-                                            entry.authorisation_token.clone(),
-                                        )
-                                        .unwrap(),
-                                        available,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        match order {
-            QueryOrder::Subspace => {
-                candidates.sort_by(|a, b| {
-                    a.entry()
-                        .entry()
-                        .subspace_id()
-                        .cmp(&b.entry().entry().subspace_id())
-                        .then(a.entry().entry().path().cmp(&b.entry().entry().path()))
-                        .then(
-                            a.entry()
-                                .entry()
-                                .timestamp()
-                                .cmp(&b.entry().entry().timestamp()),
-                        )
-                });
-            }
-            QueryOrder::Path => {
-                candidates.sort_by(|a, b| a.entry().entry().path().cmp(&b.entry().entry().path()));
-            }
-            QueryOrder::Timestamp => {
-                candidates.sort_by(|a, b| {
-                    a.entry()
-                        .entry()
-                        .timestamp()
-                        .cmp(&b.entry().entry().timestamp())
-                });
-            }
-            QueryOrder::Arbitrary => {
-                // no-op
-            }
-        }
-
-        if reverse {
-            candidates.reverse();
         }
 
         Ok(FromBoxedSlice::from_vec(candidates))
     }
 
-    fn subscribe_area(
+    async fn subscribe_area(
         &self,
-        area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
-        ignore: Option<willow_data_model::QueryIgnoreParams>,
-    ) -> FromSlice<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>
-// impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
-    {
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> impl Producer<
+        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+        Error = EventSenderError<Self::Error>,
+    > {
         todo!()
+        // FromBoxedSlice::from_vec(vec![])
+    }
+}
+
+pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone,
+{
+    IngestEntry {
+        authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        prevent_pruning: bool,
+        origin: EntryOrigin,
+    },
+    BulkIngestEntry {
+        ingested: Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        prevent_pruning: bool,
+        origin: EntryOrigin,
+    },
+    AppendPayload {
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
+        data: Vec<u8>,
+    },
+    ForgetEntry {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    ForgetArea {
+        area: Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
+    ForgetPayload {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    ForgetAreaPayloads {
+        area: Area<MCL, MCC, MPL, S>,
+        protected: Option<Area<MCL, MCC, MPL, S>>,
+    },
+    GetPayload {
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
+    },
+    GetEntry {
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+        ignore: Option<QueryIgnoreParams>,
+    },
+    QueryArea {
+        area: Area<MCL, MCC, MPL, S>,
+        ignore: Option<QueryIgnoreParams>,
+    },
+}
+
+/// Panics if and only if the two stores do not exhibit equivalent behaviour upon executing the given `ops`.
+pub async fn check_store_equality<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    Store1,
+    Store2,
+>(
+    store1: &mut Store1,
+    store2: &mut Store2,
+    ops: &[StoreOp<MCL, MCC, MPL, N, S, PD, AT>],
+) where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone + std::fmt::Debug + PartialEq,
+    Store1: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    Store2: Store<MCL, MCC, MPL, N, S, PD, AT>,
+{
+    let namespace_id = store1.namespace_id();
+    assert_eq!(namespace_id, store2.namespace_id());
+
+    for op in ops.iter() {
+        match op {
+            StoreOp::IngestEntry {
+                authorised_entry,
+                prevent_pruning,
+                origin,
+            } => {
+                if authorised_entry.entry().namespace_id() != namespace_id {
+                    continue;
+                } else {
+                    match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
+                        (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
+                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented)) | (Err(EntryIngestionError::NotAuthorised), Err(EntryIngestionError::NotAuthorised)) | (Err(EntryIngestionError::OperationsError(_)), Err(EntryIngestionError::OperationsError(_))) => continue,
+                        (res1, res2) => panic!("IngestEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
+                        _ => todo!(),
+                    }
+                }
+            }
+            _ => todo!(),
+        }
     }
 }
