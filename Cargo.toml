@@ -3,7 +3,6 @@
 members = [
     "compact_u64",
     "data-model",
-    "earthstar",
     "encoding",
     "fairly_unsafe_cell",
     "fuzz",
@@ -13,7 +12,8 @@ members = [
     "ufotofu_codec_endian",
     "wgps",
     "wb_async_utils",
-    "store_simple_sled"
+    "store_simple_sled",
+    "willow_25"
 ]
 resolver = "2"
 

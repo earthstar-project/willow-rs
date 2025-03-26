@@ -1,0 +1,10 @@
+[package]
+name = "willow_25"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+willow-data-model = { path = "../data-model", version = "0.1.0" }
+
+[lints]
+workspace = true
