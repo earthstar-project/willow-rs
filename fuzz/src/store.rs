@@ -7,10 +7,11 @@ use std::{
     thread::current,
 };
 
-use either::Either::{Left, Right};
+use either::Either::{self, Left, Right};
 use meadowcap::SubspaceDelegation;
 use ufotofu::{
     consumer::IntoVec,
+    pipe,
     producer::{FromBoxedSlice, FromSlice},
     BulkConsumer, BulkProducer, Producer,
 };
@@ -18,7 +19,7 @@ use ufotofu_queues::Fixed;
 use wb_async_utils::spsc::{Sender, State};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    AuthorisationToken, AuthorisedEntry, BulkIngestionError, Component, Entry, EntryIngestionError,
+    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
     EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
     Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store,
     StoreEvent, SubspaceId, Timestamp,
@@ -496,6 +497,7 @@ where
     }
 }
 
+// TODO: Verify all op params match with actual method params
 pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -508,11 +510,6 @@ where
         prevent_pruning: bool,
         origin: EntryOrigin,
     },
-    BulkIngestEntry {
-        ingested: Vec<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        prevent_pruning: bool,
-        origin: EntryOrigin,
-    },
     AppendPayload {
         subspace: S,
         path: Path<MCL, MCC, MPL>,
@@ -521,6 +518,7 @@ where
     ForgetEntry {
         subspace_id: S,
         path: Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
     },
     ForgetArea {
         area: Area<MCL, MCC, MPL, S>,
@@ -529,6 +527,7 @@ where
     ForgetPayload {
         subspace_id: S,
         path: Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
     },
     ForgetAreaPayloads {
         area: Area<MCL, MCC, MPL, S>,
@@ -537,15 +536,16 @@ where
     GetPayload {
         subspace: S,
         path: Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
     },
     GetEntry {
         subspace_id: S,
         path: Path<MCL, MCC, MPL>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     },
     QueryArea {
         area: Area<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     },
 }
 
@@ -576,6 +576,7 @@ pub async fn check_store_equality<
     assert_eq!(namespace_id, store2.namespace_id());
 
     for op in ops.iter() {
+        // TODO: Handle all op variants
         match op {
             StoreOp::IngestEntry {
                 authorised_entry,
@@ -586,14 +587,189 @@ pub async fn check_store_equality<
                     continue;
                 } else {
                     match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
-                        (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
-                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented)) | (Err(EntryIngestionError::NotAuthorised), Err(EntryIngestionError::NotAuthorised)) | (Err(EntryIngestionError::OperationsError(_)), Err(EntryIngestionError::OperationsError(_))) => continue,
-                        (res1, res2) => panic!("IngestEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
-                        _ => todo!(),
-                    }
+                                (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
+                                (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                                (res1, res2) => panic!("IngestEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
+                            }
                 }
             }
-            _ => todo!(),
+            StoreOp::AppendPayload {
+                subspace,
+                path,
+                data,
+            } => {
+                let mut payload_1 = FromSlice::new(data);
+                let mut payload_2 = FromSlice::new(data);
+
+                let res_1 = store1
+                    .append_payload(subspace, path, None, &mut payload_1)
+                    .await;
+                let res_2 = store2
+                    .append_payload(subspace, path, None, &mut payload_2)
+                    .await;
+
+                match (res_1, res_2) {
+                    (Ok(success_1), Ok(success_2)) => assert_eq!(success_1, success_2),
+                    (Err(err_1), Err(err_2)) => panic!("AppendPayload: Failed, but FromSlice cannot fail."),
+                    (res1, res2) => panic!("AppendPayload: non-equivale]nt behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
+                }
+            }
+            StoreOp::ForgetEntry {
+                subspace_id,
+                path,
+                expected_digest,
+            } => {
+                match (
+                    store1
+                        .forget_entry(subspace_id, path, expected_digest.clone())
+                        .await,
+                    store2
+                        .forget_entry(subspace_id, path, expected_digest.clone())
+                        .await,
+                ) {
+                    (Ok(_), Ok(_)) => {}
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "ForgetEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
+            StoreOp::ForgetArea { area, protected } => {
+                match (
+                    store1.forget_area(area, protected.clone()).await,
+                    store2.forget_area(area, protected.clone()).await,
+                ) {
+                    (Ok(forgotten1), Ok(forgotten2)) => assert_eq!(forgotten1, forgotten2),
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "ForgetArea: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
+            StoreOp::ForgetPayload {
+                subspace_id,
+                path,
+                expected_digest,
+            } => {
+                match (
+                    store1
+                        .forget_payload(subspace_id, path, expected_digest.clone())
+                        .await,
+                    store2
+                        .forget_payload(subspace_id, path, expected_digest.clone())
+                        .await,
+                ) {
+                    (Ok(_), Ok(_)) => {}
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "ForgetPayload: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
+            StoreOp::ForgetAreaPayloads { area, protected } => {
+                match (
+                    store1.forget_area_payloads(area, protected.clone()).await,
+                    store2.forget_area_payloads(area, protected.clone()).await,
+                ) {
+                    (Ok(forgotten1), Ok(forgotten2)) => assert_eq!(forgotten1, forgotten2),
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                 (res1, res2) => panic!(
+                     "ForgetAreaPayloads: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                     res1, res2
+                 ),
+                }
+            }
+            StoreOp::GetPayload {
+                subspace,
+                path,
+                expected_digest,
+            } => {
+                match (
+                    store1
+                        .payload(subspace, path, expected_digest.clone())
+                        .await,
+                    store2
+                        .payload(subspace, path, expected_digest.clone())
+                        .await,
+                ) {
+                    (Ok(Some(producer1)), Ok(Some(producer2))) => {
+                        let mut consumer1 = IntoVec::new();
+                        let mut consumer2 = IntoVec::new();
+
+                        pipe(&mut producer1, &mut consumer1).await;
+                        pipe(&mut producer2, &mut consumer2).await;
+
+                        assert_eq!(consumer1.into_vec(), consumer2.into_vec())
+                    }
+                    (Ok(None), Ok(None)) => {}
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "GetPayload: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
+            StoreOp::GetEntry {
+                subspace_id,
+                path,
+                ignore,
+            } => {
+                match (
+                    store1.entry(subspace_id, path, ignore.clone()).await,
+                    store2.entry(subspace_id, path, ignore.clone()).await,
+                ) {
+                    (Ok(entry1), Ok(entry2)) => assert_eq!(entry1, entry2),
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "GetEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
+            StoreOp::QueryArea { area, ignore } => {
+                match (
+                    store1.query_area(area, ignore.clone()).await,
+                    store2.query_area(area, ignore.clone()).await,
+                ) {
+                    (Ok(producer1), Ok(producer2)) => loop {
+                        match (producer1.produce().await, producer2.produce().await) {
+                            (Ok(Either::Left(item1)), Ok(Either::Left(item2))) => {
+                                assert_eq!(item1, item2)
+                            }
+                            (Ok(Either::Right(_)), Ok(Either::Right(_))) => {
+                                break;
+                            }
+                            (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                            (res1, res2) => {
+                                panic!(
+                                    "QueryArea: non-equivalent producer behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                                    res1, res2
+                                )
+                            }
+                        }
+                    },
+                    (Err(err1), Err(err2)) => assert_eq!(err1, err2),
+                    (res1, res2) => panic!(
+                        "QueryArea: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
+                        res1, res2
+                    ),
+                }
+            }
         }
+    }
+}
+
+struct WrappedIngestResult<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, E>(
+    Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<E>>,
+);
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, E> Default
+    for WrappedIngestResult<MCL, MCC, MPL, N, S, PD, AT, E>
+{
+    fn default() -> Self {
+        Self(Ok(EntryIngestionSuccess::Success))
     }
 }

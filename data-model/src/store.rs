@@ -4,15 +4,9 @@ use std::{
     future::Future,
 };
 
-use either::Either;
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::{BulkProducer, Producer};
 
-use crate::{
-    entry::AuthorisedEntry,
-    grouping::{Area, AreaSubspace, Range},
-    parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    LengthyAuthorisedEntry, Path, Timestamp,
-};
+use crate::{entry::AuthorisedEntry, grouping::Area, LengthyAuthorisedEntry, Path};
 
 /// Returned when an entry could be ingested into a [`Store`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,28 +48,6 @@ impl<OE: Display + Error> Display for EntryIngestionError<OE> {
 }
 
 impl<OE: Display + Error> Error for EntryIngestionError<OE> {}
-
-/// Returned when a bulk ingestion failed due to a producer or a consumer error.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
-pub enum BulkIngestionError<PE, CE> {
-    Producer(PE),
-    Consumer(CE),
-}
-
-impl<PE: Display + Error, OE: Display + Error> std::fmt::Display for BulkIngestionError<PE, OE> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BulkIngestionError::Producer(err) => {
-                write!(f, "A producer error stopped bulk ingestion: {}", err)
-            }
-            BulkIngestionError::Consumer(err) => {
-                write!(f, "A consumer error stopped bulk ingestion: {}", err)
-            }
-        }
-    }
-}
-
-impl<PE: Display + Error, OE: Display + Error> Error for BulkIngestionError<PE, OE> {}
 
 /// Returned when a payload is successfully appended to the [`Store`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
@@ -269,50 +241,6 @@ pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, 
     },
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    StoreEvent<MCL, MCC, MPL, N, S, PD, AT>
-where
-    S: PartialEq + Clone,
-{
-    pub fn included_by_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
-        match self {
-            StoreEvent::Ingested { entry, origin: _ } => area.includes_entry(entry.entry()),
-            StoreEvent::Appended(lengthy_authorised_entry) => {
-                area.includes_entry(lengthy_authorised_entry.entry().entry())
-            }
-            StoreEvent::EntryForgotten {
-                entry
-            } => {
-                area.includes_entry(entry.entry())
-            }
-            StoreEvent::PayloadForgotten(entry) => area.includes_entry(entry.entry()),
-            StoreEvent::Pruned {
-                cause
-            } => {
-                // To be included by an area,
-                // The originating entry must exist OUTSIDE the area
-                // AND the area pruned by that entry must intersect with the given area
-                !area.includes_entry(cause.entry())
-                    && Area::new(
-                        AreaSubspace::Id(subspace_id.clone()),
-                        path.clone(),
-                        Range::new_closed(0, *timestamp).unwrap(),
-                    )
-                    .intersection(area)
-                    .is_some()
-            }
-            StoreEvent::AreaForgotten {
-                area: forgotten_area,
-                protected: _,
-            } => area.intersection(forgotten_area).is_some(),
-            StoreEvent::AreaPayloadsForgotten {
-                area: forgotten_area,
-                protected: _,
-            } => area.intersection(forgotten_area).is_some(),
-        }
-    }
-}
-
 /// Describes which entries to ignore during a query.
 ///
 /// The `Default::default()` ignores nothing.
@@ -385,51 +313,6 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
             EntryIngestionError<Self::Error>,
         >,
     >;
-
-    /// Attempts to ingest many [`AuthorisedEntry`] produced by a given `BulkProducer` into the [`Store`].
-    ///
-    /// The result being `Ok` does **not** indicate that all entry ingestions were successful, only that each entry had an ingestion attempt, some of which *may* have errored. The `Err` type of this result is only returned if there was some internal error.
-    fn bulk_ingest_entry<P, C>(
-        &self,
-        entry_producer: &mut P,
-        result_consumer: &mut C,
-        prevent_pruning: bool,
-        origin: EntryOrigin,
-    ) -> impl Future<Output = Result<(), BulkIngestionError<P::Error, C::Error>>>
-    where
-        P: BulkProducer<Item = AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
-        C: BulkConsumer<
-            Item = Result<
-                EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>,
-                EntryIngestionError<Self::Error>,
-            >,
-        >,
-    {
-        async move {
-            loop {
-                let next = entry_producer
-                    .produce()
-                    .await
-                    .map_err(BulkIngestionError::Producer)?;
-
-                match next {
-                    Either::Left(authed_entry) => {
-                        let result = self
-                            .ingest_entry(authed_entry, prevent_pruning, origin.clone())
-                            .await;
-
-                        result_consumer
-                            .consume(result)
-                            .await
-                            .map_err(BulkIngestionError::Consumer)?;
-                    }
-                    Either::Right(_) => break,
-                }
-            }
-
-            Ok(())
-        }
-    }
 
     /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
     ///
@@ -510,7 +393,12 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
-    ) -> impl Future<Output = Result<Option<impl Producer<Item = u8>>, PayloadError<Self::Error>>>;
+    ) -> impl Future<
+        Output = Result<
+            Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+            PayloadError<Self::Error>,
+        >,
+    >;
 
     /// Returns a [`LengthyAuthorisedEntry`] with the given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) ID, if present.
     fn entry(
@@ -529,7 +417,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = Result<
-            impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+            impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
             Self::Error,
         >,
     >;
