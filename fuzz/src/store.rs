@@ -585,11 +585,14 @@ pub async fn check_store_equality<
                 if authorised_entry.entry().namespace_id() != namespace_id {
                     continue;
                 } else {
-                    match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
-                                (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
-                                (Err(err1), Err(err2)) => assert_eq!(err1, err2),
-                                (res1, res2) => panic!("IngestEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
-                            }
+                    let res1 = store1
+                        .ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin)
+                        .await;
+                    let res2 = store1
+                        .ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin)
+                        .await;
+
+                    assert_eq!(res1, res2);
                 }
             }
             StoreOp::AppendPayload {
