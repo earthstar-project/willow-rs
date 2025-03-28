@@ -682,7 +682,6 @@ pub async fn check_store_equality<
                     (Ok(_), Ok(_)) => {}
                     (Err(err1), Err(err2)) => {
                         match (err1, err2) {
-                    
                             (willow_data_model::ForgetPayloadError::WrongEntry, willow_data_model::ForgetPayloadError::OperationError(_)) => panic!("ForgetPayload: non-equivalent behaviour"),
                             (willow_data_model::ForgetPayloadError::OperationError(_), willow_data_model::ForgetPayloadError::WrongEntry) => panic!("ForgetPayload: non-equivalent behaviour"),
                             (willow_data_model::ForgetPayloadError::OperationError(_), willow_data_model::ForgetPayloadError::OperationError(_)) => {
@@ -737,11 +736,9 @@ pub async fn check_store_equality<
                     (Ok(None), Ok(None)) => {}
                     (Err(err1), Err(err2)) => {
                         match (err1, err2) {
-                           
                             (willow_data_model::PayloadError::WrongEntry, willow_data_model::PayloadError::OperationError(_)) => panic!("GetPayload: non-equivalent behaviour"),
                             (willow_data_model::PayloadError::OperationError(_), willow_data_model::PayloadError::WrongEntry) => panic!("GetPayload: non-equivalent behaviour"),
-                          (willow_data_model::PayloadError::OperationError(_), willow_data_model::PayloadError::OperationError(_)) =>  panic!("ForgetAreaPayloads: Two stores happened to fail at the same time in different ways."),
-                                                    
+                          (willow_data_model::PayloadError::OperationError(_), willow_data_model::PayloadError::OperationError(_)) =>  panic!("ForgetAreaPayloads: Two stores happened to fail at the same time in different ways."),   
                             _ => {}
                         }
                     },
@@ -762,7 +759,7 @@ pub async fn check_store_equality<
                     (Ok(entry1), Ok(entry2)) => assert_eq!(entry1, entry2),
                     (Err(_), Err(_)) => {
                         panic!("GetEntry: Two stores happened to fail at the same time in different ways.")
-                    },
+                    }
                     (res1, res2) => panic!(
                         "GetEntry: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}",
                         res1, res2
@@ -784,21 +781,16 @@ pub async fn check_store_equality<
                             }
                             (Err(_), Err(_)) => {
                                 panic!("GetEntry: Two stores happened to fail at the same time in different ways.")
-                            },
+                            }
                             (_, _) => {
-                                panic!(
-                                    "QueryArea: non-equivalent producer behaviour."
-                                )
+                                panic!("QueryArea: non-equivalent producer behaviour.")
                             }
                         }
                     },
                     (Err(_), Err(_)) => {
                         panic!("GetEntry: Two stores happened to fail at the same time in different ways.")
-                    },
-                    (_, _) => panic!(
-                        "QueryArea: non-equivalent behaviour.",
-                       
-                    ),
+                    }
+                    (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
             }
         }
