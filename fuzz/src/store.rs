@@ -576,7 +576,6 @@ pub async fn check_store_equality<
     assert_eq!(namespace_id, store2.namespace_id());
 
     for op in ops.iter() {
-        // TODO: Handle all op variants
         match op {
             StoreOp::IngestEntry {
                 authorised_entry,
