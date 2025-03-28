@@ -497,7 +497,6 @@ where
     }
 }
 
-// TODO: Verify all op params match with actual method params
 pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -513,6 +512,7 @@ where
     AppendPayload {
         subspace: S,
         path: Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
         data: Vec<u8>,
     },
     ForgetEntry {
@@ -596,16 +596,17 @@ pub async fn check_store_equality<
             StoreOp::AppendPayload {
                 subspace,
                 path,
+                expected_digest,
                 data,
             } => {
                 let mut payload_1 = FromSlice::new(data);
                 let mut payload_2 = FromSlice::new(data);
 
                 let res_1 = store1
-                    .append_payload(subspace, path, None, &mut payload_1)
+                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_1)
                     .await;
                 let res_2 = store2
-                    .append_payload(subspace, path, None, &mut payload_2)
+                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_2)
                     .await;
 
                 match (res_1, res_2) {
