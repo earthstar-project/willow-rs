@@ -294,7 +294,7 @@ impl<OE: Display + Error> Error for EventSenderError<OE> {}
 
 /// A [`Store`] is a set of [`AuthorisedEntry`] belonging to a single namespace, and a  (possibly partial) corresponding set of payloads.
 pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
-    type Error: Display + Error;
+    type Error: Display + Error + PartialEq;
 
     /// Returns the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) which all of this store's [`AuthorisedEntry`] belong to.
     fn namespace_id(&self) -> &N;
