@@ -173,6 +173,31 @@ where
             }
         }
     }
+
+    /// Returns whether an [`Entry`] can cause prefix-pruning in this [`Area`].
+    pub fn could_be_pruned_by<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
+        self.could_be_pruned_by_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
+    }
+
+    /// Returns whether an [`Entry`] of the given subspace_id, path, and timestamp can cause prefix-pruning in this [`Area`].
+    pub fn could_be_pruned_by_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        if let AreaSubspace::Id(my_subspace_id) = self.subspace() {
+            if my_subspace_id != subspace_id {
+                return false;
+            }
+        }
+
+        if !(self.times().includes(&timestamp) || timestamp < self.times().start) {
+            return false;
+        }
+
+        return path.is_prefix_of(&self.path) || path.is_prefixed_by(&self.path);
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL, S>

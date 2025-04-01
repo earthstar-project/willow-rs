@@ -844,9 +844,11 @@ dependencies = [
  "bytes",
  "compact_u64",
  "either",
+ "slab",
  "smol",
  "ufotofu",
  "ufotofu_codec",
+ "wb_async_utils",
  "willow-encoding",
 ]
 
