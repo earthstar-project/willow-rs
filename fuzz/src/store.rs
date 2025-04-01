@@ -571,6 +571,8 @@ pub async fn check_store_equality<
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone + std::fmt::Debug + PartialEq,
     Store1: Store<MCL, MCC, MPL, N, S, PD, AT>,
     Store2: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    Store1::Error: std::fmt::Debug,
+    Store2::Error: std::fmt::Debug,
 {
     let namespace_id = store1.namespace_id();
     assert_eq!(namespace_id, store2.namespace_id());
