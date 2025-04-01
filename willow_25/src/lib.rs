@@ -1,1 +1,2 @@
-pub struct NamespaceId25(());
+mod namespace;
+pub use namespace::*;
