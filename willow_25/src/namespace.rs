@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH};
+use ed25519_dalek::{SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH};
 use meadowcap::{IsCommunal, McNamespacePublicKey};
 use rand::rngs::OsRng;
 use signature::Verifier;
@@ -45,9 +45,9 @@ impl NamespaceId25 {
     }
 }
 
-impl Verifier<Signature> for NamespaceId25 {
-    fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
-        self.0.verify_strict(msg, signature)
+impl Verifier<crate::Signature25> for NamespaceId25 {
+    fn verify(&self, msg: &[u8], signature: &crate::Signature25) -> Result<(), signature::Error> {
+        self.0.verify_strict(msg, signature.inner())
     }
 }
 
@@ -71,7 +71,7 @@ impl Encodable for NamespaceId25 {
         let bytes_slice = self.0.to_bytes();
 
         consumer
-            .consume_full_slice(&bytes_slice)
+            .bulk_consume_full_slice(&bytes_slice)
             .await
             .map_err(|err| err.into_reason())?;
 

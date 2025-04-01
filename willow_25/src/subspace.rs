@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH};
+use ed25519_dalek::{SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH};
 use meadowcap::McPublicUserKey;
 use rand::rngs::OsRng;
 use signature::Verifier;
@@ -22,11 +22,11 @@ impl SubspaceId25 {
     }
 }
 
-impl Verifier<Signature> for SubspaceId25 {
-    fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), signature::Error> {
+impl Verifier<crate::Signature25> for SubspaceId25 {
+    fn verify(&self, msg: &[u8], signature: &crate::Signature25) -> Result<(), signature::Error> {
         let verifying_key = VerifyingKey::from_bytes(&self.0).expect("Tried to use a public key which doesn't actually represent a point on curve25519, probably taken from the result of a successor function.");
 
-        verifying_key.verify(msg, signature)
+        verifying_key.verify(msg, signature.inner())
     }
 }
 
@@ -64,7 +64,7 @@ impl SubspaceId for SubspaceId25 {
     }
 }
 
-impl McPublicUserKey<Signature> for SubspaceId25 {}
+impl McPublicUserKey<crate::Signature25> for SubspaceId25 {}
 
 impl Encodable for SubspaceId25 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -72,7 +72,7 @@ impl Encodable for SubspaceId25 {
         C: BulkConsumer<Item = u8>,
     {
         consumer
-            .consume_full_slice(&self.0)
+            .bulk_consume_full_slice(&self.0)
             .await
             .map_err(|err| err.into_reason())?;
 
