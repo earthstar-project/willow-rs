@@ -1,8 +1,7 @@
 use either::Either;
-use std::{collections::BTreeMap, convert::Infallible};
-use ufotofu_queues::Fixed;
-use wb_async_utils::spsc::{new_spsc, Sender, State};
-use wb_async_utils::Mutex;
+use std::marker::PhantomData;
+use ufotofu::BufferedProducer;
+use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError};
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -16,9 +15,9 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, EntryOrigin, EventSenderError, LengthyAuthorisedEntry, NamespaceId,
-    Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store,
-    StoreEvent, SubspaceId,
+    EntryIngestionSuccess, EntryOrigin, LengthyAuthorisedEntry, NamespaceId, Path,
+    PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
+    SubspaceId,
 };
 
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -30,7 +29,11 @@ where
 {
     namespace_id: N,
     db: Db,
-    subscriptions: Mutex<BTreeMap<u64, EventSubscription<MCL, MCC, MPL, N, S, PD, AT>>>,
+    _subspace: PhantomData<S>,
+    _payload_digest: PhantomData<PD>,
+    _auth_token: PhantomData<AT>,
+    // TODO: Use new event system
+    // subscriptions: Mutex<BTreeMap<u64, EventSubscription<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
@@ -68,7 +71,9 @@ where
         let store = Self {
             db,
             namespace_id: namespace.clone(),
-            subscriptions: Mutex::new(BTreeMap::new()),
+            _subspace: PhantomData,
+            _payload_digest: PhantomData,
+            _auth_token: PhantomData,
         };
 
         let misc_tree = store.misc_tree()?;
@@ -97,7 +102,9 @@ where
         Ok(Self {
             namespace_id,
             db,
-            subscriptions: Mutex::new(BTreeMap::new()),
+            _subspace: PhantomData,
+            _payload_digest: PhantomData,
+            _auth_token: PhantomData,
         })
     }
 
@@ -179,30 +186,9 @@ where
 
         Ok(None)
     }
-
-    /// Regarding `completeness`: This should be the maximum amount of payload completeness from all entries related to this event.
-    async fn send_event(&self, event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>) {
-        // Seems like this approach may not work.
-        // This only needs to be async because sending events is async,
-        // and that is async because consumers consuming is async.
-        let mut subs = self.subscriptions.write().await;
-
-        let mut dropped = Vec::<u64>::new();
-
-        for (key, sub) in subs.iter() {
-            match sub.send_event(event).await {
-                Ok(_) => {}
-                Err(_) => dropped.push(*key),
-            }
-        }
-
-        for key in dropped {
-            subs.remove(&key);
-        }
-    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SimpleStoreSledError {
     Sled(SledError),
     Transaction(TransactionError<()>),
@@ -279,8 +265,9 @@ where
 
         let mut keys_to_prune: Vec<IVec> = Vec::new();
 
-        let mut prune_all_payloads_empty = true;
-        let mut prune_all_payloads_incomplete = true;
+        // TODO: Use new event system
+        // let mut prune_all_payloads_empty = true;
+        // let mut prune_all_payloads_incomplete = true;
 
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
@@ -316,6 +303,8 @@ where
             }
 
             // Prune it!
+            // TODO: Use new event system
+            /*
             if other_payload_length > 0 {
                 prune_all_payloads_empty = false
             }
@@ -323,6 +312,7 @@ where
             if other_local_length == other_payload_length {
                 prune_all_payloads_incomplete = false
             }
+            */
 
             keys_to_prune.push(key);
         }
@@ -337,7 +327,8 @@ where
         let mut entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
-        let dispatch_prune = !keys_to_prune.is_empty();
+        // TODO: Use new event system
+        // let dispatch_prune = !keys_to_prune.is_empty();
 
         for key in keys_to_prune {
             entry_batch.remove(&key);
@@ -359,6 +350,8 @@ where
             )
             .map_err(SimpleStoreSledError::from)?;
 
+        // TODO: Use new event system
+        /*
         self.send_event(&SimpleStoreEvent {
             event: StoreEvent::Ingested {
                 entry: unsafe { AuthorisedEntry::new_unchecked(entry.clone(), token.clone()) },
@@ -368,6 +361,7 @@ where
             all_payloads_incomplete: true,
         })
         .await;
+
 
         if dispatch_prune {
             self.send_event(&SimpleStoreEvent {
@@ -381,6 +375,7 @@ where
             })
             .await;
         }
+        */
 
         Ok(EntryIngestionSuccess::Success)
     }
@@ -389,6 +384,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -407,6 +403,12 @@ where
                     decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
                 let (length, digest, auth_token, _local_length) =
                     decode_entry_values::<PD, AT>(&value).await;
+
+                if let Some(expected) = expected_digest {
+                    if expected != digest {
+                        return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
 
                 let payload_key = encode_subspace_path_key(&subspace, &path, false).await;
 
@@ -476,6 +478,8 @@ where
                                 )
                                 .map_err(SimpleStoreSledError::from)?;
 
+                            // TODO: Use new event system
+                            /*
                             let authed_entry = unsafe {
                                 AuthorisedEntry::new_unchecked(
                                     Entry::new(
@@ -490,6 +494,7 @@ where
                                 )
                             };
 
+
                             let lengthy_entry = LengthyAuthorisedEntry::new(
                                 authed_entry,
                                 received_payload_len as u64,
@@ -501,6 +506,7 @@ where
                                 all_payloads_incomplete: true,
                             })
                             .await;
+                            */
 
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
@@ -569,12 +575,15 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
+                    // TODO: Use new event system
+                    /*
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
                         all_payloads_empty: false,
                         all_payloads_incomplete: false,
                     })
                     .await;
+                    */
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
@@ -597,12 +606,15 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
+                    // TODO: Use new event system
+                    /*
                     self.send_event(&SimpleStoreEvent {
                         event: StoreEvent::Appended(lengthy_entry),
                         all_payloads_empty: false,
                         all_payloads_incomplete: true,
                     })
                     .await;
+                    */
 
                     Ok(PayloadAppendSuccess::Appended)
                 }
@@ -615,18 +627,29 @@ where
         &self,
         subspace_id: &S,
         path: &willow_data_model::Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::Error> {
+        expected_digest: Option<PD>,
+    ) -> Result<(), ForgetEntryError<Self::Error>> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let entry_tree = self.entry_tree()?;
-        let payload_tree = self.payload_tree()?;
+        let entry_tree = self
+            .entry_tree()
+            .map_err(|err| SimpleStoreSledError::from(err))?;
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|err| SimpleStoreSledError::from(err))?;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
-            let (subspace_id, path, timestamp) = decode_entry_key(&key).await;
-            let (length, _digest, _auth_token, _local_length) =
+            let (subspace_id, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+            let (length, digest, _auth_token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
+
+            if let Some(expected) = expected_digest {
+                if expected != digest {
+                    return Err(ForgetEntryError::WrongEntry);
+                }
+            }
 
             (&entry_tree, &payload_tree)
                 .transaction(
@@ -639,8 +662,10 @@ where
 
                         Ok(())
                     },
-                )?;
+                ) .map_err(|err| SimpleStoreSledError::from(err))?;
 
+            // TODO: Use new event system
+            /*
             self.send_event(&SimpleStoreEvent {
                 event: StoreEvent::EntryForgotten {
                     subspace_id,
@@ -651,6 +676,7 @@ where
                 all_payloads_incomplete: true,
             })
             .await;
+            */
         }
 
         Ok(())
@@ -659,7 +685,7 @@ where
     async fn forget_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
@@ -679,10 +705,10 @@ where
             }
         };
 
-        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
-
-        let mut all_payloads_empty = true;
-        let mut all_payloads_incomplete = true;
+        // TODO: Use new event system
+        // let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+        // let mut all_payloads_empty = true;
+        // let mut all_payloads_incomplete = true;
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
@@ -712,6 +738,8 @@ where
                 entry_batch.remove(&key);
                 payload_batch.remove(&key);
 
+                // TODO: Use new event system
+                /*
                 if length > 0 {
                     all_payloads_empty = false;
                 }
@@ -719,6 +747,7 @@ where
                 if local_length == length {
                     all_payloads_incomplete = false
                 }
+                */
 
                 forgotten_count += 1;
             }
@@ -737,16 +766,19 @@ where
                 },
             )?;
 
+        // TODO: Use new event system
+        /*
         if forgotten_count > 0 {
             events_to_send.push(SimpleStoreEvent {
                 event: StoreEvent::AreaForgotten {
                     area: area.clone(),
-                    protected: protected.clone(),
+                    protected: protected.clone,
                 },
                 all_payloads_empty,
                 all_payloads_incomplete,
             });
         }
+        */
 
         Ok(forgotten_count)
     }
@@ -755,23 +787,35 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::Error> {
-        let payload_tree = self.payload_tree()?;
+        expected_digest: Option<PD>,
+    ) -> Result<(), ForgetPayloadError<Self::Error>> {
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|err| SimpleStoreSledError::from(err))?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
 
         let maybe_payload = self.prefix_gt(&payload_tree, &payload_key)?;
 
-        let entry_tree = self.entry_tree()?;
+        let entry_tree = self
+            .entry_tree()
+            .map_err(|err| SimpleStoreSledError::from(err))?;
 
         let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
         let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
 
         match (maybe_entry, maybe_payload) {
             (Some((entry_key, entry_value)), Some((payload_key, _payload_value))) => {
-                let (subspace, path, timestamp) = decode_entry_key(&entry_key).await;
+                let (subspace, path, timestamp) =
+                    decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
                 let (length, digest, token, _local_length) =
-                    decode_entry_values(&entry_value).await;
+                    decode_entry_values::<PD, AT>(&entry_value).await;
+
+                if let Some(expected) = expected_digest {
+                    if expected != digest {
+                        return Err(ForgetPayloadError::WrongEntry);
+                    }
+                }
 
                 let new_key_value = encode_entry_values(length, &digest, &token, 0).await;
 
@@ -785,8 +829,10 @@ where
 
                         Ok(())
                     },
-                )?;
+                ).map_err(|err| SimpleStoreSledError::from(err))?;
 
+                // TODO: Use new event system
+                /*
                 let entry = Entry::new(
                     self.namespace_id().clone(),
                     subspace,
@@ -805,6 +851,7 @@ where
                     all_payloads_incomplete: true,
                 })
                 .await;
+                */
 
                 Ok(())
             }
@@ -816,7 +863,7 @@ where
     async fn forget_area_payloads(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
         let entry_tree = self.entry_tree()?;
         let payload_tree = self.payload_tree()?;
@@ -836,10 +883,10 @@ where
             }
         };
 
-        let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
-
-        let mut all_payloads_empty = true;
-        let mut all_payloads_incomplete = true;
+        // TODO: Use new event system
+        // let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
+        // let mut all_payloads_empty = true;
+        // let mut all_payloads_incomplete = true;
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
@@ -871,6 +918,8 @@ where
 
                 forgotten_count += 1;
 
+                // TODO: Use new event system
+                /*
                 if length > 0 {
                     all_payloads_empty = false
                 }
@@ -878,6 +927,7 @@ where
                 if local_length == length {
                     all_payloads_incomplete = false
                 }
+                */
             }
         }
 
@@ -893,6 +943,8 @@ where
             },
         )?;
 
+        // TODO: Use new event system
+        /*
         if forgotten_count > 0 {
             events_to_send.push(SimpleStoreEvent {
                 event: StoreEvent::AreaPayloadsForgotten {
@@ -903,6 +955,7 @@ where
                 all_payloads_incomplete,
             });
         }
+        */
 
         Ok(forgotten_count)
     }
@@ -915,14 +968,29 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<impl Producer<Item = u8>>, Self::Error> {
-        let payload_tree = self.payload_tree()?;
+        expected_digest: Option<PD>,
+    ) -> Result<
+        Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+        PayloadError<Self::Error>,
+    > {
+        let payload_tree = self
+            .payload_tree()
+            .map_err(|err| SimpleStoreSledError::from(err))?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
 
         if let Some((_key, value)) = maybe_payload {
             // Create a producer!
+            let (_length, digest, _token, _local_length) =
+                decode_entry_values::<PD, AT>(&value).await;
+
+            if let Some(expected) = expected_digest {
+                if expected != digest {
+                    return Err(PayloadError::WrongEntry);
+                }
+            }
+
             Ok(Some(PayloadProducer::new(value)))
         } else {
             Ok(None)
@@ -991,7 +1059,7 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
-        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
         Self::Error,
     > {
         EntryProducer::new(self, area, ignore).await
@@ -1001,10 +1069,10 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Producer<
-        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::Error>,
-    > {
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
+    {
+        // TODO: Use new event system
+        /*
         let (pack, receiver) =
             EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
 
@@ -1018,6 +1086,9 @@ where
         subs.insert(next_key, pack);
 
         receiver
+        */
+
+        todo!("use new event system")
     }
 }
 
@@ -1260,6 +1331,24 @@ impl<PSE> From<SimpleStoreSledError> for PayloadAppendError<PSE, SimpleStoreSled
     }
 }
 
+impl From<SimpleStoreSledError> for ForgetEntryError<SimpleStoreSledError> {
+    fn from(value: SimpleStoreSledError) -> Self {
+        Self::OperationError(value)
+    }
+}
+
+impl From<SimpleStoreSledError> for ForgetPayloadError<SimpleStoreSledError> {
+    fn from(value: SimpleStoreSledError) -> Self {
+        Self::OperationError(value)
+    }
+}
+
+impl From<SimpleStoreSledError> for PayloadError<SimpleStoreSledError> {
+    fn from(value: SimpleStoreSledError) -> Self {
+        Self::OperationError(value)
+    }
+}
+
 pub struct PayloadProducer {
     produced: usize,
     ivec: IVec,
@@ -1276,7 +1365,7 @@ impl Producer for PayloadProducer {
 
     type Final = ();
 
-    type Error = Infallible;
+    type Error = SimpleStoreSledError;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         match self.produced.cmp(&self.ivec.len()) {
@@ -1287,6 +1376,29 @@ impl Producer for PayloadProducer {
             std::cmp::Ordering::Equal =>  Ok(Either::Right(())),
             std::cmp::Ordering::Greater => panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool."),
         }
+    }
+}
+
+// TODO: Actually implement this!
+impl BufferedProducer for PayloadProducer {
+    async fn slurp(&mut self) -> Result<(), Self::Error> {
+        todo!()
+    }
+}
+
+// TODO: Actually implement this!
+impl BulkProducer for PayloadProducer {
+    async fn expose_items<'a>(
+        &'a mut self,
+    ) -> Result<Either<&'a [Self::Item], Self::Final>, Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        todo!()
+    }
+
+    async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
+        todo!()
     }
 }
 
@@ -1401,6 +1513,8 @@ where
     }
 }
 
+// TODO: Use new event system
+/*
 // Going to store a vec of these in the store
 struct EventSubscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
@@ -1543,3 +1657,4 @@ where
         }
     }
 }
+*/
