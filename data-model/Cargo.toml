@@ -14,6 +14,8 @@ either = "1.10.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 ufotofu = { version = "0.6.0", features = ["std"] }
 bytes = "1.6.0"
+slab = "0.4.9"
+wb_async_utils = { path = "../wb_async_utils", version = "0.1.0" }
 
 [dependencies.willow-encoding]
 path = "../encoding"
@@ -37,5 +39,3 @@ all-features = true
 
 [lints]
 workspace = true
-
-
