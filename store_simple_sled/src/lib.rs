@@ -353,8 +353,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .ingested_entry(AuthorisedEntry::new(entry, token).unwrap(), origin)
-            .await;
+            .ingested_entry(AuthorisedEntry::new(entry, token).unwrap(), origin);
 
         Ok(EntryIngestionSuccess::Success)
     }
@@ -469,13 +468,12 @@ where
                             let authy_entry =
                                 unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
 
-                            self.event_system
-                                .borrow_mut()
-                                .appended_payload(LengthyAuthorisedEntry::new(
+                            self.event_system.borrow_mut().appended_payload(
+                                LengthyAuthorisedEntry::new(
                                     authy_entry,
                                     received_payload_len as u64,
-                                ))
-                                .await;
+                                ),
+                            );
 
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
@@ -546,8 +544,7 @@ where
 
                     self.event_system
                         .borrow_mut()
-                        .appended_payload(lengthy_entry)
-                        .await;
+                        .appended_payload(lengthy_entry);
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
@@ -572,8 +569,7 @@ where
 
                     self.event_system
                         .borrow_mut()
-                        .appended_payload(lengthy_entry)
-                        .await;
+                        .appended_payload(lengthy_entry);
 
                     Ok(PayloadAppendSuccess::Appended)
                 }
@@ -633,8 +629,7 @@ where
 
             self.event_system
                 .borrow_mut()
-                .forgot_entry(LengthyAuthorisedEntry::new(authy_entry, local_length))
-                .await;
+                .forgot_entry(LengthyAuthorisedEntry::new(authy_entry, local_length));
         }
 
         Ok(())
@@ -710,8 +705,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.map(|a| a.clone()))
-            .await;
+            .forgot_area(area.clone(), protected.map(|a| a.clone()));
 
         Ok(forgotten_count)
     }
@@ -773,8 +767,7 @@ where
 
                 self.event_system
                     .borrow_mut()
-                    .forgot_payload(LengthyAuthorisedEntry::new(authy_entry, local_length))
-                    .await;
+                    .forgot_payload(LengthyAuthorisedEntry::new(authy_entry, local_length));
 
                 Ok(())
             }
@@ -853,8 +846,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.map(|a| a.clone()))
-            .await;
+            .forgot_area(area.clone(), protected.map(|a| a.clone()));
 
         Ok(forgotten_count)
     }

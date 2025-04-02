@@ -565,60 +565,52 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
     }
 
     /// Call this inside your store impl after it has ingested an entry.
-    pub async fn ingested_entry(
+    pub fn ingested_entry(
         &mut self,
         entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         origin: EntryOrigin,
     ) {
-        self.enqueue_op(QueuedOp::Insertion { entry, origin }).await
+        self.enqueue_op(QueuedOp::Insertion { entry, origin })
     }
 
     /// Call this inside your store impl after it has appended to a payload.
-    pub async fn appended_payload(
+    pub fn appended_payload(
         &mut self,
         lengthy_entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     ) {
-        self.enqueue_op(QueuedOp::Appended { lengthy_entry }).await
+        self.enqueue_op(QueuedOp::Appended { lengthy_entry })
     }
 
     /// Call this inside your store impl after it has forgotten an entry.
-    pub async fn forgot_entry(
-        &mut self,
-        entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-    ) {
-        self.enqueue_op(QueuedOp::EntryForgotten { entry }).await
+    pub fn forgot_entry(&mut self, entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) {
+        self.enqueue_op(QueuedOp::EntryForgotten { entry })
     }
 
     /// Call this inside your store impl after it has forgotten an area.
-    pub async fn forgot_area(
+    pub fn forgot_area(
         &mut self,
         area: Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
     ) {
         self.enqueue_op(QueuedOp::AreaForgotten { area, protected })
-            .await
     }
 
     /// Call this inside your store impl after it has forgotten a payload.
-    pub async fn forgot_payload(
-        &mut self,
-        entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-    ) {
-        self.enqueue_op(QueuedOp::PayloadForgotten { entry }).await
+    pub fn forgot_payload(&mut self, entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) {
+        self.enqueue_op(QueuedOp::PayloadForgotten { entry })
     }
 
     /// Call this inside your store impl after it has forgotten the payloads of an area.
-    pub async fn forgot_area_payloads(
+    pub fn forgot_area_payloads(
         &mut self,
         area: Area<MCL, MCC, MPL, S>,
         protected: Option<Area<MCL, MCC, MPL, S>>,
     ) {
         self.enqueue_op(QueuedOp::AreaPayloadsForgotten { area, protected })
-            .await
     }
 
     // We enqueue an operation. If the max capacity of the queue is reached through that, we pop the oldest op (which might cause straggling subscribers to be cancelled the next time they try to produce an event). If any subscribers have been awaiting a new op, we notify them.
-    async fn enqueue_op(&mut self, op: QueuedOp<MCL, MCC, MPL, N, S, PD, AT>) {
+    fn enqueue_op(&mut self, op: QueuedOp<MCL, MCC, MPL, N, S, PD, AT>) {
         self.op_queue.push_back(op);
 
         if self.op_queue.len() > self.max_queue_capacity {
