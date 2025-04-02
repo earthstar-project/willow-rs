@@ -1,34 +1,29 @@
 use std::{
     cell::{RefCell, RefMut},
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     convert::Infallible,
     ops::{Deref, DerefMut},
     rc::Rc,
-    thread::current,
 };
 
 use either::Either::{self, Left, Right};
-use meadowcap::SubspaceDelegation;
 use ufotofu::{
-    consumer::IntoVec,
-    pipe,
     producer::{FromBoxedSlice, FromSlice},
-    BulkConsumer, BulkProducer, Producer,
+    BulkProducer, Producer,
 };
-use ufotofu_queues::Fixed;
-use wb_async_utils::spsc::{Sender, State};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, EntryOrigin, EventSenderError, ForgetEntryError, ForgetPayloadError,
-    LengthyAuthorisedEntry, NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess,
-    PayloadDigest, PayloadError, QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
+    AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryIngestionSuccess,
+    EntryOrigin, EventSystem, ForgetEntryError, ForgetPayloadError, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, PayloadError,
+    QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
 pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace: N,
     subspaces: RefCell<BTreeMap<S, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>>,
+    event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, Infallible>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -123,7 +118,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
-        origin: EntryOrigin,
+        _origin: EntryOrigin,
     ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
     {
         if self.namespace_id() != authorised_entry.entry().namespace_id() {
@@ -187,6 +182,7 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
+        expected_digest: Option<PD>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -197,6 +193,12 @@ where
         match subspace_store.entries.get_mut(path) {
             None => panic!("Tried to append a payload for a non-existant entry."),
             Some(entry) => {
+                if let Some(expected) = expected_digest {
+                    if entry.payload_digest != expected {
+                        return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
+
                 let max_length = entry.payload_length;
                 let mut current_length = entry.payload.len() as u64;
 
@@ -242,16 +244,32 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::Error> {
+        expected_digest: Option<PD>,
+    ) -> Result<(), ForgetEntryError<Self::Error>> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
-        subspace_store.entries.remove(path);
-        Ok(())
+
+        let found = subspace_store.entries.get(path);
+
+        match found {
+            None => return Ok(()),
+            Some(entry) => {
+                if let Some(expected) = expected_digest {
+                    if entry.payload_digest != expected {
+                        return Err(ForgetEntryError::WrongEntry);
+                    }
+                }
+
+                subspace_store.entries.remove(path);
+
+                Ok(())
+            }
+        }
     }
 
     async fn forget_area(
         &self,
         area: &willow_data_model::grouping::Area<MCL, MCC, MPL, S>,
-        protected: Option<willow_data_model::grouping::Area<MCL, MCC, MPL, S>>,
+        protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
         let mut candidates = vec![];
 
@@ -285,7 +303,9 @@ where
                 }
             }
 
-            self.forget_entry(&candidate.0, &candidate.1).await?;
+            self.forget_entry(&candidate.0, &candidate.1, None)
+                .await
+                .expect("cannot fail when expected_digest is None");
             count += 1;
         }
 
@@ -296,11 +316,18 @@ where
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<(), Self::Error> {
+        expected_digest: Option<PD>,
+    ) -> Result<(), ForgetPayloadError<Self::Error>> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get_mut(path) {
             None => panic!("Tried to forget the payload of an entry we do not have."),
             Some(entry) => {
+                if let Some(expected) = expected_digest {
+                    if entry.payload_digest != expected {
+                        return Err(ForgetPayloadError::WrongEntry);
+                    }
+                }
+
                 entry.payload.clear();
             }
         }
@@ -310,7 +337,7 @@ where
     async fn forget_area_payloads(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-        protected: Option<Area<MCL, MCC, MPL, S>>,
+        protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
         let mut candidates = vec![];
 
@@ -344,7 +371,9 @@ where
                 }
             }
 
-            self.forget_payload(&candidate.0, &candidate.1).await?;
+            self.forget_payload(&candidate.0, &candidate.1, None)
+                .await
+                .expect("cannot error if expectedDigest is None");
             count += 1;
         }
 
@@ -359,11 +388,23 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
-    ) -> Result<Option<impl Producer<Item = u8>>, Self::Error> {
+        expected_digest: Option<PD>,
+    ) -> Result<
+        Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+        PayloadError<Self::Error>,
+    > {
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
         match subspace_store.entries.get_mut(path) {
             None => Ok(None),
-            Some(entry) => Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone()))),
+            Some(entry) => {
+                if let Some(expected) = expected_digest {
+                    if entry.payload_digest != expected {
+                        return Err(PayloadError::WrongEntry);
+                    }
+                }
+
+                Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
+            }
         }
     }
 
@@ -409,7 +450,7 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
-        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
         Self::Error,
     > {
         let mut candidates = vec![];
@@ -488,12 +529,10 @@ where
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Producer<
-        Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-        Error = EventSenderError<Self::Error>,
-    > {
-        todo!()
-        // FromBoxedSlice::from_vec(vec![])
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
+    {
+        EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
+        // TODO not hooked up yet, no events are ever emitted. But at least it compiles...
     }
 }
 
