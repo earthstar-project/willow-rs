@@ -1,5 +1,5 @@
 use either::Either;
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 use ufotofu::BufferedProducer;
 use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError};
 
@@ -15,7 +15,7 @@ use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError,
-    EntryIngestionSuccess, EntryOrigin, LengthyAuthorisedEntry, NamespaceId, Path,
+    EntryIngestionSuccess, EntryOrigin, EventSystem, LengthyAuthorisedEntry, NamespaceId, Path,
     PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
     SubspaceId,
 };
@@ -32,8 +32,7 @@ where
     _subspace: PhantomData<S>,
     _payload_digest: PhantomData<PD>,
     _auth_token: PhantomData<AT>,
-    // TODO: Use new event system
-    // subscriptions: Mutex<BTreeMap<u64, EventSubscription<MCL, MCC, MPL, N, S, PD, AT>>>,
+    event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, SimpleStoreSledError>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
@@ -68,12 +67,24 @@ where
     where
         N: NamespaceId + EncodableKnownSize + EncodableSync,
     {
+        Self::new_with_event_queue_capacity(namespace, db, 1024) // the 1024 is arbitrary, really
+    }
+
+    pub fn new_with_event_queue_capacity(
+        namespace: &N,
+        db: Db,
+        capacity: usize,
+    ) -> Result<Self, NewStoreSimpleSledError>
+    where
+        N: NamespaceId + EncodableKnownSize + EncodableSync,
+    {
         let store = Self {
             db,
             namespace_id: namespace.clone(),
             _subspace: PhantomData,
             _payload_digest: PhantomData,
             _auth_token: PhantomData,
+            event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         };
 
         let misc_tree = store.misc_tree()?;
@@ -90,6 +101,13 @@ where
     }
 
     pub fn from_existing(db: Db) -> Result<Self, ExistingStoreSimpleSledError> {
+        Self::from_existing_with_event_queue_capacity(db, 1024) // the 1024 is arbitrary, really
+    }
+
+    pub fn from_existing_with_event_queue_capacity(
+        db: Db,
+        capacity: usize,
+    ) -> Result<Self, ExistingStoreSimpleSledError> {
         let misc_tree = db.open_tree(MISC_TREE_KEY)?;
 
         let namespace_encoded = misc_tree
@@ -105,6 +123,7 @@ where
             _subspace: PhantomData,
             _payload_digest: PhantomData,
             _auth_token: PhantomData,
+            event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         })
     }
 
@@ -265,10 +284,6 @@ where
 
         let mut keys_to_prune: Vec<IVec> = Vec::new();
 
-        // TODO: Use new event system
-        // let mut prune_all_payloads_empty = true;
-        // let mut prune_all_payloads_incomplete = true;
-
         for (key, value) in entry_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
             .flatten()
@@ -303,17 +318,6 @@ where
             }
 
             // Prune it!
-            // TODO: Use new event system
-            /*
-            if other_payload_length > 0 {
-                prune_all_payloads_empty = false
-            }
-
-            if other_local_length == other_payload_length {
-                prune_all_payloads_incomplete = false
-            }
-            */
-
             keys_to_prune.push(key);
         }
 
@@ -326,9 +330,6 @@ where
 
         let mut entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
-
-        // TODO: Use new event system
-        // let dispatch_prune = !keys_to_prune.is_empty();
 
         for key in keys_to_prune {
             entry_batch.remove(&key);
@@ -350,32 +351,10 @@ where
             )
             .map_err(SimpleStoreSledError::from)?;
 
-        // TODO: Use new event system
-        /*
-        self.send_event(&SimpleStoreEvent {
-            event: StoreEvent::Ingested {
-                entry: unsafe { AuthorisedEntry::new_unchecked(entry.clone(), token.clone()) },
-                origin,
-            },
-            all_payloads_empty: entry.payload_length() == 0,
-            all_payloads_incomplete: true,
-        })
-        .await;
-
-
-        if dispatch_prune {
-            self.send_event(&SimpleStoreEvent {
-                event: StoreEvent::Pruned {
-                    subspace_id: entry.subspace_id().clone(),
-                    path: entry.path().clone(),
-                    timestamp: entry.timestamp(),
-                },
-                all_payloads_empty: entry.payload_length() == 0 && prune_all_payloads_empty,
-                all_payloads_incomplete: prune_all_payloads_incomplete,
-            })
+        self.event_system
+            .borrow_mut()
+            .ingested_entry(AuthorisedEntry::new(entry, token).unwrap(), origin)
             .await;
-        }
-        */
 
         Ok(EntryIngestionSuccess::Success)
     }
@@ -478,35 +457,13 @@ where
                                 )
                                 .map_err(SimpleStoreSledError::from)?;
 
-                            // TODO: Use new event system
-                            /*
-                            let authed_entry = unsafe {
-                                AuthorisedEntry::new_unchecked(
-                                    Entry::new(
-                                        self.namespace_id.clone(),
-                                        subspace,
-                                        path,
-                                        timestamp,
-                                        length,
-                                        digest.clone(),
-                                    ),
-                                    auth_token,
-                                )
-                            };
-
-
-                            let lengthy_entry = LengthyAuthorisedEntry::new(
-                                authed_entry,
-                                received_payload_len as u64,
-                            );
-
-                            self.send_event(&SimpleStoreEvent {
-                                event: StoreEvent::Appended(lengthy_entry),
-                                all_payloads_empty: false,
-                                all_payloads_incomplete: true,
-                            })
-                            .await;
-                            */
+                            self.event_system
+                                .borrow_mut()
+                                .appended_payload(LengthyAuthorisedEntry::new(
+                                    AuthorisedEntry::new(entry, token).unwrap(),
+                                    received_payload_len as u64,
+                                ))
+                                .await;
 
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
@@ -575,15 +532,10 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
-                    // TODO: Use new event system
-                    /*
-                    self.send_event(&SimpleStoreEvent {
-                        event: StoreEvent::Appended(lengthy_entry),
-                        all_payloads_empty: false,
-                        all_payloads_incomplete: false,
-                    })
-                    .await;
-                    */
+                    self.event_system
+                        .borrow_mut()
+                        .appended_payload(lengthy_entry)
+                        .await;
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
@@ -606,15 +558,10 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
-                    // TODO: Use new event system
-                    /*
-                    self.send_event(&SimpleStoreEvent {
-                        event: StoreEvent::Appended(lengthy_entry),
-                        all_payloads_empty: false,
-                        all_payloads_incomplete: true,
-                    })
-                    .await;
-                    */
+                    self.event_system
+                        .borrow_mut()
+                        .appended_payload(lengthy_entry)
+                        .await;
 
                     Ok(PayloadAppendSuccess::Appended)
                 }
@@ -677,6 +624,11 @@ where
             })
             .await;
             */
+            // TODO use this instead (@gwil, please create that `lengthy_authorised_entry`):
+            // self.event_system
+            //     .borrow_mut()
+            //     .forgot_entry(lengthy_authorised_entry)
+            //     .await;
         }
 
         Ok(())
@@ -704,11 +656,6 @@ where
                 entry_tree.scan_prefix(&matching_subspace_path)
             }
         };
-
-        // TODO: Use new event system
-        // let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
-        // let mut all_payloads_empty = true;
-        // let mut all_payloads_incomplete = true;
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
@@ -738,17 +685,6 @@ where
                 entry_batch.remove(&key);
                 payload_batch.remove(&key);
 
-                // TODO: Use new event system
-                /*
-                if length > 0 {
-                    all_payloads_empty = false;
-                }
-
-                if local_length == length {
-                    all_payloads_incomplete = false
-                }
-                */
-
                 forgotten_count += 1;
             }
         }
@@ -766,19 +702,10 @@ where
                 },
             )?;
 
-        // TODO: Use new event system
-        /*
-        if forgotten_count > 0 {
-            events_to_send.push(SimpleStoreEvent {
-                event: StoreEvent::AreaForgotten {
-                    area: area.clone(),
-                    protected: protected.clone,
-                },
-                all_payloads_empty,
-                all_payloads_incomplete,
-            });
-        }
-        */
+        self.event_system
+            .borrow_mut()
+            .forgot_area(area.clone(), protected.map(|a| a.clone()))
+            .await;
 
         Ok(forgotten_count)
     }
@@ -853,6 +780,12 @@ where
                 .await;
                 */
 
+                // TODO use this instead (@gwil, please create that `lengthy_authorised_entry`):
+                // self.event_system
+                //     .borrow_mut()
+                //     .forgot_payload(lengthy_authorised_entry)
+                //     .await;
+
                 Ok(())
             }
             (None, Some(_)) => panic!("Storing a payload for which we have no entry, that is bad!"),
@@ -883,11 +816,6 @@ where
             }
         };
 
-        // TODO: Use new event system
-        // let mut events_to_send: Vec<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>> = Vec::new();
-        // let mut all_payloads_empty = true;
-        // let mut all_payloads_incomplete = true;
-
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
             let (length, digest, token, local_length) = decode_entry_values::<PD, AT>(&value).await;
@@ -917,17 +845,6 @@ where
                 payload_batch.remove(&key);
 
                 forgotten_count += 1;
-
-                // TODO: Use new event system
-                /*
-                if length > 0 {
-                    all_payloads_empty = false
-                }
-
-                if local_length == length {
-                    all_payloads_incomplete = false
-                }
-                */
             }
         }
 
@@ -943,19 +860,10 @@ where
             },
         )?;
 
-        // TODO: Use new event system
-        /*
-        if forgotten_count > 0 {
-            events_to_send.push(SimpleStoreEvent {
-                event: StoreEvent::AreaPayloadsForgotten {
-                    area: area.clone(),
-                    protected: protected.clone(),
-                },
-                all_payloads_empty,
-                all_payloads_incomplete,
-            });
-        }
-        */
+        self.event_system
+            .borrow_mut()
+            .forgot_area(area.clone(), protected.map(|a| a.clone()))
+            .await;
 
         Ok(forgotten_count)
     }
@@ -1071,24 +979,7 @@ where
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
-        // TODO: Use new event system
-        /*
-        let (pack, receiver) =
-            EventSubscription::<MCL, MCC, MPL, N, S, PD, AT>::new(area.clone(), ignore);
-
-        let mut subs = self.subscriptions.write().await;
-
-        let next_key = match subs.last_key_value() {
-            Some((highest_key, _whatever)) => highest_key + 1,
-            None => 0,
-        };
-
-        subs.insert(next_key, pack);
-
-        receiver
-        */
-
-        todo!("use new event system")
+        EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
     }
 }
 

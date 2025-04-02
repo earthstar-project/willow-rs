@@ -531,6 +531,16 @@ pub struct EventSystem<const MCL: usize, const MCC: usize, const MPL: usize, N, 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
     EventSystem<MCL, MCC, MPL, N, S, PD, AT, Err>
 {
+    /// Creates a new Eventsystem.
+    pub fn new(max_queue_capacity: usize) -> Self {
+        Self {
+            op_queue: VecDeque::new(),
+            max_queue_capacity,
+            popped_count: 0,
+            subscribers: Slab::new(),
+        }
+    }
+
     /// Create a new subscription: setting up the internals, and returning the external part.
     pub fn add_subscription(
         this: Rc<RefCell<Self>>,
