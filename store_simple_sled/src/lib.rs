@@ -295,7 +295,7 @@ where
                 other_payload_length,
                 other_payload_digest,
                 _other_authorisation_token,
-                other_local_length,
+                _other_local_length,
             ) = decode_entry_values::<PD, AT>(&value).await;
 
             let other_entry = Entry::new(
@@ -457,10 +457,22 @@ where
                                 )
                                 .map_err(SimpleStoreSledError::from)?;
 
+                            let entry = Entry::new(
+                                self.namespace_id.clone(),
+                                subspace,
+                                path,
+                                timestamp,
+                                length,
+                                digest,
+                            );
+
+                            let authy_entry =
+                                unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
+
                             self.event_system
                                 .borrow_mut()
                                 .appended_payload(LengthyAuthorisedEntry::new(
-                                    AuthorisedEntry::new(entry, token).unwrap(),
+                                    authy_entry,
                                     received_payload_len as u64,
                                 ))
                                 .await;
@@ -578,18 +590,14 @@ where
     ) -> Result<(), ForgetEntryError<Self::Error>> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|err| SimpleStoreSledError::from(err))?;
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|err| SimpleStoreSledError::from(err))?;
+        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
             let (subspace_id, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
-            let (length, digest, _auth_token, _local_length) =
+            let (length, digest, auth_token, local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             if let Some(expected) = expected_digest {
@@ -609,26 +617,24 @@ where
 
                         Ok(())
                     },
-                ) .map_err(|err| SimpleStoreSledError::from(err))?;
+                ) .map_err(SimpleStoreSledError::from)?;
 
-            // TODO: Use new event system
-            /*
-            self.send_event(&SimpleStoreEvent {
-                event: StoreEvent::EntryForgotten {
-                    subspace_id,
-                    path,
-                    timestamp,
-                },
-                all_payloads_empty: length == 0,
-                all_payloads_incomplete: true,
-            })
-            .await;
-            */
-            // TODO use this instead (@gwil, please create that `lengthy_authorised_entry`):
-            // self.event_system
-            //     .borrow_mut()
-            //     .forgot_entry(lengthy_authorised_entry)
-            //     .await;
+            let entry = Entry::new(
+                self.namespace_id.clone(),
+                subspace_id,
+                path,
+                timestamp,
+                length,
+                digest,
+            );
+
+            // We can do this because the token comes from within our store (where it was vetted prior to ingestion)
+            let authy_entry = unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
+
+            self.event_system
+                .borrow_mut()
+                .forgot_entry(LengthyAuthorisedEntry::new(authy_entry, local_length))
+                .await;
         }
 
         Ok(())
@@ -716,17 +722,13 @@ where
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
     ) -> Result<(), ForgetPayloadError<Self::Error>> {
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|err| SimpleStoreSledError::from(err))?;
+        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
 
         let maybe_payload = self.prefix_gt(&payload_tree, &payload_key)?;
 
-        let entry_tree = self
-            .entry_tree()
-            .map_err(|err| SimpleStoreSledError::from(err))?;
+        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
 
         let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
         let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
@@ -735,7 +737,7 @@ where
             (Some((entry_key, entry_value)), Some((payload_key, _payload_value))) => {
                 let (subspace, path, timestamp) =
                     decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
-                let (length, digest, token, _local_length) =
+                let (length, digest, auth_token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
                 if let Some(expected) = expected_digest {
@@ -744,7 +746,7 @@ where
                     }
                 }
 
-                let new_key_value = encode_entry_values(length, &digest, &token, 0).await;
+                let new_key_value = encode_entry_values(length, &digest, &auth_token, 0).await;
 
                 (&entry_tree, &payload_tree).transaction(
                     |(entry_tx, payload_tx): &(TransactionalTree, TransactionalTree)| -> Result<
@@ -756,12 +758,10 @@ where
 
                         Ok(())
                     },
-                ).map_err(|err| SimpleStoreSledError::from(err))?;
+                ).map_err(SimpleStoreSledError::from)?;
 
-                // TODO: Use new event system
-                /*
                 let entry = Entry::new(
-                    self.namespace_id().clone(),
+                    self.namespace_id.clone(),
                     subspace,
                     path,
                     timestamp,
@@ -769,22 +769,12 @@ where
                     digest,
                 );
 
-                // We can do this because the entry was successfully stored (and thus deemed authentic) before.
-                let authed = unsafe { AuthorisedEntry::new_unchecked(entry, token) };
+                let authy_entry = unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
 
-                self.send_event(&SimpleStoreEvent {
-                    event: StoreEvent::PayloadForgotten(authed),
-                    all_payloads_empty: length == 0,
-                    all_payloads_incomplete: true,
-                })
-                .await;
-                */
-
-                // TODO use this instead (@gwil, please create that `lengthy_authorised_entry`):
-                // self.event_system
-                //     .borrow_mut()
-                //     .forgot_payload(lengthy_authorised_entry)
-                //     .await;
+                self.event_system
+                    .borrow_mut()
+                    .forgot_payload(LengthyAuthorisedEntry::new(authy_entry, local_length))
+                    .await;
 
                 Ok(())
             }
@@ -818,7 +808,8 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (length, digest, token, local_length) = decode_entry_values::<PD, AT>(&value).await;
+            let (length, digest, token, _local_length) =
+                decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
                 path.is_prefixed_by(area.path())
@@ -881,9 +872,7 @@ where
         Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
-        let payload_tree = self
-            .payload_tree()
-            .map_err(|err| SimpleStoreSledError::from(err))?;
+        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
@@ -1403,149 +1392,3 @@ where
         }
     }
 }
-
-// TODO: Use new event system
-/*
-// Going to store a vec of these in the store
-struct EventSubscription<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    area: Area<MCL, MCC, MPL, S>,
-    ignore: QueryIgnoreParams,
-    sender: Mutex<
-        Sender<
-            std::rc::Rc<
-                State<
-                    Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-                    (),
-                    EventSenderError<SimpleStoreSledError>,
-                >,
-            >,
-            Fixed<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-            (),
-            EventSenderError<SimpleStoreSledError>,
-        >,
-    >,
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    EventSubscription<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    fn new(
-        area: Area<MCL, MCC, MPL, S>,
-        ignore: QueryIgnoreParams,
-    ) -> (
-        Self,
-        impl Producer<
-            Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-            Error = EventSenderError<SimpleStoreSledError>,
-        >,
-    ) {
-        let state = State::new(Fixed::<SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>>::new(
-            256,
-        ));
-        let state_rc = std::rc::Rc::new(state);
-        let (sender, receiver) = new_spsc(state_rc);
-
-        let mapped = ufotofu::producer::MapItem::new(
-            receiver,
-            |simple: SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>| simple.event,
-        );
-
-        let pack = Self {
-            area,
-            ignore,
-            sender: Mutex::new(sender),
-        };
-
-        (pack, mapped)
-    }
-
-    /// Error indicates that sender was dropped.
-    async fn send_event(
-        &self,
-        event: &SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-    ) -> Result<(), ()> {
-        let mut handle = self.sender.write().await;
-
-        if handle.is_receiver_dropped() {
-            return Err(());
-        }
-
-        if event.should_send(&self.area, &self.ignore) {
-            // We can unwrap because sender is infallible, apparently.
-            handle.consume(event.clone()).await.unwrap();
-        }
-
-        Ok(())
-    }
-}
-
-// We need this just so we can have a `Default` impl
-// So that we can stick it in a ufotofu_queues::fixed
-#[derive(Clone)]
-struct SimpleStoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    event: StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-    /// Are all payloads pertaining to this event empty?
-    all_payloads_empty: bool,
-    /// Are all payloads pertaining to this event locally incomplete?
-    all_payloads_incomplete: bool,
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    pub fn should_send(&self, area: &Area<MCL, MCC, MPL, S>, params: &QueryIgnoreParams) -> bool {
-        self.event.included_by_area(area) && !self.should_ignore(params)
-    }
-
-    pub fn should_ignore(&self, params: &QueryIgnoreParams) -> bool {
-        if params.ignore_empty_payloads && self.all_payloads_empty {
-            true
-        } else {
-            params.ignore_incomplete_payloads && self.all_payloads_incomplete
-        }
-    }
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Default
-    for SimpleStoreEvent<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
-    fn default() -> Self {
-        Self {
-            event: StoreEvent::EntryForgotten {
-                subspace_id: S::default(),
-                path: Path::new_empty(),
-                timestamp: 0,
-            },
-            all_payloads_empty: true,
-            all_payloads_incomplete: true,
-        }
-    }
-}
-*/
