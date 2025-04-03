@@ -1,6 +1,6 @@
 use std::{
     cell::{RefCell, RefMut},
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     convert::Infallible,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -8,8 +8,9 @@ use std::{
 
 use either::Either::{self, Left, Right};
 use ufotofu::{
+    consumer::IntoVec,
     producer::{FromBoxedSlice, FromSlice},
-    BulkProducer, Producer,
+    BulkProducer, Consumer, Producer,
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
@@ -604,10 +605,15 @@ pub async fn check_store_equality<
     store2: &mut Store2,
     ops: &[StoreOp<MCL, MCC, MPL, N, S, PD, AT>],
 ) where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Clone + std::fmt::Debug + PartialEq,
+    N: NamespaceId + std::hash::Hash,
+    S: SubspaceId + std::hash::Hash,
+    PD: PayloadDigest + std::hash::Hash,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+        + Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + std::hash::Hash,
     Store1: Store<MCL, MCC, MPL, N, S, PD, AT>,
     Store2: Store<MCL, MCC, MPL, N, S, PD, AT>,
     Store1::Error: std::fmt::Debug,
@@ -792,17 +798,32 @@ pub async fn check_store_equality<
                     store2.query_area(area, ignore.to_owned()).await,
                 ) {
                     (Ok(mut producer1), Ok(mut producer2)) => loop {
-                        match (producer1.produce().await, producer2.produce().await) {
-                            (Ok(Either::Left(item1)), Ok(Either::Left(item2))) => {
-                                assert_eq!(item1, item2)
-                            }
-                            (Ok(Either::Right(())), Ok(Either::Right(()))) => {
-                                break;
-                            }
-                            (_, _) => {
-                                panic!("QueryArea: non-equivalent producer behaviour.")
+                        let mut set1 =
+                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+                        let mut set2 =
+                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+
+                        loop {
+                            match producer1.produce().await {
+                                Ok(Either::Left(entry)) => {
+                                    set1.insert(entry);
+                                }
+                                Ok(Either::Right(_)) => break,
+                                Err(_) => panic!("QueryArea: Store producer error"),
                             }
                         }
+
+                        loop {
+                            match producer2.produce().await {
+                                Ok(Either::Left(entry)) => {
+                                    set2.insert(entry);
+                                }
+                                Ok(Either::Right(_)) => break,
+                                Err(_) => panic!("QueryArea: Store producer error"),
+                            }
+                        }
+
+                        assert_eq!(set1, set2)
                     },
                     (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
