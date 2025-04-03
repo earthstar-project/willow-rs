@@ -33,6 +33,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     S: Ord + Clone,
 {
+    pub fn new(namespace: N, capacity: usize) -> Self {
+        Self {
+            namespace,
+            subspaces: RefCell::new(BTreeMap::new()),
+            event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
+        }
+    }
+
     fn get_or_create_subspace_store<'s>(
         &'s self,
         subspace_id: &S,
@@ -538,7 +546,7 @@ where
     }
 }
 
-#[derive(Arbitrary)]
+#[derive(Arbitrary, Debug)]
 pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,

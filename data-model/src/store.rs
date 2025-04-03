@@ -9,7 +9,7 @@ use std::{
 
 use either::Either::{self, Left, Right};
 use slab::Slab;
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::{BulkProducer, Producer};
 use wb_async_utils::TakeCell;
 
 use crate::{entry::AuthorisedEntry, grouping::Area, Entry, LengthyAuthorisedEntry, Path};
