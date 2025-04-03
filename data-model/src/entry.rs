@@ -285,6 +285,7 @@ impl std::error::Error for UnauthorisedWriteError {}
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
     Entry<MCL, MCC, MPL, N, S, PD>,
     AT,

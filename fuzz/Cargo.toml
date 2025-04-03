@@ -492,3 +492,10 @@ path = "fuzz_targets/enc_sledentrykey_abs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "store"
+path = "fuzz_targets/store.rs"
+test = false
+doc = false
+bench = false

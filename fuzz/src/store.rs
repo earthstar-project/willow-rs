@@ -6,6 +6,7 @@ use std::{
     rc::Rc,
 };
 
+use arbitrary::Arbitrary;
 use either::Either::{self, Left, Right};
 use ufotofu::{
     consumer::IntoVec,
@@ -537,6 +538,7 @@ where
     }
 }
 
+#[derive(Arbitrary)]
 pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,

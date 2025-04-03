@@ -14,6 +14,9 @@ use wb_async_utils::TakeCell;
 
 use crate::{entry::AuthorisedEntry, grouping::Area, Entry, LengthyAuthorisedEntry, Path};
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 /// Returned when an entry could be ingested into a [`Store`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EntryIngestionSuccess<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
@@ -248,7 +251,8 @@ pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, 
 /// Describes which entries to ignore during a query.
 ///
 /// The `Default::default()` ignores nothing.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy, Default)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct QueryIgnoreParams {
     /// Omit entries with locally incomplete corresponding payloads.
     pub ignore_incomplete_payloads: bool,
@@ -309,17 +313,9 @@ impl QueryIgnoreParams {
     }
 }
 
-impl Default for QueryIgnoreParams {
-    fn default() -> Self {
-        Self {
-            ignore_incomplete_payloads: false,
-            ignore_empty_payloads: false,
-        }
-    }
-}
-
 /// The origin of an entry ingestion event.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub enum EntryOrigin {
     /// The entry was probably created on this machine.
     Local,
