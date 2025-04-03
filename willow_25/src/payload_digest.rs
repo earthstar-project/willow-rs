@@ -1,6 +1,9 @@
 use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use willow_data_model::PayloadDigest;
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadDigest25(blake3::Hash);
 
@@ -73,5 +76,14 @@ impl Decodable for PayloadDigest25 {
         producer.bulk_overwrite_full_slice(&mut out_slice).await?;
 
         Ok(Self(blake3::Hash::from_bytes(out_slice)))
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for PayloadDigest25 {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let bytes: [u8; blake3::OUT_LEN] = Arbitrary::arbitrary(u)?;
+
+        Ok(Self(blake3::Hash::from_bytes(bytes)))
     }
 }

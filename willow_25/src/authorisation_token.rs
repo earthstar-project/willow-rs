@@ -1,7 +1,7 @@
 use meadowcap::McAuthorisationToken;
 use willow_data_model::AuthorisationToken;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AuthorisationToken25(
     McAuthorisationToken<
         1024,

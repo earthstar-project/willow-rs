@@ -1,6 +1,9 @@
 use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
 
-#[derive(Clone)]
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Signature25(ed25519_dalek::Signature);
 
 impl Signature25 {
@@ -51,5 +54,14 @@ impl Decodable for Signature25 {
         let sig = ed25519_dalek::Signature::from_bytes(&slice);
 
         Ok(Self(sig))
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for Signature25 {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let bytes: [u8; 64] = Arbitrary::arbitrary(u)?;
+
+        Ok(Self(ed25519_dalek::Signature::from_bytes(&bytes)))
     }
 }

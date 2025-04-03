@@ -8,7 +8,11 @@ use ufotofu_codec::{
 };
 use willow_data_model::SubspaceId;
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct SubspaceId25([u8; PUBLIC_KEY_LENGTH]);
 
 /// A Willowʼ25 NamespaceId, compatible with Meadowcap using the ed25519 signature scheme.

@@ -8,6 +8,9 @@ use ufotofu_codec::{
 };
 use willow_data_model::NamespaceId;
 
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NamespaceId25(VerifyingKey);
 
@@ -125,6 +128,19 @@ impl DecodableCanonic for NamespaceId25 {
         match VerifyingKey::from_bytes(&slice) {
             Ok(key) => Ok(Self(key)),
             Err(_) => Err(DecodeError::Other(Blame::TheirFault)),
+        }
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a> for NamespaceId25 {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_communal = Arbitrary::arbitrary(u)?;
+
+        if is_communal {
+            Ok(Self::new_communal().0)
+        } else {
+            Ok(Self::new_owned().0)
         }
     }
 }
