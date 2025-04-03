@@ -70,10 +70,10 @@ pub enum PayloadAppendSuccess {
 /// Returned when a payload fails to be appended into the [`Store`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadAppendError<PayloadSourceError, OE> {
+    /// No entry for the given subspace and path exists in this store.
+    NoSuchEntry,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
     WrongEntry,
-    /// The payload is already held in storage.
-    AlreadyHaveIt,
     /// The payload source produced more bytes than were expected for this payload.
     TooManyBytes,
     /// The completed payload's digest is not what was expected.
@@ -93,14 +93,17 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PayloadAppendError::NoSuchEntry => {
+                write!(
+                    f,
+                    "No entry for the given subspace and path exists in this store"
+                )
+            }
             PayloadAppendError::WrongEntry => {
                 write!(
                     f,
                     "The entry to whose payload to append to had an unexpected payload_digest."
                 )
-            }
-            PayloadAppendError::AlreadyHaveIt => {
-                write!(f, "The payload is already held in storage.")
             }
             PayloadAppendError::TooManyBytes => write!(
                 f,
@@ -150,6 +153,8 @@ impl<OE: Display + Error> Error for ForgetEntryError<OE> {}
 /// Returned when forgetting a payload fails.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum ForgetPayloadError<OE> {
+    /// No entry for the given subspace and path exists in this store.
+    NoSuchEntry,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
     WrongEntry,
     /// Something specific to this store implementation went wrong.
@@ -159,6 +164,12 @@ pub enum ForgetPayloadError<OE> {
 impl<OE: Display + Error> Display for ForgetPayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ForgetPayloadError::NoSuchEntry => {
+                write!(
+                    f,
+                    "No entry for the given subspace and path exists in this store"
+                )
+            }
             ForgetPayloadError::WrongEntry => {
                 write!(
                     f,
@@ -346,18 +357,18 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         >,
     >;
 
-    /// Attempts to append part of a payload for a given [`AuthorisedEntry`].
+    /// Attempts to append part of a payload for an entry at a given SubspaceId-Path-pair.
     ///
-    /// Will fail if:
+    /// Will report an error if:
     ///
-    /// - The payload digest of the entry at the given subspace_id and path does not have the supplied `expected_digest` (if one was supplied).
-    /// - The payload digest is not referred to by any of the store's entries.
-    /// - A complete payload with the same digest is already held in storage.
+    /// - There is no entry for the given SubspaceId-Path pair.
+    /// - The payload digest of the entry at the given subspace_id and path is not equal to the supplied `expected_digest` (*if* one was supplied).
     /// - The payload source produced more bytes than were expected for this payload.
+    /// - The payload source yielded an error.
     /// - The final payload's digest did not match the expected digest
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
-    /// This method **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. during [the Willow General Sync Protocol's payload transformation](https://willowprotocol.org/specs/sync/index.html#sync_payloads_transform)).
+    /// This method **does not** and **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. as part of a sync protocol).
     fn append_payload<Producer, PayloadSourceError>(
         &self,
         subspace_id: &S,

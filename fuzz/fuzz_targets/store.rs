@@ -54,4 +54,20 @@ fuzz_target!(|data: (
     pollster::block_on(async {
         check_store_equality(&mut control_store, &mut sled_store, &ops).await
     })
+
+    /*
+    let mut control_store2 = ControlStore::<
+        16,
+        16,
+        16,
+        FakeNamespaceId,
+        FakeSubspaceId,
+        FakePayloadDigest,
+        FakeAuthorisationToken,
+    >::new(namespace.clone(), 1024);
+
+    pollster::block_on(async {
+        check_store_equality(&mut control_store, &mut control_store2, &ops).await
+    })
+    */
 });

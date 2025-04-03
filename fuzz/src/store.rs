@@ -201,7 +201,7 @@ where
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
 
         match subspace_store.entries.get_mut(path) {
-            None => panic!("Tried to append a payload for a non-existant entry."),
+            None => return Err(PayloadAppendError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -330,7 +330,7 @@ where
     ) -> Result<(), ForgetPayloadError<Self::Error>> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get_mut(path) {
-            None => panic!("Tried to forget the payload of an entry we do not have."),
+            None => return Err(ForgetPayloadError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -670,7 +670,7 @@ pub async fn check_store_equality<
 
                 match (res_1, res_2) {
                     (Ok(success_1), Ok(success_2)) => assert_eq!(success_1, success_2),
-                    (Err(PayloadAppendError::AlreadyHaveIt), Err(PayloadAppendError::AlreadyHaveIt)) |(Err(PayloadAppendError::DigestMismatch), Err(PayloadAppendError::DigestMismatch)) | (Err(PayloadAppendError::TooManyBytes), Err(PayloadAppendError::TooManyBytes)) | (Err(PayloadAppendError::WrongEntry), Err(PayloadAppendError::WrongEntry)) => continue,
+                    (Err(PayloadAppendError::NoSuchEntry), Err(PayloadAppendError::NoSuchEntry)) |(Err(PayloadAppendError::DigestMismatch), Err(PayloadAppendError::DigestMismatch)) | (Err(PayloadAppendError::TooManyBytes), Err(PayloadAppendError::TooManyBytes)) | (Err(PayloadAppendError::WrongEntry), Err(PayloadAppendError::WrongEntry)) => continue,
                     (Err(PayloadAppendError::OperationError(_)), Err(PayloadAppendError::OperationError(_))) => panic!("AppendPayload: Producer failed, which indicates the two stores failed in different ways at the same time."),
                     (res1, res2) => panic!("AppendPayload: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
                 }
@@ -726,7 +726,7 @@ pub async fn check_store_equality<
                         .await,
                 ) {
                     (Ok(()), Ok(())) => {}
-                    (Err(ForgetPayloadError::WrongEntry), Err(ForgetPayloadError::WrongEntry)) => continue,
+                    (Err(ForgetPayloadError::WrongEntry), Err(ForgetPayloadError::WrongEntry)) | (Err(ForgetPayloadError::NoSuchEntry), Err(ForgetPayloadError::NoSuchEntry)) => continue,
                     (Err(ForgetPayloadError::OperationError(_)), Err(ForgetPayloadError::OperationError(_))) => {
                         panic!("ForgetPayload: Two stores happened to fail at the same time in different ways.")
                     }

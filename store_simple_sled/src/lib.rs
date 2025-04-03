@@ -574,7 +574,7 @@ where
                     Ok(PayloadAppendSuccess::Appended)
                 }
             }
-            None => panic!("Tried to append a payload to an entry we do not have in the store."),
+            None => Err(PayloadAppendError::NoSuchEntry),
         }
     }
 
@@ -771,7 +771,7 @@ where
 
                 Ok(())
             }
-            (None, Some(_)) => panic!("Storing a payload for which we have no entry, that is bad!"),
+            (None, Some(_)) => Err(ForgetPayloadError::NoSuchEntry),
             _ => Ok(()),
         }
     }
