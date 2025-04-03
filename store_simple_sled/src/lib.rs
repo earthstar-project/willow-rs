@@ -1246,19 +1246,17 @@ impl Producer for PayloadProducer {
                 Ok(Either::Left(byte))
             },
             std::cmp::Ordering::Equal =>  Ok(Either::Right(())),
-            std::cmp::Ordering::Greater => panic!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool."),
+            std::cmp::Ordering::Greater => unreachable!("You tried to produce more bytes than you could, but you claimed infallibity. You traitor. You fool."),
         }
     }
 }
 
-// TODO: Actually implement this!
 impl BufferedProducer for PayloadProducer {
     async fn slurp(&mut self) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 }
 
-// TODO: Actually implement this!
 impl BulkProducer for PayloadProducer {
     async fn expose_items<'a>(
         &'a mut self,
@@ -1266,11 +1264,18 @@ impl BulkProducer for PayloadProducer {
     where
         Self::Item: 'a,
     {
-        todo!()
+        let slice = &self.ivec[self.produced..];
+        if slice.is_empty() {
+            Ok(Either::Right(()))
+        } else {
+            Ok(Either::Left(slice))
+        }
     }
 
     async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
-        todo!()
+        self.produced += amount;
+
+        Ok(())
     }
 }
 
