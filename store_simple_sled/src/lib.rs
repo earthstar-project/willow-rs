@@ -256,10 +256,6 @@ where
             )
         }
 
-        if !token.is_authorised_write(&entry) {
-            return Err(EntryIngestionError::NotAuthorised);
-        }
-
         // Check if we have any newer entries with this prefix.
         match self
             .is_prefixed_by_newer(entry.subspace_id(), entry.path(), entry.timestamp())
@@ -771,7 +767,8 @@ where
 
                 Ok(())
             }
-            (None, Some(_)) => Err(ForgetPayloadError::NoSuchEntry),
+            (None, None) => Err(ForgetPayloadError::NoSuchEntry),
+            (None, Some(_)) => panic!("StoreSimpleSled is storing a payload with no corresponding entry, which indicates an implementation error!"),
             _ => Ok(()),
         }
     }

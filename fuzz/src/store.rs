@@ -644,7 +644,7 @@ pub async fn check_store_equality<
                 } else {
                     match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store2.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
                         (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
-                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented)) | (Err(EntryIngestionError::NotAuthorised), Err(EntryIngestionError::NotAuthorised))  => continue,
+                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented))   => continue,
                         (Err(EntryIngestionError::OperationsError(_)), Err(EntryIngestionError::OperationsError(_))) => {
                             panic!("AppendPayload: Producer failed, which indicates the two stores failed in different ways at the same time.")
                         }

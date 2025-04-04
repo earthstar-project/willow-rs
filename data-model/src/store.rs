@@ -36,8 +36,6 @@ pub enum EntryIngestionSuccess<const MCL: usize, const MCC: usize, const MPL: us
 pub enum EntryIngestionError<OE> {
     /// The ingestion would have triggered prefix pruning when that was not desired.
     PruningPrevented,
-    /// The entry's authorisation token is invalid.
-    NotAuthorised,
     /// Something specific to this store implementation went wrong.
     OperationsError(OE),
 }
@@ -47,9 +45,6 @@ impl<OE: Display + Error> Display for EntryIngestionError<OE> {
         match self {
             EntryIngestionError::PruningPrevented => {
                 write!(f, "Entry ingestion would have triggered undesired pruning.")
-            }
-            EntryIngestionError::NotAuthorised => {
-                write!(f, "The entry had an invalid authorisation token")
             }
             EntryIngestionError::OperationsError(err) => Display::fmt(err, f),
         }
