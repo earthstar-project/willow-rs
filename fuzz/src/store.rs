@@ -93,20 +93,12 @@ impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        if entry.timestamp() < self.timestamp {
-            return true;
-        } else if entry.timestamp() == self.timestamp
-            && entry.payload_digest() < &self.payload_digest
-        {
-            return true;
-        } else if entry.timestamp() == self.timestamp
-            && entry.payload_digest() < &self.payload_digest
-            && entry.payload_length() < self.payload_length
-        {
-            return true;
-        } else {
-            return false;
-        }
+        entry.timestamp() < self.timestamp
+            || (entry.timestamp() == self.timestamp
+                && *entry.payload_digest() < self.payload_digest)
+            || (entry.timestamp() == self.timestamp
+                && *entry.payload_digest() == self.payload_digest
+                && entry.payload_length() < self.payload_length)
     }
 }
 
@@ -183,6 +175,17 @@ where
             for path_to_prune in prune_these {
                 subspace_store.deref_mut().entries.remove(&path_to_prune);
             }
+
+            subspace_store.deref_mut().entries.insert(
+                authorised_entry.entry().path().clone(),
+                ControlEntry {
+                    authorisation_token: authorised_entry.token().to_owned(),
+                    payload: Vec::new(),
+                    payload_digest: authorised_entry.entry().payload_digest().to_owned(),
+                    payload_length: authorised_entry.entry().payload_length(),
+                    timestamp: authorised_entry.entry().timestamp(),
+                },
+            );
 
             return Ok(EntryIngestionSuccess::Success);
         }
@@ -291,7 +294,9 @@ where
 
                 for path in subspace_store.entries.keys() {
                     if let Some(entry) = subspace_store.entries.get(path) {
-                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        if path.is_prefixed_by(area.path()) {
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        }
                     }
                 }
             }
@@ -299,7 +304,9 @@ where
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
                         if let Some(entry) = subspace_store.entries.get(path) {
-                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                            if path.is_prefixed_by(area.path()) {
+                                candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                            }
                         }
                     }
                 }
@@ -633,6 +640,8 @@ pub async fn check_store_equality<
     assert_eq!(namespace_id, store2.namespace_id());
 
     for op in ops.iter() {
+        // println!("op {:?}", op);
+
         match op {
             StoreOp::IngestEntry {
                 authorised_entry,
@@ -807,7 +816,7 @@ pub async fn check_store_equality<
                     store1.query_area(area, ignore.to_owned()).await,
                     store2.query_area(area, ignore.to_owned()).await,
                 ) {
-                    (Ok(mut producer1), Ok(mut producer2)) => loop {
+                    (Ok(mut producer1), Ok(mut producer2)) => {
                         let mut set1 =
                             HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
                         let mut set2 =
@@ -834,7 +843,7 @@ pub async fn check_store_equality<
                         }
 
                         assert_eq!(set1, set2)
-                    },
+                    }
                     (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
             }

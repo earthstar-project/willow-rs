@@ -142,9 +142,7 @@ where
     /// Return whether this store contains entries with paths that are prefixes of the given path and newer than the given timestamp
     async fn is_prefixed_by_newer(
         &self,
-        subspace: &S,
-        path: &Path<MCL, MCC, MPL>,
-        timestamp: u64,
+        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, SimpleStoreSledError>
     where
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
@@ -159,26 +157,28 @@ where
 
         let tree = self.entry_tree()?;
 
-        let prefix = subspace.sync_encode_into_vec();
+        let prefix = entry.subspace_id().sync_encode_into_vec();
 
         for (key, value) in tree.scan_prefix(&prefix).flatten() {
+            // println!("key: {:?}", key);
+
             let (other_subspace, other_path, other_timestamp) =
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+            let (payload_length, payload_digest, authorisation_token, _local_length) =
+                decode_entry_values(&value).await;
 
-            if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
-                let (payload_length, payload_digest, authorisation_token, _local_length) =
-                    decode_entry_values(&value).await;
+            let other_entry = Entry::new(
+                self.namespace_id.clone(),
+                other_subspace,
+                other_path,
+                other_timestamp,
+                payload_length,
+                payload_digest,
+            );
 
-                let entry = Entry::new(
-                    self.namespace_id.clone(),
-                    other_subspace,
-                    other_path,
-                    timestamp,
-                    payload_length,
-                    payload_digest,
-                );
-
-                let authed = unsafe { AuthorisedEntry::new_unchecked(entry, authorisation_token) };
+            if entry.path().is_prefixed_by(other_entry.path()) && other_entry.is_newer_than(entry) {
+                let authed =
+                    unsafe { AuthorisedEntry::new_unchecked(other_entry, authorisation_token) };
 
                 return Ok(Some(authed));
             }
@@ -204,6 +204,13 @@ where
         }
 
         Ok(None)
+    }
+
+    /// Clear all data from the internal `sled::Db`
+    pub fn clear(&self) -> Result<(), SimpleStoreSledError> {
+        self.db.clear()?;
+        self.flush()?;
+        Ok(())
     }
 }
 
@@ -257,10 +264,7 @@ where
         }
 
         // Check if we have any newer entries with this prefix.
-        match self
-            .is_prefixed_by_newer(entry.subspace_id(), entry.path(), entry.timestamp())
-            .await
-        {
+        match self.is_prefixed_by_newer(&entry).await {
             Ok(Some(newer)) => {
                 return Ok(EntryIngestionSuccess::Obsolete {
                     obsolete: unsafe { AuthorisedEntry::new_unchecked(entry, token) },
@@ -656,7 +660,7 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (length, _digest, _token, local_length) =
+            let (_length, _digest, _token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
@@ -701,7 +705,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.map(|a| a.clone()));
+            .forgot_area(area.clone(), protected.cloned());
 
         Ok(forgotten_count)
     }
@@ -843,7 +847,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.map(|a| a.clone()));
+            .forgot_area(area.clone(), protected.cloned());
 
         Ok(forgotten_count)
     }
@@ -977,9 +981,7 @@ async fn encode_subspace_path_key<
     // Unwrap because IntoVec should not fail.
     subspace.encode(&mut consumer).await.unwrap();
 
-    let component_count = path.component_count();
-
-    for (i, component) in path.components().enumerate() {
+    for component in path.components() {
         for byte in component.as_ref() {
             if *byte == 0 {
                 // Unwrap because IntoVec should not fail.
@@ -990,13 +992,13 @@ async fn encode_subspace_path_key<
             }
         }
 
-        if i < component_count - 1 || !with_path_end {
-            // Unwrap because IntoVec should not fail.
-            consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
-        } else {
-            // Unwrap because IntoVec should not fail.
-            consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
-        }
+        // Unwrap because IntoVec should not fail.
+        consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
+    }
+
+    // Unwrap because IntoVec should not fail.
+    if with_path_end {
+        consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
     }
 
     // No timestamp here!
@@ -1019,9 +1021,7 @@ async fn encode_entry_key<
     // Unwrap because IntoVec should not fail.
     subspace.encode(&mut consumer).await.unwrap();
 
-    let component_count = path.component_count();
-
-    for (i, component) in path.components().enumerate() {
+    for component in path.components() {
         for byte in component.as_ref() {
             if *byte == 0 {
                 // Unwrap because IntoVec should not fail.
@@ -1032,14 +1032,12 @@ async fn encode_entry_key<
             }
         }
 
-        if i < component_count - 1 {
-            // Unwrap because IntoVec should not fail.
-            consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
-        } else {
-            // Unwrap because IntoVec should not fail.
-            consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
-        }
+        // Unwrap because IntoVec should not fail.
+        consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
     }
+
+    // Unwrap because IntoVec should not fail.
+    consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
 
     // Unwrap because IntoVec should not fail.
     U64BE(timestamp).encode(&mut consumer).await.unwrap();
@@ -1064,32 +1062,24 @@ where
 
     let mut components_vecs: Vec<Vec<u8>> = Vec::new();
 
-    loop {
-        match component_bytes(&mut producer).await {
-            Either::Left(bytes) => {
-                components_vecs.push(bytes);
-            }
-            Either::Right(fin) => {
-                // It's the last component.
-                components_vecs.push(fin);
-                break;
-            }
-        }
+    while let Some(bytes) = component_bytes(&mut producer).await {
+        components_vecs.push(bytes);
     }
 
     let mut components = components_vecs
         .iter()
-        .map(|bytes| Component::new(bytes).expect("This should be fine! What could go wrong!"));
+        .map(|bytes| Component::new(bytes).expect("Component was unexpectedly longer than MCL."));
 
-    let path: Path<MCL, MCC, MPL> =
-        Path::new_from_iter(components_vecs.len(), &mut components).unwrap();
+    let total_len = components.clone().fold(0, |acc, comp| acc + comp.len());
+
+    let path: Path<MCL, MCC, MPL> = Path::new_from_iter(total_len, &mut components).unwrap();
 
     let timestamp = U64BE::decode(&mut producer).await.unwrap().0;
 
     (subspace, path, timestamp)
 }
 
-async fn component_bytes<P: Producer<Item = u8>>(producer: &mut P) -> Either<Vec<u8>, Vec<u8>>
+async fn component_bytes<P: Producer<Item = u8>>(producer: &mut P) -> Option<Vec<u8>>
 where
     P::Error: core::fmt::Debug,
     P::Final: core::fmt::Debug,
@@ -1098,25 +1088,35 @@ where
     let mut previous_was_zero = false;
 
     loop {
-        let byte = producer.produce_item().await.unwrap();
+        match producer.produce().await {
+            Ok(Either::Left(byte)) => {
+                if !previous_was_zero && byte == 0 {
+                    previous_was_zero = true
+                } else if previous_was_zero && byte == 2 {
+                    // Append a zero.
 
-        if byte == 0 {
-            previous_was_zero = true
-        } else if previous_was_zero && byte == 2 {
-            // Append a zero.
+                    vec.push(0);
+                    previous_was_zero = false;
+                } else if previous_was_zero && byte == 1 {
+                    // That's the end of this component..
+                    return Some(vec);
+                } else if previous_was_zero && byte == 0 {
+                    // That's the end of the path.
+                    return None;
+                } else {
+                    // Append to the component.
+                    vec.push(byte);
+                    previous_was_zero = false;
+                }
+            }
+            Ok(Either::Right(_)) => {
+                if previous_was_zero {
+                    panic!("Unterminated escaped key!")
+                }
 
-            vec.push(0);
-            previous_was_zero = false;
-        } else if previous_was_zero && byte == 1 {
-            // That's the end of the component. Yay.
-            return Either::Left(vec);
-        } else if previous_was_zero && byte == 0 {
-            // That's the end of the component, and this is the last one! Stop here.
-            return Either::Right(vec);
-        } else {
-            // Append to the component.
-            vec.push(0);
-            previous_was_zero = false;
+                return None;
+            }
+            Err(err) => panic!("Unexpected error: {:?}", err),
         }
     }
 }
