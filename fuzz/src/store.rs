@@ -454,7 +454,11 @@ where
                     }
                 }
 
-                Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
+                if entry.payload_length > 0 && !entry.payload.is_empty() {
+                    Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
+                } else {
+                    Ok(None)
+                }
             }
         }
     }
@@ -841,7 +845,7 @@ pub async fn check_store_equality<
                     // These are failing variants, but we don't use them because we can't print all of them
                     // (in particular, the bulk producers that could appear here don't have Debug on them)
                     (_, _) => panic!(
-                        "GetPayload: non-equivalent behaviour.\n\nStore 1",
+                        "GetPayload: non-equivalent behaviour.",
                     ),
                 }
             }
