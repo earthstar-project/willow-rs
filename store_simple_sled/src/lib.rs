@@ -771,9 +771,20 @@ where
 
                 Ok(())
             }
+            (Some((_entry_key, entry_value)), None) => {
+                if let Some(expected) = expected_digest {
+                    let (_length, digest, _auth_token, _local_length) =
+                    decode_entry_values::<PD, AT>(&entry_value).await;
+                   
+                    if expected != digest {
+                        return Err(ForgetPayloadError::WrongEntry);
+                    }
+                }
+                
+                Ok(())
+            },
             (None, None) => Err(ForgetPayloadError::NoSuchEntry),
             (None, Some(_)) => panic!("StoreSimpleSled is storing a payload with no corresponding entry, which indicates an implementation error!"),
-            _ => Ok(()),
         }
     }
 
