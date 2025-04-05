@@ -456,7 +456,7 @@ where
             Some(entry) => {
                 let available = entry.payload.len() as u64;
 
-                if (ignore.ignore_empty_payloads && available == 0)
+                if (ignore.ignore_empty_payloads && entry.payload_length == 0)
                     || (ignore.ignore_incomplete_payloads && available != entry.payload_length)
                 {
                     return Ok(None);
@@ -507,7 +507,7 @@ where
 
                         let available = entry.payload.len() as u64;
 
-                        if (ignore.ignore_empty_payloads && available == 0)
+                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
                             || (ignore.ignore_incomplete_payloads
                                 && available != entry.payload_length)
                         {
@@ -546,7 +546,7 @@ where
 
                             let available = entry.payload.len() as u64;
 
-                            if (ignore.ignore_empty_payloads && available == 0)
+                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
                                 || (ignore.ignore_incomplete_payloads
                                     && available != entry.payload_length)
                             {
