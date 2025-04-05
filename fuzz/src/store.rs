@@ -215,23 +215,38 @@ where
                 let mut current_length = entry.payload.len() as u64;
 
                 while current_length < max_length {
-                    match payload_source.expose_items().await {
-                        Err(err) => {
-                            return Err(PayloadAppendError::SourceError {
-                                source_error: err,
-                                total_length_now_available: current_length,
-                            });
+                    let result = payload_source.expose_items().await.map_err(|err| {
+                        PayloadAppendError::SourceError {
+                            source_error: err,
+                            total_length_now_available: current_length,
                         }
-                        Ok(Left(bytes)) => {
+                    })?;
+
+                    let produced_count = match result {
+                        Left(bytes) => {
                             current_length = current_length.saturating_add(bytes.len() as u64);
                             if current_length > max_length {
                                 break;
                             }
 
                             entry.payload.extend_from_slice(bytes);
+                            Some(bytes.len())
                         }
-                        Ok(Right(_fin)) => break,
-                    }
+                        Right(_fin) => None,
+                    };
+
+                    match produced_count {
+                        Some(count) => {
+                            payload_source
+                                .consider_produced(count)
+                                .await
+                                .map_err(|err| PayloadAppendError::SourceError {
+                                    source_error: err,
+                                    total_length_now_available: current_length,
+                                })?
+                        }
+                        None => break,
+                    };
                 }
 
                 if current_length > max_length {
