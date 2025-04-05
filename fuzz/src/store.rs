@@ -9,9 +9,8 @@ use std::{
 use arbitrary::Arbitrary;
 use either::Either::{self, Left, Right};
 use ufotofu::{
-    consumer::IntoVec,
     producer::{FromBoxedSlice, FromSlice},
-    BulkProducer, Consumer, Producer,
+    BulkProducer, Producer,
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
@@ -51,9 +50,9 @@ where
             let _ = subspaces.insert(subspace_id.clone(), ControlSubspaceStore::new());
         }
 
-        return RefMut::map(subspaces, |subspaces| {
+        RefMut::map(subspaces, |subspaces| {
             subspaces.get_mut(subspace_id).unwrap()
-        });
+        })
     }
 }
 
@@ -128,7 +127,7 @@ where
         }
 
         let mut subspace_store =
-            self.get_or_create_subspace_store(&authorised_entry.entry().subspace_id());
+            self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
 
         // Is the inserted entry redundant?
         for (path, entry) in subspace_store.deref().entries.iter() {
@@ -170,7 +169,7 @@ where
             .collect();
 
         if prevent_pruning && !prune_these.is_empty() {
-            return Err(EntryIngestionError::PruningPrevented);
+            Err(EntryIngestionError::PruningPrevented)
         } else {
             for path_to_prune in prune_these {
                 subspace_store.deref_mut().entries.remove(&path_to_prune);
@@ -187,7 +186,7 @@ where
                 },
             );
 
-            return Ok(EntryIngestionSuccess::Success);
+            Ok(EntryIngestionSuccess::Success)
         }
     }
 
@@ -204,7 +203,7 @@ where
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
 
         match subspace_store.entries.get_mut(path) {
-            None => return Err(PayloadAppendError::NoSuchEntry),
+            None => Err(PayloadAppendError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -264,7 +263,7 @@ where
         let found = subspace_store.entries.get(path);
 
         match found {
-            None => return Ok(()),
+            None => Ok(()),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -314,7 +313,7 @@ where
         }
 
         for candidate in candidates {
-            if let Some(ref prot) = protected {
+            if let Some(prot) = protected {
                 if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
                     continue;
                 }
@@ -382,7 +381,7 @@ where
         }
 
         for candidate in candidates {
-            if let Some(ref prot) = protected {
+            if let Some(prot) = protected {
                 if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
                     continue;
                 }
@@ -443,7 +442,7 @@ where
                     return Ok(None);
                 }
 
-                return Ok(Some(LengthyAuthorisedEntry::new(
+                Ok(Some(LengthyAuthorisedEntry::new(
                     AuthorisedEntry::new(
                         Entry::new(
                             self.namespace.clone(),
@@ -457,7 +456,7 @@ where
                     )
                     .unwrap(),
                     available,
-                )));
+                )))
             }
         }
     }
@@ -477,6 +476,10 @@ where
                 let subspace_store = self.get_or_create_subspace_store(subspace_id);
 
                 for path in subspace_store.entries.keys() {
+                    if !path.is_prefixed_by(area.path()) {
+                        continue;
+                    }
+
                     if let Some(entry) = subspace_store.entries.get(path) {
                         let available = entry.payload.len() as u64;
 
@@ -508,6 +511,10 @@ where
             AreaSubspace::Any => {
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
+                        if !path.is_prefixed_by(area.path()) {
+                            continue;
+                        }
+
                         if let Some(entry) = subspace_store.entries.get(path) {
                             let available = entry.payload.len() as u64;
 
