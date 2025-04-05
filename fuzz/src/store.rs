@@ -293,6 +293,10 @@ where
 
                 for path in subspace_store.entries.keys() {
                     if let Some(entry) = subspace_store.entries.get(path) {
+                        if !area.times().includes(&entry.timestamp) {
+                            continue;
+                        }
+
                         if path.is_prefixed_by(area.path()) {
                             candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                         }
@@ -303,6 +307,10 @@ where
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
                         if let Some(entry) = subspace_store.entries.get(path) {
+                            if !area.times().includes(&entry.timestamp) {
+                                continue;
+                            }
+
                             if path.is_prefixed_by(area.path()) {
                                 candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                             }
@@ -365,7 +373,13 @@ where
 
                 for path in subspace_store.entries.keys() {
                     if let Some(entry) = subspace_store.entries.get(path) {
-                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        if !area.times().includes(&entry.timestamp) {
+                            continue;
+                        }
+
+                        if path.is_prefixed_by(area.path()) {
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                        }
                     }
                 }
             }
@@ -373,7 +387,13 @@ where
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
                         if let Some(entry) = subspace_store.entries.get(path) {
-                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                            if !area.times().includes(&entry.timestamp) {
+                                continue;
+                            }
+
+                            if path.is_prefixed_by(area.path()) {
+                                candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
+                            }
                         }
                     }
                 }
@@ -481,6 +501,10 @@ where
                     }
 
                     if let Some(entry) = subspace_store.entries.get(path) {
+                        if !area.times().includes(&entry.timestamp) {
+                            continue;
+                        }
+
                         let available = entry.payload.len() as u64;
 
                         if (ignore.ignore_empty_payloads && available == 0)
@@ -516,6 +540,10 @@ where
                         }
 
                         if let Some(entry) = subspace_store.entries.get(path) {
+                            if !area.times().includes(&entry.timestamp) {
+                                continue;
+                            }
+
                             let available = entry.payload.len() as u64;
 
                             if (ignore.ignore_empty_payloads && available == 0)
