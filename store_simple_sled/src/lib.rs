@@ -937,12 +937,12 @@ where
                 None => 0,
             };
 
-            let payload_is_empty_string = local_length == 0;
-            let is_incomplete = (payload_length as u64) < length;
+            let payload_is_empty_string = length == 0;
+            let is_incomplete = local_length < length;
 
             if (ignore.ignore_incomplete_payloads && is_incomplete)
                 || (ignore.ignore_empty_payloads && payload_is_empty_string)
-            {
+            {   
                 return Ok(None);
             } else {
                 return Ok(Some(LengthyAuthorisedEntry::new(
