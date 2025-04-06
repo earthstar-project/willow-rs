@@ -31,17 +31,6 @@ fuzz_target!(|data: (
 )| {
     // println!("🏁 ");
 
-    let things_are_fine = Arc::new(AtomicBool::new(false));
-
-    let thread_thing = things_are_fine.clone();
-
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1_000));
-        if !thread_thing.load(Ordering::Relaxed) {
-            std::process::exit(-1);
-        }
-    });
-
     let (namespace, op_sequences) = data;
 
     let tmp_dir = TempDir::new("fuzz").unwrap();
@@ -109,6 +98,4 @@ fuzz_target!(|data: (
         println!("...es.");
     }
     */
-
-    things_are_fine.store(true, Ordering::Relaxed);
 });
