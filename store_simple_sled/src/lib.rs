@@ -876,25 +876,42 @@ where
         Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
+        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
         let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
+        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
 
-        if let Some((_key, value)) = maybe_payload {
-            // Create a producer!
-            let (_length, digest, _token, _local_length) =
-                decode_entry_values::<PD, AT>(&value).await;
-
-            if let Some(expected) = expected_digest {
-                if expected != digest {
-                    return Err(PayloadError::WrongEntry);
+        match (maybe_entry, maybe_payload) {
+            (Some((_entry_key, entry_value)), Some((_payload_key, payload_value))) => {
+                let (_length, digest, _token, _local_length) =
+                decode_entry_values::<PD, AT>(&entry_value).await;
+                
+                if let Some(expected) = expected_digest {
+                    if expected != digest {
+                        return Err(PayloadError::WrongEntry);
+                    }
                 }
-            }
-
-            Ok(Some(PayloadProducer::new(value)))
-        } else {
-            Ok(None)
+                
+                Ok(Some(PayloadProducer::new(payload_value)))
+            },
+            (Some((_entry_key, entry_value)), None) => {
+                // check expected digest.
+                let (_length, digest, _token, _local_length) =
+                decode_entry_values::<PD, AT>(&entry_value).await;
+                
+                if let Some(expected) = expected_digest {
+                    if expected != digest {
+                        return Err(PayloadError::WrongEntry);
+                    }
+                }
+                
+                Ok(None)
+                
+            },
+            (None, None) => Ok(None),
+            (None, Some(_)) => panic!("Holding a payload for which there is no corresponding entry, this is bad!"),
         }
     }
 
