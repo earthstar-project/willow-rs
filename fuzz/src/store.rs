@@ -253,19 +253,19 @@ where
                     return Err(PayloadAppendError::TooManyBytes);
                 }
 
-                if current_length > max_length {
-                    return Err(PayloadAppendError::TooManyBytes);
-                } else if current_length == max_length {
-                    let mut hasher = PD::hasher();
-                    PD::write(&mut hasher, &entry.payload);
+                match current_length.cmp(&max_length) {
+                    std::cmp::Ordering::Greater => Err(PayloadAppendError::TooManyBytes),
+                    std::cmp::Ordering::Equal => {
+                        let mut hasher = PD::hasher();
+                        PD::write(&mut hasher, &entry.payload);
 
-                    if PD::finish(&hasher) != entry.payload_digest {
-                        return Err(PayloadAppendError::DigestMismatch);
-                    } else {
-                        return Ok(PayloadAppendSuccess::Completed);
+                        if PD::finish(&hasher) != entry.payload_digest {
+                            Err(PayloadAppendError::DigestMismatch)
+                        } else {
+                            Ok(PayloadAppendSuccess::Completed)
+                        }
                     }
-                } else {
-                    return Ok(PayloadAppendSuccess::Appended);
+                    std::cmp::Ordering::Less => Ok(PayloadAppendSuccess::Appended),
                 }
             }
         }
