@@ -2,12 +2,15 @@ use signature::Signer;
 use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::grouping::Area;
+use willow_data_model::grouping::{arbitrary_included_area, Area};
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
     McPublicUserKey,
 };
+
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
 
 /// Returned when [`is_communal`](https://willowprotocol.org/specs/meadowcap/index.html#is_communal) unexpectedly mapped a given [`namespace`](https://willowprotocol.org/specs/data-model/index.html#namespace) to `false`.
 #[derive(Debug)]
@@ -373,28 +376,43 @@ where
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 #[cfg(feature = "dev")]
-impl<
-        'a,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        UserPublicKey,
-        UserSignature,
-    > Arbitrary<'a>
-    for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, NamespacePublicKey> Arbitrary<'a>
+    for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, SillyPublicKey, SillySig>
 where
     NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a>,
-    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
-        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
+        let mut prev_area = Area::new_subspace(user_key.clone());
+
         match Self::new(namespace_key, user_key, access_mode) {
-            Ok(cap) => Ok(cap),
+            Ok(cap) => {
+                let mut cap_with_delegations = cap.clone();
+                let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
+
+                let mut last_receiver = cap.receiver().clone();
+
+                for delegee in delegees {
+                    let area = arbitrary_included_area(&prev_area, u)?;
+
+                    prev_area = area;
+
+                    cap_with_delegations = cap_with_delegations
+                        .delegate(
+                            &last_receiver.corresponding_secret_key(),
+                            &delegee,
+                            &prev_area,
+                        )
+                        .map_err(|_| ArbitraryError::IncorrectFormat)?;
+
+                    last_receiver = delegee;
+                }
+
+                Ok(cap_with_delegations)
+            }
             Err(_) => Err(ArbitraryError::IncorrectFormat),
         }
     }

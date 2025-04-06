@@ -77,6 +77,11 @@ where
 }
 
 #[cfg(feature = "dev")]
+mod silly_sigs;
+#[cfg(feature = "dev")]
+pub use silly_sigs::*;
+
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
 #[cfg(feature = "dev")]
@@ -239,3 +244,6 @@ pub use mc_subspace_capability::*;
 
 mod parameters;
 pub use parameters::*;
+
+mod private_interest_intersection;
+pub use private_interest_intersection::*;

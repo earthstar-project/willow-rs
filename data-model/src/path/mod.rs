@@ -22,6 +22,7 @@ mod component;
 pub use component::*;
 
 mod codec; // Nothing to import, the file only provides trait implementations.
+pub use codec::{decode_path_extends_path, encode_path_extends_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// An error arising from trying to construct a invalid [`Path`] from valid components.
@@ -385,6 +386,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
     pub fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
+    }
+
+    /// Tests whether this path is _related_ to the given path, that is, whether either one is a prefix of the other.
+    pub fn is_related(&self, other: &Self) -> bool {
+        self.is_prefix_of(other) || self.is_prefixed_by(other)
     }
 
     /// Returns the longest common prefix of this path and the given path.

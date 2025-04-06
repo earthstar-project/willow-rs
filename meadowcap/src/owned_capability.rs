@@ -3,7 +3,7 @@ use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    grouping::{Area, AreaSubspace},
+    grouping::{arbitrary_included_area, Area, AreaSubspace},
     Path, SubspaceId,
 };
 
@@ -11,6 +11,9 @@ use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
     McPublicUserKey,
 };
+
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
 
 /// Returned when an attempt to create a new owned capability failed.
 #[derive(Debug)]
@@ -548,37 +551,15 @@ where
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
 #[cfg(feature = "dev")]
-impl<
-        'a,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    > Arbitrary<'a>
-    for OwnedCapability<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    >
-where
-    NamespacePublicKey: McNamespacePublicKey + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Arbitrary<'a>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for OwnedCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
+        let namespace_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
 
-        let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
+        let initial_authorisation: SillySig = Arbitrary::arbitrary(u)?;
 
-        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
         let init_auth = OwnedInitialAuthorisationMsg {
@@ -592,12 +573,36 @@ where
             .verify(&message, &initial_authorisation)
             .map_err(|_| ArbitraryError::IncorrectFormat)?;
 
-        Ok(Self {
+        let cap = Self {
             access_mode,
             initial_authorisation,
             namespace_key,
             user_key,
             delegations: Vec::new(),
-        })
+        };
+
+        let mut cap_with_delegations = cap.clone();
+        let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
+
+        let mut last_receiver = cap.receiver().clone();
+
+        let mut prev_area = Area::new_full();
+
+        for delegee in delegees {
+            let area = arbitrary_included_area(&prev_area, u)?;
+
+            prev_area = area;
+
+            cap_with_delegations = cap_with_delegations
+                .delegate(
+                    &last_receiver.corresponding_secret_key(),
+                    &delegee,
+                    &prev_area,
+                )
+                .map_err(|_| ArbitraryError::IncorrectFormat)?;
+            last_receiver = delegee;
+        }
+
+        Ok(cap_with_delegations)
     }
 }

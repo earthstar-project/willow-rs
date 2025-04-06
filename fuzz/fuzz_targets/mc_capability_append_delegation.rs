@@ -1,43 +1,25 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{Delegation, InvalidDelegationError, McCapability};
-use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use meadowcap::{Delegation, InvalidDelegationError, McCapability, SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
     Delegation<16, 16, 16, SillyPublicKey, SillySig>,
     McCapability<16, 16, 16, SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-    Vec<SillyPublicKey>
 )| {
-    let (delegation, mc_cap, delegees) = data;
-
-    let mut mut_cap = mc_cap.clone();
-
-    let mut last_receiver = mut_cap.receiver().clone();
-    let granted_area = mut_cap.granted_area();
-
-    for delegee in delegees {
-        mut_cap = mut_cap
-            .delegate(
-                &last_receiver.corresponding_secret_key(),
-                &delegee,
-                &granted_area,
-            )
-            .unwrap();
-        last_receiver = delegee;
-    }
+    let (delegation, mut mc_cap) = data;
 
     let claimed_area = delegation.area().clone();
     let delegation_user = delegation.user().clone();
     let delegation_sig = delegation.signature().clone();
 
-    let granted_area_includes_delegation = mut_cap.granted_area().includes_area(delegation.area());
+    let granted_area_includes_delegation = mc_cap.granted_area().includes_area(delegation.area());
 
-    let actual_receiver_secret = mut_cap.receiver().corresponding_secret_key();
+    let actual_receiver_secret = mc_cap.receiver().corresponding_secret_key();
 
-    let cap_before_delegation = mut_cap.clone();
+    let cap_before_delegation = mc_cap.clone();
 
-    match mut_cap.append_existing_delegation(delegation) {
+    match mc_cap.append_existing_delegation(delegation) {
         Ok(_) => {
             assert!(granted_area_includes_delegation);
 
@@ -50,7 +32,7 @@ fuzz_target!(|data: (
 
             match expected_cap {
                 Ok(cap) => {
-                    assert_eq!(cap, mut_cap);
+                    assert_eq!(cap, mc_cap);
                 }
                 Err(_) => {
                     panic!("The delegation should not have been possible")
@@ -70,12 +52,12 @@ fuzz_target!(|data: (
                 claimed_receiver,
                 signature: _,
             } => {
-                assert_eq!(&expected_signatory, mut_cap.receiver());
+                assert_eq!(&expected_signatory, mc_cap.receiver());
                 assert_eq!(delegation_user, claimed_receiver);
 
                 // Because there is only one user who can delegate a given capability, we know what it should look like given the same new_area and new_user.
                 let expected_cap =
-                    mut_cap.delegate(&actual_receiver_secret, &delegation_user, &claimed_area);
+                    mc_cap.delegate(&actual_receiver_secret, &delegation_user, &claimed_area);
 
                 match expected_cap {
                     Ok(cap) => {

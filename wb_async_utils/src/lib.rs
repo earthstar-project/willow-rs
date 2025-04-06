@@ -19,6 +19,9 @@ pub mod shared_producer;
 #[cfg(feature = "ufotofu_utils")]
 pub mod shared_consumer;
 
+#[cfg(feature = "ufotofu_utils")]
+pub mod shelf;
+
 // This is safe if and only if the object pointed at by `reference` lives for at least `'longer`.
 // See https://doc.rust-lang.org/nightly/std/intrinsics/fn.transmute.html for more detail.
 pub(crate) unsafe fn extend_lifetime<'shorter, 'longer, T: ?Sized>(

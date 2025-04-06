@@ -1,3 +1,12 @@
+use crate::{
+    communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
+    mc_authorisation_token::McAuthorisationToken,
+    owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
+    McPublicUserKey,
+};
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
@@ -9,14 +18,6 @@ use ufotofu_codec::{
 };
 use willow_data_model::{grouping::Area, Entry, PayloadDigest};
 use willow_encoding::is_bitflagged;
-
-use crate::{
-    communal_capability::{CommunalCapability, NamespaceIsNotCommunalError},
-    mc_authorisation_token::McAuthorisationToken,
-    owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
-    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
-    McPublicUserKey,
-};
 
 /// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
 #[derive(Debug)]
@@ -37,7 +38,6 @@ impl std::error::Error for NotAWriteCapabilityError {}
 ///
 /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#Capability)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub enum McCapability<
     const MCL: usize,
     const MCC: usize,
@@ -596,5 +596,20 @@ where
         }
 
         1 + namespace_len + progenitor_len + init_auth_len + delegations_count_len + delegations_len
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for McCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_communal: bool = Arbitrary::arbitrary(u)?;
+
+        if is_communal {
+            Ok(Self::Communal(Arbitrary::arbitrary(u)?))
+        } else {
+            Ok(Self::Owned(Arbitrary::arbitrary(u)?))
+        }
     }
 }
