@@ -250,33 +250,6 @@ where
 }
 
 #[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
-    for Area<MCL, MCC, MPL, S>
-where
-    S: SubspaceId + Arbitrary<'a>,
-{
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let subspace: AreaSubspace<S> = Arbitrary::arbitrary(u)?;
-        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
-        let times: Range<u64> = Arbitrary::arbitrary(u)?;
-
-        Ok(Self {
-            subspace,
-            path,
-            times,
-        })
-    }
-
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        and_all(&[
-            AreaSubspace::<S>::size_hint(depth),
-            Path::<MCL, MCC, MPL>::size_hint(depth),
-            Range::<u64>::size_hint(depth),
-        ])
-    }
-}
-
-#[cfg(feature = "dev")]
 pub fn arbitrary_included_area<'a, const MCL: usize, const MCC: usize, const MPL: usize, S>(
     area: &Area<MCL, MCC, MPL, S>,
     u: &mut arbitrary::Unstructured<'a>,

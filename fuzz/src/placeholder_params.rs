@@ -1,7 +1,10 @@
 use std::hash::{DefaultHasher, Hasher};
 
 use arbitrary::Arbitrary;
-use meadowcap::{IsCommunal, McAuthorisationToken, McNamespacePublicKey, McPublicUserKey};
+use meadowcap::{
+    IsCommunal, McAuthorisationToken, McNamespacePublicKey, McPublicUserKey, SillyPublicKey,
+    SillySig,
+};
 use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
@@ -10,8 +13,6 @@ use ufotofu_codec::{
 };
 use ufotofu_codec_endian::U64BE;
 use willow_data_model::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId};
-
-use crate::silly_sigs::{SillyPublicKey, SillySig};
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
     bytes: &[u8; BYTES_LENGTH],

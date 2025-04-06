@@ -125,7 +125,7 @@ where
             _auth_token: PhantomData,
             event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         })
-    }
+    } 
 
     fn entry_tree(&self) -> SledResult<Tree> {
         self.db.open_tree(ENTRY_TREE_KEY)
