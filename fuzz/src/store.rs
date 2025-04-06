@@ -249,6 +249,10 @@ where
                     };
                 }
 
+                if let Ok(Left(_)) = payload_source.expose_items().await {
+                    return Err(PayloadAppendError::TooManyBytes);
+                }
+
                 if current_length > max_length {
                     return Err(PayloadAppendError::TooManyBytes);
                 } else if current_length == max_length {
