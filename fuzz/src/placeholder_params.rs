@@ -1,12 +1,17 @@
 use std::hash::{DefaultHasher, Hasher};
 
 use arbitrary::Arbitrary;
+use meadowcap::{IsCommunal, McAuthorisationToken, McNamespacePublicKey, McPublicUserKey};
+use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
+    EncodableSync,
 };
 use ufotofu_codec_endian::U64BE;
-use willow_data_model::{NamespaceId, PayloadDigest, SubspaceId};
+use willow_data_model::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId};
+
+use crate::silly_sigs::{SillyPublicKey, SillySig};
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
     bytes: &[u8; BYTES_LENGTH],
@@ -38,15 +43,15 @@ where
 
 // Namespace ID
 
-#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct FakeNamespaceId([u8; 16]);
+#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+pub struct FakeNamespaceId(SillyPublicKey);
 
 impl Encodable for FakeNamespaceId {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        encode_bytes(&self.0, consumer).await
+        self.0.encode(consumer).await
     }
 }
 
@@ -60,9 +65,7 @@ impl Decodable for FakeNamespaceId {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let bytes = decode_bytes(producer).await?;
-
-        Ok(FakeNamespaceId(bytes))
+        Ok(Self(SillyPublicKey::decode(producer).await?))
     }
 }
 
@@ -82,23 +85,32 @@ impl DecodableCanonic for FakeNamespaceId {
 
 impl EncodableKnownSize for FakeNamespaceId {
     fn len_of_encoding(&self) -> usize {
-        16
+        self.0.len_of_encoding()
     }
 }
 
+impl EncodableSync for FakeNamespaceId {}
+impl DecodableSync for FakeNamespaceId {}
+
 impl NamespaceId for FakeNamespaceId {}
+
+impl Verifier<SillySig> for FakeNamespaceId {
+    fn verify(&self, msg: &[u8], signature: &SillySig) -> Result<(), signature::Error> {
+        self.0.verify(msg, signature)
+    }
+}
 
 // Subspace ID
 
-#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct FakeSubspaceId([u8; 8]);
+#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+pub struct FakeSubspaceId(SillyPublicKey);
 
 impl Encodable for FakeSubspaceId {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
-        encode_bytes(&self.0, consumer).await
+        self.0.encode(consumer).await
     }
 }
 
@@ -112,9 +124,7 @@ impl Decodable for FakeSubspaceId {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let bytes = decode_bytes(producer).await?;
-
-        Ok(FakeSubspaceId(bytes))
+        Ok(Self(SillyPublicKey::decode(producer).await?))
     }
 }
 
@@ -134,33 +144,29 @@ impl DecodableCanonic for FakeSubspaceId {
 
 impl EncodableKnownSize for FakeSubspaceId {
     fn len_of_encoding(&self) -> usize {
-        8
+        self.0.len_of_encoding()
     }
 }
 
 impl SubspaceId for FakeSubspaceId {
     fn successor(&self) -> Option<Self> {
-        // Wish we could avoid this allocation somehow.
-        let mut new_id = self.0;
-
-        for i in (0..self.0.len()).rev() {
-            let byte = self.0.as_ref()[i];
-
-            if byte == 255 {
-                new_id[i] = 0;
-            } else {
-                new_id[i] = byte + 1;
-                return Some(FakeSubspaceId(new_id));
-            }
-        }
-
-        None
+        self.0.successor().map(Self)
     }
 }
 
+impl EncodableSync for FakeSubspaceId {}
+
+impl Verifier<SillySig> for FakeSubspaceId {
+    fn verify(&self, msg: &[u8], signature: &SillySig) -> Result<(), signature::Error> {
+        self.0.verify(msg, signature)
+    }
+}
+
+impl McPublicUserKey<SillySig> for FakeSubspaceId {}
+
 // Payload digest
 
-#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct FakePayloadDigest([u8; 32]);
 
 impl Encodable for FakePayloadDigest {
@@ -227,5 +233,54 @@ impl PayloadDigest for FakePayloadDigest {
 
     fn hasher() -> Self::Hasher {
         DefaultHasher::new()
+    }
+}
+
+#[derive(Clone, Debug, Arbitrary, PartialEq, Eq, Hash)]
+pub struct FakeAuthorisationToken(SillySig);
+
+impl AuthorisationToken<16, 16, 16, FakeNamespaceId, FakeSubspaceId, FakePayloadDigest>
+    for FakeAuthorisationToken
+{
+    fn is_authorised_write(
+        &self,
+        entry: &willow_data_model::Entry<
+            16,
+            16,
+            16,
+            FakeNamespaceId,
+            FakeSubspaceId,
+            FakePayloadDigest,
+        >,
+    ) -> bool {
+        let message = entry.sync_encode_into_boxed_slice();
+
+        entry.subspace_id().verify(&message, &self.0).is_ok()
+    }
+}
+
+impl Encodable for FakeAuthorisationToken {
+    fn encode<C>(
+        &self,
+        consumer: &mut C,
+    ) -> impl std::prelude::rust_2024::Future<Output = Result<(), C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        self.0.encode(consumer)
+    }
+}
+
+impl Decodable for FakeAuthorisationToken {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        Ok(Self(SillySig::decode(producer).await?))
     }
 }
