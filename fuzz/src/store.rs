@@ -6,11 +6,11 @@ use std::{
     rc::Rc,
 };
 
-use arbitrary::Arbitrary;
 use either::Either::{self, Left, Right};
 use ufotofu::{
+    consumer::IntoVec,
     producer::{FromBoxedSlice, FromSlice},
-    BulkProducer, Producer,
+    BulkProducer, Consumer, Producer,
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
@@ -32,14 +32,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     S: Ord + Clone,
 {
-    pub fn new(namespace: N, capacity: usize) -> Self {
-        Self {
-            namespace,
-            subspaces: RefCell::new(BTreeMap::new()),
-            event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
-        }
-    }
-
     fn get_or_create_subspace_store<'s>(
         &'s self,
         subspace_id: &S,
@@ -50,9 +42,9 @@ where
             let _ = subspaces.insert(subspace_id.clone(), ControlSubspaceStore::new());
         }
 
-        RefMut::map(subspaces, |subspaces| {
+        return RefMut::map(subspaces, |subspaces| {
             subspaces.get_mut(subspace_id).unwrap()
-        })
+        });
     }
 }
 
@@ -92,12 +84,20 @@ impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
-        entry.timestamp() < self.timestamp
-            || (entry.timestamp() == self.timestamp
-                && *entry.payload_digest() < self.payload_digest)
-            || (entry.timestamp() == self.timestamp
-                && *entry.payload_digest() == self.payload_digest
-                && entry.payload_length() < self.payload_length)
+        if entry.timestamp() < self.timestamp {
+            return true;
+        } else if entry.timestamp() == self.timestamp
+            && entry.payload_digest() < &self.payload_digest
+        {
+            return true;
+        } else if entry.timestamp() == self.timestamp
+            && entry.payload_digest() < &self.payload_digest
+            && entry.payload_length() < self.payload_length
+        {
+            return true;
+        } else {
+            return false;
+        }
     }
 }
 
@@ -127,7 +127,7 @@ where
         }
 
         let mut subspace_store =
-            self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
+            self.get_or_create_subspace_store(&authorised_entry.entry().subspace_id());
 
         // Is the inserted entry redundant?
         for (path, entry) in subspace_store.deref().entries.iter() {
@@ -169,24 +169,13 @@ where
             .collect();
 
         if prevent_pruning && !prune_these.is_empty() {
-            Err(EntryIngestionError::PruningPrevented)
+            return Err(EntryIngestionError::PruningPrevented);
         } else {
             for path_to_prune in prune_these {
                 subspace_store.deref_mut().entries.remove(&path_to_prune);
             }
 
-            subspace_store.deref_mut().entries.insert(
-                authorised_entry.entry().path().clone(),
-                ControlEntry {
-                    authorisation_token: authorised_entry.token().to_owned(),
-                    payload: Vec::new(),
-                    payload_digest: authorised_entry.entry().payload_digest().to_owned(),
-                    payload_length: authorised_entry.entry().payload_length(),
-                    timestamp: authorised_entry.entry().timestamp(),
-                },
-            );
-
-            Ok(EntryIngestionSuccess::Success)
+            return Ok(EntryIngestionSuccess::Success);
         }
     }
 
@@ -203,7 +192,7 @@ where
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
 
         match subspace_store.entries.get_mut(path) {
-            None => Err(PayloadAppendError::NoSuchEntry),
+            None => panic!("Tried to append a payload for a non-existant entry."),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -215,57 +204,38 @@ where
                 let mut current_length = entry.payload.len() as u64;
 
                 while current_length < max_length {
-                    let result = payload_source.expose_items().await.map_err(|err| {
-                        PayloadAppendError::SourceError {
-                            source_error: err,
-                            total_length_now_available: current_length,
+                    match payload_source.expose_items().await {
+                        Err(err) => {
+                            return Err(PayloadAppendError::SourceError {
+                                source_error: err,
+                                total_length_now_available: current_length,
+                            });
                         }
-                    })?;
-
-                    let produced_count = match result {
-                        Left(bytes) => {
+                        Ok(Left(bytes)) => {
                             current_length = current_length.saturating_add(bytes.len() as u64);
                             if current_length > max_length {
                                 break;
                             }
 
                             entry.payload.extend_from_slice(bytes);
-                            Some(bytes.len())
                         }
-                        Right(_fin) => None,
-                    };
-
-                    match produced_count {
-                        Some(count) => {
-                            payload_source
-                                .consider_produced(count)
-                                .await
-                                .map_err(|err| PayloadAppendError::SourceError {
-                                    source_error: err,
-                                    total_length_now_available: current_length,
-                                })?
-                        }
-                        None => break,
-                    };
-                }
-
-                if let Ok(Left(_)) = payload_source.expose_items().await {
-                    return Err(PayloadAppendError::TooManyBytes);
-                }
-
-                match current_length.cmp(&max_length) {
-                    std::cmp::Ordering::Greater => Err(PayloadAppendError::TooManyBytes),
-                    std::cmp::Ordering::Equal => {
-                        let mut hasher = PD::hasher();
-                        PD::write(&mut hasher, &entry.payload);
-
-                        if PD::finish(&hasher) != entry.payload_digest {
-                            Err(PayloadAppendError::DigestMismatch)
-                        } else {
-                            Ok(PayloadAppendSuccess::Completed)
-                        }
+                        Ok(Right(_fin)) => break,
                     }
-                    std::cmp::Ordering::Less => Ok(PayloadAppendSuccess::Appended),
+                }
+
+                if current_length > max_length {
+                    return Err(PayloadAppendError::TooManyBytes);
+                } else if current_length == max_length {
+                    let mut hasher = PD::hasher();
+                    PD::write(&mut hasher, &entry.payload);
+
+                    if PD::finish(&hasher) != entry.payload_digest {
+                        return Err(PayloadAppendError::DigestMismatch);
+                    } else {
+                        return Ok(PayloadAppendSuccess::Completed);
+                    }
+                } else {
+                    return Ok(PayloadAppendSuccess::Appended);
                 }
             }
         }
@@ -282,7 +252,7 @@ where
         let found = subspace_store.entries.get(path);
 
         match found {
-            None => Ok(()),
+            None => return Ok(()),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -312,13 +282,7 @@ where
 
                 for path in subspace_store.entries.keys() {
                     if let Some(entry) = subspace_store.entries.get(path) {
-                        if !area.times().includes(&entry.timestamp) {
-                            continue;
-                        }
-
-                        if path.is_prefixed_by(area.path()) {
-                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
-                        }
+                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                     }
                 }
             }
@@ -326,13 +290,7 @@ where
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
                         if let Some(entry) = subspace_store.entries.get(path) {
-                            if !area.times().includes(&entry.timestamp) {
-                                continue;
-                            }
-
-                            if path.is_prefixed_by(area.path()) {
-                                candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
-                            }
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                         }
                     }
                 }
@@ -340,7 +298,7 @@ where
         }
 
         for candidate in candidates {
-            if let Some(prot) = protected {
+            if let Some(ref prot) = protected {
                 if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
                     continue;
                 }
@@ -363,7 +321,7 @@ where
     ) -> Result<(), ForgetPayloadError<Self::Error>> {
         let mut subspace_store = self.get_or_create_subspace_store(subspace_id);
         match subspace_store.entries.get_mut(path) {
-            None => return Err(ForgetPayloadError::NoSuchEntry),
+            None => panic!("Tried to forget the payload of an entry we do not have."),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -392,13 +350,7 @@ where
 
                 for path in subspace_store.entries.keys() {
                     if let Some(entry) = subspace_store.entries.get(path) {
-                        if !area.times().includes(&entry.timestamp) {
-                            continue;
-                        }
-
-                        if path.is_prefixed_by(area.path()) {
-                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
-                        }
+                        candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                     }
                 }
             }
@@ -406,13 +358,7 @@ where
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
                         if let Some(entry) = subspace_store.entries.get(path) {
-                            if !area.times().includes(&entry.timestamp) {
-                                continue;
-                            }
-
-                            if path.is_prefixed_by(area.path()) {
-                                candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
-                            }
+                            candidates.push((subspace_id.clone(), path.clone(), entry.clone()));
                         }
                     }
                 }
@@ -420,7 +366,7 @@ where
         }
 
         for candidate in candidates {
-            if let Some(prot) = protected {
+            if let Some(ref prot) = protected {
                 if prot.includes_triplet(&candidate.0, &candidate.1, candidate.2.timestamp) {
                     continue;
                 }
@@ -458,11 +404,7 @@ where
                     }
                 }
 
-                if entry.payload_length > 0 && !entry.payload.is_empty() {
-                    Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
-                } else {
-                    Ok(None)
-                }
+                Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
             }
         }
     }
@@ -479,13 +421,13 @@ where
             Some(entry) => {
                 let available = entry.payload.len() as u64;
 
-                if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                if (ignore.ignore_empty_payloads && available == 0)
                     || (ignore.ignore_incomplete_payloads && available != entry.payload_length)
                 {
                     return Ok(None);
                 }
 
-                Ok(Some(LengthyAuthorisedEntry::new(
+                return Ok(Some(LengthyAuthorisedEntry::new(
                     AuthorisedEntry::new(
                         Entry::new(
                             self.namespace.clone(),
@@ -499,7 +441,7 @@ where
                     )
                     .unwrap(),
                     available,
-                )))
+                )));
             }
         }
     }
@@ -519,18 +461,10 @@ where
                 let subspace_store = self.get_or_create_subspace_store(subspace_id);
 
                 for path in subspace_store.entries.keys() {
-                    if !path.is_prefixed_by(area.path()) {
-                        continue;
-                    }
-
                     if let Some(entry) = subspace_store.entries.get(path) {
-                        if !area.times().includes(&entry.timestamp) {
-                            continue;
-                        }
-
                         let available = entry.payload.len() as u64;
 
-                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                        if (ignore.ignore_empty_payloads && available == 0)
                             || (ignore.ignore_incomplete_payloads
                                 && available != entry.payload_length)
                         {
@@ -558,18 +492,10 @@ where
             AreaSubspace::Any => {
                 for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
                     for path in subspace_store.entries.keys() {
-                        if !path.is_prefixed_by(area.path()) {
-                            continue;
-                        }
-
                         if let Some(entry) = subspace_store.entries.get(path) {
-                            if !area.times().includes(&entry.timestamp) {
-                                continue;
-                            }
-
                             let available = entry.payload.len() as u64;
 
-                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                            if (ignore.ignore_empty_payloads && available == 0)
                                 || (ignore.ignore_incomplete_payloads
                                     && available != entry.payload_length)
                             {
@@ -611,7 +537,6 @@ where
     }
 }
 
-#[derive(Arbitrary, Debug)]
 pub enum StoreOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId,
@@ -698,8 +623,6 @@ pub async fn check_store_equality<
     assert_eq!(namespace_id, store2.namespace_id());
 
     for op in ops.iter() {
-        // println!("op {:?}", op);
-
         match op {
             StoreOp::IngestEntry {
                 authorised_entry,
@@ -711,7 +634,7 @@ pub async fn check_store_equality<
                 } else {
                     match (store1.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await, store2.ingest_entry(authorised_entry.clone(), *prevent_pruning, *origin).await) {
                         (Ok(yay1), Ok(yay2)) => assert_eq!(yay1, yay2),
-                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented))   => continue,
+                        (Err(EntryIngestionError::PruningPrevented), Err(EntryIngestionError::PruningPrevented)) | (Err(EntryIngestionError::NotAuthorised), Err(EntryIngestionError::NotAuthorised))  => continue,
                         (Err(EntryIngestionError::OperationsError(_)), Err(EntryIngestionError::OperationsError(_))) => {
                             panic!("AppendPayload: Producer failed, which indicates the two stores failed in different ways at the same time.")
                         }
@@ -737,7 +660,7 @@ pub async fn check_store_equality<
 
                 match (res_1, res_2) {
                     (Ok(success_1), Ok(success_2)) => assert_eq!(success_1, success_2),
-                    (Err(PayloadAppendError::NoSuchEntry), Err(PayloadAppendError::NoSuchEntry)) |(Err(PayloadAppendError::DigestMismatch), Err(PayloadAppendError::DigestMismatch)) | (Err(PayloadAppendError::TooManyBytes), Err(PayloadAppendError::TooManyBytes)) | (Err(PayloadAppendError::WrongEntry), Err(PayloadAppendError::WrongEntry)) => continue,
+                    (Err(PayloadAppendError::AlreadyHaveIt), Err(PayloadAppendError::AlreadyHaveIt)) |(Err(PayloadAppendError::DigestMismatch), Err(PayloadAppendError::DigestMismatch)) | (Err(PayloadAppendError::TooManyBytes), Err(PayloadAppendError::TooManyBytes)) | (Err(PayloadAppendError::WrongEntry), Err(PayloadAppendError::WrongEntry)) => continue,
                     (Err(PayloadAppendError::OperationError(_)), Err(PayloadAppendError::OperationError(_))) => panic!("AppendPayload: Producer failed, which indicates the two stores failed in different ways at the same time."),
                     (res1, res2) => panic!("AppendPayload: non-equivalent behaviour.\n\nStore 1: {:?}\n\nStore 2: {:?}", res1, res2),
                 }
@@ -793,7 +716,7 @@ pub async fn check_store_equality<
                         .await,
                 ) {
                     (Ok(()), Ok(())) => {}
-                    (Err(ForgetPayloadError::WrongEntry), Err(ForgetPayloadError::WrongEntry)) | (Err(ForgetPayloadError::NoSuchEntry), Err(ForgetPayloadError::NoSuchEntry)) => continue,
+                    (Err(ForgetPayloadError::WrongEntry), Err(ForgetPayloadError::WrongEntry)) => continue,
                     (Err(ForgetPayloadError::OperationError(_)), Err(ForgetPayloadError::OperationError(_))) => {
                         panic!("ForgetPayload: Two stores happened to fail at the same time in different ways.")
                     }
@@ -849,7 +772,7 @@ pub async fn check_store_equality<
                     // These are failing variants, but we don't use them because we can't print all of them
                     // (in particular, the bulk producers that could appear here don't have Debug on them)
                     (_, _) => panic!(
-                        "GetPayload: non-equivalent behaviour.",
+                        "GetPayload: non-equivalent behaviour.\n\nStore 1",
                     ),
                 }
             }
@@ -874,7 +797,7 @@ pub async fn check_store_equality<
                     store1.query_area(area, ignore.to_owned()).await,
                     store2.query_area(area, ignore.to_owned()).await,
                 ) {
-                    (Ok(mut producer1), Ok(mut producer2)) => {
+                    (Ok(mut producer1), Ok(mut producer2)) => loop {
                         let mut set1 =
                             HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
                         let mut set2 =
@@ -901,7 +824,7 @@ pub async fn check_store_equality<
                         }
 
                         assert_eq!(set1, set2)
-                    }
+                    },
                     (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
             }

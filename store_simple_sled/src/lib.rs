@@ -142,7 +142,9 @@ where
     /// Return whether this store contains entries with paths that are prefixes of the given path and newer than the given timestamp
     async fn is_prefixed_by_newer(
         &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
+        subspace: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: u64,
     ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, SimpleStoreSledError>
     where
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
@@ -157,28 +159,26 @@ where
 
         let tree = self.entry_tree()?;
 
-        let prefix = entry.subspace_id().sync_encode_into_vec();
+        let prefix = subspace.sync_encode_into_vec();
 
         for (key, value) in tree.scan_prefix(&prefix).flatten() {
-            // println!("key: {:?}", key);
-
             let (other_subspace, other_path, other_timestamp) =
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
-            let (payload_length, payload_digest, authorisation_token, _local_length) =
-                decode_entry_values(&value).await;
 
-            let other_entry = Entry::new(
-                self.namespace_id.clone(),
-                other_subspace,
-                other_path,
-                other_timestamp,
-                payload_length,
-                payload_digest,
-            );
+            if timestamp < other_timestamp && path.is_prefixed_by(&other_path) {
+                let (payload_length, payload_digest, authorisation_token, _local_length) =
+                    decode_entry_values(&value).await;
 
-            if entry.path().is_prefixed_by(other_entry.path()) && other_entry.is_newer_than(entry) {
-                let authed =
-                    unsafe { AuthorisedEntry::new_unchecked(other_entry, authorisation_token) };
+                let entry = Entry::new(
+                    self.namespace_id.clone(),
+                    other_subspace,
+                    other_path,
+                    timestamp,
+                    payload_length,
+                    payload_digest,
+                );
+
+                let authed = unsafe { AuthorisedEntry::new_unchecked(entry, authorisation_token) };
 
                 return Ok(Some(authed));
             }
@@ -204,13 +204,6 @@ where
         }
 
         Ok(None)
-    }
-
-    /// Clear all data from the internal `sled::Db`
-    pub fn clear(&self) -> Result<(), SimpleStoreSledError> {
-        self.db.clear()?;
-        self.flush()?;
-        Ok(())
     }
 }
 
@@ -263,8 +256,15 @@ where
             )
         }
 
+        if !token.is_authorised_write(&entry) {
+            return Err(EntryIngestionError::NotAuthorised);
+        }
+
         // Check if we have any newer entries with this prefix.
-        match self.is_prefixed_by_newer(&entry).await {
+        match self
+            .is_prefixed_by_newer(entry.subspace_id(), entry.path(), entry.timestamp())
+            .await
+        {
             Ok(Some(newer)) => {
                 return Ok(EntryIngestionSuccess::Obsolete {
                     obsolete: unsafe { AuthorisedEntry::new_unchecked(entry, token) },
@@ -574,7 +574,7 @@ where
                     Ok(PayloadAppendSuccess::Appended)
                 }
             }
-            None => Err(PayloadAppendError::NoSuchEntry),
+            None => panic!("Tried to append a payload to an entry we do not have in the store."),
         }
     }
 
@@ -660,7 +660,7 @@ where
 
         for (key, value) in entry_iterator.flatten() {
             let (subspace, path, timestamp) = decode_entry_key(&key).await;
-            let (_length, _digest, _token, _local_length) =
+            let (length, _digest, _token, local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
             let prefix_matches = if *area.subspace() == AreaSubspace::Any {
@@ -705,7 +705,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.cloned());
+            .forgot_area(area.clone(), protected.map(|a| a.clone()));
 
         Ok(forgotten_count)
     }
@@ -771,20 +771,8 @@ where
 
                 Ok(())
             }
-            (Some((_entry_key, entry_value)), None) => {
-                if let Some(expected) = expected_digest {
-                    let (_length, digest, _auth_token, _local_length) =
-                    decode_entry_values::<PD, AT>(&entry_value).await;
-                   
-                    if expected != digest {
-                        return Err(ForgetPayloadError::WrongEntry);
-                    }
-                }
-                
-                Ok(())
-            },
-            (None, None) => Err(ForgetPayloadError::NoSuchEntry),
-            (None, Some(_)) => panic!("StoreSimpleSled is storing a payload with no corresponding entry, which indicates an implementation error!"),
+            (None, Some(_)) => panic!("Storing a payload for which we have no entry, that is bad!"),
+            _ => Ok(()),
         }
     }
 
@@ -858,7 +846,7 @@ where
 
         self.event_system
             .borrow_mut()
-            .forgot_area(area.clone(), protected.cloned());
+            .forgot_area(area.clone(), protected.map(|a| a.clone()));
 
         Ok(forgotten_count)
     }
@@ -876,42 +864,25 @@ where
         Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
         let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
 
-        match (maybe_entry, maybe_payload) {
-            (Some((_entry_key, entry_value)), Some((_payload_key, payload_value))) => {
-                let (_length, digest, _token, _local_length) =
-                decode_entry_values::<PD, AT>(&entry_value).await;
-                
-                if let Some(expected) = expected_digest {
-                    if expected != digest {
-                        return Err(PayloadError::WrongEntry);
-                    }
+        if let Some((_key, value)) = maybe_payload {
+            // Create a producer!
+            let (_length, digest, _token, _local_length) =
+                decode_entry_values::<PD, AT>(&value).await;
+
+            if let Some(expected) = expected_digest {
+                if expected != digest {
+                    return Err(PayloadError::WrongEntry);
                 }
-                
-                Ok(Some(PayloadProducer::new(payload_value)))
-            },
-            (Some((_entry_key, entry_value)), None) => {
-                // check expected digest.
-                let (_length, digest, _token, _local_length) =
-                decode_entry_values::<PD, AT>(&entry_value).await;
-                
-                if let Some(expected) = expected_digest {
-                    if expected != digest {
-                        return Err(PayloadError::WrongEntry);
-                    }
-                }
-                
-                Ok(None)
-                
-            },
-            (None, None) => Ok(None),
-            (None, Some(_)) => panic!("Holding a payload for which there is no corresponding entry, this is bad!"),
+            }
+
+            Ok(Some(PayloadProducer::new(value)))
+        } else {
+            Ok(None)
         }
     }
 
@@ -954,12 +925,12 @@ where
                 None => 0,
             };
 
-            let payload_is_empty_string = length == 0;
-            let is_incomplete = local_length < length;
+            let payload_is_empty_string = local_length == 0;
+            let is_incomplete = (payload_length as u64) < length;
 
             if (ignore.ignore_incomplete_payloads && is_incomplete)
                 || (ignore.ignore_empty_payloads && payload_is_empty_string)
-            {   
+            {
                 return Ok(None);
             } else {
                 return Ok(Some(LengthyAuthorisedEntry::new(
@@ -1009,7 +980,9 @@ async fn encode_subspace_path_key<
     // Unwrap because IntoVec should not fail.
     subspace.encode(&mut consumer).await.unwrap();
 
-    for component in path.components() {
+    let component_count = path.component_count();
+
+    for (i, component) in path.components().enumerate() {
         for byte in component.as_ref() {
             if *byte == 0 {
                 // Unwrap because IntoVec should not fail.
@@ -1020,13 +993,13 @@ async fn encode_subspace_path_key<
             }
         }
 
-        // Unwrap because IntoVec should not fail.
-        consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
-    }
-
-    // Unwrap because IntoVec should not fail.
-    if with_path_end {
-        consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
+        if i < component_count - 1 || !with_path_end {
+            // Unwrap because IntoVec should not fail.
+            consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
+        } else {
+            // Unwrap because IntoVec should not fail.
+            consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
+        }
     }
 
     // No timestamp here!
@@ -1049,7 +1022,9 @@ async fn encode_entry_key<
     // Unwrap because IntoVec should not fail.
     subspace.encode(&mut consumer).await.unwrap();
 
-    for component in path.components() {
+    let component_count = path.component_count();
+
+    for (i, component) in path.components().enumerate() {
         for byte in component.as_ref() {
             if *byte == 0 {
                 // Unwrap because IntoVec should not fail.
@@ -1060,12 +1035,14 @@ async fn encode_entry_key<
             }
         }
 
-        // Unwrap because IntoVec should not fail.
-        consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
+        if i < component_count - 1 {
+            // Unwrap because IntoVec should not fail.
+            consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
+        } else {
+            // Unwrap because IntoVec should not fail.
+            consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
+        }
     }
-
-    // Unwrap because IntoVec should not fail.
-    consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
 
     // Unwrap because IntoVec should not fail.
     U64BE(timestamp).encode(&mut consumer).await.unwrap();
@@ -1090,24 +1067,32 @@ where
 
     let mut components_vecs: Vec<Vec<u8>> = Vec::new();
 
-    while let Some(bytes) = component_bytes(&mut producer).await {
-        components_vecs.push(bytes);
+    loop {
+        match component_bytes(&mut producer).await {
+            Either::Left(bytes) => {
+                components_vecs.push(bytes);
+            }
+            Either::Right(fin) => {
+                // It's the last component.
+                components_vecs.push(fin);
+                break;
+            }
+        }
     }
 
     let mut components = components_vecs
         .iter()
-        .map(|bytes| Component::new(bytes).expect("Component was unexpectedly longer than MCL."));
+        .map(|bytes| Component::new(bytes).expect("This should be fine! What could go wrong!"));
 
-    let total_len = components.clone().fold(0, |acc, comp| acc + comp.len());
-
-    let path: Path<MCL, MCC, MPL> = Path::new_from_iter(total_len, &mut components).unwrap();
+    let path: Path<MCL, MCC, MPL> =
+        Path::new_from_iter(components_vecs.len(), &mut components).unwrap();
 
     let timestamp = U64BE::decode(&mut producer).await.unwrap().0;
 
     (subspace, path, timestamp)
 }
 
-async fn component_bytes<P: Producer<Item = u8>>(producer: &mut P) -> Option<Vec<u8>>
+async fn component_bytes<P: Producer<Item = u8>>(producer: &mut P) -> Either<Vec<u8>, Vec<u8>>
 where
     P::Error: core::fmt::Debug,
     P::Final: core::fmt::Debug,
@@ -1116,35 +1101,25 @@ where
     let mut previous_was_zero = false;
 
     loop {
-        match producer.produce().await {
-            Ok(Either::Left(byte)) => {
-                if !previous_was_zero && byte == 0 {
-                    previous_was_zero = true
-                } else if previous_was_zero && byte == 2 {
-                    // Append a zero.
+        let byte = producer.produce_item().await.unwrap();
 
-                    vec.push(0);
-                    previous_was_zero = false;
-                } else if previous_was_zero && byte == 1 {
-                    // That's the end of this component..
-                    return Some(vec);
-                } else if previous_was_zero && byte == 0 {
-                    // That's the end of the path.
-                    return None;
-                } else {
-                    // Append to the component.
-                    vec.push(byte);
-                    previous_was_zero = false;
-                }
-            }
-            Ok(Either::Right(_)) => {
-                if previous_was_zero {
-                    panic!("Unterminated escaped key!")
-                }
+        if byte == 0 {
+            previous_was_zero = true
+        } else if previous_was_zero && byte == 2 {
+            // Append a zero.
 
-                return None;
-            }
-            Err(err) => panic!("Unexpected error: {:?}", err),
+            vec.push(0);
+            previous_was_zero = false;
+        } else if previous_was_zero && byte == 1 {
+            // That's the end of the component. Yay.
+            return Either::Left(vec);
+        } else if previous_was_zero && byte == 0 {
+            // That's the end of the component, and this is the last one! Stop here.
+            return Either::Right(vec);
+        } else {
+            // Append to the component.
+            vec.push(0);
+            previous_was_zero = false;
         }
     }
 }

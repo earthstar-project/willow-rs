@@ -26,9 +26,6 @@ compact_u64 = { path = "../compact_u64", features = ["std", "dev"] }
 either = "1.10.0"
 wb_async_utils = { path = "../wb_async_utils", features = ["ufotofu_utils"] }
 futures = { version = "0.3.31" }
-willow-store-simple-sled = { path = "../store_simple_sled" }
-sled = "0.34.7"
-tempdir = "0.3.7"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -37,6 +34,9 @@ features = ["dev"]
 [dependencies.meadowcap]
 path = "../meadowcap"
 features = ["dev"]
+
+[dependencies.earthstar]
+path = "../earthstar"
 
 ################
 # compact_u64 #
@@ -489,13 +489,6 @@ bench = false
 [[bin]]
 name = "enc_sledentrykey_abs"
 path = "fuzz_targets/enc_sledentrykey_abs.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "store"
-path = "fuzz_targets/store.rs"
 test = false
 doc = false
 bench = false

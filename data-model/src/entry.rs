@@ -337,27 +337,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     }
 }
 
-#[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Arbitrary<'a>
-    for AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: Arbitrary<'a>,
-    S: Arbitrary<'a>,
-    PD: Arbitrary<'a>,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Arbitrary<'a>,
-{
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let entry: Entry<MCL, MCC, MPL, N, S, PD> = Arbitrary::arbitrary(u)?;
-        let token: AT = Arbitrary::arbitrary(u)?;
-
-        if !token.is_authorised_write(&entry) {
-            arbitrary::Result::Err(arbitrary::Error::IncorrectFormat)
-        } else {
-            Ok(unsafe { Self::new_unchecked(entry, token) })
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::path::Component;

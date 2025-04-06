@@ -7,20 +7,12 @@ use ufotofu_codec::{
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
-#[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord, Hash)]
+#[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord)]
 pub struct SillyPublicKey(u8);
 
 impl SillyPublicKey {
     pub fn corresponding_secret_key(&self) -> SillySecret {
         SillySecret(self.0)
-    }
-
-    pub fn successor(&self) -> Option<Self> {
-        if self.0 == 255 {
-            None
-        } else {
-            Some(Self(self.0 + 1))
-        }
     }
 }
 
@@ -42,7 +34,7 @@ pub struct SillyKeypair(pub SillyPublicKey, pub SillySecret);
 
 /// A silly, trivial, insecure signature for fuzz testing.
 /// It's the public key followed by the message itself.
-#[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Hash)]
+#[derive(PartialEq, Eq, Debug, Arbitrary, Clone)]
 pub struct SillySig(u8);
 
 impl Signer<SillySig> for SillySecret {
