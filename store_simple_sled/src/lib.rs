@@ -125,7 +125,7 @@ where
             _auth_token: PhantomData,
             event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         })
-    } 
+    }
 
     fn entry_tree(&self) -> SledResult<Tree> {
         self.db.open_tree(ENTRY_TREE_KEY)
@@ -423,7 +423,6 @@ where
                         }
                         Ok(Either::Right(_)) => break,
                         Err(err) => {
-                            // Update with what we were able to produce.
                             let new_value = encode_entry_values(
                                 length,
                                 &digest,
@@ -775,12 +774,12 @@ where
                 if let Some(expected) = expected_digest {
                     let (_length, digest, _auth_token, _local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
-                   
+
                     if expected != digest {
                         return Err(ForgetPayloadError::WrongEntry);
                     }
                 }
-                
+
                 Ok(())
             },
             (None, None) => Err(ForgetPayloadError::NoSuchEntry),
@@ -886,32 +885,33 @@ where
         match (maybe_entry, maybe_payload) {
             (Some((_entry_key, entry_value)), Some((_payload_key, payload_value))) => {
                 let (_length, digest, _token, _local_length) =
-                decode_entry_values::<PD, AT>(&entry_value).await;
-                
+                    decode_entry_values::<PD, AT>(&entry_value).await;
+
                 if let Some(expected) = expected_digest {
                     if expected != digest {
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-                
+
                 Ok(Some(PayloadProducer::new(payload_value)))
-            },
+            }
             (Some((_entry_key, entry_value)), None) => {
                 // check expected digest.
                 let (_length, digest, _token, _local_length) =
-                decode_entry_values::<PD, AT>(&entry_value).await;
-                
+                    decode_entry_values::<PD, AT>(&entry_value).await;
+
                 if let Some(expected) = expected_digest {
                     if expected != digest {
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-                
+
                 Ok(None)
-                
-            },
+            }
             (None, None) => Ok(None),
-            (None, Some(_)) => panic!("Holding a payload for which there is no corresponding entry, this is bad!"),
+            (None, Some(_)) => {
+                panic!("Holding a payload for which there is no corresponding entry, this is bad!")
+            }
         }
     }
 
@@ -945,26 +945,17 @@ where
 
             let authed_entry = unsafe { AuthorisedEntry::new_unchecked(entry, token) };
 
-            let payload_tree = self.payload_tree()?;
-
-            let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
-
-            let payload_length = match maybe_payload {
-                Some((_key, value)) => value.len(),
-                None => 0,
-            };
-
             let payload_is_empty_string = length == 0;
             let is_incomplete = local_length < length;
 
             if (ignore.ignore_incomplete_payloads && is_incomplete)
                 || (ignore.ignore_empty_payloads && payload_is_empty_string)
-            {   
+            {
                 return Ok(None);
             } else {
                 return Ok(Some(LengthyAuthorisedEntry::new(
                     authed_entry,
-                    payload_length as u64,
+                    local_length,
                 )));
             }
         }
