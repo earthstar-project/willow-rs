@@ -4,7 +4,7 @@ use arbitrary::Arbitrary;
 use crate::{
     entry::{Entry, Timestamp},
     grouping::RangeEnd,
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    parameters::SubspaceId,
     path::Path,
     PathBuilder,
 };
