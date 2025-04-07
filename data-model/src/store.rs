@@ -133,10 +133,7 @@ impl<OE: Display + Error> Display for ForgetEntryError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ForgetEntryError::WrongEntry => {
-                write!(
-                    f,
-                    "The entry to whose payload to append to had an unexpected payload_digest."
-                )
+                write!(f, "The entry to forget had an unexpected payload_digest.")
             }
             ForgetEntryError::OperationError(err) => std::fmt::Display::fmt(err, f),
         }
@@ -168,7 +165,7 @@ impl<OE: Display + Error> Display for ForgetPayloadError<OE> {
             ForgetPayloadError::WrongEntry => {
                 write!(
                     f,
-                    "The entry to whose payload to append to had an unexpected payload_digest."
+                    "The entry to whose payload to forget had an unexpected payload_digest."
                 )
             }
             ForgetPayloadError::OperationError(err) => std::fmt::Display::fmt(err, f),
@@ -181,6 +178,8 @@ impl<OE: Display + Error> Error for ForgetPayloadError<OE> {}
 /// Returned when retrieving a payload fails.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadError<OE> {
+    /// The offset at which to fetch the payload bytes was too large.
+    OutOfBounds,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
     WrongEntry,
     /// Something specific to this store implementation went wrong.
@@ -190,10 +189,16 @@ pub enum PayloadError<OE> {
 impl<OE: Display + Error> Display for PayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PayloadError::OutOfBounds => {
+                write!(
+                    f,
+                    "Attempted to fetch payload at an offset that was too large."
+                )
+            }
             PayloadError::WrongEntry => {
                 write!(
                     f,
-                    "The entry to whose payload to append to had an unexpected payload_digest."
+                    "The entry to whose payload to fetch to had an unexpected payload_digest."
                 )
             }
             PayloadError::OperationError(err) => std::fmt::Display::fmt(err, f),
@@ -230,7 +235,13 @@ pub enum StoreEvent<const MCL: usize, const MCC: usize, const MPL: usize, N, S, 
     /// An existing entry inside `area` received a portion of its corresponding payload.
     ///
     /// If `ignores.ignore_incomplete_payloads`, this is only emitted when the payload is now fully available. In this case, the corresponding `Ingested` event is guaranteed to be emitted before this `Appended` event.
-    Appended(LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    Appended {
+        entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        /// How many bytes of the payload were available before this event.
+        previous_available: u64,
+        /// How many bytes of the payload are now available.
+        now_available: u64,
+    },
     /// Emitted whenever a non-ignored entry in `area` is forgotten via `Store::forget_entry`. No corresponding `PayloadForgotten` event is emitted in this case.
     EntryForgotten {
         /// The entry that was forgotten.
@@ -298,20 +309,19 @@ impl QueryIgnoreParams {
         AT,
     >(
         &self,
-        entry: &LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        available: u64,
     ) -> bool
     where
         S: PartialEq,
     {
         // Ignore if necessary if empty payload
-        if self.ignore_empty_payloads && entry.entry().entry().payload_length() == 0 {
+        if self.ignore_empty_payloads && entry.entry().payload_length() == 0 {
             return true;
         }
 
         // Ignore if necessary if the entry has an incomplete payload (always unless the expected payload length is zero).
-        if self.ignore_incomplete_payloads
-            && entry.entry().entry().payload_length() != entry.available()
-        {
+        if self.ignore_incomplete_payloads && entry.entry().payload_length() != available {
             return true;
         }
 
@@ -425,15 +435,16 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     /// Forces persistence of all previous mutations
     fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
-    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `PayloadError::WrongEntry` error.
+    /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path, starting at the supplied offset. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `PayloadError::WrongEntry` error. If the supplied `offset` is equal to or greater than the number of available payload bytes, this reports a `PayloadError::OutOfBounds`.
     fn payload(
         &self,
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
+        offset: u64,
         expected_digest: Option<PD>,
     ) -> impl Future<
         Output = Result<
-            Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+            impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
             PayloadError<Self::Error>,
         >,
     >;
@@ -490,7 +501,9 @@ enum QueuedOp<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT
         origin: EntryOrigin,
     },
     Appended {
-        lengthy_entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        previous_available: u64,
+        now_available: u64,
     },
     EntryForgotten {
         entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
@@ -578,9 +591,15 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
     /// Call this inside your store impl after it has appended to a payload.
     pub fn appended_payload(
         &mut self,
-        lengthy_entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        previous_available: u64,
+        now_available: u64,
     ) {
-        self.enqueue_op(QueuedOp::Appended { lengthy_entry })
+        self.enqueue_op(QueuedOp::Appended {
+            entry,
+            previous_available,
+            now_available,
+        })
     }
 
     /// Call this inside your store impl after it has forgotten an entry.
@@ -707,29 +726,39 @@ where
                             }
 
                             match op {
-                                QueuedOp::Appended { lengthy_entry } => {
-                                    if !self.area.includes_entry(lengthy_entry.entry().entry())
-                                        || self
-                                            .ignore
-                                            .ignores_lengthy_authorised_entry(lengthy_entry)
+                                QueuedOp::Appended {
+                                    entry,
+                                    previous_available,
+                                    now_available,
+                                } => {
+                                    if !self.area.includes_entry(entry.entry())
+                                        || self.ignore.ignores_lengthy_authorised_entry(
+                                            &entry,
+                                            *now_available,
+                                        )
                                     {
                                         continue;
                                     }
 
                                     if self.ignore.ignore_incomplete_payloads {
                                         // If the entry was ignored due to an incomplete payload, we buffer the append event and emit an insertion event first.
-                                        self.buffered_event =
-                                            Some(StoreEvent::Appended(lengthy_entry.clone()));
+                                        self.buffered_event = Some(StoreEvent::Appended {
+                                            entry: entry.clone(),
+                                            previous_available: *previous_available,
+                                            now_available: *now_available,
+                                        });
 
                                         return Ok(Left(StoreEvent::Ingested {
-                                            entry: lengthy_entry.entry().clone(),
+                                            entry: entry.clone(),
                                             origin: EntryOrigin::Local,
                                         }));
                                     } else {
                                         // Otherwise, emit the Appended event directly.
-                                        return Ok(Left(StoreEvent::Appended(
-                                            lengthy_entry.clone(),
-                                        )));
+                                        return Ok(Left(StoreEvent::Appended {
+                                            entry: entry.clone(),
+                                            previous_available: *previous_available,
+                                            now_available: *now_available,
+                                        }));
                                     }
                                 }
                                 QueuedOp::AreaForgotten { area, protected } => {
@@ -768,7 +797,10 @@ where
                                 }
                                 QueuedOp::EntryForgotten { entry } => {
                                     if self.area.includes_entry(entry.entry().entry())
-                                        && !self.ignore.ignores_lengthy_authorised_entry(entry)
+                                        && !self.ignore.ignores_lengthy_authorised_entry(
+                                            entry.entry(),
+                                            entry.available(),
+                                        )
                                     {
                                         return Ok(Left(StoreEvent::EntryForgotten {
                                             entry: entry.entry().clone(),
@@ -809,7 +841,10 @@ where
 
                                 QueuedOp::PayloadForgotten { entry } => {
                                     if self.area.includes_entry(entry.entry().entry())
-                                        && !self.ignore.ignores_lengthy_authorised_entry(entry)
+                                        && !self.ignore.ignores_lengthy_authorised_entry(
+                                            entry.entry(),
+                                            entry.available(),
+                                        )
                                     {
                                         return Ok(Left(StoreEvent::PayloadForgotten(
                                             entry.entry().clone(),

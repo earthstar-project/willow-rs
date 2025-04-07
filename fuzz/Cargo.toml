@@ -493,6 +493,10 @@ test = false
 doc = false
 bench = false
 
+###########
+## Store ##
+###########
+
 [[bin]]
 name = "enc_path_rel_privatepathcontext"
 path = "fuzz_targets/enc_path_rel_privatepathcontext.rs"
@@ -531,6 +535,13 @@ bench = false
 [[bin]]
 name = "enc_subspacecapability_rel_personalprivateinterest"
 path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "events"
+path = "fuzz_targets/events.rs"
 test = false
 doc = false
 bench = false

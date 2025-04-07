@@ -443,14 +443,15 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
+        offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
-        Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+        impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
         PayloadError<Self::Error>,
     > {
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
         match subspace_store.entries.get_mut(path) {
-            None => Ok(None),
+            None => Ok(FromBoxedSlice::from_vec(vec![])),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
@@ -458,10 +459,12 @@ where
                     }
                 }
 
-                if entry.payload_length > 0 && !entry.payload.is_empty() {
-                    Ok(Some(FromBoxedSlice::from_vec(entry.payload.clone())))
+                if offset >= (entry.payload.len() as u64) {
+                    return Err(PayloadError::OutOfBounds);
                 } else {
-                    Ok(None)
+                    return Ok(FromBoxedSlice::from_vec(
+                        entry.payload[(offset as usize)..].to_vec(),
+                    ));
                 }
             }
         }
@@ -651,6 +654,7 @@ where
     GetPayload {
         subspace: S,
         path: Path<MCL, MCC, MPL>,
+        offset: u64,
         expected_digest: Option<PD>,
     },
     GetEntry {
@@ -818,17 +822,18 @@ pub async fn check_store_equality<
             StoreOp::GetPayload {
                 subspace,
                 path,
+                offset,
                 expected_digest,
             } => {
                 match (
                     store1
-                        .payload(subspace, path, expected_digest.clone())
+                        .payload(subspace, path, *offset, expected_digest.clone())
                         .await,
                     store2
-                        .payload(subspace, path, expected_digest.clone())
+                        .payload(subspace, path, *offset, expected_digest.clone())
                         .await,
                 ) {
-                    (Ok(Some(mut producer1)), Ok(Some(mut producer2))) => loop {
+                    (Ok(mut producer1), Ok(mut producer2)) => loop {
                         match (producer1.produce().await, producer2.produce().await) {
                             (Ok(Either::Left(item1)), Ok(Either::Left(item2))) => {
                                 assert_eq!(item1, item2)
@@ -844,7 +849,7 @@ pub async fn check_store_equality<
                             }
                         }
                     },
-                    (Ok(None), Ok(None)) | (Err(PayloadError::WrongEntry), Err(PayloadError::WrongEntry)) => continue,
+                    (Err(PayloadError::WrongEntry), Err(PayloadError::WrongEntry)) | (Err(PayloadError::OutOfBounds), Err(PayloadError::OutOfBounds)) => continue,
                     (Err(PayloadError::OperationError(_)), Err(PayloadError::OperationError(_))) =>  panic!("Get Payload: Two stores happened to fail at the same time in different ways."),
                     // These are failing variants, but we don't use them because we can't print all of them
                     // (in particular, the bulk producers that could appear here don't have Debug on them)
