@@ -136,13 +136,44 @@ fuzz_target!(|data: (
                                     .await
                                     .unwrap();
                             }
-                            StoreEvent::Appended(lengthy_entry) => {
-                                todo!()
+                            StoreEvent::EntryForgotten { entry } => {
+                                let _ = collected.forget_entry(entry).await;
+                            }
+                            StoreEvent::AreaForgotten { area, protected } => {
+                                let _ = collected.forget_area(area, protected).await;
+                            }
+                            StoreEvent::PayloadForgotten(entry) => {
+                                let _ = collected.forget_payload(entry).await;
+                            }
+                            StoreEvent::AreaPayloadsForgotten { area, protected } => {
+                                let _ = collected.forget_area_payloads(area, protected).await;
+                            }
+                            StoreEvent::Appended {
+                                entry,
+                                previous_available,
+                                now_available,
+                            } => {
+                                let mut new_payload_bytes_producer = store
+                                    .payload(
+                                        entry.subspace_id(),
+                                        entry.path(),
+                                        previous_available,
+                                        None,
+                                    )
+                                    .await;
+
+                                let _ = collected
+                                    .append_payload(
+                                        entry.subspace_id(),
+                                        entry.path(),
+                                        None,
+                                        &mut new_payload_bytes_producer,
+                                    )
+                                    .await;
                             }
                             StoreEvent::PruneAlert { cause } => {
                                 todo!()
                             }
-                            _ => todo!(),
                         },
                     }
 

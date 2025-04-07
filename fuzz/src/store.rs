@@ -40,6 +40,63 @@ where
         }
     }
 
+    pub async fn prune(&self, authorised_entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>)
+    where
+        PD: PayloadDigest,
+        N: NamespaceId,
+    {
+        self.prune_maybe(authorised_entry, false).await;
+    }
+
+    async fn prune_maybe(
+        &self,
+        authorised_entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        prevent_pruning: bool,
+    ) -> bool
+    where
+        PD: PayloadDigest,
+        N: NamespaceId,
+    {
+        let mut subspace_store =
+            self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
+
+        // Does the inserted entry replace others?
+        let prune_these: Vec<_> = subspace_store
+            .entries
+            .iter()
+            .filter_map(|(path, entry)| {
+                if authorised_entry.entry().path().is_prefix_of(path)
+                    && !entry.is_newer_than(authorised_entry.entry())
+                {
+                    Some(path.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if prevent_pruning && !prune_these.is_empty() {
+            return false;
+        } else {
+            for path_to_prune in prune_these {
+                subspace_store.deref_mut().entries.remove(&path_to_prune);
+            }
+
+            subspace_store.deref_mut().entries.insert(
+                authorised_entry.entry().path().clone(),
+                ControlEntry {
+                    authorisation_token: authorised_entry.token().to_owned(),
+                    payload: Vec::new(),
+                    payload_digest: authorised_entry.entry().payload_digest().to_owned(),
+                    payload_length: authorised_entry.entry().payload_length(),
+                    timestamp: authorised_entry.entry().timestamp(),
+                },
+            );
+
+            return true;
+        }
+    }
+
     fn get_or_create_subspace_store<'s>(
         &'s self,
         subspace_id: &S,
@@ -153,40 +210,10 @@ where
             }
         }
 
-        // Does the inserted entry replace others?
-        let prune_these: Vec<_> = subspace_store
-            .entries
-            .iter()
-            .filter_map(|(path, entry)| {
-                if authorised_entry.entry().path().is_prefix_of(path)
-                    && !entry.is_newer_than(authorised_entry.entry())
-                {
-                    Some(path.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if prevent_pruning && !prune_these.is_empty() {
-            Err(EntryIngestionError::PruningPrevented)
-        } else {
-            for path_to_prune in prune_these {
-                subspace_store.deref_mut().entries.remove(&path_to_prune);
-            }
-
-            subspace_store.deref_mut().entries.insert(
-                authorised_entry.entry().path().clone(),
-                ControlEntry {
-                    authorisation_token: authorised_entry.token().to_owned(),
-                    payload: Vec::new(),
-                    payload_digest: authorised_entry.entry().payload_digest().to_owned(),
-                    payload_length: authorised_entry.entry().payload_length(),
-                    timestamp: authorised_entry.entry().timestamp(),
-                },
-            );
-
+        if self.prune_maybe(authorised_entry.entry(), prevent_pruning).await {
             Ok(EntryIngestionSuccess::Success)
+        } else {
+            Err(EntryIngestionError::PruningPrevented)
         }
     }
 
