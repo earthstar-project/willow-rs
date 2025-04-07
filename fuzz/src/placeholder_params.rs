@@ -1,10 +1,7 @@
 use std::hash::{DefaultHasher, Hasher};
 
 use arbitrary::Arbitrary;
-use meadowcap::{
-    IsCommunal, McAuthorisationToken, McNamespacePublicKey, McPublicUserKey, SillyPublicKey,
-    SillySig,
-};
+use meadowcap::{McPublicUserKey, SillyPublicKey, SillySig};
 use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
@@ -12,7 +9,9 @@ use ufotofu_codec::{
     EncodableSync,
 };
 use ufotofu_codec_endian::U64BE;
-use willow_data_model::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId};
+use willow_data_model::{
+    AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
+};
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
     bytes: &[u8; BYTES_LENGTH],
@@ -283,5 +282,16 @@ impl Decodable for FakeAuthorisationToken {
         Self: Sized,
     {
         Ok(Self(SillySig::decode(producer).await?))
+    }
+}
+
+impl TrustedDecodable for FakeAuthorisationToken {
+    async unsafe fn trusted_decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        Self::decode(producer).await
     }
 }
