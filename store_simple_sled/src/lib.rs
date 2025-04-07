@@ -1,7 +1,7 @@
 use either::Either;
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 use ufotofu::BufferedProducer;
-use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError};
+use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError, TrustedDecodable};
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -147,10 +147,9 @@ where
     where
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
         PD: PayloadDigest + Decodable + EncodableSync + EncodableKnownSize,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
         S::ErrorReason: core::fmt::Debug,
         PD::ErrorReason: core::fmt::Debug,
-        AT::ErrorReason: core::fmt::Debug,
     {
         // Iterate from subspace, just linearly
         // Create all prefixes of given path
@@ -235,10 +234,9 @@ where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
-    AT::ErrorReason: core::fmt::Debug,
 {
     type Error = SimpleStoreSledError;
 
@@ -1162,16 +1160,15 @@ where
 
 async fn decode_entry_values<PD, AT>(encoded: &IVec) -> (u64, PD, AT, u64)
 where
+    AT: TrustedDecodable,
     PD: Decodable,
-    AT: Decodable,
     PD::ErrorReason: core::fmt::Debug,
-    AT::ErrorReason: core::fmt::Debug,
 {
     let mut producer = FromSlice::new(encoded);
 
     let payload_length = U64BE::decode(&mut producer).await.unwrap().0;
     let payload_digest = PD::decode(&mut producer).await.unwrap();
-    let auth_token = AT::decode(&mut producer).await.unwrap();
+    let auth_token = unsafe { AT::trusted_decode(&mut producer).await.unwrap() };
     let local_length = U64BE::decode(&mut producer).await.unwrap().0;
 
     (payload_length, payload_digest, auth_token, local_length)
@@ -1342,16 +1339,15 @@ where
     }
 }
 
-impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
-    for EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntryProducer<'_, MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
     S::ErrorReason: std::fmt::Debug,
     PD::ErrorReason: std::fmt::Debug,
-    AT::ErrorReason: std::fmt::Debug,
 {
     type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
 
