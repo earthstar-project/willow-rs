@@ -14,9 +14,9 @@ use arbitrary::Arbitrary;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NamespaceId25(VerifyingKey);
 
-/// A Willowʼ25 NamespaceId, compatible with Meadowcap using the ed25519 signature scheme.
+/// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) public key suitable for the Willow Data Model's [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) parameter, and Meadowcap's [`NamespacePublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#NamespacePublicKey) parameter.
 impl NamespaceId25 {
-    /// Create a new communal namespace keypair,
+    /// Returns a new keypair where the component [`NamespaceId25`] is valid for use with *[communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace)*.
     pub fn new_communal() -> (Self, SigningKey) {
         let mut csprng = OsRng;
         let mut signing_key: SigningKey = SigningKey::generate(&mut csprng);
@@ -32,6 +32,7 @@ impl NamespaceId25 {
         (maybe_communal, signing_key)
     }
 
+    /// Returns a new keypair where the component [`NamespaceId25`] is valid for use with *[owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace)*.
     pub fn new_owned() -> (Self, SigningKey) {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
@@ -58,7 +59,7 @@ impl NamespaceId for NamespaceId25 {}
 impl McNamespacePublicKey for NamespaceId25 {}
 
 impl IsCommunal for NamespaceId25 {
-    /// Check if the last bit is zero
+    /// Returns true if the last bit of the first byte is zero.
     fn is_communal(&self) -> bool {
         let last_byte = *self.0.to_bytes().last().unwrap();
 
