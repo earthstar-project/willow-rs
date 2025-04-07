@@ -111,7 +111,7 @@ where
             user: new_user,
         };
 
-        let handover_enc = &handover.sync_encode_into_boxed_slice();
+        let handover_enc = handover.sync_encode_into_boxed_slice();
 
         let signature = secret_key.sign(&handover_enc);
 
@@ -241,6 +241,23 @@ where
     pub fn progenitor(&self) -> &UserPublicKey {
         &self.user_key
     }
+
+    /// Returns a [`CommunalCapability`] without checking if any of the delegations are valid.
+    ///
+    /// Calling this method with an invalid delegation check is immediate undefined behaviour!
+    pub unsafe fn new_unchecked(
+        access_mode: AccessMode,
+        namespace_key: NamespacePublicKey,
+        user_key: UserPublicKey,
+        delegations: Vec<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>,
+    ) -> Self {
+        Self {
+            access_mode,
+            namespace_key,
+            user_key,
+            delegations,
+        }
+    }
 }
 
 /// Can be encoded to a bytestring to be signed for a new [`Delegation`] to a [`CommunalCapability`].
@@ -265,7 +282,6 @@ pub struct CommunalHandover<
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -273,7 +289,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > Encodable
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
@@ -316,7 +332,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -324,7 +339,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > EncodableKnownSize
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
@@ -356,7 +371,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -364,7 +378,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > EncodableSync
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
