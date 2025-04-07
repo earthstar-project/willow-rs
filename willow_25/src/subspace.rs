@@ -15,9 +15,9 @@ use arbitrary::Arbitrary;
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct SubspaceId25([u8; PUBLIC_KEY_LENGTH]);
 
-/// A Willowʼ25 NamespaceId, compatible with Meadowcap using the ed25519 signature scheme.
+/// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) public key suitable for the Willow Data Model's [`SubspaceId`](https://willowprotocol.org/specs/data-model/index.html#SubspaceId) parameter, and Meadowcap's [`UserPublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#UserPublicKey) parameter.
 impl SubspaceId25 {
-    /// Create a new subspace keypair,
+    /// Returns a new [`SubspaceId25`] and its corresponding signing key.
     pub fn new() -> (Self, SigningKey) {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
@@ -47,6 +47,9 @@ impl Ord for SubspaceId25 {
 }
 
 impl SubspaceId for SubspaceId25 {
+    /// Returns the next possible value in the set of all [`SubspaceId`], i.e. the (unique) least value that is strictly greater than `self`. Only if there is no greater value at all may this method return `None`.
+    ///
+    /// Returned values may not represent a point on curve25519 and may panic if you try to use `verify` on them. Successors are generally only used to generate upper bounds for [`willow_data_model::grouping::Range`]s.
     fn successor(&self) -> Option<Self> {
         let mut bytes = self.0;
 
