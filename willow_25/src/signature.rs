@@ -3,10 +3,12 @@ use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSy
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
+/// A /// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature suitable for Meadowcap's [`NamespaceSignature`](https://willowprotocol.org/specs/meadowcap/index.html#NamespaceSignature) and [`UserSignature`](https://willowprotocol.org/specs/meadowcap/index.html#UserSignature) parameters.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Signature25(ed25519_dalek::Signature);
 
 impl Signature25 {
+    /// Returns a reference to the inner [`ed25519_dalek::Signature`].
     pub fn inner(&self) -> &ed25519_dalek::Signature {
         &self.0
     }
@@ -48,7 +50,7 @@ impl Decodable for Signature25 {
     {
         let mut slice: [u8; 64] = [0; 64];
 
-        producer.bulk_overwrite_full_slice(&mut slice).await;
+        producer.bulk_overwrite_full_slice(&mut slice).await?;
 
         // We can unwrap here because we know the slice is 64 bytes
         let sig = ed25519_dalek::Signature::from_bytes(&slice);
