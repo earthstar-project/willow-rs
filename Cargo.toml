@@ -1,6 +1,20 @@
 [workspace]
 
-members = ["data-model", "earthstar", "encoding", "fuzz", "meadowcap", "wgps"]
+members = [
+    "compact_u64",
+    "data-model",
+    "encoding",
+    "fairly_unsafe_cell",
+    "fuzz",
+    "lcmux",
+    "meadowcap",
+    "ufotofu_codec",
+    "ufotofu_codec_endian",
+    "wgps",
+    "wb_async_utils",
+    "store_simple_sled",
+    "willow_25"
+]
 resolver = "2"
 
 [workspace.lints.clippy]

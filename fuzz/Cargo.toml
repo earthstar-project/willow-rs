@@ -11,13 +11,24 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.4.2", features = ["std", "dev"] }
-smol = "2.0.0"
+ufotofu = { version = "0.6.2", features = ["std", "dev"] }
+# ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
+ufotofu_queues = { version = "0.6.0", features = ["std"] }
+pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 signature = "2.2.0"
 syncify = "0.1.0"
 willow-encoding = { path = "../encoding" }
+ufotofu_codec = { path = "../ufotofu_codec", features = ["std", "dev"] }
+ufotofu_codec_endian = { path = "../ufotofu_codec_endian", features = ["std"] }
+compact_u64 = { path = "../compact_u64", features = ["std", "dev"] }
+either = "1.10.0"
+wb_async_utils = { path = "../wb_async_utils", features = ["ufotofu_utils"] }
+futures = { version = "0.3.31" }
+willow-store-simple-sled = { path = "../store_simple_sled" }
+sled = "0.34.7"
+tempdir = "0.3.7"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -27,8 +38,147 @@ features = ["dev"]
 path = "../meadowcap"
 features = ["dev"]
 
-[dependencies.earthstar]
-path = "../earthstar"
+################
+# compact_u64 #
+###############
+
+[[bin]]
+name = "compact_u64_codec"
+path = "fuzz_targets/compact_u64_codec.rs"
+test = false
+doc = false
+bench = false
+
+########################
+# ufotofu_codec_endian #
+########################
+
+[[bin]]
+name = "endian_u8_be"
+path = "fuzz_targets/endian_u8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_be"
+path = "fuzz_targets/endian_u16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_be"
+path = "fuzz_targets/endian_u32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_be"
+path = "fuzz_targets/endian_u64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u8_le"
+path = "fuzz_targets/endian_u8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u16_le"
+path = "fuzz_targets/endian_u16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u32_le"
+path = "fuzz_targets/endian_u32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_u64_le"
+path = "fuzz_targets/endian_u64_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_be"
+path = "fuzz_targets/endian_i8_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_be"
+path = "fuzz_targets/endian_i16_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_be"
+path = "fuzz_targets/endian_i32_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_be"
+path = "fuzz_targets/endian_i64_be.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i8_le"
+path = "fuzz_targets/endian_i8_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i16_le"
+path = "fuzz_targets/endian_i16_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i32_le"
+path = "fuzz_targets/endian_i32_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "endian_i64_le"
+path = "fuzz_targets/endian_i64_le.rs"
+test = false
+doc = false
+bench = false
+
+##################
+# wb_async_utils #
+##################
+
+[[bin]]
+name = "spsc"
+path = "fuzz_targets/spsc.rs"
+test = false
+doc = false
+bench = false
+
+#########
+# Other #
+#########
 
 [[bin]]
 name = "path"
@@ -102,225 +252,22 @@ doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding"
-path = "fuzz_targets/path_encoding.rs"
+name = "enc_path_abs"
+path = "fuzz_targets/enc_path_abs.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding2"
-path = "fuzz_targets/path_encoding2.rs"
+name = "enc_path2_abs"
+path = "fuzz_targets/enc_path2_abs.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "path_encoding3"
-path = "fuzz_targets/path_encoding3.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random"
-path = "fuzz_targets/path_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random2"
-path = "fuzz_targets/path_encoding_random2.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_encoding_random3"
-path = "fuzz_targets/path_encoding_random3.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_encoding"
-path = "fuzz_targets/entry_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_encoding_random"
-path = "fuzz_targets/entry_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u8be_encoding"
-path = "fuzz_targets/u8be_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u8be_encoding_random"
-path = "fuzz_targets/u8be_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u16be_encoding"
-path = "fuzz_targets/u16be_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u16be_encoding_random"
-path = "fuzz_targets/u16be_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u32be_encoding"
-path = "fuzz_targets/u32be_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u32be_encoding_random"
-path = "fuzz_targets/u32be_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u64be_encoding"
-path = "fuzz_targets/u64be_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "u64be_encoding_random"
-path = "fuzz_targets/u64be_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding"
-path = "fuzz_targets/path_rel_path_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding2"
-path = "fuzz_targets/path_rel_path_encoding2.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding3"
-path = "fuzz_targets/path_rel_path_encoding3.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding_random"
-path = "fuzz_targets/path_rel_path_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding_random2"
-path = "fuzz_targets/path_rel_path_encoding_random2.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "path_rel_path_encoding_random3"
-path = "fuzz_targets/path_rel_path_encoding_random3.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_entry_encoding"
-path = "fuzz_targets/entry_rel_entry_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_entry_encoding_random"
-path = "fuzz_targets/entry_rel_entry_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_area_encoding"
-path = "fuzz_targets/entry_rel_namespace_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_area_encoding_random"
-path = "fuzz_targets/entry_rel_namespace_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_range_encoding"
-path = "fuzz_targets/entry_rel_namespace_range_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "entry_rel_namespace_range_encoding_random"
-path = "fuzz_targets/entry_rel_namespace_range_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "area_rel_area_encoding"
-path = "fuzz_targets/area_rel_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "area_rel_area_encoding_random"
-path = "fuzz_targets/area_rel_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "range3d_rel_range3d_encoding"
-path = "fuzz_targets/range3d_rel_range3d_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "range3d_rel_range3d_encoding_random"
-path = "fuzz_targets/range3d_rel_range3d_encoding_random.rs"
+name = "enc_path3_abs"
+path = "fuzz_targets/enc_path3_abs.rs"
 test = false
 doc = false
 bench = false
@@ -347,20 +294,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mc_capability_rel_area_encoding"
-path = "fuzz_targets/mc_capability_rel_area_encoding.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "mc_capability_rel_area_encoding_random"
-path = "fuzz_targets/mc_capability_rel_area_encoding_random.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "mc_subspace_capability_delegation"
 path = "fuzz_targets/mc_subspace_capability_delegation.rs"
 test = false
@@ -375,15 +308,120 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mc_subspace_capability_encoding"
-path = "fuzz_targets/mc_subspace_capability_encoding.rs"
+name = "enc_path_rel_path"
+path = "fuzz_targets/enc_path_rel_path.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "mc_subspace_capability_encoding_random"
-path = "fuzz_targets/mc_subspace_capability_encoding_random.rs"
+name = "enc_path2_rel_path2"
+path = "fuzz_targets/enc_path2_rel_path2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_path3_rel_path3"
+path = "fuzz_targets/enc_path3_rel_path3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_abs"
+path = "fuzz_targets/enc_entry_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_entry"
+path = "fuzz_targets/enc_entry_rel_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_area"
+path = "fuzz_targets/enc_entry_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_entry_rel_range3d"
+path = "fuzz_targets/enc_entry_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_area_rel_area"
+path = "fuzz_targets/enc_area_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_range3d_rel_range3d"
+path = "fuzz_targets/enc_range3d_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_mccapability_rel_area"
+path = "fuzz_targets/enc_mccapability_rel_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_mcsubspacecapability_abs"
+path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_path_rel_privatepathcontext"
+path = "fuzz_targets/enc_path_rel_privatepathcontext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store"
+path = "fuzz_targets/store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_area_rel_privateareacontext"
+path = "fuzz_targets/enc_area_rel_privateareacontext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_communalcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_communalcapability_rel_personalprivateinterest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_ownedcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_ownedcapability_rel_personalprivateinterest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_subspacecapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
 test = false
 doc = false
 bench = false

@@ -1,12 +1,21 @@
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::{sync::consumer::IntoVec, sync::Consumer};
+use ufotofu_codec::{
+    Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
+};
+#[cfg(feature = "dev")]
+use willow_data_model::grouping::arbitrary_included_area;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    NamespaceId, Path, SubspaceId,
+    Path, SubspaceId,
 };
-use willow_encoding::sync::{Encodable, RelativeEncodable};
 
-use crate::{AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, IsCommunal};
+use crate::{
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
+    McPublicUserKey,
+};
+
+#[cfg(feature = "dev")]
+use crate::{SillyPublicKey, SillySig};
 
 /// Returned when an attempt to create a new owned capability failed.
 #[derive(Debug)]
@@ -50,10 +59,10 @@ pub struct OwnedCapability<
     UserPublicKey,
     UserSignature,
 > where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    NamespaceSignature: Encodable,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    UserSignature: Encodable,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize,
 {
     access_mode: AccessMode,
     namespace_key: NamespacePublicKey,
@@ -81,10 +90,10 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey: NamespaceId + Encodable + Verifier<NamespaceSignature> + IsCommunal,
-    NamespaceSignature: Encodable + Clone,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature>,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Creates a new owned capability granting access to the [full area](https://willowprotocol.org/specs/grouping-entries/index.html#full_area) of the [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace) to the given `UserPublicKey`.
     pub fn new<NamespaceSecret>(
@@ -102,22 +111,17 @@ where
             ));
         }
 
-        let mut consumer = IntoVec::<u8>::new();
-
-        let access_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
+        let message = OwnedInitialAuthorisationMsg {
+            access_mode,
+            user_key: &user_key,
         };
 
-        consumer.consume(access_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
+        let message_enc = message.sync_encode_into_boxed_slice();
 
-        let message = consumer.into_vec();
-
-        let initial_authorisation = namespace_secret.sign(&message);
+        let initial_authorisation = namespace_secret.sign(&message_enc);
 
         namespace_key
-            .verify(&message, &initial_authorisation)
+            .verify(&message_enc, &initial_authorisation)
             .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
 
         Ok(Self {
@@ -136,21 +140,15 @@ where
         initial_authorisation: NamespaceSignature,
         access_mode: AccessMode,
     ) -> Result<Self, OwnedCapabilityCreationError<NamespacePublicKey>> {
-        let mut consumer = IntoVec::<u8>::new();
-
-        let access_mode_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
+        let message = OwnedInitialAuthorisationMsg {
+            access_mode,
+            user_key: &user_key,
         };
 
-        // We can safely unwrap as IntoVec's error type is ! (never).
-        consumer.consume(access_mode_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-
-        let message = consumer.into_vec();
+        let message_enc = message.sync_encode_into_boxed_slice();
 
         namespace_key
-            .verify(&message, &initial_authorisation)
+            .verify(&message_enc, &initial_authorisation)
             .map_err(|err| OwnedCapabilityCreationError::InvalidSignature(err))?;
 
         Ok(Self {
@@ -184,11 +182,18 @@ where
 
         let prev_user = self.receiver();
 
-        let handover = self.handover(new_area, new_user);
-        let signature = secret_key.sign(&handover);
+        let handover = OwnedHandover {
+            cap: self,
+            area: new_area,
+            user: new_user,
+        };
+
+        let handover_enc = handover.sync_encode_into_boxed_slice();
+
+        let signature = secret_key.sign(&handover_enc);
 
         prev_user
-            .verify(&handover, &signature)
+            .verify(&handover_enc, &signature)
             .map_err(|_| FailedDelegationError::WrongSecretForUser(self.receiver().clone()))?;
 
         let mut new_delegations = self.delegations.clone();
@@ -243,11 +248,17 @@ where
             });
         }
 
-        let handover = self.handover(new_area, new_user);
+        let handover = OwnedHandover {
+            cap: self,
+            area: new_area,
+            user: new_user,
+        };
+
+        let handover_enc = handover.sync_encode_into_boxed_slice();
 
         let prev_receiver = self.receiver();
 
-        prev_receiver.verify(&handover, new_sig).map_err(|_| {
+        prev_receiver.verify(&handover_enc, new_sig).map_err(|_| {
             InvalidDelegationError::InvalidSignature {
                 claimed_receiver: new_user.clone(),
                 expected_signatory: prev_receiver.clone(),
@@ -333,47 +344,101 @@ where
         &self.initial_authorisation
     }
 
-    /// Returns a bytestring to be signed for a new [`Delegation`].
+    /// Returns a [`OwnedCapability`] without checking if its initial authorisation or delegations are valid.
     ///
-    /// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#owned_handover)
-    fn handover(
-        &self,
-        new_area: &Area<MCL, MCC, MPL, UserPublicKey>,
-        new_user: &UserPublicKey,
-    ) -> Box<[u8]> {
-        let mut consumer = IntoVec::<u8>::new();
-
-        if self.delegations.is_empty() {
-            let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
-
-            // We can safely unwrap all these encodings as IntoVec's error is the never type.
-            new_area.relative_encode(&prev_area, &mut consumer).unwrap();
-            self.initial_authorisation.encode(&mut consumer).unwrap();
-            new_user.encode(&mut consumer).unwrap();
-
-            return consumer.into_vec().into();
+    /// # Safety
+    /// Calling this method with an invalid initial authorisation or delegation is immediate undefined behaviour!
+    pub unsafe fn new_unchecked(
+        access_mode: AccessMode,
+        namespace_key: NamespacePublicKey,
+        user_key: UserPublicKey,
+        initial_authorisation: NamespaceSignature,
+        delegations: Vec<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>,
+    ) -> Self {
+        Self {
+            access_mode,
+            namespace_key,
+            user_key,
+            initial_authorisation,
+            delegations,
         }
-
-        // We can unwrap here because we know that self.delegations is not empty.
-        let last_delegation = self.delegations.last().unwrap();
-        let prev_area = last_delegation.area();
-        let prev_signature = last_delegation.signature();
-
-        // We can safely unwrap all these encodings as IntoVec's error is the never type.
-        new_area.relative_encode(prev_area, &mut consumer).unwrap();
-        prev_signature.encode(&mut consumer).unwrap();
-        new_user.encode(&mut consumer).unwrap();
-
-        consumer.into_vec().into()
     }
 }
 
-#[cfg(feature = "dev")]
-use arbitrary::{Arbitrary, Error as ArbitraryError};
+struct OwnedInitialAuthorisationMsg<'a, UserPublicKey>
+where
+    UserPublicKey: SubspaceId + Encodable,
+{
+    access_mode: AccessMode,
+    user_key: &'a UserPublicKey,
+}
 
-#[cfg(feature = "dev")]
+impl<UserPublicKey> Encodable for OwnedInitialAuthorisationMsg<'_, UserPublicKey>
+where
+    UserPublicKey: SubspaceId + Encodable,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let access_byte = match self.access_mode {
+            AccessMode::Read => 0x02,
+            AccessMode::Write => 0x03,
+        };
+
+        consumer.consume(access_byte).await?;
+        self.user_key.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<UserPublicKey> EncodableKnownSize for OwnedInitialAuthorisationMsg<'_, UserPublicKey>
+where
+    UserPublicKey: SubspaceId + EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        1 + self.user_key.len_of_encoding()
+    }
+}
+
+impl<UserPublicKey> EncodableSync for OwnedInitialAuthorisationMsg<'_, UserPublicKey> where
+    UserPublicKey: SubspaceId + EncodableKnownSize
+{
+}
+
+/// Can be encoded to a bytestring to be signed for a new [`Delegation`] to an [`OwnedCapability`].
+///
+/// [Definition](https://willowprotocol.org/specs/meadowcap/index.html#communal_handover)
+pub struct OwnedHandover<
+    'a,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    NamespacePublicKey,
+    NamespaceSignature,
+    UserPublicKey,
+    UserSignature,
+> where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize,
+{
+    cap: &'a OwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >,
+    area: &'a Area<MCL, MCC, MPL, UserPublicKey>,
+    user: &'a UserPublicKey,
+}
+
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -381,8 +446,9 @@ impl<
         NamespaceSignature,
         UserPublicKey,
         UserSignature,
-    > Arbitrary<'a>
-    for OwnedCapability<
+    > Encodable
+    for OwnedHandover<
+        '_,
         MCL,
         MCC,
         MPL,
@@ -392,42 +458,170 @@ impl<
         UserSignature,
     >
 where
-    NamespacePublicKey:
-        NamespaceId + Encodable + IsCommunal + Arbitrary<'a> + Verifier<NamespaceSignature>,
-    UserPublicKey: SubspaceId + Encodable + Verifier<UserSignature> + Arbitrary<'a>,
-    NamespaceSignature: Encodable + Clone + Arbitrary<'a>,
-    UserSignature: Encodable + Clone,
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        if self.cap.delegations.is_empty() {
+            let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
+
+            self.area.relative_encode(consumer, &prev_area).await?;
+            self.cap.initial_authorisation.encode(consumer).await?;
+            self.user.encode(consumer).await?;
+
+            return Ok(());
+        }
+
+        // We can unwrap here because we know that self.delegations is not empty.
+        let last_delegation = self.cap.delegations.last().unwrap();
+        let prev_area = last_delegation.area();
+        let prev_signature = last_delegation.signature();
+
+        self.area.relative_encode(consumer, prev_area).await?;
+        prev_signature.encode(consumer).await?;
+        self.user.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > EncodableKnownSize
+    for OwnedHandover<
+        '_,
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        if self.cap.delegations.is_empty() {
+            let prev_area = Area::<MCL, MCC, MPL, UserPublicKey>::new_full();
+
+            let area_len = self.area.relative_len_of_encoding(&prev_area);
+            let initial_auth_len = self.cap.initial_authorisation.len_of_encoding();
+            let user_len = self.user.len_of_encoding();
+
+            return area_len + initial_auth_len + user_len;
+        }
+
+        // We can unwrap here because we know that self.delegations is not empty.
+        let last_delegation = self.cap.delegations.last().unwrap();
+        let prev_area = last_delegation.area();
+        let prev_signature = last_delegation.signature();
+
+        let area_len = self.area.relative_len_of_encoding(prev_area);
+        let prev_sig_len = prev_signature.len_of_encoding();
+        let user_len = self.user.len_of_encoding();
+
+        area_len + prev_sig_len + user_len
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > EncodableSync
+    for OwnedHandover<
+        '_,
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize,
+{
+}
+
+#[cfg(feature = "dev")]
+use arbitrary::{Arbitrary, Error as ArbitraryError};
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for OwnedCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let namespace_key: NamespacePublicKey = Arbitrary::arbitrary(u)?;
+        let namespace_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
 
-        let initial_authorisation: NamespaceSignature = Arbitrary::arbitrary(u)?;
+        let initial_authorisation: SillySig = Arbitrary::arbitrary(u)?;
 
-        let user_key: UserPublicKey = Arbitrary::arbitrary(u)?;
+        let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let access_mode: AccessMode = Arbitrary::arbitrary(u)?;
 
-        let mut consumer = IntoVec::<u8>::new();
-
-        let access_byte = match access_mode {
-            AccessMode::Read => 0x02,
-            AccessMode::Write => 0x03,
+        let init_auth = OwnedInitialAuthorisationMsg {
+            access_mode,
+            user_key: &user_key,
         };
 
-        consumer.consume(access_byte).unwrap();
-        user_key.encode(&mut consumer).unwrap();
-
-        let message = consumer.into_vec();
+        let message = init_auth.sync_encode_into_boxed_slice();
 
         namespace_key
             .verify(&message, &initial_authorisation)
             .map_err(|_| ArbitraryError::IncorrectFormat)?;
 
-        Ok(Self {
+        let cap = Self {
             access_mode,
             initial_authorisation,
             namespace_key,
             user_key,
             delegations: Vec::new(),
-        })
+        };
+
+        let mut cap_with_delegations = cap.clone();
+        let delegees: Vec<SillyPublicKey> = Arbitrary::arbitrary(u)?;
+
+        let mut last_receiver = cap.receiver().clone();
+
+        let mut prev_area = Area::new_full();
+
+        for delegee in delegees {
+            let area = arbitrary_included_area(&prev_area, u)?;
+
+            prev_area = area;
+
+            cap_with_delegations = cap_with_delegations
+                .delegate(
+                    &last_receiver.corresponding_secret_key(),
+                    &delegee,
+                    &prev_area,
+                )
+                .map_err(|_| ArbitraryError::IncorrectFormat)?;
+            last_receiver = delegee;
+        }
+
+        Ok(cap_with_delegations)
     }
 }

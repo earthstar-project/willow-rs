@@ -1,26 +1,15 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{McSubspaceCapability, SubspaceDelegation};
-use willow_fuzz::silly_sigs::{SillyPublicKey, SillySig};
+use meadowcap::{McSubspaceCapability, SillyPublicKey, SillySig, SubspaceDelegation};
 
 fuzz_target!(|data: (
     SubspaceDelegation<SillyPublicKey, SillySig>,
-    McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
-    Vec<SillyPublicKey>
+    McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 )| {
-    let (delegation, mc_cap, delegees) = data;
+    let (delegation, mc_cap) = data;
 
     let mut mut_cap = mc_cap.clone();
-
-    let mut last_receiver = mut_cap.receiver().clone();
-
-    for delegee in delegees {
-        mut_cap = mut_cap
-            .delegate(&last_receiver.corresponding_secret_key(), &delegee)
-            .unwrap();
-        last_receiver = delegee;
-    }
 
     let delegation_user = delegation.user().clone();
     let delegation_sig = delegation.signature().clone();

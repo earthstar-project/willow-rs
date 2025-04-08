@@ -1,9 +1,10 @@
 #[cfg(feature = "dev")]
-use arbitrary::{size_hint::and_all, Arbitrary};
+use crate::{grouping::RangeEnd, parameters::SubspaceId, PathBuilder};
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
 
 use crate::{
     entry::{Entry, Timestamp},
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
     path::Path,
 };
 
@@ -11,19 +12,45 @@ use super::range::Range;
 
 /// The possible values of an [`Area`]'s `subspace`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
-pub enum AreaSubspace<S: SubspaceId> {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub enum AreaSubspace<S> {
     /// A value that signals that an [`Area`] includes Entries with arbitrary subspace_ids.
     Any,
     /// A concrete [`SubspaceId`].
     Id(S),
 }
 
-impl<S: SubspaceId> AreaSubspace<S> {
+impl<S> AreaSubspace<S> {
+    /// Returns whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
+    pub fn is_any(&self) -> bool {
+        matches!(self, AreaSubspace::Any)
+    }
+}
+
+impl<S> AreaSubspace<S>
+where
+    S: PartialEq,
+{
     /// Returns whether this [`AreaSubspace`] includes a given [`SubspaceId`].
     pub fn includes(&self, sub: &S) -> bool {
         match self {
             AreaSubspace::Any => true,
             AreaSubspace::Id(id) => sub == id,
+        }
+    }
+}
+
+impl<S> AreaSubspace<S>
+where
+    S: PartialEq + Clone,
+{
+    /// Returns whether this [`AreaSubspace`] includes a given [`AreaSubspace`].
+    pub fn includes_area_subspace(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AreaSubspace::Any, AreaSubspace::Any) => true,
+            (AreaSubspace::Any, AreaSubspace::Id(_)) => true,
+            (AreaSubspace::Id(_), AreaSubspace::Any) => false,
+            (AreaSubspace::Id(id), AreaSubspace::Id(id_other)) => id == id_other,
         }
     }
 
@@ -37,35 +64,23 @@ impl<S: SubspaceId> AreaSubspace<S> {
             (Self::Id(_a), Self::Id(_b)) => None,
         }
     }
-
-    /// Returns whether this [`AreaSubspace`] includes Entries with arbitrary subspace_ids.
-    pub fn is_any(&self) -> bool {
-        matches!(self, AreaSubspace::Any)
-    }
 }
 
-#[cfg(feature = "dev")]
-impl<'a, S> Arbitrary<'a> for AreaSubspace<S>
-where
-    S: SubspaceId + Arbitrary<'a>,
-{
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let is_any: bool = Arbitrary::arbitrary(u)?;
-
-        if !is_any {
-            let subspace: S = Arbitrary::arbitrary(u)?;
-
-            return Ok(Self::Id(subspace));
+impl<S: PartialEq> PartialEq<S> for AreaSubspace<S> {
+    fn eq(&self, other: &S) -> bool {
+        match self {
+            AreaSubspace::Any => false,
+            AreaSubspace::Id(s) => s == other,
         }
-
-        Ok(Self::Any)
     }
 }
 
 /// A grouping of entries.
+///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#areas).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
-pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// To be included in this [`Area`], an [`Entry`]’s `subspace_id` must be equal to the subspace_id, unless it is any.
     subspace: AreaSubspace<S>,
     /// To be included in this [`Area`], an [`Entry`]’s `path` must be prefixed by the path.
@@ -74,7 +89,7 @@ pub struct Area<const MCL: usize, const MCC: usize, const MPL: usize, S: Subspac
     times: Range<Timestamp>,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<MCL, MCC, MPL, S> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL, S> {
     /// Creates a new [`Area`].
     pub fn new(
         subspace: AreaSubspace<S>,
@@ -120,7 +135,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
-    /// Returns an [`Area`] which includes all entries within a [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
+    /// Returns an [`Area`] which includes all entries within a given [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace).
     ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#subspace_area).
     pub fn new_subspace(sub: S) -> Self {
@@ -130,15 +145,27 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             times: Range::new_open(0),
         }
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL, S>
+where
+    S: PartialEq,
+{
     /// Returns whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) an [`Entry`].
-    pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
+    pub fn includes_entry<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
+        self.includes_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
+    }
+
+    /// Returns whether an [`Area`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) includes an entry with a given subspace_id, path, and timestamp.
+    pub fn includes_triplet(
         &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
     ) -> bool {
-        self.subspace.includes(entry.subspace_id())
-            && self.path.is_prefix_of(entry.path())
-            && self.times.includes(&entry.timestamp())
+        self.subspace.includes(subspace_id)
+            && self.path.is_prefix_of(path)
+            && self.times.includes(&timestamp)
     }
 
     /// Returns whether an [`Area`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Area`].
@@ -159,6 +186,36 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
         }
     }
 
+    /// Returns whether an [`Entry`] can cause prefix-pruning in this [`Area`].
+    pub fn could_be_pruned_by<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
+        self.could_be_pruned_by_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
+    }
+
+    /// Returns whether an [`Entry`] of the given subspace_id, path, and timestamp can cause prefix-pruning in this [`Area`].
+    pub fn could_be_pruned_by_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        if let AreaSubspace::Id(my_subspace_id) = self.subspace() {
+            if my_subspace_id != subspace_id {
+                return false;
+            }
+        }
+
+        if !(self.times().includes(&timestamp) || timestamp < self.times().start) {
+            return false;
+        }
+
+        path.is_prefix_of(&self.path) || path.is_prefixed_by(&self.path)
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL, S>
+where
+    S: PartialEq + Clone,
+{
     /// Returns the intersection of this [`Area`] with another.
     ///
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#area_intersection).
@@ -178,33 +235,93 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Area<M
             path,
         })
     }
+
+    /// Returns whether an [`Area`] _almost includes_ another area, that is, if the other [`Area`] would be included by this if [`Area] if it had the same [`SubspaceId`].
+    pub fn almost_includes_area(&self, other: &Area<MCL, MCC, MPL, S>) -> bool {
+        let subspace_is_fine = match (self.subspace(), other.subspace()) {
+            (AreaSubspace::Id(self_id), AreaSubspace::Id(other_id)) => self_id == other_id,
+            _ => true,
+        };
+        subspace_is_fine
+            && self.path.is_prefix_of(&other.path)
+            && self.times.includes_range(&other.times)
+    }
 }
 
 #[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
-    for Area<MCL, MCC, MPL, S>
+pub fn arbitrary_included_area<'a, const MCL: usize, const MCC: usize, const MPL: usize, S>(
+    area: &Area<MCL, MCC, MPL, S>,
+    u: &mut arbitrary::Unstructured<'a>,
+) -> arbitrary::Result<Area<MCL, MCC, MPL, S>>
 where
     S: SubspaceId + Arbitrary<'a>,
 {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let subspace: AreaSubspace<S> = Arbitrary::arbitrary(u)?;
-        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
-        let times: Range<u64> = Arbitrary::arbitrary(u)?;
+    let suffix: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
 
-        Ok(Self {
-            subspace,
-            path,
-            times,
-        })
-    }
+    let total_length = area.path().path_length() + suffix.path_length();
+    let total_component_length = area.path().component_count() + suffix.component_count();
 
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        and_all(&[
-            AreaSubspace::<S>::size_hint(depth),
-            Path::<MCL, MCC, MPL>::size_hint(depth),
-            Range::<u64>::size_hint(depth),
-        ])
-    }
+    let included_path = if let Ok(mut builder) = PathBuilder::new_from_prefix(
+        total_length,
+        total_component_length,
+        area.path(),
+        area.path.component_count(),
+    ) {
+        for component in suffix.components() {
+            builder.append_component(component)
+        }
+
+        builder.build()
+    } else {
+        area.path().clone()
+    };
+
+    let subspace = match area.subspace() {
+        AreaSubspace::Any => {
+            let is_subspace: bool = Arbitrary::arbitrary(u)?;
+
+            if is_subspace {
+                let subspace: S = Arbitrary::arbitrary(u)?;
+                AreaSubspace::Id(subspace)
+            } else {
+                AreaSubspace::Any
+            }
+        }
+        AreaSubspace::Id(id) => AreaSubspace::Id(id.clone()),
+    };
+
+    let start_offset: u64 = Arbitrary::arbitrary(u)?;
+
+    let new_start = area
+        .times()
+        .start
+        .checked_add(start_offset)
+        .map_or(area.times().start, |res| res);
+
+    let end_offset: u64 = Arbitrary::arbitrary(u)?;
+
+    let new_end = match area.times().end {
+        crate::grouping::RangeEnd::Closed(end) => {
+            RangeEnd::Closed(end.checked_sub(end_offset).map_or(end, |res| res))
+        }
+        crate::grouping::RangeEnd::Open => {
+            let is_any: bool = Arbitrary::arbitrary(u)?;
+
+            if is_any {
+                RangeEnd::Open
+            } else {
+                RangeEnd::Closed(end_offset)
+            }
+        }
+    };
+
+    let times = if new_start <= new_end {
+        Range::new(new_start, new_end)
+    } else {
+        *area.times()
+    };
+
+    Ok(Area::new(subspace, included_path, times))
 }
 
 #[cfg(test)]
@@ -214,64 +331,51 @@ mod tests {
 
     use super::*;
 
-    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-    struct FakeSubspaceId(usize);
-    impl SubspaceId for FakeSubspaceId {
-        fn successor(&self) -> Option<Self> {
-            Some(FakeSubspaceId(self.0 + 1))
-        }
-    }
-
     const MCL: usize = 8;
     const MCC: usize = 4;
     const MPL: usize = 16;
 
     #[test]
     fn subspace_area_includes() {
-        assert!(AreaSubspace::<FakeSubspaceId>::Any.includes(&FakeSubspaceId(5)));
-        assert!(AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(5)).includes(&FakeSubspaceId(5)));
-        assert!(!AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(8)).includes(&FakeSubspaceId(5)));
+        assert!(AreaSubspace::<u64>::Any.includes(&5));
+        assert!(AreaSubspace::<u64>::Id(5).includes(&5));
+        assert!(!AreaSubspace::<u64>::Id(8).includes(&5));
     }
 
     #[test]
     fn subspace_area_intersects() {
         // Non-empty intersections
-        let any_any_intersection =
-            AreaSubspace::<FakeSubspaceId>::Any.intersection(&AreaSubspace::<FakeSubspaceId>::Any);
+        let any_any_intersection = AreaSubspace::<u64>::Any.intersection(&AreaSubspace::<u64>::Any);
 
         assert!(any_any_intersection.is_some());
 
-        assert!(any_any_intersection.unwrap() == AreaSubspace::<FakeSubspaceId>::Any);
+        assert!(any_any_intersection.unwrap() == AreaSubspace::<u64>::Any);
 
-        let any_id_intersection = AreaSubspace::<FakeSubspaceId>::Any
-            .intersection(&AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6)));
+        let any_id_intersection =
+            AreaSubspace::<u64>::Any.intersection(&AreaSubspace::<u64>::Id(6));
 
         assert!(any_id_intersection.is_some());
 
-        assert!(
-            any_id_intersection.unwrap() == AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6))
-        );
+        assert!(any_id_intersection.unwrap() == AreaSubspace::<u64>::Id(6));
 
-        let id_id_intersection = AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6))
-            .intersection(&AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6)));
+        let id_id_intersection =
+            AreaSubspace::<u64>::Id(6).intersection(&AreaSubspace::<u64>::Id(6));
 
         assert!(id_id_intersection.is_some());
 
-        assert!(
-            id_id_intersection.unwrap() == AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6))
-        );
+        assert!(id_id_intersection.unwrap() == AreaSubspace::<u64>::Id(6));
 
         // Empty intersections
 
-        let empty_id_id_intersection = AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(7))
-            .intersection(&AreaSubspace::<FakeSubspaceId>::Id(FakeSubspaceId(6)));
+        let empty_id_id_intersection =
+            AreaSubspace::<u64>::Id(7).intersection(&AreaSubspace::<u64>::Id(6));
 
         assert!(empty_id_id_intersection.is_none())
     }
 
     #[test]
     fn area_full() {
-        let full_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_full();
+        let full_area = Area::<MCL, MCC, MPL, u64>::new_full();
 
         assert_eq!(
             full_area,
@@ -285,12 +389,12 @@ mod tests {
 
     #[test]
     fn area_subspace() {
-        let subspace_area = Area::<MCL, MCC, MPL, FakeSubspaceId>::new_subspace(FakeSubspaceId(7));
+        let subspace_area = Area::<MCL, MCC, MPL, u64>::new_subspace(7);
 
         assert_eq!(
             subspace_area,
             Area {
-                subspace: AreaSubspace::Id(FakeSubspaceId(7)),
+                subspace: AreaSubspace::Id(7),
                 path: Path::new_empty(),
                 times: Range::new_open(0)
             }
@@ -299,52 +403,52 @@ mod tests {
 
     #[test]
     fn area_intersects() {
-        let empty_intersection_subspace = Area::<MCL, MCC, MPL, FakeSubspaceId> {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+        let empty_intersection_subspace = Area::<MCL, MCC, MPL, u64> {
+            subspace: AreaSubspace::Id(1),
             path: Path::new_empty(),
             times: Range::new_open(0),
         }
         .intersection(&Area {
-            subspace: AreaSubspace::Id(FakeSubspaceId(2)),
+            subspace: AreaSubspace::Id(2),
             path: Path::new_empty(),
             times: Range::new_open(0),
         });
 
         assert!(empty_intersection_subspace.is_none());
 
-        let empty_intersection_path = Area::<MCL, MCC, MPL, FakeSubspaceId> {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+        let empty_intersection_path = Area::<MCL, MCC, MPL, u64> {
+            subspace: AreaSubspace::Id(1),
             path: Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
             times: Range::new_open(0),
         }
         .intersection(&Area {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+            subspace: AreaSubspace::Id(1),
             path: Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             times: Range::new_open(0),
         });
 
         assert!(empty_intersection_path.is_none());
 
-        let empty_intersection_time = Area::<MCL, MCC, MPL, FakeSubspaceId> {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+        let empty_intersection_time = Area::<MCL, MCC, MPL, u64> {
+            subspace: AreaSubspace::Id(1),
             path: Path::new_empty(),
             times: Range::new_closed(0, 1).unwrap(),
         }
         .intersection(&Area {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+            subspace: AreaSubspace::Id(1),
             path: Path::new_empty(),
             times: Range::new_closed(2, 3).unwrap(),
         });
 
         assert!(empty_intersection_time.is_none());
 
-        let intersection = Area::<MCL, MCC, MPL, FakeSubspaceId> {
+        let intersection = Area::<MCL, MCC, MPL, u64> {
             subspace: AreaSubspace::Any,
             path: Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
             times: Range::new_closed(0, 10).unwrap(),
         }
         .intersection(&Area {
-            subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+            subspace: AreaSubspace::Id(1),
             path: Path::new_from_slice(&[
                 Component::new(b"1").unwrap(),
                 Component::new(b"2").unwrap(),
@@ -358,7 +462,7 @@ mod tests {
         assert_eq!(
             intersection.unwrap(),
             Area {
-                subspace: AreaSubspace::Id(FakeSubspaceId(1)),
+                subspace: AreaSubspace::Id(1),
                 path: Path::new_from_slice(&[
                     Component::new(b"1").unwrap(),
                     Component::new(b"2").unwrap(),

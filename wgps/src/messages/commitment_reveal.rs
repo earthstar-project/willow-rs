@@ -1,21 +1,35 @@
-use ufotofu::local_nb::BulkConsumer;
-use willow_encoding::Encodable;
+// use lcmux::{GetGlobalNibble, SendGlobalNibble};
+use ufotofu::BulkConsumer;
+use ufotofu_codec::RelativeEncodable;
 
-pub struct CommitmentReveal<const CHALLENGE_LENGTH: usize> {
-    pub nonce: [u8; CHALLENGE_LENGTH],
+pub struct CommitmentReveal<'nonce, const CHALLENGE_LENGTH: usize> {
+    pub nonce: &'nonce [u8; CHALLENGE_LENGTH],
 }
 
-impl<const CHALLENGE_LENGTH: usize> Encodable for CommitmentReveal<CHALLENGE_LENGTH> {
-    async fn encode<Consumer>(&self, consumer: &mut Consumer) -> Result<(), Consumer::Error>
+impl<const CHALLENGE_LENGTH: usize> RelativeEncodable</*SendGlobalNibble*/ ()>
+    for CommitmentReveal<'_, CHALLENGE_LENGTH>
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        _r: &(), //&SendGlobalNibble,
+    ) -> Result<(), C::Error>
     where
-        Consumer: BulkConsumer<Item = u8>,
+        C: BulkConsumer<Item = u8>,
     {
-        consumer.consume(0x0).await?;
         consumer
             .bulk_consume_full_slice(&self.nonce[..])
             .await
-            .map_err(|err| err.reason)?;
-
-        Ok(())
+            .map_err(|err| err.reason)
     }
 }
+
+/*
+impl<'nonce, const CHALLENGE_LENGTH: usize> GetGlobalNibble
+    for CommitmentReveal<'nonce, CHALLENGE_LENGTH>
+{
+    fn control_nibble(&self) -> SendGlobalNibble {
+        0b0000_0000
+    }
+}
+*/

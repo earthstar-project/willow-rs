@@ -26,6 +26,8 @@
 //! - `AT` - The type used for [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) (willowprotocol.org), must implement the [`AuthorisationToken`] trait.
 
 mod entry;
+use std::future::Future;
+
 pub use entry::*;
 mod lengthy_entry;
 pub use lengthy_entry::*;
@@ -34,6 +36,34 @@ mod parameters;
 pub use parameters::*;
 mod path;
 pub use path::*;
+mod private_encodings;
+pub use private_encodings::*;
 mod relative_encodings;
 mod store;
 pub use store::*;
+use ufotofu_codec::Blame;
+
+/// Methods for decoding **trusted** encodings,that is, data which was already deemed trustworthy *prior* to encoding.
+pub trait TrustedDecodable: Sized {
+    /// # Safety
+    /// This function is only intended to decode types which have been deemed *trusted* prior to their encoding.
+    /// Using it to decode encodings from untrusted sources will result in immediate undefined behaviour!
+    unsafe fn trusted_decode<P>(
+        producer: &mut P,
+    ) -> impl Future<Output = Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>;
+}
+
+/// Methods for decoding **trusted** encodings (that is, data which was deemed trustworthy *prior* to encoding), **relative** to type `R`.
+pub trait TrustedRelativeDecodable<R>: Sized {
+    /// # Safety
+    /// This function is only intended to decode types which have been deemed *trusted* prior to their encoding.
+    /// Using it to decode encodings from untrusted sources will result in immediate undefined behaviour!
+    unsafe fn trusted_relative_decode<P>(
+        producer: &mut P,
+        r: &R,
+    ) -> impl Future<Output = Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>;
+}

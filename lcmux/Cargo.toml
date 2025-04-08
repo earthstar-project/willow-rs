@@ -1,0 +1,24 @@
+[package]
+name = "lcmux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+either = "1.10.0"
+wb_async_utils = { path = "../wb_async_utils", version = "0.1.0", features = [
+    "ufotofu_utils",
+] }
+ufotofu = { version = "0.6.0", features = ["std"] }
+ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
+ufotofu_codec_endian = { path = "../ufotofu_codec_endian", version = "0.1.0" }
+compact_u64 = { path = "../compact_u64", version = "0.1.0" }
+ufotofu_queues = { version = "0.6.0", features = ["std"] }
+async_cell = "0.2.2"
+futures = { version = "0.3.31" }
+willow-encoding = { path = "../encoding", version = "0.1.0" }
+
+[dev-dependencies]
+smol = "2.0.2"
+
+[lints]
+workspace = true

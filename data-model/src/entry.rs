@@ -1,27 +1,21 @@
-use std::cmp::Ordering;
-
 #[cfg(feature = "dev")]
-use arbitrary::{size_hint::and_all, Arbitrary};
+use arbitrary::Arbitrary;
+use compact_u64::CompactU64;
 
-use crate::{
-    parameters::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId},
-    path::Path,
-};
+use crate::{parameters::AuthorisationToken, path::Path};
 
 /// A Timestamp is a 64-bit unsigned integer, that is, a natural number between zero (inclusive) and 2^64 (exclusive).
 /// Timestamps are to be interpreted as a time in microseconds since the Unix epoch.
+///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Timestamp).
 pub type Timestamp = u64;
 
 /// The metadata associated with each Payload.
+///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#Entry).
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
-{
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> {
     /// The identifier of the namespace to which the [`Entry`] belongs.
     namespace_id: N,
     /// The identifier of the subspace to which the [`Entry`] belongs.
@@ -36,11 +30,8 @@ where
     payload_length: u64,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    Entry<MCL, MCC, MPL, N, S, PD>
 {
     /// Creates a new [`Entry`].
     pub fn new(
@@ -90,7 +81,12 @@ where
     pub fn payload_digest(&self) -> &PD {
         &self.payload_digest
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
+where
+    PD: PartialOrd,
+{
     /// Returns if this [`Entry`] is newer than another using their timestamps.
     /// Tie-breaks using the Entries' payload digest and payload length otherwise.
     ///
@@ -104,160 +100,170 @@ where
     }
 }
 
-/// Returns an ordering between `self` and `other`.
-///
-/// See the implementation of [`Ord`] on [`Entry`].
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> PartialOrd
+use ufotofu::{BulkConsumer, BulkProducer};
+
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
+    EncodableSync,
+};
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + Ord,
-    S: SubspaceId,
-    PD: PayloadDigest,
+    N: Encodable,
+    S: Encodable,
+    PD: Encodable,
 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Returns an ordering between `self` and `other`.
-///
-/// The ordering is the ordering defined in the [sideloading protocol]: Entries are first compared
-/// by namespace id, then by subspace id, then by path. If those are all equal, the entries are
-/// sorted by their newer relation (see [`Self::is_newer_than`]).
-///
-/// [sideloading protocol]: https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Ord
-    for Entry<MCL, MCC, MPL, N, S, PD>
-where
-    N: NamespaceId + Ord,
-    S: SubspaceId,
-    PD: PayloadDigest,
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.namespace_id
-            .cmp(&other.namespace_id)
-            .then_with(|| self.subspace_id.cmp(&other.subspace_id))
-            .then_with(|| self.path.cmp(&other.path))
-            .then_with(|| {
-                if self.is_newer_than(other) {
-                    Ordering::Greater
-                } else if other.is_newer_than(self) {
-                    Ordering::Less
-                } else {
-                    Ordering::Equal
-                }
-            })
-    }
-}
-
-use syncify::syncify;
-use syncify::syncify_replace;
-
-#[syncify(encoding_sync)]
-mod encoding {
-    use super::*;
-
-    #[syncify_replace(use ufotofu::sync::{BulkConsumer, BulkProducer};)]
-    use ufotofu::local_nb::{BulkConsumer, BulkProducer};
-
-    use willow_encoding::{DecodeError, U64BE};
-
-    #[syncify_replace(use willow_encoding::sync::{Decodable, Encodable};)]
-    use willow_encoding::{Decodable, Encodable};
-
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
-        for Entry<MCL, MCC, MPL, N, S, PD>
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
     where
-        N: NamespaceId + Encodable,
-        S: SubspaceId + Encodable,
-        PD: PayloadDigest + Encodable,
+        C: BulkConsumer<Item = u8>,
     {
-        async fn encode<C>(&self, consumer: &mut C) -> Result<(), <C>::Error>
-        where
-            C: BulkConsumer<Item = u8>,
-        {
-            self.namespace_id.encode(consumer).await?;
-            self.subspace_id.encode(consumer).await?;
-            self.path.encode(consumer).await?;
+        self.namespace_id.encode(consumer).await?;
+        self.subspace_id.encode(consumer).await?;
+        self.path.encode(consumer).await?;
 
-            U64BE::from(self.timestamp).encode(consumer).await?;
-            U64BE::from(self.payload_length).encode(consumer).await?;
+        CompactU64(self.timestamp).encode(consumer).await?;
+        CompactU64(self.payload_length).encode(consumer).await?;
 
-            self.payload_digest.encode(consumer).await?;
+        self.payload_digest.encode(consumer).await?;
 
-            Ok(())
-        }
-    }
-
-    impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
-        for Entry<MCL, MCC, MPL, N, S, PD>
-    where
-        N: NamespaceId + Decodable,
-        S: SubspaceId + Decodable,
-        PD: PayloadDigest + Decodable,
-    {
-        async fn decode_canonical<Prod>(
-            producer: &mut Prod,
-        ) -> Result<Self, DecodeError<Prod::Error>>
-        where
-            Prod: BulkProducer<Item = u8>,
-        {
-            let namespace_id = N::decode_canonical(producer).await?;
-            let subspace_id = S::decode_canonical(producer).await?;
-            let path = Path::<MCL, MCC, MPL>::decode_canonical(producer).await?;
-            let timestamp = U64BE::decode_canonical(producer).await?.into();
-            let payload_length = U64BE::decode_canonical(producer).await?.into();
-            let payload_digest = PD::decode_canonical(producer).await?;
-
-            Ok(Entry {
-                namespace_id,
-                subspace_id,
-                path,
-                timestamp,
-                payload_length,
-                payload_digest,
-            })
-        }
+        Ok(())
     }
 }
 
-#[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Arbitrary<'a>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + Arbitrary<'a>,
-    S: SubspaceId + Arbitrary<'a>,
-    PD: PayloadDigest + Arbitrary<'a>,
+    N: Decodable,
+    S: Decodable,
+    PD: Decodable,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
 {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let namespace_id: N = Arbitrary::arbitrary(u)?;
+    type ErrorReason = Blame;
 
-        let subspace_id: S = Arbitrary::arbitrary(u)?;
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let namespace_id = N::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let subspace_id = S::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
+        let timestamp = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_length = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_digest = PD::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
 
-        let path: Path<MCL, MCC, MPL> = Arbitrary::arbitrary(u)?;
-
-        let payload_digest: PD = Arbitrary::arbitrary(u)?;
-
-        Ok(Self {
+        Ok(Entry {
             namespace_id,
             subspace_id,
             path,
+            timestamp,
+            payload_length,
             payload_digest,
-            payload_length: Arbitrary::arbitrary(u)?,
-            timestamp: Arbitrary::arbitrary(u)?,
         })
     }
+}
 
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        and_all(&[
-            N::size_hint(depth),
-            S::size_hint(depth),
-            Path::<MCL, MCC, MPL>::size_hint(depth),
-            PD::size_hint(depth),
-            u64::size_hint(depth),
-            u64::size_hint(depth),
-        ])
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableCanonic
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: DecodableCanonic,
+    S: DecodableCanonic,
+    PD: DecodableCanonic,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
+{
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let namespace_id = N::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let subspace_id = S::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let path = Path::<MCL, MCC, MPL>::decode_canonic(producer).await?;
+        let timestamp = CompactU64::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_length = CompactU64::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let payload_digest = PD::decode_canonic(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(Entry {
+            namespace_id,
+            subspace_id,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        })
     }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableKnownSize
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: EncodableKnownSize,
+    S: EncodableKnownSize,
+    PD: EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        self.namespace_id.len_of_encoding()
+            + self.subspace_id.len_of_encoding()
+            + self.path.len_of_encoding()
+            + CompactU64(self.timestamp).len_of_encoding()
+            + CompactU64(self.payload_length).len_of_encoding()
+            + self.payload_digest.len_of_encoding()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableSync
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: EncodableSync,
+    S: EncodableSync,
+    PD: EncodableSync,
+{
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableSync
+    for Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: DecodableSync,
+    S: DecodableSync,
+    PD: DecodableSync,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+{
 }
 
 /// An error indicating an [`AuthorisationToken`](https://willowprotocol.org/specs/data-model/index.html#AuthorisationToken) does not authorise the writing of this entry.
@@ -275,29 +281,21 @@ impl core::fmt::Display for UnauthorisedWriteError {
 
 impl std::error::Error for UnauthorisedWriteError {}
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
-/// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`AuthorisationToken::is_authorised_write`] returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AuthorisedEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>(
     Entry<MCL, MCC, MPL, N, S, PD>,
     AT,
-)
-where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest;
+);
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId,
-    S: SubspaceId,
-    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    /// Returns an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise returns an [`UnauthorisedWriteError`]
-
+    /// Returns an [`AuthorisedEntry`] if the token permits the writing of this entry, otherwise returns an [`UnauthorisedWriteError`].
     pub fn new(
         entry: Entry<MCL, MCC, MPL, N, S, PD>,
         token: AT,
@@ -311,14 +309,16 @@ where
 
         Err(UnauthorisedWriteError)
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
+{
     /// Returns an [`AuthorisedEntry`] without checking if the token permits the writing of this entry.
     ///
-    /// Should only be used if the token was created by ourselves or previously validated.
-    pub fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self
-    where
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-    {
+    /// # Safety
+    /// Calling this method when `token.is_authorised_write(&entry)` would return `false` is immediate undefined behaviour!
+    pub unsafe fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self {
         Self(entry, token)
     }
 
@@ -338,27 +338,32 @@ where
     }
 }
 
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Arbitrary<'a>
+    for AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
+    PD: Arbitrary<'a>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let entry: Entry<MCL, MCC, MPL, N, S, PD> = Arbitrary::arbitrary(u)?;
+        let token: AT = Arbitrary::arbitrary(u)?;
+
+        if !token.is_authorised_write(&entry) {
+            arbitrary::Result::Err(arbitrary::Error::IncorrectFormat)
+        } else {
+            Ok(unsafe { Self::new_unchecked(entry, token) })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::path::Component;
 
     use super::*;
-
-    #[derive(Default, PartialEq, Eq, Clone)]
-    struct FakeNamespaceId(usize);
-    impl NamespaceId for FakeNamespaceId {}
-
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-    struct FakeSubspaceId(usize);
-    impl SubspaceId for FakeSubspaceId {
-        fn successor(&self) -> Option<Self> {
-            Some(FakeSubspaceId(self.0 + 1))
-        }
-    }
-
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-    struct FakePayloadDigest(usize);
-    impl PayloadDigest for FakePayloadDigest {}
 
     const MCL: usize = 8;
     const MCC: usize = 4;
@@ -367,19 +372,19 @@ mod tests {
     #[test]
     fn entry_newer_than() {
         let e_a1 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest::default(),
+            payload_digest: 0,
             payload_length: 0,
             timestamp: 20,
         };
 
         let e_a2 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest::default(),
+            payload_digest: 0,
             payload_length: 0,
             timestamp: 10,
         };
@@ -387,19 +392,19 @@ mod tests {
         assert!(e_a1.is_newer_than(&e_a2));
 
         let e_b1 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest(2),
+            payload_digest: 2,
             payload_length: 0,
             timestamp: 10,
         };
 
         let e_b2 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest(1),
+            payload_digest: 1,
             payload_length: 0,
             timestamp: 10,
         };
@@ -407,19 +412,19 @@ mod tests {
         assert!(e_b1.is_newer_than(&e_b2));
 
         let e_c1 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest::default(),
+            payload_digest: 0,
             payload_length: 2,
             timestamp: 20,
         };
 
         let e_c2 = Entry {
-            namespace_id: FakeNamespaceId::default(),
-            subspace_id: FakeSubspaceId::default(),
+            namespace_id: 0,
+            subspace_id: 0,
             path: Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
-            payload_digest: FakePayloadDigest::default(),
+            payload_digest: 0,
             payload_length: 1,
             timestamp: 20,
         };
