@@ -12,7 +12,7 @@
 //! Willowʼ25 uses:
 //!
 //! - ed25519 signing and verification provided by [`ed25519_dalek`](https://docs.rs/ed25519-dalek/latest/ed25519_dalek/)
-//! - BLAKE3 cryptographic hashing provided by [`blake3`](https://docs.rs/blake3/latest/blake3/)
+//! - (Temporarily) BLAKE3 cryptographic hashing provided by [`blake3`](https://docs.rs/blake3/latest/blake3/). This will eventually be replaced by WILLAM3 cryptographic hashing to allow partial payload verification.
 //!
 //! These choices have been chosen to balance performance and cryptographic security. They have **not** yet been audited in combination with Willow protocols.
 
