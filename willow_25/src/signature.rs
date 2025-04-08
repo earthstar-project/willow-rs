@@ -3,7 +3,7 @@ use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSy
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
-/// A /// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature suitable for Meadowcap's [`NamespaceSignature`](https://willowprotocol.org/specs/meadowcap/index.html#NamespaceSignature) and [`UserSignature`](https://willowprotocol.org/specs/meadowcap/index.html#UserSignature) parameters.
+/// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature suitable for Meadowcap's [`NamespaceSignature`](https://willowprotocol.org/specs/meadowcap/index.html#NamespaceSignature) and [`UserSignature`](https://willowprotocol.org/specs/meadowcap/index.html#UserSignature) parameters.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Signature25(ed25519_dalek::Signature);
 
