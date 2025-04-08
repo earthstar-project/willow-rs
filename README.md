@@ -13,7 +13,7 @@ _Currently_, this repo provides Rust implementations of:
   a capability system adaptable to local needs,
 - `SimpleStoreSled`, a [sled](https://docs.rs/sled/latest/sled/)-powered
   Willow [store](https://willowprotocol.org/specs/data-model/index.html#store)
-  implementing the [`Store`] trait, enabling persistent storage of Willow data!
+  implementing the `Store` trait, enabling persistent storage of Willow data!
 
 _Eventually_, this repo will also house Rust implementations of:
 
