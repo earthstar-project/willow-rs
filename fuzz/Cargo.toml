@@ -165,38 +165,6 @@ test = false
 doc = false
 bench = false
 
-#################
-# ufotofu_codec #
-#################
-
-[[bin]]
-name = "encoder_decoder"
-path = "fuzz_targets/encoder_decoder.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "encoder_canonic_decoder"
-path = "fuzz_targets/encoder_canonic_decoder.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "encoder_decoder_relative"
-path = "fuzz_targets/encoder_decoder_relative.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "encoder_canonic_decoder_relative"
-path = "fuzz_targets/encoder_canonic_decoder_relative.rs"
-test = false
-doc = false
-bench = false
-
 ##################
 # wb_async_utils #
 ##################
@@ -412,13 +380,6 @@ bench = false
 [[bin]]
 name = "enc_mcsubspacecapability_abs"
 path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "enc_sledentrykey_abs"
-path = "fuzz_targets/enc_sledentrykey_abs.rs"
 test = false
 doc = false
 bench = false

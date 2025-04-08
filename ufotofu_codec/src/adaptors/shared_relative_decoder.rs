@@ -39,8 +39,8 @@ impl<'mutex, P, T, R, RelativeTo, ErrorReason>
     }
 }
 
-impl<'mutex, P, T, R, RelativeTo, ErrorReason> Producer
-    for SharedRelativeDecoder<'mutex, P, T, R, RelativeTo, ErrorReason>
+impl<P, T, R, RelativeTo, ErrorReason> Producer
+    for SharedRelativeDecoder<'_, P, T, R, RelativeTo, ErrorReason>
 where
     P: BulkProducer<Item = u8>,
     T: RelativeDecodable<RelativeTo, ErrorReason>,
@@ -65,8 +65,8 @@ where
     }
 }
 
-impl<'mutex, P, T, R, RelativeTo, ErrorReason> BufferedProducer
-    for SharedRelativeDecoder<'mutex, P, T, R, RelativeTo, ErrorReason>
+impl<P, T, R, RelativeTo, ErrorReason> BufferedProducer
+    for SharedRelativeDecoder<'_, P, T, R, RelativeTo, ErrorReason>
 where
     P: BulkProducer<Item = u8>,
     T: RelativeDecodable<RelativeTo, ErrorReason>,
@@ -110,8 +110,8 @@ impl<'mutex, P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
     }
 }
 
-impl<'mutex, P, T, R, RelativeTo, ErrorReason, ErrorCanonic> Producer
-    for SharedRelativeCanonicDecoder<'mutex, P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
+impl<P, T, R, RelativeTo, ErrorReason, ErrorCanonic> Producer
+    for SharedRelativeCanonicDecoder<'_, P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
 where
     P: BulkProducer<Item = u8>,
     T: RelativeDecodableCanonic<RelativeTo, ErrorReason, ErrorCanonic>,
@@ -137,8 +137,8 @@ where
     }
 }
 
-impl<'mutex, P, T, R, RelativeTo, ErrorReason, ErrorCanonic> BufferedProducer
-    for SharedRelativeCanonicDecoder<'mutex, P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
+impl<P, T, R, RelativeTo, ErrorReason, ErrorCanonic> BufferedProducer
+    for SharedRelativeCanonicDecoder<'_, P, T, R, RelativeTo, ErrorReason, ErrorCanonic>
 where
     P: BulkProducer<Item = u8>,
     T: RelativeDecodableCanonic<RelativeTo, ErrorReason, ErrorCanonic>,

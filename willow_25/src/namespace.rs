@@ -141,7 +141,7 @@ impl<'a> Arbitrary<'a> for NamespaceId25 {
         let is_communal = Arbitrary::arbitrary(u)?;
 
         if is_communal {
-            Ok(Self::new_communal().0)
+            Ok(Self::new_communal())
         } else {
             Ok(Self::new_owned().0)
         }

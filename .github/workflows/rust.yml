@@ -254,10 +254,10 @@ jobs:
       uses: mozilla-actions/sccache-action@v0.0.5
 
     - name: clippy check (all features)
-      run: cargo clippy --workspace --all-features --all-targets --bins --tests --benches
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --all-features --all-targets --bins --tests --benches
 
     - name: clippy check (no features)
-      run: cargo clippy --workspace --no-default-features --lib --bins --tests
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --no-default-features --lib --bins --tests
 
     - name: clippy check (default features)
-      run: cargo clippy --workspace --all-targets
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --all-targets

@@ -7,7 +7,7 @@ use ufotofu::Producer;
 use crate::TakeCell;
 
 /// The state shared between the [`Sender`] and the [`Receiver`]. This is fully opaque, but we expose it to give control over where it is allocated.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct State<Item, Final> {
     cell: TakeCell<Either<Item, Final>>,
 }

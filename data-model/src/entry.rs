@@ -316,6 +316,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 {
     /// Returns an [`AuthorisedEntry`] without checking if the token permits the writing of this entry.
     ///
+    /// # Safety
     /// Calling this method when `token.is_authorised_write(&entry)` would return `false` is immediate undefined behaviour!
     pub unsafe fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self {
         Self(entry, token)

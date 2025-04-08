@@ -137,7 +137,7 @@ where
     }
 }
 
-impl<'shared_producer, P> Producer for SharedProducerAccess<'shared_producer, P>
+impl<P> Producer for SharedProducerAccess<'_, P>
 where
     P: Producer,
     P::Final: Clone,
@@ -170,7 +170,7 @@ where
     }
 }
 
-impl<'shared_producer, P> BufferedProducer for SharedProducerAccess<'shared_producer, P>
+impl<P> BufferedProducer for SharedProducerAccess<'_, P>
 where
     P: BufferedProducer,
     P::Final: Clone,
@@ -193,7 +193,7 @@ where
     }
 }
 
-impl<'shared_producer, P> BulkProducer for SharedProducerAccess<'shared_producer, P>
+impl<P> BulkProducer for SharedProducerAccess<'_, P>
 where
     P: BulkProducer,
     P::Final: Clone,

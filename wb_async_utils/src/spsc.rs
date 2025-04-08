@@ -244,7 +244,8 @@ impl<R: Deref<Target = State<Q, F, E>>, Q: Queue, F, E> Consumer for Sender<R, Q
     }
 
     async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-        Ok(self.close_sync(fin))
+        self.close_sync(fin);
+        Ok(())
     }
 }
 

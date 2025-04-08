@@ -169,7 +169,7 @@ where
     }
 }
 
-impl<'shared_consumer, C> Consumer for SharedConsumerAccess<'shared_consumer, C>
+impl<C> Consumer for SharedConsumerAccess<'_, C>
 where
     C: Consumer,
     C::Final: Clone,
@@ -223,7 +223,7 @@ where
     }
 }
 
-impl<'shared_consumer, C> BufferedConsumer for SharedConsumerAccess<'shared_consumer, C>
+impl<C> BufferedConsumer for SharedConsumerAccess<'_, C>
 where
     C: BufferedConsumer,
     C::Final: Clone,
@@ -245,7 +245,7 @@ where
     }
 }
 
-impl<'shared_consumer, C> BulkConsumer for SharedConsumerAccess<'shared_consumer, C>
+impl<C> BulkConsumer for SharedConsumerAccess<'_, C>
 where
     C: BulkConsumer,
     C::Final: Clone,

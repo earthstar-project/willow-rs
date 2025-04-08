@@ -29,7 +29,7 @@ impl<'mutex, C, T> SharedEncoder<'mutex, C, T> {
     }
 }
 
-impl<'mutex, C, T> Consumer for SharedEncoder<'mutex, C, T>
+impl<C, T> Consumer for SharedEncoder<'_, C, T>
 where
     C: BulkConsumer<Item = u8>,
     T: Encodable,
@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<'mutex, C, T> BufferedConsumer for SharedEncoder<'mutex, C, T>
+impl<C, T> BufferedConsumer for SharedEncoder<'_, C, T>
 where
     C: BulkConsumer<Item = u8>,
     T: Encodable,

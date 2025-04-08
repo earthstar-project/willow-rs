@@ -286,10 +286,7 @@ impl<T: Clone> TakeCell<T> {
     /// ```
     pub fn peek(&self) -> Option<T> {
         let r = unsafe { self.value.borrow_mut() };
-        match r.deref() {
-            None => None,
-            Some(content_ref) => Some(content_ref.clone()),
-        }
+        r.deref().clone()
     }
 }
 

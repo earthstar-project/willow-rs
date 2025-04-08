@@ -474,9 +474,9 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     >;
 }
 
-///////////////////////////////
-//// In-Memory Event Queue ////
-///////////////////////////////
+//---------------------------//
+// In-Memory Event Queue     //
+//---------------------------//
 
 // What follows is one possible technique for implementing the event subscription service offered by stores. This technique maintains a queue of (relevant) store operations. Subscribers maintain an offset into this queue; producing events works by advancing through the queue, ignoring irrelevant operations, and emitting events whenever appropriate. The queue has a maximum capacity, if it is reached, but some subscriber has not yet processed the oldest operation, then either the queue blocks or the subscriber is removed.
 

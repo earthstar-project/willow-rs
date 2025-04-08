@@ -6,6 +6,7 @@ use core::fmt::Debug;
 use core::num::NonZeroUsize;
 use std::boxed::Box;
 use std::format;
+use std::string::ToString;
 use ufotofu::producer::{FromSlice, TestProducerBuilder};
 use ufotofu::{consumer::TestConsumer, producer::TestProducer};
 
@@ -25,7 +26,7 @@ async fn assert_relative_encoding_does_not_care_about_consumer_details<T, R>(
     let consumed2 = c2.consumed();
     let common_len = core::cmp::min(consumed1.len(), consumed2.len());
     let status = match (res1, res2) {
-        (Ok(()), Ok(())) => format!("Neither consumer errored."),
+        (Ok(()), Ok(())) => "Neither consumer errored.".to_string(),
         (Err(()), Ok(())) => format!(
             "First consumer errored after {} bytes, second did not error.",
             consumed1.len()
@@ -78,6 +79,7 @@ where
 }
 
 /// Irrespective of the blocking/yielding and sizes of items slots of a producer, decoding always produces the same encoding.
+#[allow(clippy::borrowed_box)]
 async fn assert_relative_decoding_does_not_care_about_consumer_details<T, R, ErrR>(
     r: &R,
     potential_encoding: &Box<[u8]>,
@@ -164,6 +166,7 @@ where
 }
 
 /// Panics if the input values (which should be generated randomly, so you do not need to know what they mean) certify a violation of any invariant of the [`RelativeEncodable`] or [`RelativeDecodable`] trait.
+#[allow(clippy::too_many_arguments, clippy::borrowed_box)]
 pub async fn assert_relative_basic_invariants<T, R, ErrR>(
     r: &R,
     t1: &T,
@@ -305,16 +308,16 @@ pub async fn assert_relative_canonic_invariants<T, R, ErrR, ErrC>(
 {
     assert_relative_distinct_encodings_do_not_canonically_decode_to_equal_values::<T, R, ErrR, ErrC>(
         r,
-        &potential_encoding1,
-        &potential_encoding2,
+        potential_encoding1,
+        potential_encoding2,
     )
     .await;
 
     assert_relative_canonic_decoding_specialises_regular_decoding::<T, R, ErrR, ErrC>(
         r,
-        &potential_encoding1,
+        potential_encoding1,
     )
     .await;
 
-    assert_relative_canonic_decoding_roundtrips::<T, R, ErrR, ErrC>(r, &potential_encoding1).await;
+    assert_relative_canonic_decoding_roundtrips::<T, R, ErrR, ErrC>(r, potential_encoding1).await;
 }

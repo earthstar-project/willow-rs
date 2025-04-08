@@ -1,13 +1,8 @@
-use compact_u64::{CompactU64, Tag, TagWidth};
-use meadowcap::{
-    AccessMode, CommunalCapability, Delegation, McAuthorisationToken, McCapability, OwnedCapability,
+use meadowcap::McAuthorisationToken;
+use ufotofu_codec::{Blame, Decodable, Encodable, RelativeEncodable};
+use willow_data_model::{
+    grouping::Area, AuthorisationToken, TrustedDecodable, TrustedRelativeDecodable,
 };
-use ufotofu_codec::{
-    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
-    RelativeEncodable, RelativeEncodableKnownSize,
-};
-use willow_data_model::{grouping::Area, AuthorisationToken, TrustedDecodable};
-use willow_encoding::is_bitflagged;
 
 /// A [`McCapability`](https://willowprotocol.org/specs/meadowcap/index.html#Capability) configured with Willowʼ25 parameters.
 pub type Capability25 = meadowcap::McCapability<
@@ -85,7 +80,10 @@ impl Encodable for AuthorisationToken25 {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        self.0.capability.relative_encode(consumer).await?;
+        self.0
+            .capability
+            .relative_encode(consumer, &Area::new_full())
+            .await?;
         self.0.signature.encode(consumer).await?;
 
         Ok(())
@@ -99,17 +97,8 @@ impl TrustedDecodable for AuthorisationToken25 {
     where
         P: ufotofu::BulkProducer<Item = u8>,
     {
-        let capability = McCapability::<
-            1024,
-            1024,
-            1024,
-            crate::NamespaceId25,
-            crate::Signature25,
-            crate::SubspaceId25,
-            crate::Signature25,
-        >::trusted_relative_decode(producer, Area::new_full())
-        .await;
-        let signature = crate::Signature25::decode(consumer).await?;
+        let capability = Capability25::trusted_relative_decode(producer, &Area::new_full()).await?;
+        let signature = crate::Signature25::decode(producer).await?;
 
         Ok(Self(McAuthorisationToken {
             capability,

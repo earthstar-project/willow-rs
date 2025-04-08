@@ -124,7 +124,7 @@ impl Blame {
 
     /// Converts from a `u16` to a `usize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `usize`.
     pub fn u16_to_usize<F, E>(n: u16) -> Result<usize, DecodeError<F, E, Blame>> {
-        usize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+        Ok(usize::from(n))
     }
 
     /// Converts from an `i64` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
@@ -139,7 +139,7 @@ impl Blame {
 
     /// Converts from an `i16` to a `isize`, yielding a `DecodeError::Other(Blame::OurFault)` if the number does not fit into a `isize`.
     pub fn i16_to_usize<F, E>(n: i16) -> Result<isize, DecodeError<F, E, Blame>> {
-        isize::try_from(n).map_err(|_| DecodeError::Other(Blame::OurFault))
+        Ok(isize::from(n))
     }
 }
 

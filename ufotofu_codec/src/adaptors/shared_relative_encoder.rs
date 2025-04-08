@@ -35,7 +35,7 @@ impl<'mutex, C, T, R, RelativeTo> SharedRelativeEncoder<'mutex, C, T, R, Relativ
     }
 }
 
-impl<'mutex, C, T, R, RelativeTo> Consumer for SharedRelativeEncoder<'mutex, C, T, R, RelativeTo>
+impl<C, T, R, RelativeTo> Consumer for SharedRelativeEncoder<'_, C, T, R, RelativeTo>
 where
     C: BulkConsumer<Item = u8>,
     T: RelativeEncodable<RelativeTo>,
@@ -59,8 +59,7 @@ where
     }
 }
 
-impl<'mutex, C, T, R, RelativeTo> BufferedConsumer
-    for SharedRelativeEncoder<'mutex, C, T, R, RelativeTo>
+impl<C, T, R, RelativeTo> BufferedConsumer for SharedRelativeEncoder<'_, C, T, R, RelativeTo>
 where
     C: BulkConsumer<Item = u8>,
     T: RelativeEncodable<RelativeTo>,

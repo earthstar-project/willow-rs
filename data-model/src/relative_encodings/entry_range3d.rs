@@ -24,7 +24,6 @@ where
     /// Encodes this [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
     ///
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
-
     async fn relative_encode<C>(
         &self,
         consumer: &mut C,

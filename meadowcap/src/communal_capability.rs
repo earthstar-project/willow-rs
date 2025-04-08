@@ -246,6 +246,7 @@ where
 
     /// Returns a [`CommunalCapability`] without checking if any of the delegations are valid.
     ///
+    /// # Safety
     /// Calling this method with an invalid delegation check is immediate undefined behaviour!
     pub unsafe fn new_unchecked(
         access_mode: AccessMode,

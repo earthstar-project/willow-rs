@@ -1,12 +1,11 @@
 #[cfg(feature = "dev")]
+use crate::{grouping::RangeEnd, parameters::SubspaceId, PathBuilder};
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
 use crate::{
     entry::{Entry, Timestamp},
-    grouping::RangeEnd,
-    parameters::SubspaceId,
     path::Path,
-    PathBuilder,
 };
 
 use super::range::Range;
@@ -209,7 +208,7 @@ where
             return false;
         }
 
-        return path.is_prefix_of(&self.path) || path.is_prefixed_by(&self.path);
+        path.is_prefix_of(&self.path) || path.is_prefixed_by(&self.path)
     }
 }
 

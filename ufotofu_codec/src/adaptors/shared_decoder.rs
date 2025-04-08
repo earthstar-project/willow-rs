@@ -31,7 +31,7 @@ impl<'mutex, P, T> SharedDecoder<'mutex, P, T> {
     }
 }
 
-impl<'mutex, P, T> Producer for SharedDecoder<'mutex, P, T>
+impl<P, T> Producer for SharedDecoder<'_, P, T>
 where
     P: BulkProducer<Item = u8>,
     T: Decodable,
@@ -53,7 +53,7 @@ where
     }
 }
 
-impl<'mutex, P, T> BufferedProducer for SharedDecoder<'mutex, P, T>
+impl<P, T> BufferedProducer for SharedDecoder<'_, P, T>
 where
     P: BulkProducer<Item = u8>,
     T: Decodable,
@@ -87,7 +87,7 @@ impl<'mutex, P, T> SharedCanonicDecoder<'mutex, P, T> {
     }
 }
 
-impl<'mutex, P, T> Producer for SharedCanonicDecoder<'mutex, P, T>
+impl<P, T> Producer for SharedCanonicDecoder<'_, P, T>
 where
     P: BulkProducer<Item = u8>,
     T: DecodableCanonic,
@@ -109,7 +109,7 @@ where
     }
 }
 
-impl<'mutex, P, T> BufferedProducer for SharedCanonicDecoder<'mutex, P, T>
+impl<P, T> BufferedProducer for SharedCanonicDecoder<'_, P, T>
 where
     P: BulkProducer<Item = u8>,
     T: DecodableCanonic,

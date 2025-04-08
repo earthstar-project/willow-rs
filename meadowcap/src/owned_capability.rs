@@ -346,6 +346,7 @@ where
 
     /// Returns a [`OwnedCapability`] without checking if its initial authorisation or delegations are valid.
     ///
+    /// # Safety
     /// Calling this method with an invalid initial authorisation or delegation is immediate undefined behaviour!
     pub unsafe fn new_unchecked(
         access_mode: AccessMode,

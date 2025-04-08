@@ -541,7 +541,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MC
         if self.component_count != other.component_count {
             false
         } else {
-            return self.components().eq(other.components());
+            self.components().eq(other.components())
         }
     }
 }
@@ -567,7 +567,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for Path<M
 /// Compares paths lexicographically, since that is the path ordering that the Willow spec always uses.
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for Path<MCL, MCC, MPL> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        return self.components().cmp(other.components());
+        self.components().cmp(other.components())
     }
 }
 

@@ -62,7 +62,7 @@ impl TagWidth {
     /// ```
     pub const fn from_u8(num: u8) -> Option<Self> {
         match num {
-            2 | 3 | 4 | 5 | 6 | 7 | 8 => Some(Self(num)),
+            2..=8 => Some(Self(num)),
             _ => None,
         }
     }
@@ -319,16 +319,14 @@ impl EncodingWidth {
 
         if n < max_inline {
             Self::zero()
+        } else if n < 256 {
+            Self::one()
+        } else if n < 256 * 256 {
+            Self::two()
+        } else if n < 256 * 256 * 256 * 256 {
+            Self::four()
         } else {
-            if n < 256 {
-                Self::one()
-            } else if n < 256 * 256 {
-                Self::two()
-            } else if n < 256 * 256 * 256 * 256 {
-                Self::four()
-            } else {
-                Self::eight()
-            }
+            Self::eight()
         }
     }
 }
@@ -432,7 +430,7 @@ impl Tag {
     /// Panics if the sum of `offset` and the width of the tag is strictly greater than eight.
     pub fn data_at_offset(&self, offset: u8) -> u8 {
         debug_assert!(offset.saturating_add(self.tag_width().as_u8()) <= 8);
-        return self.data() << (8 - (self.tag_width().as_u8() + offset));
+        self.data() << (8 - (self.tag_width().as_u8() + offset))
     }
 
     /// Returns the width of the integer encoding indicated by this tag.

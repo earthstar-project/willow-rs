@@ -12,7 +12,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
     /// Creates a `Component` from a byte slice. Return `None` if the slice is longer than `MaxComponentLength`.
     pub fn new(slice: &'a [u8]) -> Option<Self> {
         if slice.len() <= MAX_COMPONENT_LENGTH {
-            return Some(unsafe { Self::new_unchecked(slice) }); // Safe because we just checked the length.
+            Some(unsafe { Self::new_unchecked(slice) }) // Safe because we just checked the length.
         } else {
             None
         }
@@ -39,7 +39,7 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Component<'a, MAX_COMPONENT_LENGTH> 
     }
 }
 
-impl<'a, const MAX_COMPONENT_LENGTH: usize> Deref for Component<'a, MAX_COMPONENT_LENGTH> {
+impl<const MAX_COMPONENT_LENGTH: usize> Deref for Component<'_, MAX_COMPONENT_LENGTH> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -47,13 +47,13 @@ impl<'a, const MAX_COMPONENT_LENGTH: usize> Deref for Component<'a, MAX_COMPONEN
     }
 }
 
-impl<'a, const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
+impl<const MAX_COMPONENT_LENGTH: usize> AsRef<[u8]> for Component<'_, MAX_COMPONENT_LENGTH> {
     fn as_ref(&self) -> &[u8] {
         self.0
     }
 }
 
-impl<'a, const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'a, MAX_COMPONENT_LENGTH> {
+impl<const MAX_COMPONENT_LENGTH: usize> Borrow<[u8]> for Component<'_, MAX_COMPONENT_LENGTH> {
     fn borrow(&self) -> &[u8] {
         self.0
     }
