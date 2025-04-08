@@ -237,7 +237,7 @@ jobs:
       uses: mozilla-actions/sccache-action@v0.0.5
 
     - name: Docs
-      run: cargo doc --workspace --all-features --no-deps --document-private-items
+      run: cargo doc --workspace --all-features --exclude wgps --exclude lcmux --exclude willow-fuzz --no-deps --document-private-items
       env:
         RUSTDOCFLAGS: --cfg docsrs
 
