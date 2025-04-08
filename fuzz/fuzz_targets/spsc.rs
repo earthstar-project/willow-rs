@@ -37,7 +37,6 @@ fuzz_target!(|data: (
             }
             assert_eq!(Ok(()), sender.flush().await);
 
-
             match last {
                 Ok(fin) => {
                     assert_eq!(Ok(()), sender.close(fin).await);
@@ -65,10 +64,10 @@ fuzz_target!(|data: (
 
         // let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         // let done_as_well = done.clone();
-        
+
         // thread::spawn(move || {
         //     thread::sleep(std::time::Duration::from_millis(10000));
-            
+
         //     if !done_as_well.load(std::sync::atomic::Ordering::Relaxed) {
         //         std::process::exit(-123);
         //     }
@@ -77,6 +76,5 @@ fuzz_target!(|data: (
         join!(send, receive);
 
         // done.store(true, std::sync::atomic::Ordering::Relaxed);
-
     });
 });

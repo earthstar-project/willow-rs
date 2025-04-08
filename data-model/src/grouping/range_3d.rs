@@ -4,14 +4,15 @@ use arbitrary::Arbitrary;
 use crate::{
     entry::{Entry, Timestamp},
     grouping::{area::Area, range::Range},
-    parameters::{NamespaceId, PayloadDigest, SubspaceId},
+    parameters::SubspaceId,
     path::Path,
 };
 
 /// A three-dimensional range that includes every Entry included in all three of its ranges.
+///
 /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#D3Range).
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> {
+pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// A range of [`SubspaceId`]s.
     /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#SubspaceRange).
     subspaces: Range<S>,
@@ -23,9 +24,7 @@ pub struct Range3d<const MCL: usize, const MCC: usize, const MPL: usize, S: Subs
     times: Range<Timestamp>,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
-    Range3d<MCL, MCC, MPL, S>
-{
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Range3d<MCL, MCC, MPL, S> {
     /// Creates a new [`Range3d`].
     pub fn new(
         subspaces: Range<S>,
@@ -37,15 +36,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
             paths,
             times,
         }
-    }
-
-    /// Creates a new [`Range3d`] that covers everything.
-    pub fn new_full() -> Self {
-        Self::new(
-            Default::default(),
-            Range::new_open(Path::new_empty()),
-            Default::default(),
-        )
     }
 
     /// Returns a reference to the range of [`SubspaceId`]s.
@@ -68,17 +58,38 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     pub fn times(&self) -> &Range<Timestamp> {
         &self.times
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Range3d<MCL, MCC, MPL, S>
+where
+    S: Default,
+{
+    /// Creates a new [`Range3d`] that covers everything. Requires `S::default()` to be the least `S` to be correct.
+    pub fn new_full() -> Self {
+        Self::new(
+            Default::default(),
+            Range::new_open(Path::new_empty()),
+            Default::default(),
+        )
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Range3d<MCL, MCC, MPL, S>
+where
+    S: PartialOrd,
+{
     /// Returns whether an [`Entry`] is [included](https://willowprotocol.org/specs/grouping-entries/index.html#d3_range_include) by this 3d range.
-    pub fn includes_entry<N: NamespaceId, PD: PayloadDigest>(
-        &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
-    ) -> bool {
+    pub fn includes_entry<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
         self.subspaces.includes(entry.subspace_id())
             && self.paths.includes(entry.path())
             && self.times.includes(&entry.timestamp())
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Range3d<MCL, MCC, MPL, S>
+where
+    S: Ord + Clone,
+{
     /// Returns the intersection between this [`Range3d`] and another.
     pub fn intersection(&self, other: &Range3d<MCL, MCC, MPL, S>) -> Option<Self> {
         let paths = self.paths.intersection(&other.paths)?;
@@ -92,10 +103,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Default
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Default> Default
     for Range3d<MCL, MCC, MPL, S>
 {
-    /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#default_3d_range).
+    /// The default 3dRange, assuming that `S::default()` yields the default SubspaceId.
+    ///
+    /// [Definition](https://willowprotocol.org/specs/grouping-entries/index.html#default_3d_range)
     fn default() -> Self {
         Self {
             subspaces: Range::<S>::default(),
@@ -108,8 +121,29 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId> Defaul
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
     From<Area<MCL, MCC, MPL, S>> for Range3d<MCL, MCC, MPL, S>
 {
-    fn from(_value: Area<MCL, MCC, MPL, S>) -> Self {
-        todo!("Need to add successor fns to SubspaceId and Paths first.")
+    fn from(value: Area<MCL, MCC, MPL, S>) -> Self {
+        let subspaces = match value.subspace() {
+            super::AreaSubspace::Any => Range::new_open(S::default()),
+            super::AreaSubspace::Id(id) => match id.successor() {
+                Some(successor) => {
+                    super::Range::new(id.clone(), super::RangeEnd::Closed(successor))
+                }
+                None => super::Range::new_open(id.clone()),
+            },
+        };
+
+        let paths = match value.path().successor() {
+            Some(succesor) => {
+                super::Range::new(value.path().clone(), super::RangeEnd::Closed(succesor))
+            }
+            None => super::Range::new_open(value.path().clone()),
+        };
+
+        Self {
+            subspaces,
+            paths,
+            times: *value.times(),
+        }
     }
 }
 
@@ -117,7 +151,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: SubspaceId>
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
     for Range3d<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + Arbitrary<'a>,
+    S: PartialOrd + Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {
@@ -130,26 +164,9 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use crate::path::Component;
 
     use super::*;
-
-    #[derive(Default, PartialEq, Eq, Clone, Debug)]
-    struct FakeNamespaceId(usize);
-    impl NamespaceId for FakeNamespaceId {}
-
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-    struct FakeSubspaceId(usize);
-    impl SubspaceId for FakeSubspaceId {
-        fn successor(&self) -> Option<Self> {
-            Some(FakeSubspaceId(self.0 + 1))
-        }
-    }
-
-    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-    struct FakePayloadDigest(usize);
-    impl PayloadDigest for FakePayloadDigest {}
 
     const MCL: usize = 8;
     const MCC: usize = 4;
@@ -158,17 +175,16 @@ mod tests {
     #[test]
     fn includes_entry() {
         let entry = Entry::new(
-            FakeNamespaceId::default(),
-            FakeSubspaceId(10),
+            0,
+            10,
             Path::<MCL, MCC, MPL>::new_from_slice(&[Component::new(b"a").unwrap()]).unwrap(),
             500,
             10,
-            FakePayloadDigest::default(),
+            0,
         );
 
         let range_including = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(9, 11).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
@@ -180,8 +196,7 @@ mod tests {
         assert!(range_including.includes_entry(&entry));
 
         let range_subspaces_excluding = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(11), FakeSubspaceId(13))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(11, 13).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
@@ -193,8 +208,7 @@ mod tests {
         assert!(!range_subspaces_excluding.includes_entry(&entry));
 
         let range_paths_excluding = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(9, 11).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -206,8 +220,7 @@ mod tests {
         assert!(!range_paths_excluding.includes_entry(&entry));
 
         let range_times_excluding = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(9), FakeSubspaceId(11))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(9, 11).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"b").unwrap()]).unwrap(),
@@ -222,8 +235,7 @@ mod tests {
     #[test]
     fn intersection() {
         let empty_intersection_subspace = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(11), FakeSubspaceId(13))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(11, 13).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -232,8 +244,7 @@ mod tests {
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
         }
         .intersection(&Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -245,8 +256,7 @@ mod tests {
         assert!(empty_intersection_subspace.is_none());
 
         let empty_intersection_path = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -255,8 +265,7 @@ mod tests {
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
         }
         .intersection(&Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"4").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),
@@ -268,8 +277,7 @@ mod tests {
         assert!(empty_intersection_path.is_none());
 
         let empty_intersection_time = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -278,8 +286,7 @@ mod tests {
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
         }
         .intersection(&Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"1").unwrap()]).unwrap(),
@@ -291,8 +298,7 @@ mod tests {
         assert!(empty_intersection_time.is_none());
 
         let intersection = Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(0), FakeSubspaceId(3))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(0, 3).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"0").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),
@@ -301,8 +307,7 @@ mod tests {
             times: Range::<Timestamp>::new_closed(0, 100).unwrap(),
         }
         .intersection(&Range3d {
-            subspaces: Range::<FakeSubspaceId>::new_closed(FakeSubspaceId(2), FakeSubspaceId(4))
-                .unwrap(),
+            subspaces: Range::<u64>::new_closed(2, 4).unwrap(),
             paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                 Path::new_from_slice(&[Component::new(b"3").unwrap()]).unwrap(),
                 Path::new_from_slice(&[Component::new(b"9").unwrap()]).unwrap(),
@@ -316,11 +321,7 @@ mod tests {
         assert_eq!(
             intersection.unwrap(),
             Range3d {
-                subspaces: Range::<FakeSubspaceId>::new_closed(
-                    FakeSubspaceId(2),
-                    FakeSubspaceId(3)
-                )
-                .unwrap(),
+                subspaces: Range::<u64>::new_closed(2, 3).unwrap(),
                 paths: Range::<Path<MCL, MCC, MPL>>::new_closed(
                     Path::new_from_slice(&[Component::new(b"3").unwrap()]).unwrap(),
                     Path::new_from_slice(&[Component::new(b"6").unwrap()]).unwrap(),

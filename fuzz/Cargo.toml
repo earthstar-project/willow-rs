@@ -11,9 +11,9 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.6.0", features = ["std", "dev"] }
+ufotofu = { version = "0.6.2", features = ["std", "dev"] }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
-ufotofu_queues = { version = "0.5.0", features = ["std"] }
+ufotofu_queues = { version = "0.6.0", features = ["std"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
@@ -26,6 +26,9 @@ compact_u64 = { path = "../compact_u64", features = ["std", "dev"] }
 either = "1.10.0"
 wb_async_utils = { path = "../wb_async_utils", features = ["ufotofu_utils"] }
 futures = { version = "0.3.31" }
+willow-store-simple-sled = { path = "../store_simple_sled" }
+sled = "0.34.7"
+tempdir = "0.3.7"
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -484,8 +487,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "enc_sledentrykey_abs"
+path = "fuzz_targets/enc_sledentrykey_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "enc_path_rel_privatepathcontext"
 path = "fuzz_targets/enc_path_rel_privatepathcontext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store"
+path = "fuzz_targets/store.rs"
 test = false
 doc = false
 bench = false

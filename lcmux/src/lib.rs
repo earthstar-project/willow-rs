@@ -1,5 +1,5 @@
-mod frames;
 mod client_logic;
+mod frames;
 mod server_logic;
 
 mod guarantee_bound;

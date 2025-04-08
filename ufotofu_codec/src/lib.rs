@@ -31,7 +31,7 @@
 //! Formally, each possible reference value defines an encoding relation that is independent from the relations defined by any other reference values. All API contracts that are stated in the documentation must hold only when using the same reference value. As an example, consider an encoding for integers that encodes relative to a reference value by encoding the difference between the value to encode and the reference value. Then, when encoding any two distinct values relative to the reference value `5`, the resulting encodings must be different. But when encoding some value `x` relative to `5` and another value `y` relative to `17`, then it is perfectly fine for both encodings to be the same bytestring.
 //!
 //! ## Encoders and Decoders
-//! 
+//!
 //! The [`adaptors`] module provide structs which turn consumers of bytes into consumers of encodables, and producers of bytes into producers of decodables.
 //!
 //! ## Property Testing
@@ -47,7 +47,7 @@ extern crate std;
 pub mod proptest;
 
 mod decode_error;
-pub use decode_error::{DecodeError, Blame};
+pub use decode_error::{Blame, DecodeError};
 
 mod decode;
 pub use decode::*;
