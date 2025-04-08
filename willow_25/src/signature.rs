@@ -1,4 +1,6 @@
-use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
+};
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
@@ -56,6 +58,20 @@ impl Decodable for Signature25 {
         let sig = ed25519_dalek::Signature::from_bytes(&slice);
 
         Ok(Self(sig))
+    }
+}
+
+impl DecodableCanonic for Signature25 {
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        Self::decode(producer).await
     }
 }
 

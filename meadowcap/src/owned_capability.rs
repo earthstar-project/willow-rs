@@ -184,8 +184,8 @@ where
 
         let handover = OwnedHandover {
             cap: self,
-            area: &new_area,
-            user: &new_user,
+            area: new_area,
+            user: new_user,
         };
 
         let handover_enc = handover.sync_encode_into_boxed_slice();
@@ -250,8 +250,8 @@ where
 
         let handover = OwnedHandover {
             cap: self,
-            area: &new_area,
-            user: &new_user,
+            area: new_area,
+            user: new_user,
         };
 
         let handover_enc = handover.sync_encode_into_boxed_slice();
@@ -343,6 +343,25 @@ where
     pub fn initial_authorisation(&self) -> &NamespaceSignature {
         &self.initial_authorisation
     }
+
+    /// Returns a [`OwnedCapability`] without checking if its initial authorisation or delegations are valid.
+    ///
+    /// Calling this method with an invalid initial authorisation or delegation is immediate undefined behaviour!
+    pub unsafe fn new_unchecked(
+        access_mode: AccessMode,
+        namespace_key: NamespacePublicKey,
+        user_key: UserPublicKey,
+        initial_authorisation: NamespaceSignature,
+        delegations: Vec<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>,
+    ) -> Self {
+        Self {
+            access_mode,
+            namespace_key,
+            user_key,
+            initial_authorisation,
+            delegations,
+        }
+    }
 }
 
 struct OwnedInitialAuthorisationMsg<'a, UserPublicKey>
@@ -353,7 +372,7 @@ where
     user_key: &'a UserPublicKey,
 }
 
-impl<'a, UserPublicKey> Encodable for OwnedInitialAuthorisationMsg<'a, UserPublicKey>
+impl<UserPublicKey> Encodable for OwnedInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: SubspaceId + Encodable,
 {
@@ -373,7 +392,7 @@ where
     }
 }
 
-impl<'a, UserPublicKey> EncodableKnownSize for OwnedInitialAuthorisationMsg<'a, UserPublicKey>
+impl<UserPublicKey> EncodableKnownSize for OwnedInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: SubspaceId + EncodableKnownSize,
 {
@@ -382,7 +401,7 @@ where
     }
 }
 
-impl<'a, UserPublicKey> EncodableSync for OwnedInitialAuthorisationMsg<'a, UserPublicKey> where
+impl<UserPublicKey> EncodableSync for OwnedInitialAuthorisationMsg<'_, UserPublicKey> where
     UserPublicKey: SubspaceId + EncodableKnownSize
 {
 }
@@ -419,7 +438,6 @@ pub struct OwnedHandover<
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -429,7 +447,7 @@ impl<
         UserSignature,
     > Encodable
     for OwnedHandover<
-        'a,
+        '_,
         MCL,
         MCC,
         MPL,
@@ -472,7 +490,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -482,7 +499,7 @@ impl<
         UserSignature,
     > EncodableKnownSize
     for OwnedHandover<
-        'a,
+        '_,
         MCL,
         MCC,
         MPL,
@@ -513,7 +530,7 @@ where
         let prev_area = last_delegation.area();
         let prev_signature = last_delegation.signature();
 
-        let area_len = self.area.relative_len_of_encoding(&prev_area);
+        let area_len = self.area.relative_len_of_encoding(prev_area);
         let prev_sig_len = prev_signature.len_of_encoding();
         let user_len = self.user.len_of_encoding();
 
@@ -522,7 +539,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -532,7 +548,7 @@ impl<
         UserSignature,
     > EncodableSync
     for OwnedHandover<
-        'a,
+        '_,
         MCL,
         MCC,
         MPL,
