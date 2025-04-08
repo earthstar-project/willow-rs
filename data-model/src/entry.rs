@@ -281,7 +281,7 @@ impl core::fmt::Display for UnauthorisedWriteError {
 
 impl std::error::Error for UnauthorisedWriteError {}
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`AuthorisationToken::is_authorised_write`] returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

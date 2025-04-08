@@ -17,7 +17,9 @@ pub struct NamespaceId25(VerifyingKey);
 /// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) public key suitable for the Willow Data Model's [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) parameter, and Meadowcap's [`NamespacePublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#NamespacePublicKey) parameter.
 impl NamespaceId25 {
     /// Returns a new keypair where the component [`NamespaceId25`] is valid for use with *[communal namespaces](https://willowprotocol.org/specs/meadowcap/index.html#communal_namespace)*.
-    pub fn new_communal() -> (Self, SigningKey) {
+    ///
+    /// Does not return a signing key as communal namespaces do not use namespace signatures.
+    pub fn new_communal() -> Self {
         let mut csprng = OsRng;
         let mut signing_key: SigningKey = SigningKey::generate(&mut csprng);
 
@@ -29,7 +31,7 @@ impl NamespaceId25 {
             maybe_communal = Self(signing_key.verifying_key());
         }
 
-        (maybe_communal, signing_key)
+        maybe_communal
     }
 
     /// Returns a new keypair where the component [`NamespaceId25`] is valid for use with *[owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace)*.
