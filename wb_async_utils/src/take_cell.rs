@@ -99,7 +99,8 @@ impl<T> TakeCell<T> {
     ///         cell.set(5);
     ///     });
     /// });
-    /// 
+    ///
+    ///
     /// let cell2 = TakeCell::new();
     ///
     /// pollster::block_on(async {
