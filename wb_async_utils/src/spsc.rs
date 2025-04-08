@@ -70,7 +70,7 @@ impl<Q: Queue, F, E> State<Q, F, E> {
         self.notify_the_receiver.set(());
     }
 
-    /// Same as calling [`cause_error`] on the Sender, but directly from an immutable reference to the state. This is essentially an escape hatch around the *single producer* part for signaling errors. Ideally, you should not need to use this.
+    /// Same as calling `cause_error` on the Sender, but directly from an immutable reference to the state. This is essentially an escape hatch around the *single producer* part for signaling errors. Ideally, you should not need to use this.
     /// The same invariants as for the regular `cause_error` method on the [`Sender`] apply.
     pub fn cause_error(&self, err: E) {
         let mut last = unsafe { self.last.borrow_mut() };

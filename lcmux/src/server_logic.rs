@@ -111,7 +111,7 @@ where
                 phantom: PhantomData,
             },
             received_data: ReceivedData {
-                state: state,
+                state,
                 buffer_receiver,
             },
         }

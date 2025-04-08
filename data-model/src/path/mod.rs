@@ -97,7 +97,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Ok(builder.build())
     }
 
-    /// Creates a path of known total length from an [`ExactSizeIterator`][core::iter::ExactSizeIterator] of components.
+    /// Creates a path of known total length from an [`ExactSizeIterator`] of components.
     ///
     /// Copies the bytes of the components into an owned allocation on the heap.
     ///
@@ -132,7 +132,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
             total_length += comp.len();
         }
 
-        return Self::new_from_iter(total_length, &mut components.iter().copied());
+        Self::new_from_iter(total_length, &mut components.iter().copied())
     }
 
     /// Creates a new path by appending a component to this one.

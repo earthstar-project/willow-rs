@@ -90,7 +90,7 @@ where
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
+    /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
     pub fn new_communal(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -629,7 +629,7 @@ where
         + From<NamespaceSignature::ErrorReason>
         + From<UserSignature::ErrorReason>,
 {
-    /// Unsafely decode a [`McCapability`] from a [`BulkProducer`] of bytes, that is, decode without verifying the validity of the inner capability.
+    /// Unsafely decode a [`McCapability`] from a [`ufotofu::BulkProducer`] of bytes, that is, decode without verifying the validity of the inner capability.
     ///
     /// # Safety
     /// Only use this method to decode [`McCapability`] from trusted sources, e.g. a database you yourself are writing verified capabilities to.

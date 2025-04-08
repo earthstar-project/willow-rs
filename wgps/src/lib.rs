@@ -1,14 +1,12 @@
 use std::{future::Future, ops::DerefMut};
 
-use futures::try_join;
-
 //use lcmux::new_lcmux;
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
-    ResumptionFailedError, Store, StoreEvent, SubspaceId,
+    Store, StoreEvent, SubspaceId,
 };
 
 mod parameters;
@@ -22,7 +20,6 @@ use commitment_scheme::*;
 use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable};
 
 mod data_handles;
-use data_handles::*;
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
@@ -83,7 +80,7 @@ pub async fn sync_with_peer<
     // a type annotation on the return value; that's why the last two lines of each of the following
     // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
 
-    let send_prelude = async {
+    let _send_prelude = async {
         let own_prelude = Prelude {
             max_payload_power: options.max_payload_power,
             commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
@@ -103,7 +100,7 @@ pub async fn sync_with_peer<
         ret
     };
 
-    let receive_prelude = async {
+    let _receive_prelude = async {
         let mut p = producer.write().await;
 
         match Prelude::decode_canonic(p.deref_mut()).await {
@@ -205,19 +202,6 @@ where
         range: &Range3d<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
-
-    /// Attempt to resume a subscription using a *progress ID* obtained from a previous subscription, or return an error if this store implementation is unable to resume the subscription.
-    fn resume_range_subscription(
-        &self,
-        progress_id: u64,
-        range: &Range3d<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
-            ResumptionFailedError,
-        >,
-    >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
     fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = FP>;

@@ -63,7 +63,7 @@ where
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and [`UserSignature`].
+    /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and `UserSignature`.
     ///
     /// Does **not** verify the signature's validity.
     pub fn new(

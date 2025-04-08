@@ -37,7 +37,7 @@ pub struct AuthorisationToken25(
 );
 
 impl AuthorisationToken25 {
-    /// Returns a new [`AuthorisationToken25`] for a given [`meadowcap::McCapability`] and [`Signature25`].
+    /// Returns a new [`AuthorisationToken25`] for a given [`meadowcap::McCapability`] and [`crate::Signature25`].
     pub fn new(capability: Capability25, signature: crate::Signature25) -> Self {
         let token = McAuthorisationToken::new(capability, signature);
 
@@ -49,7 +49,7 @@ impl AuthorisationToken25 {
         &self.0.capability
     }
 
-    /// Returns a reference to the inner [`Signature25`].
+    /// Returns a reference to the inner [`crate::Signature25`].
     pub fn signature(&self) -> &crate::Signature25 {
         &self.0.signature
     }

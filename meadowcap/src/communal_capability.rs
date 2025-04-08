@@ -67,7 +67,7 @@ where
     UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`.
+    /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`.
     pub fn new(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
