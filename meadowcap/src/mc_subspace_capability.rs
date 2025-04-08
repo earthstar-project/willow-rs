@@ -16,9 +16,11 @@ use willow_data_model::SubspaceId;
 
 use crate::McNamespacePublicKey;
 use crate::McPublicUserKey;
-use crate::SillyPublicKey;
-use crate::SillySig;
 
+#[cfg(feature = "dev")]
+use crate::SillyPublicKey;
+#[cfg(feature = "dev")]
+use crate::SillySig;
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 

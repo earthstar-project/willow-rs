@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::CompactU64;
 use signature::Verifier;
