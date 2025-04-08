@@ -2,8 +2,10 @@ use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
+#[cfg(feature = "dev")]
+use willow_data_model::grouping::arbitrary_included_area;
 use willow_data_model::{
-    grouping::{arbitrary_included_area, Area, AreaSubspace},
+    grouping::{Area, AreaSubspace},
     Path, SubspaceId,
 };
 

@@ -2,7 +2,9 @@ use signature::Signer;
 use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::grouping::{arbitrary_included_area, Area};
+#[cfg(feature = "dev")]
+use willow_data_model::grouping::arbitrary_included_area;
+use willow_data_model::grouping::Area;
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
