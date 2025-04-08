@@ -11,7 +11,7 @@ _Currently_, this repo provides Rust implementations of:
   (parameters, paths, entries, groupings, encodings, store trait).
 - [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap),
   a capability system adaptable to local needs,
-- [`SimpleStoreSled`], a [sled](https://docs.rs/sled/latest/sled/)-powered
+- `SimpleStoreSled`, a [sled](https://docs.rs/sled/latest/sled/)-powered
   Willow [store](https://willowprotocol.org/specs/data-model/index.html#store)
   implementing the [`Store`] trait, enabling persistent storage of Willow data!
 
