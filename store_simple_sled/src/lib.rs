@@ -894,7 +894,7 @@ where
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-                Ok(Some(PayloadProducer::new(payload_value)))
+                Ok(PayloadProducer::new(payload_value, offset))
             }
 
             (Some((_entry_key, entry_value)), None) => {
@@ -910,7 +910,7 @@ where
 
                 Ok(PayloadProducer::new(IVec::default(), 0))
             }
-            (None, None) => None,
+            (None, None) => Err(PayloadError::NoSuchEntry),
             (None, Some(_)) => {
                 panic!("Holding a payload for which there is no corresponding entry, this is bad!")
             }

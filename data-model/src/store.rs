@@ -178,6 +178,8 @@ impl<OE: Display + Error> Error for ForgetPayloadError<OE> {}
 /// Returned when retrieving a payload fails.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
 pub enum PayloadError<OE> {
+    /// No entry for the given subspace and path exists in this store.
+    NoSuchEntry,
     /// The offset at which to fetch the payload bytes was too large.
     OutOfBounds,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
@@ -189,6 +191,12 @@ pub enum PayloadError<OE> {
 impl<OE: Display + Error> Display for PayloadError<OE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PayloadError::NoSuchEntry => {
+                write!(
+                    f,
+                    "Attempted to fetch a payload for which we do not even have an entry."
+                )
+            }
             PayloadError::OutOfBounds => {
                 write!(
                     f,

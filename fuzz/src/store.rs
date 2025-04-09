@@ -31,6 +31,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     ControlStore<MCL, MCC, MPL, N, S, PD, AT>
 where
     S: Ord + Clone,
+    AT: Clone,
 {
     pub fn new(namespace: N, capacity: usize) -> Self {
         Self {
@@ -139,13 +140,7 @@ pub struct ControlEntry<PD, AT> {
 
 impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
     /// https://willowprotocol.org/specs/data-model/index.html#entry_newer
-    fn is_newer_than<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
-    >(
+    fn is_newer_than<const MCL: usize, const MCC: usize, const MPL: usize, N, S>(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
     ) -> bool {
@@ -183,7 +178,7 @@ where
             panic!("Tried to ingest an entry into a store with a mismatching NamespaceId");
         }
 
-        let mut subspace_store =
+        let subspace_store =
             self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
 
         // Is the inserted entry redundant?
@@ -210,7 +205,7 @@ where
             }
         }
 
-        if self.prune_maybe(authorised_entry.entry(), prevent_pruning).await {
+        if self.prune_maybe(&authorised_entry, prevent_pruning).await {
             Ok(EntryIngestionSuccess::Success)
         } else {
             Err(EntryIngestionError::PruningPrevented)
@@ -478,7 +473,7 @@ where
     > {
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
         match subspace_store.entries.get_mut(path) {
-            None => Ok(FromBoxedSlice::from_vec(vec![])),
+            None => Err(PayloadError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
