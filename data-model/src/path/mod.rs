@@ -534,6 +534,20 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         None
     }
+
+    /// Create a new path from a slice over byte slices.
+    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, InvalidPathError> {
+        let total_length = slices.iter().map(|it| it.as_ref().len()).sum();
+        let mut builder = PathBuilder::new(total_length, slices.len())?;
+
+        for component_slice in slices {
+            let component = Component::<MCL>::new(component_slice.as_ref())
+                .ok_or(InvalidPathError::ComponentTooLong)?;
+            builder.append_component(component);
+        }
+
+        Ok(builder.build())
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
