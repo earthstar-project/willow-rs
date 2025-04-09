@@ -246,6 +246,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "compact_u64"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe61992c4cb9ec764c74faebcec021b1e112a785c413431799052d1c05ee47f"
 dependencies = [
  "arbitrary",
  "either",
@@ -441,6 +443,8 @@ dependencies = [
 [[package]]
 name = "fairly_unsafe_cell"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e19e1ca8da66b9bc3c0c30551af59e29e6cd578c8d4ef232b92bb1a6a9d841c3"
 
 [[package]]
 name = "fastrand"
@@ -1137,6 +1141,8 @@ dependencies = [
 [[package]]
 name = "ufotofu_codec"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e244ff1b1f644ae8a90abb7d20f636d0811cc0758db61ce39382009f7db5fc7"
 dependencies = [
  "either",
  "pollster",
@@ -1147,6 +1153,8 @@ dependencies = [
 [[package]]
 name = "ufotofu_codec_endian"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cb93cb00d9ae0a3d7ba45f779de03faf8aab584c68b4d4266b3377fa90d027d"
 dependencies = [
  "arbitrary",
  "either",
@@ -1190,12 +1198,11 @@ dependencies = [
 [[package]]
 name = "wb_async_utils"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0959f6010dffb28932c94fcf874ef3588aa9ca050cb0c04ac26622bfc7b2bea6"
 dependencies = [
  "either",
  "fairly_unsafe_cell",
- "futures",
- "pollster",
- "smol",
  "ufotofu",
  "ufotofu_queues",
 ]
