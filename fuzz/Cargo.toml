@@ -540,8 +540,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "events"
-path = "fuzz_targets/events.rs"
+name = "control_events"
+path = "fuzz_targets/control_events.rs"
 test = false
 doc = false
 bench = false

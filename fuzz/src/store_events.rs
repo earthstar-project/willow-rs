@@ -1,34 +1,27 @@
-#![no_main]
-
 use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    collections::HashSet,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
 };
 
-use either::Either::{Left, Right};
-use libfuzzer_sys::fuzz_target;
-use willow_fuzz::{
+use crate::{
     placeholder_params::{
         FakeAuthorisationToken, FakeNamespaceId, FakePayloadDigest, FakeSubspaceId,
     },
-    store::{check_store_equality, ControlStore, QueryIgnoreParams, StoreOp},
+    store::{ControlStore, StoreOp},
 };
-use willow_store_simple_sled::StoreSimpleSled;
+use either::Either::{Left, Right};
+use ufotofu::{producer::FromSlice, Producer};
+use willow_data_model::{
+    grouping::Area, LengthyAuthorisedEntry, QueryIgnoreParams, Store, StoreEvent,
+};
 
-// Generates a random area and ignore params, then creates a subscriber for those parameters on a fresh store. Runs a random sequence of operations on the store. The subscriber updates a collection of entries based on the events it receives. Once all ops have run, we query the store with the same area and ignore params which were used for the subscription. We assert that the query result is equal to the colleciton tha tthe subscriber reconstructed from the events it received.
-fuzz_target!(|data: (
-    FakeNamespaceId,
-    Vec<(StoreOp, bool)>,
-    Area,
-    QueryIgnoreParams,
-)| {
-    pollster::block_on(async {
-        let (namespace, ops, area, ignores) = data;
-
-        let mut store = ControlStore::<
+/// A function for testing whether a store correctly emits events. Panics if it doesn't.
+pub fn check_store_events(
+    namespace_id: FakeNamespaceId,
+    ops: Vec<(
+        StoreOp<
             16,
             16,
             16,
@@ -36,9 +29,24 @@ fuzz_target!(|data: (
             FakeSubspaceId,
             FakePayloadDigest,
             FakeAuthorisationToken,
-        >::new(namespace.clone(), 1024);
+        >,
+        bool,
+    )>,
+    area: Area<16, 16, 16, FakeSubspaceId>,
+    ignores: QueryIgnoreParams,
+) {
+    pollster::block_on(async {
+        let store = ControlStore::<
+            16,
+            16,
+            16,
+            FakeNamespaceId,
+            FakeSubspaceId,
+            FakePayloadDigest,
+            FakeAuthorisationToken,
+        >::new(namespace_id.clone(), 1024);
 
-        let mut sub = store.subscribe_area(area, ignores).await;
+        let mut sub = store.subscribe_area(&area, ignores).await;
 
         let ((), collected) = futures::future::join(
             async {
@@ -49,15 +57,11 @@ fuzz_target!(|data: (
                             prevent_pruning,
                             origin,
                         } => {
-                            if authorised_entry.entry().namespace_id() != namespace_id {
+                            if authorised_entry.entry().namespace_id() != &namespace_id {
                                 continue;
                             } else {
                                 let _ = store
-                                    .ingest_entry(
-                                        authorised_entry.clone(),
-                                        *prevent_pruning,
-                                        *origin,
-                                    )
+                                    .ingest_entry(authorised_entry.clone(), prevent_pruning, origin)
                                     .await;
                             }
                         }
@@ -67,12 +71,12 @@ fuzz_target!(|data: (
                             expected_digest,
                             data,
                         } => {
-                            let mut payload_1 = FromSlice::new(data);
+                            let mut payload_1 = FromSlice::new(&data);
 
                             let _ = store
                                 .append_payload(
-                                    subspace,
-                                    path,
+                                    &subspace,
+                                    &path,
                                     expected_digest.clone(),
                                     &mut payload_1,
                                 )
@@ -84,11 +88,11 @@ fuzz_target!(|data: (
                             expected_digest,
                         } => {
                             let _ = store
-                                .forget_entry(subspace_id, path, expected_digest.clone())
+                                .forget_entry(&subspace_id, &path, expected_digest.clone())
                                 .await;
                         }
                         StoreOp::ForgetArea { area, protected } => {
-                            let _ = store.forget_area(area, protected.as_ref()).await;
+                            let _ = store.forget_area(&area, protected.as_ref()).await;
                         }
                         StoreOp::ForgetPayload {
                             subspace_id,
@@ -96,11 +100,11 @@ fuzz_target!(|data: (
                             expected_digest,
                         } => {
                             let _ = store
-                                .forget_payload(subspace_id, path, expected_digest.clone())
+                                .forget_payload(&subspace_id, &path, expected_digest.clone())
                                 .await;
                         }
                         StoreOp::ForgetAreaPayloads { area, protected } => {
-                            let _ = store.forget_area_payloads(area, protected.as_ref()).await;
+                            let _ = store.forget_area_payloads(&area, protected.as_ref()).await;
                         }
                         StoreOp::GetPayload { .. }
                         | StoreOp::GetEntry { .. }
@@ -115,7 +119,7 @@ fuzz_target!(|data: (
                 }
             },
             async {
-                let mut collected = ControlStore::<
+                let collected = ControlStore::<
                     16,
                     16,
                     16,
@@ -123,7 +127,7 @@ fuzz_target!(|data: (
                     FakeSubspaceId,
                     FakePayloadDigest,
                     FakeAuthorisationToken,
-                >::new(namespace.clone(), 1024);
+                >::new(namespace_id.clone(), 1024);
 
                 loop {
                     match sub.produce().await {
@@ -137,53 +141,122 @@ fuzz_target!(|data: (
                                     .unwrap();
                             }
                             StoreEvent::EntryForgotten { entry } => {
-                                let _ = collected.forget_entry(entry).await;
+                                let _ = collected
+                                    .forget_entry(
+                                        entry.entry().subspace_id(),
+                                        entry.entry().path(),
+                                        None,
+                                    )
+                                    .await;
                             }
                             StoreEvent::AreaForgotten { area, protected } => {
-                                let _ = collected.forget_area(area, protected).await;
+                                let _ = collected.forget_area(&area, protected.as_ref()).await;
                             }
                             StoreEvent::PayloadForgotten(entry) => {
-                                let _ = collected.forget_payload(entry).await;
+                                let _ = collected
+                                    .forget_payload(
+                                        entry.entry().subspace_id(),
+                                        entry.entry().path(),
+                                        None,
+                                    )
+                                    .await;
                             }
                             StoreEvent::AreaPayloadsForgotten { area, protected } => {
-                                let _ = collected.forget_area_payloads(area, protected).await;
+                                let _ = collected
+                                    .forget_area_payloads(&area, protected.as_ref())
+                                    .await;
                             }
                             StoreEvent::Appended {
                                 entry,
                                 previous_available,
-                                now_available,
+                                now_available: _,
                             } => {
                                 let mut new_payload_bytes_producer = store
                                     .payload(
-                                        entry.subspace_id(),
-                                        entry.path(),
+                                        entry.entry().subspace_id(),
+                                        entry.entry().path(),
                                         previous_available,
                                         None,
                                     )
-                                    .await;
+                                    .await
+                                    .unwrap();
 
                                 let _ = collected
                                     .append_payload(
-                                        entry.subspace_id(),
-                                        entry.path(),
+                                        entry.entry().subspace_id(),
+                                        entry.entry().path(),
                                         None,
                                         &mut new_payload_bytes_producer,
                                     )
                                     .await;
                             }
                             StoreEvent::PruneAlert { cause } => {
-                                todo!()
+                                collected.prune(&cause).await;
                             }
                         },
                     }
-
-                    todo!();
                 }
+
+                collected
             },
         )
         .await;
+
+        // If events were implemented correctly, then querying the original store for the area and ignores of the subscription yields the same set of entries as querying the collected store for *all* its entries.
+
+        let full_area = Area::new_full();
+        let mut producer1 = store.query_area(&area, ignores).await.unwrap();
+        let mut producer2 = collected
+            .query_area(&full_area, QueryIgnoreParams::default())
+            .await
+            .unwrap();
+
+        let mut set1 = HashSet::<
+            LengthyAuthorisedEntry<
+                16,
+                16,
+                16,
+                FakeNamespaceId,
+                FakeSubspaceId,
+                FakePayloadDigest,
+                FakeAuthorisationToken,
+            >,
+        >::new();
+        let mut set2 = HashSet::<
+            LengthyAuthorisedEntry<
+                16,
+                16,
+                16,
+                FakeNamespaceId,
+                FakeSubspaceId,
+                FakePayloadDigest,
+                FakeAuthorisationToken,
+            >,
+        >::new();
+
+        loop {
+            match producer1.produce().await {
+                Ok(Left(entry)) => {
+                    set1.insert(entry);
+                }
+                Ok(Right(_)) => break,
+                Err(_) => panic!("QueryArea: Store producer error"),
+            }
+        }
+
+        loop {
+            match producer2.produce().await {
+                Ok(Left(entry)) => {
+                    set2.insert(entry);
+                }
+                Ok(Right(_)) => break,
+                Err(_) => panic!("QueryArea: Store producer error"),
+            }
+        }
+
+        assert_eq!(set1, set2)
     });
-});
+}
 
 struct YieldOnce(bool);
 
@@ -193,7 +266,7 @@ impl YieldOnce {
     }
 }
 
-impl<'s> Future for MaybeYield<'s> {
+impl Future for YieldOnce {
     type Output = ();
 
     // The futures executor is implemented as a FIFO queue, so all this future

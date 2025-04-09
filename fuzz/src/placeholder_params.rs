@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    future::Future,
+    hash::{DefaultHasher, Hasher},
+};
 
 use arbitrary::Arbitrary;
 use meadowcap::{
@@ -261,10 +264,7 @@ impl AuthorisationToken<16, 16, 16, FakeNamespaceId, FakeSubspaceId, FakePayload
 }
 
 impl Encodable for FakeAuthorisationToken {
-    fn encode<C>(
-        &self,
-        consumer: &mut C,
-    ) -> impl std::prelude::rust_2024::Future<Output = Result<(), C::Error>>
+    fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
     where
         C: BulkConsumer<Item = u8>,
     {
