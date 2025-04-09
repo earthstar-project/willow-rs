@@ -2,6 +2,8 @@
 name = "willow-store-simple-sled"
 version = "0.1.0"
 edition = "2021"
+description = "Simple persistent storage for Willow data"
+license = "MIT OR Apache-2.0"
 
 [lints]
 workspace = true
