@@ -25,8 +25,10 @@ mod codec; // Nothing to import, the file only provides trait implementations.
 pub use codec::{decode_path_extends_path, encode_path_extends_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// An error arising from trying to construct a invalid [`Path`] from valid components.
+/// An error arising from trying to construct a invalid [`Path`].
 pub enum InvalidPathError {
+    /// One or more component of the path is too large.
+    ComponentTooLong,
     /// The path's total length in bytes is too large.
     PathTooLong,
     /// The path has too many components.
@@ -36,6 +38,12 @@ pub enum InvalidPathError {
 impl core::fmt::Display for InvalidPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            InvalidPathError::ComponentTooLong => {
+                write!(
+                    f,
+                    "Component length of a path in bytes exceeded the maximum component length"
+                )
+            }
             InvalidPathError::PathTooLong => {
                 write!(
                     f,
@@ -533,6 +541,20 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
 
         None
+    }
+
+    /// Create a new path from a slice over byte slices.
+    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, InvalidPathError> {
+        let total_length = slices.iter().map(|it| it.as_ref().len()).sum();
+        let mut builder = PathBuilder::new(total_length, slices.len())?;
+
+        for component_slice in slices {
+            let component = Component::<MCL>::new(component_slice.as_ref())
+                .ok_or(InvalidPathError::ComponentTooLong)?;
+            builder.append_component(component);
+        }
+
+        Ok(builder.build())
     }
 }
 
