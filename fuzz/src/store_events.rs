@@ -1,7 +1,9 @@
 use std::{
+    cell::RefCell,
     collections::HashSet,
     future::Future,
     pin::Pin,
+    rc::Rc,
     task::{Context, Poll},
 };
 
@@ -45,6 +47,8 @@ pub fn check_store_events(
             FakePayloadDigest,
             FakeAuthorisationToken,
         >::new(namespace_id.clone(), 1024);
+
+        let done = Rc::new(RefCell::new(false));
 
         let mut sub = store.subscribe_area(&area, ignores).await;
 
@@ -117,6 +121,8 @@ pub fn check_store_events(
                         YieldOnce::new().await
                     }
                 }
+
+                *done.borrow_mut() = true;
             },
             async {
                 let collected = ControlStore::<
@@ -129,7 +135,8 @@ pub fn check_store_events(
                     FakeAuthorisationToken,
                 >::new(namespace_id.clone(), 1024);
 
-                loop {
+                while !*done.borrow() {
+                    println!("zzz");
                     match sub.produce().await {
                         Err(_) => unreachable!(),
                         Ok(Right(())) => break,

@@ -29,6 +29,5 @@ fuzz_target!(|data: (
     QueryIgnoreParams,
 )| {
     let (namespace_id, ops, area, ignores) = data;
-
     check_store_events(namespace_id, ops, area, ignores);
 });
