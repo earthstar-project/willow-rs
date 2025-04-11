@@ -46,12 +46,7 @@ pub enum McCapability<
     NamespaceSignature,
     UserPublicKey,
     UserSignature,
-> where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
-{
+> {
     Communal(CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>),
     Owned(
         OwnedCapability<

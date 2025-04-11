@@ -41,11 +41,7 @@ pub struct CommunalCapability<
     NamespacePublicKey,
     UserPublicKey,
     UserSignature,
-> where
-    NamespacePublicKey: McNamespacePublicKey,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize,
-{
+> {
     access_mode: AccessMode,
     namespace_key: NamespacePublicKey,
     user_key: UserPublicKey,

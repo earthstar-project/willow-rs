@@ -19,12 +19,7 @@ pub struct McAuthorisationToken<
     NamespaceSignature,
     UserPublicKey,
     UserSignature,
-> where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
-{
+> {
     /// Certifies that an Entry may be written.
     pub capability: McCapability<
         MCL,
@@ -57,11 +52,6 @@ impl<
         UserPublicKey,
         UserSignature,
     >
-where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     /// Returns a new [`McAuthorisationToken`] using the given [`McCapability`] and [`UserSignature`].
     ///
@@ -107,8 +97,8 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + core::fmt::Debug,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + core::fmt::Debug,
     PD: PayloadDigest + EncodableSync + EncodableKnownSize,
 {
     fn is_authorised_write(

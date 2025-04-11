@@ -136,7 +136,6 @@ pub fn check_store_events(
                 >::new(namespace_id.clone(), 1024);
 
                 while !*done.borrow() {
-                    println!("zzz");
                     match sub.produce().await {
                         Err(_) => unreachable!(),
                         Ok(Right(())) => break,

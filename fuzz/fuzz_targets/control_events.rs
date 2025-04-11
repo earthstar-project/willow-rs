@@ -28,6 +28,8 @@ fuzz_target!(|data: (
     Area<16, 16, 16, FakeSubspaceId>,
     QueryIgnoreParams,
 )| {
-    let (namespace_id, ops, area, ignores) = data;
-    check_store_events(namespace_id, ops, area, ignores);
+    willow_fuzz::limit_time(2000, || {
+        let (namespace_id, ops, area, ignores) = data;
+        check_store_events(namespace_id, ops, area, ignores)
+    });
 });

@@ -12,7 +12,10 @@ use slab::Slab;
 use ufotofu::{BulkProducer, Producer};
 use wb_async_utils::TakeCell;
 
-use crate::{entry::AuthorisedEntry, grouping::Area, Entry, LengthyAuthorisedEntry, Path};
+use crate::{
+    entry::AuthorisedEntry, grouping::Area, AuthorisationToken, Entry, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadDigest, SubspaceId,
+};
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
@@ -695,10 +698,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err> Dr
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err> Producer
     for Subscriber<MCL, MCC, MPL, N, S, PD, AT, Err>
 where
-    N: Clone,
-    S: PartialEq + Clone,
-    PD: Clone,
-    AT: Clone,
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     type Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>;
 
@@ -717,12 +720,14 @@ where
             match self.next_op_id.take().await {
                 Err(err) => return Err(err),
                 Ok(op_id) => {
+                    println!("produce loop, op_id: {:?}", op_id);
                     match self.events.borrow().resolve_op_id(op_id) {
                         None => {
                             // We lag too far behind.
                             return Ok(Right(()));
                         }
                         Some(op) => {
+                            println!("op: {:?}", op);
                             // Advance the op_id.
                             if op_id + 1
                                 == self.events.borrow().popped_count
