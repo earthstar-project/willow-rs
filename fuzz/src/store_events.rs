@@ -122,6 +122,11 @@ pub fn check_store_events(
                     }
                 }
 
+                YieldOnce::new().await;
+                store.flush().await.unwrap();
+                YieldOnce::new().await;
+                store.debug_cancel_subscribers();
+
                 *done.borrow_mut() = true;
             },
             async {

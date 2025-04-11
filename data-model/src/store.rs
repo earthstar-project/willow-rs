@@ -664,6 +664,15 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
             Some(index) => self.op_queue.get(index as usize),
         }
     }
+
+    /// A function for debugging and testing purposes: signals to all subscribers that they lagged behind too far, irrespective of their actual ability to keep up. Might misbehave if the store performs operations after this but before the subscriber received the cancellation. Basically, don't use this, it is a hack to make certain tests work.
+    pub fn cancel_all_subscriptions(&self) {
+        for (_, sub) in self.subscribers.iter() {
+            if sub.next_op_id.is_empty() {
+                sub.next_op_id.set(Ok(u64::MAX));
+            }
+        }
+    }
 }
 
 /// The internal part of a subscriber.
@@ -720,14 +729,12 @@ where
             match self.next_op_id.take().await {
                 Err(err) => return Err(err),
                 Ok(op_id) => {
-                    println!("produce loop, op_id: {:?}", op_id);
                     match self.events.borrow().resolve_op_id(op_id) {
                         None => {
                             // We lag too far behind.
                             return Ok(Right(()));
                         }
                         Some(op) => {
-                            println!("op: {:?}", op);
                             // Advance the op_id.
                             if op_id + 1
                                 == self.events.borrow().popped_count
