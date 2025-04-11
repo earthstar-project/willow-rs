@@ -28,17 +28,17 @@ impl Representation {
         }
     }
 
-    /// Gets the length of the i`-th component.
-    ///
-    /// Panics if `i` is outside the slice.
-    pub fn component_len(buf: &[u8], i: usize) -> usize {
-        if i == 0 {
-            Self::sum_of_lengths_for_component(buf, i)
-        } else {
-            Self::sum_of_lengths_for_component(buf, i)
-                - Self::sum_of_lengths_for_component(buf, i - 1)
-        }
-    }
+    // /// Gets the length of the i`-th component.
+    // ///
+    // /// Panics if `i` is outside the slice.
+    // pub fn component_len(buf: &[u8], i: usize) -> usize {
+    //     if i == 0 {
+    //         Self::sum_of_lengths_for_component(buf, i)
+    //     } else {
+    //         Self::sum_of_lengths_for_component(buf, i)
+    //             - Self::sum_of_lengths_for_component(buf, i - 1)
+    //     }
+    // }
 
     /// Gets the `i`-th component.
     ///

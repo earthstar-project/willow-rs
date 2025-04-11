@@ -4,10 +4,7 @@ use std::{
 };
 
 use arbitrary::Arbitrary;
-use meadowcap::{
-    IsCommunal, McAuthorisationToken, McNamespacePublicKey, McPublicUserKey, SillyPublicKey,
-    SillySig,
-};
+use meadowcap::{McPublicUserKey, SillyPublicKey, SillySig};
 use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
