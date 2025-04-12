@@ -144,67 +144,71 @@ pub fn check_store_events(
                     match sub.produce().await {
                         Err(_) => unreachable!(),
                         Ok(Right(())) => break,
-                        Ok(Left(event)) => match event {
-                            StoreEvent::Ingested { entry, origin } => {
-                                let _ = collected
-                                    .ingest_entry(entry.clone(), false, origin)
-                                    .await
-                                    .unwrap();
-                            }
-                            StoreEvent::EntryForgotten { entry } => {
-                                let _ = collected
-                                    .forget_entry(
-                                        entry.entry().subspace_id(),
-                                        entry.entry().path(),
-                                        None,
-                                    )
-                                    .await;
-                            }
-                            StoreEvent::AreaForgotten { area, protected } => {
-                                let _ = collected.forget_area(&area, protected.as_ref()).await;
-                            }
-                            StoreEvent::PayloadForgotten(entry) => {
-                                let _ = collected
-                                    .forget_payload(
-                                        entry.entry().subspace_id(),
-                                        entry.entry().path(),
-                                        None,
-                                    )
-                                    .await;
-                            }
-                            StoreEvent::AreaPayloadsForgotten { area, protected } => {
-                                let _ = collected
-                                    .forget_area_payloads(&area, protected.as_ref())
-                                    .await;
-                            }
-                            StoreEvent::Appended {
-                                entry,
-                                previous_available,
-                                now_available: _,
-                            } => {
-                                let mut new_payload_bytes_producer = store
-                                    .payload(
-                                        entry.entry().subspace_id(),
-                                        entry.entry().path(),
-                                        previous_available,
-                                        None,
-                                    )
-                                    .await
-                                    .unwrap();
+                        Ok(Left(event)) => {
+                            // println!("Subscriber got event: {:?}", event);
 
-                                let _ = collected
-                                    .append_payload(
-                                        entry.entry().subspace_id(),
-                                        entry.entry().path(),
-                                        None,
-                                        &mut new_payload_bytes_producer,
-                                    )
-                                    .await;
+                            match event {
+                                StoreEvent::Ingested { entry, origin } => {
+                                    let _ = collected
+                                        .ingest_entry(entry.clone(), false, origin)
+                                        .await
+                                        .unwrap();
+                                }
+                                StoreEvent::EntryForgotten { entry } => {
+                                    let _ = collected
+                                        .forget_entry(
+                                            entry.entry().subspace_id(),
+                                            entry.entry().path(),
+                                            None,
+                                        )
+                                        .await;
+                                }
+                                StoreEvent::AreaForgotten { area, protected } => {
+                                    let _ = collected.forget_area(&area, protected.as_ref()).await;
+                                }
+                                StoreEvent::PayloadForgotten(entry) => {
+                                    let _ = collected
+                                        .forget_payload(
+                                            entry.entry().subspace_id(),
+                                            entry.entry().path(),
+                                            None,
+                                        )
+                                        .await;
+                                }
+                                StoreEvent::AreaPayloadsForgotten { area, protected } => {
+                                    let _ = collected
+                                        .forget_area_payloads(&area, protected.as_ref())
+                                        .await;
+                                }
+                                StoreEvent::Appended {
+                                    entry,
+                                    previous_available,
+                                    now_available: _,
+                                } => {
+                                    let mut new_payload_bytes_producer = store
+                                        .payload(
+                                            entry.entry().subspace_id(),
+                                            entry.entry().path(),
+                                            previous_available,
+                                            None,
+                                        )
+                                        .await
+                                        .unwrap();
+
+                                    let _ = collected
+                                        .append_payload(
+                                            entry.entry().subspace_id(),
+                                            entry.entry().path(),
+                                            None,
+                                            &mut new_payload_bytes_producer,
+                                        )
+                                        .await;
+                                }
+                                StoreEvent::PruneAlert { cause } => {
+                                    collected.prune(&cause).await;
+                                }
                             }
-                            StoreEvent::PruneAlert { cause } => {
-                                collected.prune(&cause).await;
-                            }
-                        },
+                        }
                     }
                 }
 

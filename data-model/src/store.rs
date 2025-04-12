@@ -556,6 +556,11 @@ pub struct EventSystem<const MCL: usize, const MCC: usize, const MPL: usize, N, 
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
     EventSystem<MCL, MCC, MPL, N, S, PD, AT, Err>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     /// Creates a new Eventsystem.
     pub fn new(max_queue_capacity: usize) -> Self {
@@ -643,6 +648,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, Err>
 
     // We enqueue an operation. If the max capacity of the queue is reached through that, we pop the oldest op (which might cause straggling subscribers to be cancelled the next time they try to produce an event). If any subscribers have been awaiting a new op, we notify them.
     fn enqueue_op(&mut self, op: QueuedOp<MCL, MCC, MPL, N, S, PD, AT>) {
+        // println!("enqueue_op: {:?}", op);
         self.op_queue.push_back(op);
 
         if self.op_queue.len() > self.max_queue_capacity {

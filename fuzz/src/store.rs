@@ -30,8 +30,10 @@ pub struct ControlStore<const MCL: usize, const MCC: usize, const MPL: usize, N,
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     ControlStore<MCL, MCC, MPL, N, S, PD, AT>
 where
-    S: Ord + Clone,
-    AT: Clone,
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     pub fn new(namespace: N, capacity: usize) -> Self {
         Self {
@@ -171,6 +173,53 @@ impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
     }
 }
 
+impl<PD, AT> ControlEntry<PD, AT>
+where
+    PD: PayloadDigest,
+{
+    fn to_authorised_entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S>(
+        &self,
+        namespace_id: N,
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    ) -> AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
+    where
+        N: NamespaceId,
+        S: SubspaceId,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    {
+        AuthorisedEntry::new(
+            Entry::new(
+                namespace_id,
+                subspace_id,
+                path,
+                self.timestamp,
+                self.payload_length,
+                self.payload_digest.to_owned(),
+            ),
+            self.authorisation_token.to_owned(),
+        )
+        .unwrap()
+    }
+
+    fn to_lengthy_authorised_entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S>(
+        &self,
+        namespace_id: N,
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
+    ) -> LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>
+    where
+        N: NamespaceId,
+        S: SubspaceId,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    {
+        LengthyAuthorisedEntry::new(
+            self.to_authorised_entry(namespace_id, subspace_id, path),
+            self.payload.len() as u64,
+        )
+    }
+}
+
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     Store<MCL, MCC, MPL, N, S, PD, AT> for ControlStore<MCL, MCC, MPL, N, S, PD, AT>
 where
@@ -189,7 +238,7 @@ where
         &self,
         authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
-        _origin: EntryOrigin,
+        origin: EntryOrigin,
     ) -> Result<EntryIngestionSuccess<MCL, MCC, MPL, N, S, PD, AT>, EntryIngestionError<Self::Error>>
     {
         if self.namespace_id() != authorised_entry.entry().namespace_id() {
@@ -227,6 +276,9 @@ where
             .prune_maybe_with_subspace_store(&authorised_entry, prevent_pruning, subspace_store)
             .await
         {
+            self.event_system
+                .borrow_mut()
+                .ingested_entry(authorised_entry, origin);
             Ok(EntryIngestionSuccess::Success)
         } else {
             Err(EntryIngestionError::PruningPrevented)
@@ -255,7 +307,8 @@ where
                 }
 
                 let max_length = entry.payload_length;
-                let mut current_length = entry.payload.len() as u64;
+                let initial_length = entry.payload.len() as u64;
+                let mut current_length = initial_length;
 
                 while current_length < max_length {
                     let result = payload_source.expose_items().await.map_err(|err| {
@@ -296,6 +349,8 @@ where
                     return Err(PayloadAppendError::TooManyBytes);
                 }
 
+                debug_assert_eq!(current_length, entry.payload.len() as u64);
+
                 match current_length.cmp(&max_length) {
                     std::cmp::Ordering::Greater => Err(PayloadAppendError::TooManyBytes),
                     std::cmp::Ordering::Equal => {
@@ -305,10 +360,30 @@ where
                         if PD::finish(&hasher) != entry.payload_digest {
                             Err(PayloadAppendError::DigestMismatch)
                         } else {
+                            self.event_system.borrow_mut().appended_payload(
+                                entry.to_authorised_entry(
+                                    self.namespace_id().to_owned(),
+                                    subspace.to_owned(),
+                                    path.to_owned(),
+                                ),
+                                initial_length,
+                                current_length,
+                            );
                             Ok(PayloadAppendSuccess::Completed)
                         }
                     }
-                    std::cmp::Ordering::Less => Ok(PayloadAppendSuccess::Appended),
+                    std::cmp::Ordering::Less => {
+                        self.event_system.borrow_mut().appended_payload(
+                            entry.to_authorised_entry(
+                                self.namespace_id().to_owned(),
+                                subspace.to_owned(),
+                                path.to_owned(),
+                            ),
+                            initial_length,
+                            current_length,
+                        );
+                        Ok(PayloadAppendSuccess::Appended)
+                    }
                 }
             }
         }
@@ -331,6 +406,16 @@ where
                     if entry.payload_digest != expected {
                         return Err(ForgetEntryError::WrongEntry);
                     }
+                }
+
+                {
+                    self.event_system
+                        .borrow_mut()
+                        .forgot_entry(entry.to_lengthy_authorised_entry(
+                            self.namespace_id().to_owned(),
+                            subspace_id.to_owned(),
+                            path.to_owned(),
+                        ));
                 }
 
                 subspace_store.entries.remove(path);
@@ -395,6 +480,12 @@ where
             count += 1;
         }
 
+        if count > 0 {
+            self.event_system
+                .borrow_mut()
+                .forgot_area(area.to_owned(), protected.cloned());
+        }
+
         Ok(count)
     }
 
@@ -414,9 +505,18 @@ where
                     }
                 }
 
+                self.event_system
+                    .borrow_mut()
+                    .forgot_payload(entry.to_lengthy_authorised_entry(
+                        self.namespace_id().to_owned(),
+                        subspace_id.to_owned(),
+                        path.to_owned(),
+                    ));
+
                 entry.payload.clear();
             }
         }
+
         Ok(())
     }
 
@@ -473,6 +573,12 @@ where
                 .await
                 .expect("cannot error if expectedDigest is None");
             count += 1;
+        }
+
+        if count > 0 {
+            self.event_system
+                .borrow_mut()
+                .forgot_area_payloads(area.to_owned(), protected.cloned());
         }
 
         Ok(count)
