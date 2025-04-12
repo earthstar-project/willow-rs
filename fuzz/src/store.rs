@@ -48,13 +48,14 @@ where
         PD: PayloadDigest,
         N: NamespaceId,
     {
-        self.prune_maybe(authorised_entry, false).await;
+        self.prune_maybe(authorised_entry, false, false).await;
     }
 
     async fn prune_maybe(
         &self,
         authorised_entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        do_insert_if_necessary: bool,
     ) -> bool
     where
         PD: PayloadDigest,
@@ -63,14 +64,20 @@ where
         let subspace_store =
             self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
 
-        self.prune_maybe_with_subspace_store(authorised_entry, prevent_pruning, subspace_store)
-            .await
+        self.prune_maybe_with_subspace_store(
+            authorised_entry,
+            prevent_pruning,
+            do_insert_if_necessary,
+            subspace_store,
+        )
+        .await
     }
 
     async fn prune_maybe_with_subspace_store<'s>(
         &'s self,
         authorised_entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         prevent_pruning: bool,
+        do_insert_if_necessary: bool,
         mut subspace_store: RefMut<'s, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>,
     ) -> bool
     where
@@ -99,16 +106,18 @@ where
                 subspace_store.deref_mut().entries.remove(&path_to_prune);
             }
 
-            subspace_store.deref_mut().entries.insert(
-                authorised_entry.entry().path().clone(),
-                ControlEntry {
-                    authorisation_token: authorised_entry.token().to_owned(),
-                    payload: Vec::new(),
-                    payload_digest: authorised_entry.entry().payload_digest().to_owned(),
-                    payload_length: authorised_entry.entry().payload_length(),
-                    timestamp: authorised_entry.entry().timestamp(),
-                },
-            );
+            if do_insert_if_necessary {
+                subspace_store.deref_mut().entries.insert(
+                    authorised_entry.entry().path().clone(),
+                    ControlEntry {
+                        authorisation_token: authorised_entry.token().to_owned(),
+                        payload: Vec::new(),
+                        payload_digest: authorised_entry.entry().payload_digest().to_owned(),
+                        payload_length: authorised_entry.entry().payload_length(),
+                        timestamp: authorised_entry.entry().timestamp(),
+                    },
+                );
+            }
 
             return true;
         }
@@ -273,7 +282,12 @@ where
         }
 
         if self
-            .prune_maybe_with_subspace_store(&authorised_entry, prevent_pruning, subspace_store)
+            .prune_maybe_with_subspace_store(
+                &authorised_entry,
+                prevent_pruning,
+                true,
+                subspace_store,
+            )
             .await
         {
             self.event_system

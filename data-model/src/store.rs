@@ -837,13 +837,24 @@ where
                                 }
 
                                 QueuedOp::Insertion { entry, origin } => {
+                                    // println!(
+                                    //     "Subscriber looking at a QueuedOp::Insertion: {:?}",
+                                    //     entry
+                                    // );
+
                                     // Is the entry in the subscribed-to area?
                                     if self.area.includes_entry(entry.entry()) {
+                                        // println!("Entry included in area {:?}", self.area);
+
                                         if self.ignore.ignores_fresh_entry(entry.entry()) {
+                                            // println!("Entry got ignored, emitting a PruneAlert event for it.");
+
                                             return Ok(Left(StoreEvent::PruneAlert {
                                                 cause: entry.clone(),
                                             }));
                                         } else {
+                                            // println!("Entry not ignored, emitting a PruneAlert followed by an IngestedEvent.");
+
                                             // Insertion is not ignored.
                                             // Buffer the actual insertion event, then emit the prune alert.
                                             self.buffered_event = Some(StoreEvent::Ingested {
@@ -856,11 +867,15 @@ where
                                             }));
                                         }
                                     } else if self.area.could_be_pruned_by(entry.entry()) {
+                                        // println!("Insertion outside area but might still prune something inside the area");
+
                                         // Insertion outside area but might still prune something inside the area.
                                         return Ok(Left(StoreEvent::PruneAlert {
                                             cause: entry.clone(),
                                         }));
                                     } else {
+                                        // println!("Insertion does not affect the area, continue with next event");
+
                                         // no-op, insertion does not affect the area, continue with next event
                                     }
                                 }

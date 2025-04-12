@@ -145,7 +145,7 @@ pub fn check_store_events(
                         Err(_) => unreachable!(),
                         Ok(Right(())) => break,
                         Ok(Left(event)) => {
-                            // println!("Subscriber got event: {:?}", event);
+                            // println!("Public subscriber got event: {:?}", event);
 
                             match event {
                                 StoreEvent::Ingested { entry, origin } => {
@@ -211,6 +211,8 @@ pub fn check_store_events(
                         }
                     }
                 }
+
+                // println!("collected: {:?}", collected);
 
                 collected
             },
