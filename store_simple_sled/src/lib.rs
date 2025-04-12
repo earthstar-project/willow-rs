@@ -468,11 +468,13 @@ where
                             let authy_entry =
                                 unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
 
-                            self.event_system.borrow_mut().appended_payload(
-                                authy_entry,
-                                old_payload_len as u64,
-                                received_payload_len as u64,
-                            );
+                            if old_payload_len != received_payload_len {
+                                self.event_system.borrow_mut().appended_payload(
+                                    authy_entry,
+                                    old_payload_len as u64,
+                                    received_payload_len as u64,
+                                );
+                            }
 
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
@@ -538,11 +540,13 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
-                    self.event_system.borrow_mut().appended_payload(
-                        authed_entry,
-                        old_payload_len as u64,
-                        received_payload_len as u64,
-                    );
+                    if old_payload_len != received_payload_len {
+                        self.event_system.borrow_mut().appended_payload(
+                            authed_entry,
+                            old_payload_len as u64,
+                            received_payload_len as u64,
+                        );
+                    }
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
@@ -565,11 +569,13 @@ where
                         SimpleStoreSledError::from(err)
                     })?;
 
-                    self.event_system.borrow_mut().appended_payload(
-                        authed_entry,
-                        old_payload_len as u64,
-                        received_payload_len as u64,
-                    );
+                    if old_payload_len != received_payload_len {
+                        self.event_system.borrow_mut().appended_payload(
+                            authed_entry,
+                            old_payload_len as u64,
+                            received_payload_len as u64,
+                        );
+                    }
 
                     Ok(PayloadAppendSuccess::Appended)
                 }
