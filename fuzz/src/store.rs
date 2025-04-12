@@ -58,9 +58,23 @@ where
         PD: PayloadDigest,
         N: NamespaceId,
     {
-        let mut subspace_store =
+        let subspace_store =
             self.get_or_create_subspace_store(authorised_entry.entry().subspace_id());
 
+        self.prune_maybe_with_subspace_store(authorised_entry, prevent_pruning, subspace_store)
+            .await
+    }
+
+    async fn prune_maybe_with_subspace_store<'s>(
+        &'s self,
+        authorised_entry: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        prevent_pruning: bool,
+        mut subspace_store: RefMut<'s, ControlSubspaceStore<MCL, MCC, MPL, PD, AT>>,
+    ) -> bool
+    where
+        PD: PayloadDigest,
+        N: NamespaceId,
+    {
         // Does the inserted entry replace others?
         let prune_these: Vec<_> = subspace_store
             .entries
@@ -101,8 +115,6 @@ where
     pub(crate) fn debug_cancel_subscribers(&self) {
         self.event_system.borrow().cancel_all_subscriptions();
     }
-
-    // cancel_all_subscriptions
 
     fn get_or_create_subspace_store<'s>(
         &'s self,
@@ -211,7 +223,10 @@ where
             }
         }
 
-        if self.prune_maybe(&authorised_entry, prevent_pruning).await {
+        if self
+            .prune_maybe_with_subspace_store(&authorised_entry, prevent_pruning, subspace_store)
+            .await
+        {
             Ok(EntryIngestionSuccess::Success)
         } else {
             Err(EntryIngestionError::PruningPrevented)
@@ -638,7 +653,6 @@ where
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
         EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
-        // TODO not hooked up yet, no events are ever emitted. But at least it compiles...
     }
 }
 
