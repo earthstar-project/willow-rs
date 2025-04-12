@@ -372,6 +372,7 @@ where
                         PD::write(&mut hasher, &entry.payload);
 
                         if PD::finish(&hasher) != entry.payload_digest {
+                            entry.payload = vec![];
                             Err(PayloadAppendError::DigestMismatch)
                         } else {
                             if current_length != initial_length {
