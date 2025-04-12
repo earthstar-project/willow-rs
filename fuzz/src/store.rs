@@ -374,6 +374,22 @@ where
                         if PD::finish(&hasher) != entry.payload_digest {
                             Err(PayloadAppendError::DigestMismatch)
                         } else {
+                            if current_length != initial_length {
+                                self.event_system.borrow_mut().appended_payload(
+                                    entry.to_authorised_entry(
+                                        self.namespace_id().to_owned(),
+                                        subspace.to_owned(),
+                                        path.to_owned(),
+                                    ),
+                                    initial_length,
+                                    current_length,
+                                );
+                            }
+                            Ok(PayloadAppendSuccess::Completed)
+                        }
+                    }
+                    std::cmp::Ordering::Less => {
+                        if current_length != initial_length {
                             self.event_system.borrow_mut().appended_payload(
                                 entry.to_authorised_entry(
                                     self.namespace_id().to_owned(),
@@ -383,19 +399,7 @@ where
                                 initial_length,
                                 current_length,
                             );
-                            Ok(PayloadAppendSuccess::Completed)
                         }
-                    }
-                    std::cmp::Ordering::Less => {
-                        self.event_system.borrow_mut().appended_payload(
-                            entry.to_authorised_entry(
-                                self.namespace_id().to_owned(),
-                                subspace.to_owned(),
-                                path.to_owned(),
-                            ),
-                            initial_length,
-                            current_length,
-                        );
                         Ok(PayloadAppendSuccess::Appended)
                     }
                 }
