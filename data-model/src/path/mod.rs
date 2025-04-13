@@ -535,7 +535,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         None
     }
 
-    /// Create a new path from a slice over byte slices.
+    /// Create a new path from a slice of byte slices.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     ///
     /// # Example
     ///
