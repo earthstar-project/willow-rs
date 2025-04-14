@@ -534,6 +534,71 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         None
     }
+
+    /// Create a new path from a slice of byte slices.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use willow_data_model::{Path, PathConstructionError, InvalidPathError};
+    /// // Ok
+    /// let path = Path::<12, 3, 30>::from_slices(&["alfie", "notes"]).unwrap();
+    ///
+    /// // Err
+    /// let result1 = Path::<12, 3, 30>::from_slices(&["themaxpath", "lengthis30", "thisislonger"]);
+    /// assert!(matches!(result1, Err(PathConstructionError::InvalidPath(InvalidPathError::PathTooLong))));
+    ///
+    /// // Err
+    /// let result2 = Path::<12, 3, 30>::from_slices(&["too", "many", "components", "error"]);
+    /// assert!(matches!(result2, Err(PathConstructionError::InvalidPath(InvalidPathError::TooManyComponents))));
+    ///
+    /// // Err
+    /// let result3 = Path::<12, 3, 30>::from_slices(&["overencumbered"]);
+    /// assert!(matches!(result3, Err(PathConstructionError::ComponentTooLongError)));
+    /// ```
+    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, PathConstructionError> {
+        let total_length = slices.iter().map(|it| it.as_ref().len()).sum();
+        let mut builder = PathBuilder::new(total_length, slices.len())?;
+
+        for component_slice in slices {
+            let component = Component::<MCL>::new(component_slice.as_ref())
+                .ok_or(PathConstructionError::ComponentTooLongError)?;
+            builder.append_component(component);
+        }
+
+        Ok(builder.build())
+    }
+}
+
+/// Raised upon failing to construct a [`Path`] from a slice of slices.
+#[derive(Debug, Clone)]
+pub enum PathConstructionError {
+    InvalidPath(InvalidPathError),
+    ComponentTooLongError,
+}
+
+impl std::error::Error for PathConstructionError {}
+impl std::fmt::Display for PathConstructionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathConstructionError::InvalidPath(invalid_path_error) => {
+                std::fmt::Display::fmt(invalid_path_error, f)
+            }
+            PathConstructionError::ComponentTooLongError => {
+                write!(f, "Length of a path component in bytes exceeded the maximum component length"")
+            }
+        }
+    }
+}
+
+impl From<InvalidPathError> for PathConstructionError {
+    fn from(value: InvalidPathError) -> Self {
+        Self::InvalidPath(value)
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
