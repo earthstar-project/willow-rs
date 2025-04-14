@@ -549,7 +549,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// let path = Path::<12, 3, 30>::from_slices(&["alfie", "notes"]).unwrap();
     ///
     /// // Err
-    /// let result1 = Path::<12, 3, 30>::from_slices(&["themaxpathlengthis30andthisistoolong"]);
+    /// let result1 = Path::<12, 3, 30>::from_slices(&["themaxpath", "lengthis30", "thisislonger"]);
     /// assert!(matches!(result1, Err(PathConstructionError::InvalidPath(InvalidPathError::PathTooLong))));
     ///
     /// // Err
@@ -589,7 +589,7 @@ impl std::fmt::Display for PathConstructionError {
                 std::fmt::Display::fmt(invalid_path_error, f)
             }
             PathConstructionError::ComponentTooLongError => {
-                write!(f, "failed to construct a `Path` from slices")
+                write!(f, "Length of a path component in bytes exceeded the maximum component length"")
             }
         }
     }
