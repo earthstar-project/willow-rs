@@ -105,7 +105,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn new_from_iter<'a, I>(total_length: usize, iter: &mut I) -> Result<Self, InvalidPathError>
     where
         I: ExactSizeIterator<Item = Component<'a, MCL>>,
@@ -125,7 +125,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn new_from_slice(components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = 0;
         for comp in components {
@@ -141,7 +141,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn append(&self, comp: Component<MCL>) -> Result<Self, InvalidPathError> {
         let mut builder =
             PathBuilder::new(self.path_length() + comp.len(), self.component_count() + 1)?;
@@ -160,7 +160,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn append_slice(&self, components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = self.path_length();
         for comp in components {
@@ -367,7 +367,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_prefix_of(&self, other: &Self) -> bool {
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
@@ -383,12 +383,16 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
     }
 
     /// Tests whether this path is _related_ to the given path, that is, whether either one is a prefix of the other.
+    /// 
+    /// #### Complexity
+    /// 
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_related(&self, other: &Self) -> bool {
         self.is_prefix_of(other) || self.is_prefixed_by(other)
     }
@@ -397,7 +401,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the shorter of the two paths, and `m` is the lesser number of components. Performs a single allocation of `O(n + m)` bytes to create the return value.
     pub fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
 
@@ -416,7 +420,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn successor(&self) -> Option<Self> {
         // If it is possible to append an empty component, then doing so yields the successor.
         if let Ok(path) = self.append(Component::new_empty()) {
@@ -478,7 +482,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn greater_but_not_prefixed(&self) -> Option<Self> {
         // We iterate through all components in reverse order. For each component, we check whether we can replace it by another cmponent that is strictly greater but not prefixed by the original component. If that is possible, we do replace it with the least such component and drop all later components. If that is impossible, we try again with the previous component. If this impossible for all components, then this function returns `None`.
 
