@@ -373,6 +373,15 @@ where
 
                         if PD::finish(&hasher) != entry.payload_digest {
                             entry.payload = vec![];
+
+                            self.event_system.borrow_mut().forgot_payload(
+                                entry.to_lengthy_authorised_entry(
+                                    self.namespace_id().to_owned(),
+                                    subspace.to_owned(),
+                                    path.to_owned(),
+                                ),
+                            );
+
                             Err(PayloadAppendError::DigestMismatch)
                         } else {
                             if current_length != initial_length {
