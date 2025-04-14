@@ -185,7 +185,7 @@ pub fn check_store_events(
                                     previous_available,
                                     now_available: _,
                                 } => {
-                                    let mut new_payload_bytes_producer = store
+                                    match store
                                         .payload(
                                             entry.entry().subspace_id(),
                                             entry.entry().path(),
@@ -193,16 +193,19 @@ pub fn check_store_events(
                                             None,
                                         )
                                         .await
-                                        .unwrap();
-
-                                    let _ = collected
-                                        .append_payload(
-                                            entry.entry().subspace_id(),
-                                            entry.entry().path(),
-                                            None,
-                                            &mut new_payload_bytes_producer,
-                                        )
-                                        .await;
+                                    {
+                                        Ok(mut new_payload_bytes_producer) => {
+                                            let _ = collected
+                                                .append_payload(
+                                                    entry.entry().subspace_id(),
+                                                    entry.entry().path(),
+                                                    None,
+                                                    &mut new_payload_bytes_producer,
+                                                )
+                                                .await;
+                                        }
+                                        Err(_) => { /* no-op */ }
+                                    }
                                 }
                                 StoreEvent::PruneAlert { cause } => {
                                     collected.prune(&cause).await;
