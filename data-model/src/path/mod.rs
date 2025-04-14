@@ -589,7 +589,7 @@ impl std::fmt::Display for PathConstructionError {
                 std::fmt::Display::fmt(invalid_path_error, f)
             }
             PathConstructionError::ComponentTooLongError => {
-                write!(f, "Length of a path component in bytes exceeded the maximum component length"")
+                write!(f, "Length of a path component in bytes exceeded the maximum component length")
             }
         }
     }
