@@ -60,6 +60,36 @@ impl From<InvalidPathError> for Blame {
     }
 }
 
+/// Raised upon failing to construct a [`Path`] from bytes that each may or may not exceeded the maximum component length.
+#[derive(Debug, Clone)]
+pub enum PathConstructionError {
+    InvalidPath(InvalidPathError),
+    ComponentTooLongError,
+}
+
+impl std::error::Error for PathConstructionError {}
+impl std::fmt::Display for PathConstructionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathConstructionError::InvalidPath(invalid_path_error) => {
+                std::fmt::Display::fmt(invalid_path_error, f)
+            }
+            PathConstructionError::ComponentTooLongError => {
+                write!(
+                    f,
+                    "Length of a path component in bytes exceeded the maximum component length"
+                )
+            }
+        }
+    }
+}
+
+impl From<InvalidPathError> for PathConstructionError {
+    fn from(value: InvalidPathError) -> Self {
+        Self::InvalidPath(value)
+    }
+}
+
 /// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of, expensive to append to (linear time complexity).
 ///
 /// Enforces that each component has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each path has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and that the total size in bytes of all components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
@@ -389,9 +419,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     }
 
     /// Tests whether this path is _related_ to the given path, that is, whether either one is a prefix of the other.
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_related(&self, other: &Self) -> bool {
         self.is_prefix_of(other) || self.is_prefixed_by(other)
@@ -575,33 +605,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
 
         Ok(builder.build())
-    }
-}
-
-/// Raised upon failing to construct a [`Path`] from a slice of slices.
-#[derive(Debug, Clone)]
-pub enum PathConstructionError {
-    InvalidPath(InvalidPathError),
-    ComponentTooLongError,
-}
-
-impl std::error::Error for PathConstructionError {}
-impl std::fmt::Display for PathConstructionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PathConstructionError::InvalidPath(invalid_path_error) => {
-                std::fmt::Display::fmt(invalid_path_error, f)
-            }
-            PathConstructionError::ComponentTooLongError => {
-                write!(f, "Length of a path component in bytes exceeded the maximum component length")
-            }
-        }
-    }
-}
-
-impl From<InvalidPathError> for PathConstructionError {
-    fn from(value: InvalidPathError) -> Self {
-        Self::InvalidPath(value)
     }
 }
 
