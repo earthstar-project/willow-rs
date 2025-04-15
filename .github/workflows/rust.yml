@@ -212,7 +212,7 @@ jobs:
 
   check_fmt:
     timeout-minutes: 30
-    name: Chec fmt
+    name: Check fmt
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
