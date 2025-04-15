@@ -535,6 +535,20 @@ where
                     let computed_digest = PD::finish(&hasher);
 
                     if computed_digest != *lengthy_entry.entry().entry().payload_digest() {
+                        self.forget_payload(
+                            lengthy_entry.entry().entry().subspace_id(),
+                            lengthy_entry.entry().entry().path(),
+                            Some(lengthy_entry.entry().entry().payload_digest().clone()),
+                        )
+                        .await
+                        .map_err(|err| match err {
+                            ForgetPayloadError::OperationError(err) => {
+                                PayloadAppendError::<PayloadSourceError, _>::OperationError(err)
+                            }
+                            ForgetPayloadError::WrongEntry => PayloadAppendError::WrongEntry,
+                            ForgetPayloadError::NoSuchEntry => PayloadAppendError::NoSuchEntry,
+                        })?;
+
                         return Err(PayloadAppendError::DigestMismatch);
                     }
 
