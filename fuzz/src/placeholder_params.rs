@@ -168,7 +168,7 @@ impl McPublicUserKey<SillySig> for FakeSubspaceId {}
 // Payload digest
 
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-pub struct FakePayloadDigest([u8; 32]);
+pub struct FakePayloadDigest([u8; 1]);
 
 impl Encodable for FakePayloadDigest {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -211,7 +211,7 @@ impl DecodableCanonic for FakePayloadDigest {
 
 impl EncodableKnownSize for FakePayloadDigest {
     fn len_of_encoding(&self) -> usize {
-        32
+        1
     }
 }
 
@@ -222,10 +222,7 @@ impl PayloadDigest for FakePayloadDigest {
 
     fn finish(hasher: &Self::Hasher) -> Self {
         let hashy_numbers = hasher.finish();
-        let bytes = U64BE(hashy_numbers).sync_encode_into_vec();
-        let mut arr = [0x0; 32];
-        arr[..8].clone_from_slice(&bytes);
-        Self(arr)
+        Self([hashy_numbers.to_be_bytes()[0] & 0b0000_0011])
     }
 
     fn write(hasher: &mut Self::Hasher, bytes: &[u8]) {
