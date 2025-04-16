@@ -1,6 +1,6 @@
 [package]
 name = "willow_25"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Recommended choices for Willow specification parameters"
 license = "MIT OR Apache-2.0"
