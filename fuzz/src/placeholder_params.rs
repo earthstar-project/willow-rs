@@ -167,8 +167,14 @@ impl McPublicUserKey<SillySig> for FakeSubspaceId {}
 
 // Payload digest
 
-#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct FakePayloadDigest([u8; 1]);
+
+impl<'a> Arbitrary<'a> for FakePayloadDigest {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(FakePayloadDigest([u8::arbitrary(u).unwrap() & 0b0000_0011]))
+    }
+}
 
 impl Encodable for FakePayloadDigest {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
