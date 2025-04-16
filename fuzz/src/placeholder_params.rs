@@ -11,7 +11,6 @@ use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
     EncodableSync,
 };
-use ufotofu_codec_endian::U64BE;
 use willow_data_model::{AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId};
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
@@ -195,9 +194,9 @@ impl Decodable for FakePayloadDigest {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let bytes = decode_bytes(producer).await?;
+        let bytes: [u8; 1] = decode_bytes(producer).await?;
 
-        Ok(FakePayloadDigest(bytes))
+        Ok(FakePayloadDigest([bytes[0] & 0b0000_0011]))
     }
 }
 
@@ -211,7 +210,16 @@ impl DecodableCanonic for FakePayloadDigest {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        Self::decode(producer).await
+        match Self::decode(producer).await {
+            Ok(dec) => {
+                if dec.0[0] < 4 {
+                    Ok(dec)
+                } else {
+                    Err(DecodeError::Other(Blame::TheirFault))
+                }
+            }
+            err => err,
+        }
     }
 }
 

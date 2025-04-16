@@ -7,8 +7,14 @@ use ufotofu_codec::{
 use willow_data_model::{NamespaceId, SubspaceId};
 
 /// A silly, trivial, insecure public key for fuzz testing.
-#[derive(PartialEq, Eq, Debug, Arbitrary, Clone, Default, PartialOrd, Ord, Hash)]
+#[derive(PartialEq, Eq, Debug, Clone, Default, PartialOrd, Ord, Hash)]
 pub struct SillyPublicKey(u8);
+
+impl<'a> Arbitrary<'a> for SillyPublicKey {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(SillyPublicKey(u8::arbitrary(u).unwrap() & 0b0000_0011))
+    }
+}
 
 impl SillyPublicKey {
     pub fn corresponding_secret_key(&self) -> SillySecret {
@@ -16,7 +22,7 @@ impl SillyPublicKey {
     }
 
     pub fn successor(&self) -> Option<Self> {
-        if self.0 == 255 {
+        if self.0 == 3 {
             None
         } else {
             Some(Self(self.0 + 1))
@@ -26,8 +32,14 @@ impl SillyPublicKey {
 
 /// A silly, trivial, insecure secret key for fuzz testing.
 /// The corresponding [`SillyPublicKey`] is the identity of the secret.
-#[derive(PartialEq, Eq, Debug, Arbitrary)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct SillySecret(u8);
+
+impl<'a> Arbitrary<'a> for SillySecret {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(SillySecret(u8::arbitrary(u).unwrap() & 0b0000_0011))
+    }
+}
 
 impl SillySecret {
     pub fn corresponding_public_key(&self) -> SillyPublicKey {
@@ -73,11 +85,7 @@ impl McNamespacePublicKey for SillyPublicKey {}
 
 impl SubspaceId for SillyPublicKey {
     fn successor(&self) -> Option<Self> {
-        if self.0 == 255 {
-            return None;
-        }
-
-        Some(SillyPublicKey(self.0 + 1))
+        self.successor()
     }
 }
 
