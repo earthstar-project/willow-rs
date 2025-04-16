@@ -4,7 +4,8 @@ use rand::rngs::OsRng;
 use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
+    EncodableSync,
 };
 use willow_data_model::NamespaceId;
 
@@ -134,6 +135,8 @@ impl DecodableCanonic for NamespaceId25 {
         }
     }
 }
+
+impl DecodableSync for NamespaceId25 {}
 
 #[cfg(feature = "dev")]
 impl<'a> Arbitrary<'a> for NamespaceId25 {
