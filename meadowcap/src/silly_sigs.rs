@@ -2,7 +2,7 @@ use crate::{IsCommunal, McNamespacePublicKey, McPublicUserKey};
 use arbitrary::Arbitrary;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
 };
 use willow_data_model::{NamespaceId, SubspaceId};
 
@@ -128,7 +128,7 @@ impl Decodable for SillyPublicKey {
     {
         let num = producer.produce_item().await?;
 
-        Ok(SillyPublicKey(num))
+        Ok(SillyPublicKey(num & 0b0000_0011))
     }
 }
 
@@ -142,9 +142,16 @@ impl DecodableCanonic for SillyPublicKey {
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let num = producer.produce_item().await?;
-
-        Ok(SillyPublicKey(num))
+        match Self::decode(producer).await {
+            Ok(dec) => {
+                if dec.0 < 4 {
+                    Ok(dec)
+                } else {
+                    Err(DecodeError::Other(Blame::TheirFault))
+                }
+            }
+            err => err,
+        }
     }
 }
 
