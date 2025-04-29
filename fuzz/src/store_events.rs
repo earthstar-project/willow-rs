@@ -185,7 +185,6 @@ pub fn check_store_events(
                                     previous_available,
                                     now_available,
                                 } => {
-                                    println!("StoreEvent::Appended received by control: {:?}, prev_available {:?}, now_available {:?}", entry, previous_available, now_available);
                                     match store
                                         .payload(
                                             entry.entry().subspace_id(),
@@ -196,7 +195,10 @@ pub fn check_store_events(
                                         .await
                                     {
                                         Ok(new_payload_bytes_producer) => {
-                                            let mut limited = ufotofu::producer::Limit::new(new_payload_bytes_producer, (now_available - previous_available) as usize);
+                                            let mut limited = ufotofu::producer::Limit::new(
+                                                new_payload_bytes_producer,
+                                                (now_available - previous_available) as usize,
+                                            );
 
                                             let _ = collected
                                                 .append_payload(
