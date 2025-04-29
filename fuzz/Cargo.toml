@@ -11,7 +11,7 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.6.2", features = ["std", "dev"] }
+ufotofu = { version = "0.6.5", features = ["std", "dev"] }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
 ufotofu_queues = { version = "0.6.0", features = ["std"] }
 pollster = "0.4.0"
