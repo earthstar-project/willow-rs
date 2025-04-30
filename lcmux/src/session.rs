@@ -32,6 +32,17 @@ use crate::{
 
 pub use crate::frames::SendGlobalNibble;
 
+pub struct ChannelOptions {
+    /// Capacity of the ring buffer that buffers incoming message bytes for this channel.
+    buffer_capacity: usize,
+    /// How many guarantees must become grantable at least before they are actually granted. If this is greater than the `buffer_capacity`, no guarantees will ever be granted. You probably do not want that.
+    watermark: u64,
+    /// Is there, from the start, an upper bound on how many bytes this channel wants to receive in total.
+    receiving_limit: Option<u64>,
+    /// If this is false, then this channel will only surround message bytes to the surrounding code while no urgent channel buffers any bytes.
+    is_urgent: bool,
+}
+
 /// The state for an Lcmux session for channels `0` to `NUM_CHANNELS - 1`.
 ///
 /// This struct is opaque, but we expose it to allow for control over where it is allocated.
@@ -58,21 +69,20 @@ where
     /// Create a new opaque state for an LCMUX session.
     ///
     /// The `buffer_capacity` specifies how many bytes each logical channel can buffer at most.
-    /// The `watermark` specifies how many guarantees must become granatble at least before they are actually granted.
+    /// The `watermark` specifies how many guarantees must become grantable at least before they are actually granted.
     pub fn new(
         p: SharedProducer<PR, P>,
         c: SharedConsumer<CR, C>,
-        buffer_capacity: usize,
-        watermark: u64,
+        options: [ChannelOptions; NUM_CHANNELS],
     ) -> Self {
         Self {
             channel_states: core::array::from_fn(|i| {
                 (
                     client_logic::State::new(i as u64),
                     server_logic::State::new(
-                        Fixed::new(buffer_capacity),
-                        buffer_capacity,
-                        watermark,
+                        Fixed::new(options[i].buffer_capacity),
+                        options[i].buffer_capacity,
+                        options[i].watermark,
                     ),
                 )
             }),
