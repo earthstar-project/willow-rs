@@ -6,7 +6,7 @@
 //!
 //! The implementation does not emit `Plead` messages, since it works with a fixed-capacity queue.
 
-use std::{cell::Cell, cmp::min, convert::Infallible, marker::PhantomData, ops::Deref, usize};
+use std::{cell::Cell, cmp::min, marker::PhantomData, ops::Deref, usize};
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
 
@@ -75,7 +75,7 @@ impl<Q: Queue<Item = u8>> State<Q> {
 
 /// Everything you need to correctly manage an LCMUX server.
 #[derive(Debug)]
-pub(crate) struct ServerLogic<R, Q> {
+pub(crate) struct ServerLogic<R: Deref<Target = State<Q>>, Q> {
     /// Inform the server logic about incoming messages (control and data) about this logical channel.
     pub receiver: MessageReceiver<R, Q>,
     /// You can await on this to be notified when the server should grant more guarantees to the client.
@@ -126,10 +126,14 @@ pub enum ReceiveSendToChannelError<ProducerFinal, ProducerError> {
 }
 
 #[derive(Debug)]
-pub struct MessageReceiver<R, Q> {
+pub struct MessageReceiver<R: Deref<Target = State<Q>>, Q> {
     state: R,
     buffer_sender: spsc::Sender<ProjectSpscState<R, Q>, Q, (), ()>,
 }
+
+// impl<R, Q> Debug for MessageReceiver<R, Q> {
+
+// }
 
 impl<R, Q> MessageReceiver<R, Q>
 where
@@ -377,7 +381,7 @@ where
 ///
 /// This is a wrapper around SharedState.buffer_out that also calls `increase_guarantees_to_give` for every produced byte.
 #[derive(Debug)]
-pub struct ReceivedData<R, Q> {
+pub struct ReceivedData<R: Deref<Target = State<Q>>, Q> {
     state: R,
     buffer_receiver: spsc::Receiver<ProjectSpscState<R, Q>, Q, (), ()>,
 }

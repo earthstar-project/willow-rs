@@ -90,11 +90,11 @@ where
 #[derive(Debug)]
 pub struct Session<
     const NUM_CHANNELS: usize,
-    R,
-    P,
-    PR,
-    C,
-    CR,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
 > {
@@ -252,9 +252,14 @@ where
 }
 
 #[derive(Debug)]
-pub struct ChannelReceiver<const NUM_CHANNELS: usize, R, P, PR, C, CR>(
-    server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>,
-);
+pub struct ChannelReceiver<
+    const NUM_CHANNELS: usize,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+>(server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>);
 
 impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Producer
     for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
@@ -499,11 +504,11 @@ pub trait GetGlobalNibble {
 #[derive(Debug)]
 pub struct GlobalMessageReceiver<
     const NUM_CHANNELS: usize,
-    R,
-    P,
-    PR,
-    C,
-    CR,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
 > {
