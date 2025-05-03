@@ -29,7 +29,7 @@ fuzz_target!(|data: (
     QueryIgnoreParams,
 )| {
     // willow_fuzz::limit_time(5000, || {
-        let (namespace_id, ops, area, ignores) = data;
-        check_store_events(namespace_id, ops, area, ignores)
+    let (namespace_id, ops, area, ignores) = data;
+    check_store_events(namespace_id, ops, area, ignores)
     // });
 });

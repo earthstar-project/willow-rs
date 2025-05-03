@@ -11,7 +11,6 @@ use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
     EncodableSync,
 };
-use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
 };

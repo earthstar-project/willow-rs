@@ -758,10 +758,9 @@ where
                                     now_available,
                                 } => {
                                     if !self.area.includes_entry(entry.entry())
-                                        || self.ignore.ignores_lengthy_authorised_entry(
-                                            &entry,
-                                            *now_available,
-                                        )
+                                        || self
+                                            .ignore
+                                            .ignores_lengthy_authorised_entry(entry, *now_available)
                                     {
                                         continue;
                                     }
