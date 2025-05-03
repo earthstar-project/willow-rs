@@ -46,10 +46,10 @@ where
         }
 
         let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
-        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::three());
 
-        header |= time_diff_tag.data_at_offset(4);
-        header |= payload_length_tag.data_at_offset(6);
+        header |= time_diff_tag.data_at_offset(3);
+        header |= payload_length_tag.data_at_offset(5);
 
         consumer.consume(header).await?;
 
@@ -61,16 +61,16 @@ where
             self.subspace_id().encode(consumer).await?;
         }
 
-        self.path()
-            .relative_encode(consumer, reference.path())
-            .await?;
-
         CompactU64(time_diff)
             .relative_encode(consumer, &time_diff_tag.encoding_width())
             .await?;
 
         CompactU64(self.payload_length())
             .relative_encode(consumer, &payload_length_tag.encoding_width())
+            .await?;
+
+        self.path()
+            .relative_encode(consumer, reference.path())
             .await?;
 
         self.payload_digest().encode(consumer).await?;
@@ -155,24 +155,24 @@ where
             0
         };
 
-        let path_len = self.path().relative_len_of_encoding(r.path());
-
         let time_diff = self.timestamp().abs_diff(r.timestamp());
         let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
         let time_diff_len =
             CompactU64(time_diff).relative_len_of_encoding(&time_diff_tag.encoding_width());
 
-        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::three());
         let payload_length_len = CompactU64(self.payload_length())
             .relative_len_of_encoding(&payload_length_tag.encoding_width());
+
+        let path_len = self.path().relative_len_of_encoding(r.path());
 
         let payload_digest_len = self.payload_digest().len_of_encoding();
 
         1 + namespace_len
             + subspace_len
-            + path_len
             + time_diff_len
             + payload_length_len
+            + path_len
             + payload_digest_len
     }
 }
@@ -228,16 +228,11 @@ where
 {
     let header = producer.produce_item().await?;
 
-    // Verify that bit 3 is 0 as specified.
-    if CANONIC && is_bitflagged(header, 3) {
-        return Err(DecodeError::Other(Blame::TheirFault));
-    }
-
     let is_namespace_encoded = is_bitflagged(header, 0);
     let is_subspace_encoded = is_bitflagged(header, 1);
     let add_or_subtract_time_diff = is_bitflagged(header, 2);
-    let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 4);
-    let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
+    let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 3);
+    let payload_length_tag = Tag::from_raw(header, TagWidth::three(), 5);
 
     let namespace_id = if is_namespace_encoded {
         if CANONIC {
@@ -278,12 +273,6 @@ where
     if CANONIC && is_subspace_encoded && &subspace_id == r.subspace_id() {
         return Err(DecodeError::Other(Blame::TheirFault));
     }
-
-    let path = if CANONIC {
-        Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.path()).await?
-    } else {
-        Path::<MCL, MCC, MPL>::relative_decode(producer, r.path()).await?
-    };
 
     let time_diff = if CANONIC {
         CompactU64::relative_decode_canonic(producer, &time_diff_tag)
@@ -326,6 +315,12 @@ where
             .await
             .map_err(DecodeError::map_other_from)?
             .0
+    };
+
+    let path = if CANONIC {
+        Path::<MCL, MCC, MPL>::relative_decode_canonic(producer, r.path()).await?
+    } else {
+        Path::<MCL, MCC, MPL>::relative_decode(producer, r.path()).await?
     };
 
     let payload_digest = if CANONIC {
