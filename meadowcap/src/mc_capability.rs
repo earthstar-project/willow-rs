@@ -13,10 +13,10 @@ use compact_u64::{CompactU64, Tag, TagWidth};
 use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
-    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
     RelativeDecodable, RelativeDecodableCanonic, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::{grouping::Area, Entry, PayloadDigest};
+use willow_data_model::{grouping::Area, Entry, PayloadDigest, TrustedRelativeDecodable};
 use willow_encoding::is_bitflagged;
 
 /// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
@@ -85,7 +85,7 @@ where
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
+    /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
     pub fn new_communal(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -591,6 +591,121 @@ where
         }
 
         1 + namespace_len + progenitor_len + init_auth_len + delegations_count_len + delegations_len
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > TrustedRelativeDecodable<Area<MCL, MCC, MPL, UserPublicKey>>
+    for McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+
+    Blame: From<NamespacePublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorCanonic>
+        + From<NamespaceSignature::ErrorReason>
+        + From<UserSignature::ErrorReason>,
+{
+    /// Unsafely decode a [`McCapability`] from a [`ufotofu::BulkProducer`] of bytes, that is, decode without verifying the validity of the inner capability.
+    ///
+    /// # Safety
+    /// Only use this method to decode [`McCapability`] from trusted sources, e.g. a database you yourself are writing verified capabilities to.
+    async unsafe fn trusted_relative_decode<P>(
+        producer: &mut P,
+        r: &Area<MCL, MCC, MPL, UserPublicKey>,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        let header = producer.produce_item().await?;
+
+        let is_owned = is_bitflagged(header, 0);
+        let access_mode = if is_bitflagged(header, 1) {
+            AccessMode::Write
+        } else {
+            AccessMode::Read
+        };
+
+        let namespace_key = NamespacePublicKey::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let user_key = UserPublicKey::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let initial_authorisation = if is_owned {
+            Some(
+                NamespaceSignature::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?,
+            )
+        } else {
+            None
+        };
+
+        let tag = Tag::from_raw(header, TagWidth::six(), 2);
+
+        let delegations_to_decode = CompactU64::relative_decode(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let mut prev_area = r.clone();
+        let mut delegations = Vec::new();
+
+        for _ in 0..delegations_to_decode {
+            let area =
+                Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode(producer, &prev_area).await?;
+            prev_area = area.clone();
+            let user = UserPublicKey::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+            let signature = UserSignature::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+
+            delegations.push(Delegation::new(area, user, signature))
+        }
+
+        let cap = match initial_authorisation {
+            Some(init_auth) => unsafe {
+                McCapability::Owned(OwnedCapability::new_unchecked(
+                    access_mode,
+                    namespace_key,
+                    user_key,
+                    init_auth,
+                    delegations,
+                ))
+            },
+            None => unsafe {
+                McCapability::Communal(CommunalCapability::new_unchecked(
+                    access_mode,
+                    namespace_key,
+                    user_key,
+                    delegations,
+                ))
+            },
+        };
+
+        Ok(cap)
     }
 }
 

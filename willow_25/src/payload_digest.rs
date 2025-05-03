@@ -4,6 +4,9 @@ use willow_data_model::PayloadDigest;
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
+/// A [BLAKE3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3) hash digest suitable for the Willow Data Model's [`PayloadDigest`](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest) parameter.
+///
+/// Note: this will eventually be replaced by WILLIAM3 hash digest. Contact mail@aljoscha-meyer.de for details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadDigest25(blake3::Hash);
 

@@ -16,9 +16,11 @@ use willow_data_model::SubspaceId;
 
 use crate::McNamespacePublicKey;
 use crate::McPublicUserKey;
-use crate::SillyPublicKey;
-use crate::SillySig;
 
+#[cfg(feature = "dev")]
+use crate::SillyPublicKey;
+#[cfg(feature = "dev")]
+use crate::SillySig;
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
@@ -408,7 +410,7 @@ struct SubspaceInitialAuthorisationMsg<'a, UserPublicKey>(&'a UserPublicKey)
 where
     UserPublicKey: EncodableSync + EncodableKnownSize;
 
-impl<'a, UserPublicKey> Encodable for SubspaceInitialAuthorisationMsg<'a, UserPublicKey>
+impl<UserPublicKey> Encodable for SubspaceInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: EncodableSync + EncodableKnownSize,
 {
@@ -423,7 +425,7 @@ where
     }
 }
 
-impl<'a, UserPublicKey> EncodableKnownSize for SubspaceInitialAuthorisationMsg<'a, UserPublicKey>
+impl<UserPublicKey> EncodableKnownSize for SubspaceInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: EncodableSync + EncodableKnownSize,
 {
@@ -432,7 +434,7 @@ where
     }
 }
 
-impl<'a, UserPublicKey> EncodableSync for SubspaceInitialAuthorisationMsg<'a, UserPublicKey> where
+impl<UserPublicKey> EncodableSync for SubspaceInitialAuthorisationMsg<'_, UserPublicKey> where
     UserPublicKey: EncodableSync + EncodableKnownSize
 {
 }
@@ -456,8 +458,8 @@ where
     user: &'a UserPublicKey,
 }
 
-impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
-    for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
+    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -492,8 +494,8 @@ where
     }
 }
 
-impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
-    for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
+    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -523,8 +525,8 @@ where
     }
 }
 
-impl<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableSync
-    for SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableSync
+    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,

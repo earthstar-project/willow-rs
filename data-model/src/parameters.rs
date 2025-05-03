@@ -6,7 +6,6 @@ use core::fmt::Debug;
 /// When an implementing type implements [`PartialOrd`], then `Self::default()` must return a least element with respect to the ordering.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
-
 pub trait NamespaceId: Eq + Default + Clone + Debug {}
 
 /// A type for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).

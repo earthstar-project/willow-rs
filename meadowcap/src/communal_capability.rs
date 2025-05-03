@@ -2,7 +2,9 @@ use signature::Signer;
 use ufotofu_codec::{
     Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
 };
-use willow_data_model::grouping::{arbitrary_included_area, Area};
+#[cfg(feature = "dev")]
+use willow_data_model::grouping::arbitrary_included_area;
+use willow_data_model::grouping::Area;
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
@@ -61,7 +63,7 @@ where
     UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    /// Creates a new communal capability granting access to the [`SubspaceId`] corresponding to the given `UserPublicKey`.
+    /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`.
     pub fn new(
         namespace_key: NamespacePublicKey,
         user_key: UserPublicKey,
@@ -107,7 +109,7 @@ where
             user: new_user,
         };
 
-        let handover_enc = &handover.sync_encode_into_boxed_slice();
+        let handover_enc = handover.sync_encode_into_boxed_slice();
 
         let signature = secret_key.sign(&handover_enc);
 
@@ -237,6 +239,24 @@ where
     pub fn progenitor(&self) -> &UserPublicKey {
         &self.user_key
     }
+
+    /// Returns a [`CommunalCapability`] without checking if any of the delegations are valid.
+    ///
+    /// # Safety
+    /// Calling this method with an invalid delegation check is immediate undefined behaviour!
+    pub unsafe fn new_unchecked(
+        access_mode: AccessMode,
+        namespace_key: NamespacePublicKey,
+        user_key: UserPublicKey,
+        delegations: Vec<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>>,
+    ) -> Self {
+        Self {
+            access_mode,
+            namespace_key,
+            user_key,
+            delegations,
+        }
+    }
 }
 
 /// Can be encoded to a bytestring to be signed for a new [`Delegation`] to a [`CommunalCapability`].
@@ -261,7 +281,6 @@ pub struct CommunalHandover<
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -269,7 +288,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > Encodable
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
@@ -312,7 +331,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -320,7 +338,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > EncodableKnownSize
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
@@ -352,7 +370,6 @@ where
 }
 
 impl<
-        'a,
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
@@ -360,7 +377,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > EncodableSync
-    for CommunalHandover<'a, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+    for CommunalHandover<'_, MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,

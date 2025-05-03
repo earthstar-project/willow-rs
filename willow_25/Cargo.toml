@@ -1,7 +1,9 @@
 [package]
 name = "willow_25"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+description = "Recommended choices for Willow specification parameters"
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
@@ -9,14 +11,16 @@ dev = ["dep:arbitrary", "willow-data-model/dev", "meadowcap/dev"]
 
 [dependencies]
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
-willow-data-model = { path = "../data-model", version = "0.1.0" }
-meadowcap = { path = "../meadowcap", version = "0.1.0" }
-ufotofu_codec = { path = "../ufotofu_codec", version = "0.1.0" }
+willow-data-model = { path = "../data-model", version = "0.2.0" }
+meadowcap = { path = "../meadowcap", version = "0.2.0" }
+ufotofu_codec = { version = "0.1.0" }
 ufotofu = { version = "0.6.0", features = ["std"] }
 rand = "0.8.5"
 signature = "2.2.0"
 blake3 = "1.8.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
+compact_u64 = { version = "0.1.0", features = [ "std", "dev" ] }
+willow-encoding = { path = "../encoding", version = "0.1.0" }
 
 [lints]
 workspace = true

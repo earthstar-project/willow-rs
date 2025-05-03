@@ -1,6 +1,6 @@
 #![no_main]
 
-use ufotofu_codec::{fuzz_relative_all, fuzz_relative_basic, Blame};
+use ufotofu_codec::{fuzz_relative_basic, Blame};
 use willow_data_model::{Path, PrivatePathContext};
 
 fuzz_relative_basic!(

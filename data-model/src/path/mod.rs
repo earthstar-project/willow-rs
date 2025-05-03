@@ -60,6 +60,36 @@ impl From<InvalidPathError> for Blame {
     }
 }
 
+/// Raised upon failing to construct a [`Path`] from bytes that each may or may not exceeded the maximum component length.
+#[derive(Debug, Clone)]
+pub enum PathConstructionError {
+    InvalidPath(InvalidPathError),
+    ComponentTooLongError,
+}
+
+impl std::error::Error for PathConstructionError {}
+impl std::fmt::Display for PathConstructionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathConstructionError::InvalidPath(invalid_path_error) => {
+                std::fmt::Display::fmt(invalid_path_error, f)
+            }
+            PathConstructionError::ComponentTooLongError => {
+                write!(
+                    f,
+                    "Length of a path component in bytes exceeded the maximum component length"
+                )
+            }
+        }
+    }
+}
+
+impl From<InvalidPathError> for PathConstructionError {
+    fn from(value: InvalidPathError) -> Self {
+        Self::InvalidPath(value)
+    }
+}
+
 /// An immutable Willow [path](https://willowprotocol.org/specs/data-model/index.html#Path). Thread-safe, cheap to clone, cheap to take prefixes of, expensive to append to (linear time complexity).
 ///
 /// Enforces that each component has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each path has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and that the total size in bytes of all components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
@@ -97,7 +127,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Ok(builder.build())
     }
 
-    /// Creates a path of known total length from an [`ExactSizeIterator`][core::iter::ExactSizeIterator] of components.
+    /// Creates a path of known total length from an [`ExactSizeIterator`] of components.
     ///
     /// Copies the bytes of the components into an owned allocation on the heap.
     ///
@@ -105,7 +135,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn new_from_iter<'a, I>(total_length: usize, iter: &mut I) -> Result<Self, InvalidPathError>
     where
         I: ExactSizeIterator<Item = Component<'a, MCL>>,
@@ -125,14 +155,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn new_from_slice(components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = 0;
         for comp in components {
             total_length += comp.len();
         }
 
-        return Self::new_from_iter(total_length, &mut components.iter().copied());
+        Self::new_from_iter(total_length, &mut components.iter().copied())
     }
 
     /// Creates a new path by appending a component to this one.
@@ -141,7 +171,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn append(&self, comp: Component<MCL>) -> Result<Self, InvalidPathError> {
         let mut builder =
             PathBuilder::new(self.path_length() + comp.len(), self.component_count() + 1)?;
@@ -160,7 +190,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the new path in bytes. Performs a single allocation of `O(n)` bytes.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn append_slice(&self, components: &[Component<MCL>]) -> Result<Self, InvalidPathError> {
         let mut total_length = self.path_length();
         for comp in components {
@@ -367,7 +397,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_prefix_of(&self, other: &Self) -> bool {
         for (comp_a, comp_b) in self.components().zip(other.components()) {
             if comp_a != comp_b {
@@ -383,12 +413,16 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs no allocations.
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_prefixed_by(&self, other: &Self) -> bool {
         other.is_prefix_of(self)
     }
 
     /// Tests whether this path is _related_ to the given path, that is, whether either one is a prefix of the other.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n + m)`, where `n` is the total length of the longer path in bytes, and `m` is the greatest number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn is_related(&self, other: &Self) -> bool {
         self.is_prefix_of(other) || self.is_prefixed_by(other)
     }
@@ -397,7 +431,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the shorter of the two paths, and `m` is the lesser number of components. Performs a single allocation of `O(n + m)` bytes to create the return value.
     pub fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
 
@@ -416,7 +450,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn successor(&self) -> Option<Self> {
         // If it is possible to append an empty component, then doing so yields the successor.
         if let Ok(path) = self.append(Component::new_empty()) {
@@ -478,7 +512,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(n)`, where `n` is the total length of the shorter of the two paths. Performs a single allocation to create the return value.
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
     pub fn greater_but_not_prefixed(&self) -> Option<Self> {
         // We iterate through all components in reverse order. For each component, we check whether we can replace it by another cmponent that is strictly greater but not prefixed by the original component. If that is possible, we do replace it with the least such component and drop all later components. If that is impossible, we try again with the previous component. If this impossible for all components, then this function returns `None`.
 
@@ -534,6 +568,44 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
 
         None
     }
+
+    /// Create a new path from a slice of byte slices.
+    ///
+    /// #### Complexity
+    ///
+    /// Runs in `O(n + m)`, where `n` is the total length of the path in bytes, and `m` is the number of components. Performs a single allocation of `O(n + m)` bytes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use willow_data_model::{Path, PathConstructionError, InvalidPathError};
+    /// // Ok
+    /// let path = Path::<12, 3, 30>::from_slices(&["alfie", "notes"]).unwrap();
+    ///
+    /// // Err
+    /// let result1 = Path::<12, 3, 30>::from_slices(&["themaxpath", "lengthis30", "thisislonger"]);
+    /// assert!(matches!(result1, Err(PathConstructionError::InvalidPath(InvalidPathError::PathTooLong))));
+    ///
+    /// // Err
+    /// let result2 = Path::<12, 3, 30>::from_slices(&["too", "many", "components", "error"]);
+    /// assert!(matches!(result2, Err(PathConstructionError::InvalidPath(InvalidPathError::TooManyComponents))));
+    ///
+    /// // Err
+    /// let result3 = Path::<12, 3, 30>::from_slices(&["overencumbered"]);
+    /// assert!(matches!(result3, Err(PathConstructionError::ComponentTooLongError)));
+    /// ```
+    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, PathConstructionError> {
+        let total_length = slices.iter().map(|it| it.as_ref().len()).sum();
+        let mut builder = PathBuilder::new(total_length, slices.len())?;
+
+        for component_slice in slices {
+            let component = Component::<MCL>::new(component_slice.as_ref())
+                .ok_or(PathConstructionError::ComponentTooLongError)?;
+            builder.append_component(component);
+        }
+
+        Ok(builder.build())
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MCL, MCC, MPL> {
@@ -541,7 +613,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialEq for Path<MC
         if self.component_count != other.component_count {
             false
         } else {
-            return self.components().eq(other.components());
+            self.components().eq(other.components())
         }
     }
 }
@@ -567,7 +639,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PartialOrd for Path<M
 /// Compares paths lexicographically, since that is the path ordering that the Willow spec always uses.
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for Path<MCL, MCC, MPL> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        return self.components().cmp(other.components());
+        self.components().cmp(other.components())
     }
 }
 

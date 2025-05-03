@@ -168,7 +168,7 @@ pub struct ControlEntry<PD, AT> {
 }
 
 impl<PD: PayloadDigest, AT> ControlEntry<PD, AT> {
-    /// https://willowprotocol.org/specs/data-model/index.html#entry_newer
+    /// [newer than relation](https://willowprotocol.org/specs/data-model/index.html#entry_newer)
     fn is_newer_than<const MCL: usize, const MCC: usize, const MPL: usize, N, S>(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,

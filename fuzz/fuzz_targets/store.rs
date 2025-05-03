@@ -1,10 +1,5 @@
 #![no_main]
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
 use libfuzzer_sys::fuzz_target;
 use tempdir::TempDir;
 use willow_fuzz::{

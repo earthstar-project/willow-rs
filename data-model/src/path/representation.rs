@@ -28,17 +28,18 @@ impl Representation {
         }
     }
 
-    // /// Gets the length of the i`-th component.
-    // ///
-    // /// Panics if `i` is outside the slice.
-    // pub fn component_len(buf: &[u8], i: usize) -> usize {
-    //     if i == 0 {
-    //         Self::sum_of_lengths_for_component(buf, i)
-    //     } else {
-    //         Self::sum_of_lengths_for_component(buf, i)
-    //             - Self::sum_of_lengths_for_component(buf, i - 1)
-    //     }
-    // }
+    #[allow(dead_code)] // Because this will come in handy one day.
+    /// Gets the length of the i`-th component.
+    ///
+    /// Panics if `i` is outside the slice.
+    pub fn component_len(buf: &[u8], i: usize) -> usize {
+        if i == 0 {
+            Self::sum_of_lengths_for_component(buf, i)
+        } else {
+            Self::sum_of_lengths_for_component(buf, i)
+                - Self::sum_of_lengths_for_component(buf, i - 1)
+        }
+    }
 
     /// Gets the `i`-th component.
     ///
@@ -46,7 +47,7 @@ impl Representation {
     pub fn component<const MCL: usize>(buf: &[u8], i: usize) -> Component<MCL> {
         let start = Self::start_offset_of_component(buf, i);
         let end = Self::end_offset_of_component(buf, i);
-        return Component::new(&buf[start..end]).unwrap();
+        Component::new(&buf[start..end]).unwrap()
     }
 
     /// Gets the sum of the lengths of the first `i` components.

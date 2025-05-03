@@ -1,6 +1,6 @@
 use crate::{AuthorisedEntry, Entry};
 
-/// An [`Entry`] together with information about how much of its payload a given [`Store`] holds.
+/// An [`Entry`] together with information about how much of its payload a given [`crate::Store`] holds.
 ///
 /// [Definition](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#LengthyEntry)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,7 +43,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     }
 }
 
-/// An [`AuthorisedEntry`] together with information about how much of its payload a given [`Store`] holds.
+/// An [`AuthorisedEntry`] together with information about how much of its payload a given [`crate::Store`] holds.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LengthyAuthorisedEntry<
     const MCL: usize,

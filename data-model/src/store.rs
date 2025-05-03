@@ -399,7 +399,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
 
     /// Locally forgets an entry with a given [`Path`] and [subspace](https://willowprotocol.org/specs/data-model/index.html#subspace) id, returning the forgotten entry, or an error if no entry with that path and subspace ID are held by this store. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports an `ForgetEntryError::WrongEntry` error.
     ///
-    /// If the entry in question is the last remaining reference in the store to a particular [`PayloadDigest`], that payload will be forgotten from the store (if present).
+    /// If the entry in question is the last remaining reference in the store to a particular [`crate::PayloadDigest`], that payload will be forgotten from the store (if present).
     ///
     /// Forgetting is not the same as [pruning](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning)! Subsequent joins with other [`Store`]s may bring the forgotten entry back.
     fn forget_entry(
@@ -409,7 +409,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         expected_digest: Option<PD>,
     ) -> impl Future<Output = Result<(), ForgetEntryError<Self::Error>>>;
 
-    /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning the number of forgotten entries.
+    /// Locally forgets all [`AuthorisedEntry`] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`crate::grouping::Area`], returning the number of forgotten entries.
     ///
     /// If forgetting many entries causes no there to be no remaining references to certain payload digests, those payloads will be removed (if present).
     ///
@@ -432,7 +432,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         expected_digest: Option<PD>,
     ) -> impl Future<Output = Result<(), ForgetPayloadError<Self::Error>>>;
 
-    /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`AreaOfInterest`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
+    /// Locally forgets all payloads with corresponding ['AuthorisedEntry'] [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by a given [`crate::grouping::Area`], returning a count of forgotten payloads. Payloads corresponding to entries *outside* of the given `area` param will be be prevented from being forgotten.
     ///
     /// If `protected` is `Some`, then all payloads corresponding to entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by that [`Area`] will be prevented from being forgotten, even though they are included by `area`.
     ///
@@ -482,7 +482,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         >,
     >;
 
-    /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`AreaOfInterest`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
+    /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`crate::grouping::Area`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
@@ -496,9 +496,9 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     >;
 }
 
-///////////////////////////////
-//// In-Memory Event Queue ////
-///////////////////////////////
+//---------------------------//
+// In-Memory Event Queue     //
+//---------------------------//
 
 // What follows is one possible technique for implementing the event subscription service offered by stores. This technique maintains a queue of (relevant) store operations. Subscribers maintain an offset into this queue; producing events works by advancing through the queue, ignoring irrelevant operations, and emitting events whenever appropriate. The queue has a maximum capacity, if it is reached, but some subscriber has not yet processed the oldest operation, then either the queue blocks or the subscriber is removed.
 

@@ -6,18 +6,17 @@
 
 _Currently_, this repo provides Rust implementations of:
 
-- [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap),
-  a capability system adaptable to local needs,
 - Everything in the
   [Willow Data Model](https://willowprotocol.org/specs/data-model/index.html#data_model)
-  (parameters, paths, entries, groupings, encodings) _except_ for the
-  all-important
-  [store](https://willowprotocol.org/specs/data-model/index.html#store).
+  (parameters, paths, entries, groupings, encodings, store trait).
+- [Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html#meadowcap),
+  a capability system adaptable to local needs,
+- `SimpleStoreSled`, a [sled](https://docs.rs/sled/latest/sled/)-powered
+  Willow [store](https://willowprotocol.org/specs/data-model/index.html#store)
+  implementing the `Store` trait, enabling persistent storage of Willow data!
 
-_Eventually_, this repo will house Rust implementations of:
+_Eventually_, this repo will also house Rust implementations of:
 
-- The aforementioned all-important
-  [store](https://willowprotocol.org/specs/data-model/index.html#store),
 - [Willow Sideloading protocol](https://willowprotocol.org/specs/sideloading/index.html#sideloading),
   eventually consistent data delivered by any means possible,
 - and
@@ -35,10 +34,12 @@ the repo's issues, milestones, and projects.
   protocol.
 - [meadowcap-js](https://github.com/earthstar-project/meadowcap-js) - TypeScript
   implementation of Meadowcap
-  
+
 ## Fuzz tests
 
-This repository has many fuzz tests. To use `cargo fuzz` commands, you must first make `fuzz` the working directory so that the nightly compiler (on which cargo-fuzz relies) is used for compiling the tests.
+This repository has many fuzz tests. To use `cargo fuzz` commands, you must
+first make `fuzz` the working directory so that the nightly compiler (on which
+cargo-fuzz relies) is used for compiling the tests.
 
 ```
 cd fuzz

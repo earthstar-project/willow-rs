@@ -281,7 +281,7 @@ impl core::fmt::Display for UnauthorisedWriteError {
 
 impl std::error::Error for UnauthorisedWriteError {}
 
-/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`Entry::is_authorised_write`] returns true.
+/// An AuthorisedEntry is a pair of an [`Entry`] and [`AuthorisationToken`] for which [`AuthorisationToken::is_authorised_write`] returns true.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#AuthorisedEntry).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -316,6 +316,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 {
     /// Returns an [`AuthorisedEntry`] without checking if the token permits the writing of this entry.
     ///
+    /// # Safety
     /// Calling this method when `token.is_authorised_write(&entry)` would return `false` is immediate undefined behaviour!
     pub unsafe fn new_unchecked(entry: Entry<MCL, MCC, MPL, N, S, PD>, token: AT) -> Self {
         Self(entry, token)

@@ -1,7 +1,38 @@
+//! # willow-store-simple-sled
+//!
+//! Simple persistent storage for Willow data.
+//!
+//! - Implements [`willow_data_model::Store`].
+//! - *Simple*, hence it has a straightforward implementation without the use of fancy data structures.
+//! - Uses [sled](https://docs.rs/sled/latest/sled/) under the hood.
+//!
+//! ```
+//! # use willow_store_simple_sled::StoreSimpleSled;
+//! use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken25 };
+//!
+//! let db = sled::open("my_db").unwrap();
+//! let namespace = NamespaceId25::new_communal();
+//!
+//! let store = StoreSimpleSled::<
+//!     1024,
+//!     1024,
+//!     1024,
+//!     NamespaceId25,
+//!     SubspaceId25,
+//!     PayloadDigest25,
+//!     AuthorisationToken25
+//! >::new(&namespace, db).unwrap();
+//! ```
+//!
+//! # Performance considerations
+//!
+//! - Read and write performance should be adequate.
+//! - Loads entire payloads into memory all at once.
+
 use either::Either;
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 use ufotofu::BufferedProducer;
-use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError};
+use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError, TrustedDecodable};
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -20,6 +51,7 @@ use willow_data_model::{
     SubspaceId,
 };
 
+/// A simple, [sled](https://docs.rs/sled/latest/sled/)-powered Willow data [store](https://willowprotocol.org/specs/data-model/index.html#store) implementing the [willow_data_model::Store] trait.
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
@@ -29,10 +61,7 @@ where
 {
     namespace_id: N,
     db: Db,
-    _subspace: PhantomData<S>,
-    _payload_digest: PhantomData<PD>,
-    _auth_token: PhantomData<AT>,
-    event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, SimpleStoreSledError>>>,
+    event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>>>,
 }
 
 const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
@@ -41,18 +70,20 @@ const MISC_TREE_KEY: [u8; 1] = [0b0000_0010];
 
 const NAMESPACE_ID_KEY: [u8; 1] = [0b0000_0000];
 
+/// Returned when a store could not be instantiated from an empty [`sled::Db`].
 #[derive(Debug)]
 pub enum NewStoreSimpleSledError {
     // The DB has already been configured for another namespace.
     DbNotClean,
-    StoreError(SimpleStoreSledError),
+    StoreError(StoreSimpleSledError),
 }
 
+/// Returned when a store could not be instantiated from an existing [`sled::Db`].
 #[derive(Debug)]
 pub enum ExistingStoreSimpleSledError {
     // The DB is not correctly configured for use.
     MalformedDb,
-    StoreError(SimpleStoreSledError),
+    StoreError(StoreSimpleSledError),
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -63,6 +94,7 @@ where
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
+    /// Returns an empty [`StoreSimpleSled`], or an error if the database is already found to have data in it.
     pub fn new(namespace: &N, db: Db) -> Result<Self, NewStoreSimpleSledError>
     where
         N: NamespaceId + EncodableKnownSize + EncodableSync,
@@ -70,6 +102,7 @@ where
         Self::new_with_event_queue_capacity(namespace, db, 1024) // the 1024 is arbitrary, really
     }
 
+    /// Returns an empty [`StoreSimpleSled`] with a given event queue capacity, or an error if the database is already found to have data in it.
     pub fn new_with_event_queue_capacity(
         namespace: &N,
         db: Db,
@@ -81,9 +114,6 @@ where
         let store = Self {
             db,
             namespace_id: namespace.clone(),
-            _subspace: PhantomData,
-            _payload_digest: PhantomData,
-            _auth_token: PhantomData,
             event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         };
 
@@ -100,10 +130,12 @@ where
         Ok(store)
     }
 
+    /// Returns a [`StoreSimpleSled`] from a [`sled::Db`] already containing Willow data, or an error if the data is found to be malformed.
     pub fn from_existing(db: Db) -> Result<Self, ExistingStoreSimpleSledError> {
         Self::from_existing_with_event_queue_capacity(db, 1024) // the 1024 is arbitrary, really
     }
 
+    /// Returns a [`StoreSimpleSled`] from a [`sled::Db`] already containing Willow data with a given event queue capacity, or an error if the data is found to be malformed.
     pub fn from_existing_with_event_queue_capacity(
         db: Db,
         capacity: usize,
@@ -120,9 +152,6 @@ where
         Ok(Self {
             namespace_id,
             db,
-            _subspace: PhantomData,
-            _payload_digest: PhantomData,
-            _auth_token: PhantomData,
             event_system: Rc::new(RefCell::new(EventSystem::new(capacity))),
         })
     }
@@ -143,14 +172,13 @@ where
     async fn is_prefixed_by_newer(
         &self,
         entry: &Entry<MCL, MCC, MPL, N, S, PD>,
-    ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, SimpleStoreSledError>
+    ) -> Result<Option<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>, StoreSimpleSledError>
     where
         S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
         PD: PayloadDigest + Decodable + EncodableSync + EncodableKnownSize,
-        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+        AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
         S::ErrorReason: core::fmt::Debug,
         PD::ErrorReason: core::fmt::Debug,
-        AT::ErrorReason: core::fmt::Debug,
     {
         // Iterate from subspace, just linearly
         // Create all prefixes of given path
@@ -187,7 +215,7 @@ where
         Ok(None)
     }
 
-    fn flush(&self) -> Result<(), SimpleStoreSledError> {
+    fn flush(&self) -> Result<(), StoreSimpleSledError> {
         self.db.flush()?;
 
         Ok(())
@@ -198,7 +226,7 @@ where
         &self,
         tree: &Tree,
         prefix: &[u8],
-    ) -> Result<Option<(IVec, IVec)>, SimpleStoreSledError> {
+    ) -> Result<Option<(IVec, IVec)>, StoreSimpleSledError> {
         if let Some((key, value)) = tree.scan_prefix(prefix).flatten().next() {
             return Ok(Some((key, value)));
         }
@@ -207,27 +235,36 @@ where
     }
 
     /// Clear all data from the internal `sled::Db`
-    pub fn clear(&self) -> Result<(), SimpleStoreSledError> {
+    pub fn clear(&self) -> Result<(), StoreSimpleSledError> {
         self.db.clear()?;
         self.flush()?;
         Ok(())
     }
 }
 
+/// Returned when something goes wrong with the internal [`sled::Db`].
 #[derive(Debug, PartialEq)]
-pub enum SimpleStoreSledError {
+pub enum StoreSimpleSledError {
     Sled(SledError),
     Transaction(TransactionError<()>),
     ConflictableTransaction(ConflictableTransactionError<()>),
 }
 
-impl core::fmt::Display for SimpleStoreSledError {
+impl core::fmt::Display for StoreSimpleSledError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Oh no!")
+        match self {
+            StoreSimpleSledError::Sled(error) => core::fmt::Display::fmt(error, f),
+            StoreSimpleSledError::Transaction(_) => {
+                write!(f, "sled transaction error occurred.")
+            }
+            StoreSimpleSledError::ConflictableTransaction(_) => {
+                write!(f, "sled conflictable transaction error occurred.")
+            }
+        }
     }
 }
 
-impl core::error::Error for SimpleStoreSledError {}
+impl core::error::Error for StoreSimpleSledError {}
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
@@ -235,12 +272,11 @@ where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Encodable + Decodable + Clone,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
-    AT::ErrorReason: core::fmt::Debug,
 {
-    type Error = SimpleStoreSledError;
+    type Error = StoreSimpleSledError;
 
     fn namespace_id(&self) -> &N {
         &self.namespace_id
@@ -277,7 +313,7 @@ where
             }
         }
 
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
+        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
 
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
@@ -321,7 +357,7 @@ where
             keys_to_prune.push(key);
         }
 
-        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
         let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
 
@@ -349,7 +385,7 @@ where
                     Ok(())
                 },
             )
-            .map_err(SimpleStoreSledError::from)?;
+            .map_err(StoreSimpleSledError::from)?;
 
         self.event_system
             .borrow_mut()
@@ -368,8 +404,8 @@ where
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
-        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
+        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
@@ -392,7 +428,7 @@ where
 
                 let existing_payload = payload_tree
                     .get(&payload_key)
-                    .map_err(SimpleStoreSledError::from)?;
+                    .map_err(StoreSimpleSledError::from)?;
 
                 let prefix = if let Some(payload) = existing_payload {
                     payload
@@ -454,7 +490,7 @@ where
                                         Ok(())
                                     },
                                 )
-                                .map_err(SimpleStoreSledError::from)?;
+                                .map_err(StoreSimpleSledError::from)?;
 
                             let entry = Entry::new(
                                 self.namespace_id.clone(),
@@ -516,6 +552,20 @@ where
                     let computed_digest = PD::finish(&hasher);
 
                     if computed_digest != *authed_entry.entry().payload_digest() {
+                        self.forget_payload(
+                            authed_entry.entry().subspace_id(),
+                            authed_entry.entry().path(),
+                            Some(authed_entry.entry().payload_digest().clone()),
+                        )
+                        .await
+                        .map_err(|err| match err {
+                            ForgetPayloadError::OperationError(err) => {
+                                PayloadAppendError::<PayloadSourceError, _>::OperationError(err)
+                            }
+                            ForgetPayloadError::WrongEntry => PayloadAppendError::WrongEntry,
+                            ForgetPayloadError::NoSuchEntry => PayloadAppendError::NoSuchEntry,
+                        })?;
+
                         return Err(PayloadAppendError::DigestMismatch);
                     }
 
@@ -537,7 +587,7 @@ where
                         },
                     )
                     .map_err(|err| {
-                        SimpleStoreSledError::from(err)
+                        StoreSimpleSledError::from(err)
                     })?;
 
                     if old_payload_len != received_payload_len {
@@ -566,7 +616,7 @@ where
                         },
                     )
                     .map_err(|err| {
-                        SimpleStoreSledError::from(err)
+                        StoreSimpleSledError::from(err)
                     })?;
 
                     if old_payload_len != received_payload_len {
@@ -592,8 +642,8 @@ where
     ) -> Result<(), ForgetEntryError<Self::Error>> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
-        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
+        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
@@ -619,7 +669,7 @@ where
 
                         Ok(())
                     },
-                ) .map_err(SimpleStoreSledError::from)?;
+                ) .map_err(StoreSimpleSledError::from)?;
 
             let entry = Entry::new(
                 self.namespace_id.clone(),
@@ -722,13 +772,13 @@ where
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
     ) -> Result<(), ForgetPayloadError<Self::Error>> {
-        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
         let payload_key = encode_subspace_path_key(subspace_id, path, false).await;
 
         let maybe_payload = self.prefix_gt(&payload_tree, &payload_key)?;
 
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
+        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
 
         let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
         let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
@@ -758,7 +808,7 @@ where
 
                         Ok(())
                     },
-                ).map_err(SimpleStoreSledError::from)?;
+                ).map_err(StoreSimpleSledError::from)?;
 
                 let entry = Entry::new(
                     self.namespace_id.clone(),
@@ -883,8 +933,8 @@ where
         impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
         PayloadError<Self::Error>,
     > {
-        let entry_tree = self.entry_tree().map_err(SimpleStoreSledError::from)?;
-        let payload_tree = self.payload_tree().map_err(SimpleStoreSledError::from)?;
+        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
@@ -1170,81 +1220,81 @@ where
 
 async fn decode_entry_values<PD, AT>(encoded: &IVec) -> (u64, PD, AT, u64)
 where
+    AT: TrustedDecodable,
     PD: Decodable,
-    AT: Decodable,
     PD::ErrorReason: core::fmt::Debug,
-    AT::ErrorReason: core::fmt::Debug,
 {
     let mut producer = FromSlice::new(encoded);
 
     let payload_length = U64BE::decode(&mut producer).await.unwrap().0;
     let payload_digest = PD::decode(&mut producer).await.unwrap();
-    let auth_token = AT::decode(&mut producer).await.unwrap();
+    let auth_token = unsafe { AT::trusted_decode(&mut producer).await.unwrap() };
     let local_length = U64BE::decode(&mut producer).await.unwrap().0;
 
     (payload_length, payload_digest, auth_token, local_length)
 }
 
-impl From<SledError> for SimpleStoreSledError {
+impl From<SledError> for StoreSimpleSledError {
     fn from(value: SledError) -> Self {
-        SimpleStoreSledError::Sled(value)
+        StoreSimpleSledError::Sled(value)
     }
 }
 
-impl From<ConflictableTransactionError<()>> for SimpleStoreSledError {
+impl From<ConflictableTransactionError<()>> for StoreSimpleSledError {
     fn from(value: ConflictableTransactionError<()>) -> Self {
-        SimpleStoreSledError::ConflictableTransaction(value)
+        StoreSimpleSledError::ConflictableTransaction(value)
     }
 }
 
-impl From<TransactionError<()>> for SimpleStoreSledError {
+impl From<TransactionError<()>> for StoreSimpleSledError {
     fn from(value: TransactionError<()>) -> Self {
-        SimpleStoreSledError::Transaction(value)
+        StoreSimpleSledError::Transaction(value)
     }
 }
 
 impl From<SledError> for NewStoreSimpleSledError {
     fn from(value: SledError) -> Self {
-        Self::StoreError(SimpleStoreSledError::from(value))
+        Self::StoreError(StoreSimpleSledError::from(value))
     }
 }
 
 impl From<SledError> for ExistingStoreSimpleSledError {
     fn from(value: SledError) -> Self {
-        Self::StoreError(SimpleStoreSledError::from(value))
+        Self::StoreError(StoreSimpleSledError::from(value))
     }
 }
 
-impl From<SimpleStoreSledError> for EntryIngestionError<SimpleStoreSledError> {
-    fn from(val: SimpleStoreSledError) -> Self {
+impl From<StoreSimpleSledError> for EntryIngestionError<StoreSimpleSledError> {
+    fn from(val: StoreSimpleSledError) -> Self {
         EntryIngestionError::OperationsError(val)
     }
 }
 
-impl<PSE> From<SimpleStoreSledError> for PayloadAppendError<PSE, SimpleStoreSledError> {
-    fn from(val: SimpleStoreSledError) -> Self {
+impl<PSE> From<StoreSimpleSledError> for PayloadAppendError<PSE, StoreSimpleSledError> {
+    fn from(val: StoreSimpleSledError) -> Self {
         PayloadAppendError::OperationError(val)
     }
 }
 
-impl From<SimpleStoreSledError> for ForgetEntryError<SimpleStoreSledError> {
-    fn from(value: SimpleStoreSledError) -> Self {
+impl From<StoreSimpleSledError> for ForgetEntryError<StoreSimpleSledError> {
+    fn from(value: StoreSimpleSledError) -> Self {
         Self::OperationError(value)
     }
 }
 
-impl From<SimpleStoreSledError> for ForgetPayloadError<SimpleStoreSledError> {
-    fn from(value: SimpleStoreSledError) -> Self {
+impl From<StoreSimpleSledError> for ForgetPayloadError<StoreSimpleSledError> {
+    fn from(value: StoreSimpleSledError) -> Self {
         Self::OperationError(value)
     }
 }
 
-impl From<SimpleStoreSledError> for PayloadError<SimpleStoreSledError> {
-    fn from(value: SimpleStoreSledError) -> Self {
+impl From<StoreSimpleSledError> for PayloadError<StoreSimpleSledError> {
+    fn from(value: StoreSimpleSledError) -> Self {
         Self::OperationError(value)
     }
 }
 
+/// Produces bytes of a [payload](https://willowprotocol.org/specs/data-model/index.html#Payload).
 pub struct PayloadProducer {
     produced: usize,
     ivec: IVec,
@@ -1264,7 +1314,7 @@ impl Producer for PayloadProducer {
 
     type Final = ();
 
-    type Error = SimpleStoreSledError;
+    type Error = StoreSimpleSledError;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         match self.produced.cmp(&self.ivec.len()) {
@@ -1306,6 +1356,7 @@ impl BulkProducer for PayloadProducer {
     }
 }
 
+/// Produces [`willow_data_model::LengthyAuthorisedEntry`] for a given [`willow_data_model::grouping::Area`] and [`willow_data_model::QueryIgnoreParams`].
 pub struct EntryProducer<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
@@ -1331,7 +1382,7 @@ where
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> Result<Self, SimpleStoreSledError> {
+    ) -> Result<Self, StoreSimpleSledError> {
         let entry_tree = store.entry_tree()?;
 
         let entry_iterator = match area.subspace() {
@@ -1353,22 +1404,21 @@ where
     }
 }
 
-impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
-    for EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntryProducer<'_, MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
     S::ErrorReason: std::fmt::Debug,
     PD::ErrorReason: std::fmt::Debug,
-    AT::ErrorReason: std::fmt::Debug,
 {
     type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
 
     type Final = ();
 
-    type Error = SimpleStoreSledError;
+    type Error = StoreSimpleSledError;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         loop {
@@ -1410,7 +1460,7 @@ where
                         local_length,
                     )));
                 }
-                Some(Err(err)) => return Err(SimpleStoreSledError::from(err)),
+                Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
                 None => return Ok(Either::Right(())),
             }
         }

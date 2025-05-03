@@ -1,8 +1,5 @@
 #![no_main]
 
-use std::sync::Arc;
-use std::thread;
-
 use futures::join;
 use libfuzzer_sys::fuzz_target;
 
@@ -22,7 +19,7 @@ fuzz_target!(|data: (
 )| {
     let (input, last, queue_capacity, consume_ops, produce_ops) = data;
 
-    let queue_capacity = std::cmp::min(2048, std::cmp::max(1, queue_capacity));
+    let queue_capacity = queue_capacity.clamp(1, 2048);
 
     pollster::block_on(async {
         let state: State<ufotofu_queues::Fixed<u8>, i16, i16> =

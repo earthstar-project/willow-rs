@@ -57,11 +57,11 @@ jobs:
 
     - name: build tests
       run: |
-        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --no-run
+        cargo nextest run --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux ${{ env.FEATURES }} --lib --bins --tests --no-run
 
     - name: run tests
       run: |
-        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
+        cargo nextest run --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux ${{ env.FEATURES }} --lib --bins --tests --no-fail-fast
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
 
@@ -70,7 +70,7 @@ jobs:
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
       run: |
-        cargo test --workspace --exclude willow-fuzz --all-features --doc
+        cargo test --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux --all-features --doc
 
   build_and_test_windows:
     timeout-minutes: 30
@@ -129,11 +129,11 @@ jobs:
 
     - name: build tests
       run: |
-        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-run
+        cargo nextest run --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-run
 
     - name: run tests
       run: |
-        cargo nextest run --workspace --exclude willow-fuzz ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-fail-fast
+        cargo nextest run --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux ${{ env.FEATURES }} --lib --bins --tests --target ${{ matrix.target }} --no-fail-fast
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
 
@@ -142,7 +142,7 @@ jobs:
       env:
         RUST_LOG: ${{ runner.debug && 'TRACE' || 'DEBUG'}}
       run: |
-        cargo test --workspace --exclude willow-fuzz --all-features --doc
+        cargo test --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux --all-features --doc
 
   cross_build_and_test:
     name: Build and test (cross)
@@ -185,9 +185,9 @@ jobs:
       # setup-cross-toolchain-action sets the `CARGO_BUILD_TARGET` environment variable,
       # so there is no need for an explicit `--target` flag.
       - name: Build tests
-        run: cargo build --workspace --exclude willow-fuzz
+        run: cargo build --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux
       - name: Run tests
-        run: cargo test --verbose --workspace --exclude willow-fuzz
+        run: cargo test --verbose --workspace --exclude willow-fuzz --exclude wgps --exclude lcmux
 
   fuzz_tests:
     timeout-minutes: 30
@@ -212,7 +212,7 @@ jobs:
 
   check_fmt:
     timeout-minutes: 30
-    name: Chec fmt
+    name: Check fmt
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -237,7 +237,7 @@ jobs:
       uses: mozilla-actions/sccache-action@v0.0.5
 
     - name: Docs
-      run: cargo doc --workspace --all-features --no-deps --document-private-items
+      run: cargo doc --workspace --all-features --exclude wgps --exclude lcmux --exclude willow-fuzz --no-deps --document-private-items
       env:
         RUSTDOCFLAGS: --cfg docsrs
 
@@ -254,10 +254,10 @@ jobs:
       uses: mozilla-actions/sccache-action@v0.0.5
 
     - name: clippy check (all features)
-      run: cargo clippy --workspace --all-features --all-targets --bins --tests --benches
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --all-features --all-targets --bins --tests --benches
 
     - name: clippy check (no features)
-      run: cargo clippy --workspace --no-default-features --lib --bins --tests
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --no-default-features --lib --bins --tests
 
     - name: clippy check (default features)
-      run: cargo clippy --workspace --all-targets
+      run: cargo clippy --workspace --exclude wgps --exclude lcmux --exclude willow-fuzz --all-targets

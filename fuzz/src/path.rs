@@ -231,7 +231,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
         &self,
     ) -> impl DoubleEndedIterator<Item = &PathComponentBox<MCL>>
            + ExactSizeIterator<Item = &PathComponentBox<MCL>> {
-        return self.0.iter();
+        self.0.iter()
     }
 
     pub fn component_count(&self) -> usize {
@@ -239,7 +239,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
     }
 
     pub fn component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
-        return self.0.get(i);
+        self.0.get(i)
     }
 
     /// Return all possible prefixes of a path, including the empty path and the path itself.

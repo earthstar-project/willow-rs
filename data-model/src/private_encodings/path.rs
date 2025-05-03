@@ -1,3 +1,4 @@
+#[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::CompactU64;
 use ufotofu_codec::{
@@ -90,7 +91,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize>
 
             if lcp_len >= private_count {
                 // path extends path val <> priv
-                encode_path_extends_path(consumer, self, &r.private()).await?;
+                encode_path_extends_path(consumer, self, r.private()).await?;
             }
         }
 
