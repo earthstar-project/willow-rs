@@ -196,10 +196,7 @@ where
         };
         match end {
             RangeEnd::Open => Some(Self::new_open(start.clone())),
-            RangeEnd::Closed(t) if t >= start => {
-                Some(Self::new_closed(start.clone(), t.clone()).unwrap())
-            }
-            RangeEnd::Closed(_) => None,
+            RangeEnd::Closed(t) => Self::new_closed(start.clone(), t.clone()),
         }
     }
 }

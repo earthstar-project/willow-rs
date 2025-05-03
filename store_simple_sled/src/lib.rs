@@ -439,7 +439,8 @@ where
                 // Append the payload
 
                 let mut payload: Vec<u8> = Vec::from(prefix.as_ref());
-                let mut received_payload_len = payload.len();
+                let old_payload_len = payload.len();
+                let mut received_payload_len = old_payload_len;
                 let mut hasher = PD::hasher();
 
                 // Make sure the prefix is hashed too.
@@ -503,12 +504,13 @@ where
                             let authy_entry =
                                 unsafe { AuthorisedEntry::new_unchecked(entry, auth_token) };
 
-                            self.event_system.borrow_mut().appended_payload(
-                                LengthyAuthorisedEntry::new(
+                            if old_payload_len != received_payload_len {
+                                self.event_system.borrow_mut().appended_payload(
                                     authy_entry,
+                                    old_payload_len as u64,
                                     received_payload_len as u64,
-                                ),
-                            );
+                                );
+                            }
 
                             return Err(PayloadAppendError::SourceError {
                                 source_error: err,
@@ -532,13 +534,10 @@ where
                     )
                 };
 
-                let lengthy_entry =
-                    LengthyAuthorisedEntry::new(authed_entry, received_payload_len as u64);
-
                 let new_value = encode_entry_values(
                     length,
-                    lengthy_entry.entry().entry().payload_digest(),
-                    lengthy_entry.entry().token(),
+                    authed_entry.entry().payload_digest(),
+                    authed_entry.token(),
                     received_payload_len as u64,
                 )
                 .await;
@@ -552,11 +551,11 @@ where
                 if received_payload_len as u64 == length {
                     let computed_digest = PD::finish(&hasher);
 
-                    if computed_digest != *lengthy_entry.entry().entry().payload_digest() {
+                    if computed_digest != *authed_entry.entry().payload_digest() {
                         self.forget_payload(
-                            lengthy_entry.entry().entry().subspace_id(),
-                            lengthy_entry.entry().entry().path(),
-                            Some(lengthy_entry.entry().entry().payload_digest().clone()),
+                            authed_entry.entry().subspace_id(),
+                            authed_entry.entry().path(),
+                            Some(authed_entry.entry().payload_digest().clone()),
                         )
                         .await
                         .map_err(|err| match err {
@@ -591,9 +590,13 @@ where
                         StoreSimpleSledError::from(err)
                     })?;
 
-                    self.event_system
-                        .borrow_mut()
-                        .appended_payload(lengthy_entry);
+                    if old_payload_len != received_payload_len {
+                        self.event_system.borrow_mut().appended_payload(
+                            authed_entry,
+                            old_payload_len as u64,
+                            received_payload_len as u64,
+                        );
+                    }
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
@@ -616,9 +619,13 @@ where
                         StoreSimpleSledError::from(err)
                     })?;
 
-                    self.event_system
-                        .borrow_mut()
-                        .appended_payload(lengthy_entry);
+                    if old_payload_len != received_payload_len {
+                        self.event_system.borrow_mut().appended_payload(
+                            authed_entry,
+                            old_payload_len as u64,
+                            received_payload_len as u64,
+                        );
+                    }
 
                     Ok(PayloadAppendSuccess::Appended)
                 }
@@ -920,9 +927,10 @@ where
         &self,
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
+        offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
-        Option<impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
+        impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
         PayloadError<Self::Error>,
     > {
         let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
@@ -942,9 +950,9 @@ where
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-
-                Ok(Some(PayloadProducer::new(payload_value)))
+                Ok(PayloadProducer::new(payload_value, offset))
             }
+
             (Some((_entry_key, entry_value)), None) => {
                 // check expected digest.
                 let (_length, digest, _token, _local_length) =
@@ -956,9 +964,9 @@ where
                     }
                 }
 
-                Ok(None)
+                Ok(PayloadProducer::new(IVec::default(), 0))
             }
-            (None, None) => Ok(None),
+            (None, None) => Err(PayloadError::NoSuchEntry),
             (None, Some(_)) => {
                 panic!("Holding a payload for which there is no corresponding entry, this is bad!")
             }
@@ -1293,8 +1301,11 @@ pub struct PayloadProducer {
 }
 
 impl PayloadProducer {
-    fn new(ivec: IVec) -> Self {
-        Self { produced: 0, ivec }
+    fn new(ivec: IVec, offset: u64) -> Self {
+        Self {
+            produced: offset as usize,
+            ivec,
+        }
     }
 }
 

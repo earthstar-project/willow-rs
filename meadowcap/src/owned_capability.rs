@@ -58,12 +58,7 @@ pub struct OwnedCapability<
     NamespaceSignature,
     UserPublicKey,
     UserSignature,
-> where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize,
-{
+> {
     access_mode: AccessMode,
     namespace_key: NamespacePublicKey,
     user_key: UserPublicKey,

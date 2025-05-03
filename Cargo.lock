@@ -1130,9 +1130,9 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ufotofu"
-version = "0.6.3"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4f97ce440ea4dd2ce8acb0adb327ba0e80cc1d5aa6ed81b941721418d1bc62f"
+checksum = "81084998ab9371fb1aa3924c324633a6e8ca4c3bd7021042390c92b687123b25"
 dependencies = [
  "arbitrary",
  "either",

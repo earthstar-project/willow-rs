@@ -35,9 +35,7 @@ pub struct Delegation<
     const MPL: usize,
     UserPublicKey,
     UserSignature,
-> where
-    UserPublicKey: McPublicUserKey<UserSignature>,
-{
+> {
     area: Area<MCL, MCC, MPL, UserPublicKey>,
     user: UserPublicKey,
     signature: UserSignature,

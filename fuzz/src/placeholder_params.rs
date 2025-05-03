@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    future::Future,
+    hash::{DefaultHasher, Hasher},
+};
 
 use arbitrary::Arbitrary;
 use meadowcap::{McPublicUserKey, SillyPublicKey, SillySig};
@@ -8,7 +11,6 @@ use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
     EncodableSync,
 };
-use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
 };
@@ -166,8 +168,14 @@ impl McPublicUserKey<SillySig> for FakeSubspaceId {}
 
 // Payload digest
 
-#[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-pub struct FakePayloadDigest([u8; 32]);
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+pub struct FakePayloadDigest([u8; 1]);
+
+impl<'a> Arbitrary<'a> for FakePayloadDigest {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(FakePayloadDigest([u8::arbitrary(u).unwrap() & 0b0000_0011]))
+    }
+}
 
 impl Encodable for FakePayloadDigest {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
@@ -188,9 +196,9 @@ impl Decodable for FakePayloadDigest {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let bytes = decode_bytes(producer).await?;
+        let bytes: [u8; 1] = decode_bytes(producer).await?;
 
-        Ok(FakePayloadDigest(bytes))
+        Ok(FakePayloadDigest([bytes[0] & 0b0000_0011]))
     }
 }
 
@@ -204,13 +212,22 @@ impl DecodableCanonic for FakePayloadDigest {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        Self::decode(producer).await
+        match Self::decode(producer).await {
+            Ok(dec) => {
+                if dec.0[0] < 4 {
+                    Ok(dec)
+                } else {
+                    Err(DecodeError::Other(Blame::TheirFault))
+                }
+            }
+            err => err,
+        }
     }
 }
 
 impl EncodableKnownSize for FakePayloadDigest {
     fn len_of_encoding(&self) -> usize {
-        32
+        1
     }
 }
 
@@ -221,10 +238,7 @@ impl PayloadDigest for FakePayloadDigest {
 
     fn finish(hasher: &Self::Hasher) -> Self {
         let hashy_numbers = hasher.finish();
-        let bytes = U64BE(hashy_numbers).sync_encode_into_vec();
-        let mut arr = [0x0; 32];
-        arr[..8].clone_from_slice(&bytes);
-        Self(arr)
+        Self([hashy_numbers.to_be_bytes()[0] & 0b0000_0011])
     }
 
     fn write(hasher: &mut Self::Hasher, bytes: &[u8]) {
@@ -260,10 +274,7 @@ impl AuthorisationToken<16, 16, 16, FakeNamespaceId, FakeSubspaceId, FakePayload
 }
 
 impl Encodable for FakeAuthorisationToken {
-    fn encode<C>(
-        &self,
-        consumer: &mut C,
-    ) -> impl std::prelude::rust_2024::Future<Output = Result<(), C::Error>>
+    fn encode<C>(&self, consumer: &mut C) -> impl Future<Output = Result<(), C::Error>>
     where
         C: BulkConsumer<Item = u8>,
     {
