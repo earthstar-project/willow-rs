@@ -81,7 +81,7 @@ impl DecodableCanonic for FakeNamespaceId {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        Self::decode(producer).await
+        Ok(Self(SillyPublicKey::decode_canonic(producer).await?))
     }
 }
 
@@ -140,7 +140,7 @@ impl DecodableCanonic for FakeSubspaceId {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        Self::decode(producer).await
+        Ok(Self(SillyPublicKey::decode_canonic(producer).await?))
     }
 }
 
@@ -212,15 +212,12 @@ impl DecodableCanonic for FakePayloadDigest {
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        match Self::decode(producer).await {
-            Ok(dec) => {
-                if dec.0[0] < 4 {
-                    Ok(dec)
-                } else {
-                    Err(DecodeError::Other(Blame::TheirFault))
-                }
-            }
-            err => err,
+        let num = producer.produce_item().await?;
+
+        if num < 4 {
+            Ok(FakePayloadDigest([num]))
+        } else {
+            Err(DecodeError::Other(Blame::TheirFault))
         }
     }
 }
