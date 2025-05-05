@@ -1197,9 +1197,9 @@ dependencies = [
 
 [[package]]
 name = "wb_async_utils"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0959f6010dffb28932c94fcf874ef3588aa9ca050cb0c04ac26622bfc7b2bea6"
+checksum = "6c2d520eb6927c3aa9684a3b0e5f4fc3eda6609b8d59931bb9eb1a932fa8f3a0"
 dependencies = [
  "either",
  "fairly_unsafe_cell",
