@@ -1,3 +1,13 @@
+// So, about the state of this implementation. It gets things done, but there is room for improvement, and some quirks to be aware of. These are compromises because the spec kept evolving after we had already written the (funded, unlike the subsequent and thus minimal changes) first implementation.
+//
+// There is no optimistic sending, ever. If your peers do not issue proactive credit on some logical channel, no messages will ever be sent on it. Global messages and other channels will remain unaffected, though. Yay. Still, adding optimistic sending is the most important lacking feature.
+//
+// All channels are backed by a ringbuffer, and processing data from that rinbuffer always means that as many guarantees will eventually be given on that channel again. The only way of applying backpressure is thus to not read the data in the first place. This does not mesh well with the binding of resource handles, because messages that bind resource handles must be processed immediately. Consequently, this implementation cannot apply proper backpressure for resource handle channels. This, together with the inability to send optimistically, means that for two peers that both use this implementation to work together, they must issue proactive guarantees for the resource handle channel. To prevent a loophole where one peer can be forced to allocate more and more resource handles, you should immeditately send a LimitReceivingFrame for the channel, putting an upper bound on the total number of bytes devoted to binding resource handles, for the whole session. This is not great, but it is what we have right now. To trigger sending this LimitReceivingFrame, use the Session::init method.
+//
+// Each logical channel is configured further with a boolean urgent flag. Bytes from a non-urgent channel will only be exposed to surrounding code when no bytes are buffered in any urgent channel. By setting channels that bind resource handles as urgent and all other channels as non-urgent, you can ensure that resource handle binding messages are processed "immediately".
+//
+// Those are the main gotchas, everything else is actually pretty nice. You get BulkProducers and BulkConsumers for each logical channel, and you can use them all independently. So after becoming aware of the quirks, and configuring things accordingly, the surrounding code then gets a pretty nice interface that does not leak any internals of LCMUX.
+
 use std::{
     cell::Cell,
     error::Error,
