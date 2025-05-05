@@ -42,7 +42,7 @@ impl GuaranteeCell {
 
     /// Tries to apply a new bound to this: if none was set before, or if the new bound is tighter than the old one, returns `Ok(())`. Otherwise, returns `Err(old_bound)`.
     pub fn apply_bound(&self, new_bound: u64) -> Result<(), u64> {
-        let _ = self.bound.apply_bound(new_bound)?;
+        self.bound.apply_bound(new_bound)?;
 
         // Notify waiting task if the bound made a current threshold unreachable.
         self.notify_threshold();
@@ -303,9 +303,7 @@ impl GuaranteeCellWithoutBound {
         if let Some(threshold) = self.threshold.get() {
             // Only do anything if the last value hasn't been set yet.
             match self.notify.peek() {
-                Some(Ok(Right(()))) | Some(Err(())) => {
-                    return;
-                }
+                Some(Ok(Right(()))) | Some(Err(())) => {}
                 _ => {
                     let acc = self.acc.get();
                     if acc >= threshold {

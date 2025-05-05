@@ -6,7 +6,7 @@
 //!
 //! The implementation does not emit `Plead` messages, since it works with a fixed-capacity queue.
 
-use std::{cell::Cell, cmp::min, marker::PhantomData, ops::Deref, usize};
+use std::{cell::Cell, cmp::min, marker::PhantomData, ops::Deref};
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
 
@@ -288,7 +288,7 @@ where
     pub fn receive_apologise(&mut self) -> Result<(), ()> {
         if !self.state.currently_dropping.get() {
             self.state.report_error();
-            return Err(());
+            Err(())
         } else {
             // We are currently dropping, but did we even notify the client about that yet?
             match self.state.start_dropping.peek() {
@@ -303,7 +303,7 @@ where
                 _ => {
                     // They definitely sent their message before we told them we were dropping. That's non-conformant!
                     self.state.report_error();
-                    return Err(());
+                    Err(())
                 }
             }
         }
@@ -349,7 +349,7 @@ where
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -496,7 +496,7 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            phantom: self.phantom.clone(),
+            phantom: self.phantom,
         }
     }
 }

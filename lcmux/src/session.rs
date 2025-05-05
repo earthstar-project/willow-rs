@@ -248,7 +248,7 @@ where
                 state: state_ref.clone(),
                 client_receivers,
                 server_receivers,
-                urgent_channels: which_channels_are_urgent.clone(),
+                urgent_channels: which_channels_are_urgent,
                 phantom: PhantomData,
             },
             channel_senders: client_senders.map(|send_to_channel| ChannelSender(send_to_channel)),
@@ -303,16 +303,16 @@ where
     where
         M: EncodableKnownSize,
     {
-        let mut consumer = self.0.state.r.c.clone();
-        self.0.send_to_channel(&mut consumer, message).await
+        let consumer = self.0.state.r.c.clone();
+        self.0.send_to_channel(&consumer, message).await
     }
 
     /// Send a `LimitSending` frame to the server.
     ///
     /// This method does not check that you send valid limits or that you respect them on the future.
     pub async fn limit_sending(&mut self, bound: u64) -> Result<(), C::Error> {
-        let mut consumer = self.0.state.r.c.clone();
-        self.0.limit_sending(&mut consumer, bound).await
+        let consumer = self.0.state.r.c.clone();
+        self.0.limit_sending(&consumer, bound).await
     }
 
     /// Same as `self.limit_sending(0)`.
@@ -404,9 +404,7 @@ where
         Self::Item: 'a,
     {
         loop {
-            if self.is_urgent {
-                return self.received_data.expose_items().await;
-            } else if self.session_state.number_of_nonempty_urgent_channels.get() == 0 {
+            if self.is_urgent || self.session_state.number_of_nonempty_urgent_channels.get() == 0 {
                 return self.received_data.expose_items().await;
             } else {
                 self.session_state.deref().wait_for_no_urgency().await;
@@ -906,8 +904,8 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            i: self.i.clone(),
-            phantom: self.phantom.clone(),
+            i: self.i,
+            phantom: self.phantom,
         }
     }
 }
@@ -943,8 +941,8 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            i: self.i.clone(),
-            phantom: self.phantom.clone(),
+            i: self.i,
+            phantom: self.phantom,
         }
     }
 }
