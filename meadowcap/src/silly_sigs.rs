@@ -142,15 +142,12 @@ impl DecodableCanonic for SillyPublicKey {
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        match Self::decode(producer).await {
-            Ok(dec) => {
-                if dec.0 < 4 {
-                    Ok(dec)
-                } else {
-                    Err(DecodeError::Other(Blame::TheirFault))
-                }
-            }
-            err => err,
+        let num = producer.produce_item().await?;
+
+        if num < 4 {
+            Ok(SillyPublicKey(num))
+        } else {
+            Err(DecodeError::Other(Blame::TheirFault))
         }
     }
 }
