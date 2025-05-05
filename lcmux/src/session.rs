@@ -1,4 +1,15 @@
+// So, about the state of this implementation. It gets things done, but there is room for improvement, and some quirks to be aware of. These are compromises because the spec kept evolving after we had already written the (funded, unlike the subsequent and thus minimal changes) first implementation.
+//
+// There is no optimistic sending, ever. If your peers do not issue proactive credit on some logical channel, no messages will ever be sent on it. Global messages and other channels will remain unaffected, though. Yay. Still, adding optimistic sending is the most important lacking feature.
+//
+// All channels are backed by a ringbuffer, and processing data from that rinbuffer always means that as many guarantees will eventually be given on that channel again. The only way of applying backpressure is thus to not read the data in the first place. This does not mesh well with the binding of resource handles, because messages that bind resource handles must be processed immediately. Consequently, this implementation cannot apply proper backpressure for resource handle channels. This, together with the inability to send optimistically, means that for two peers that both use this implementation to work together, they must issue proactive guarantees for the resource handle channel. To prevent a loophole where one peer can be forced to allocate more and more resource handles, you should immeditately send a LimitReceivingFrame for the channel, putting an upper bound on the total number of bytes devoted to binding resource handles, for the whole session. This is not great, but it is what we have right now. To trigger sending this LimitReceivingFrame, use the Session::init method.
+//
+// Each logical channel is configured further with a boolean urgent flag. Bytes from a non-urgent channel will only be exposed to surrounding code when no bytes are buffered in any urgent channel. By setting channels that bind resource handles as urgent and all other channels as non-urgent, you can ensure that resource handle binding messages are processed "immediately".
+//
+// Those are the main gotchas, everything else is actually pretty nice. You get BulkProducers and BulkConsumers for each logical channel, and you can use them all independently. So after becoming aware of the quirks, and configuring things accordingly, the surrounding code then gets a pretty nice interface that does not leak any internals of LCMUX.
+
 use std::{
+    cell::Cell,
     error::Error,
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
@@ -22,6 +33,7 @@ use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
+    TakeCell,
 };
 
 use crate::{
@@ -31,6 +43,20 @@ use crate::{
 };
 
 pub use crate::frames::SendGlobalNibble;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelOptions {
+    /// Capacity of the ring buffer that buffers incoming message bytes for this channel.
+    buffer_capacity: usize,
+    /// How many guarantees must become grantable at least before they are actually granted. If this is greater than the `buffer_capacity`, no guarantees will ever be granted. You probably do not want that.
+    watermark: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InitOptions {
+    /// Is there, from the start, an upper bound on how many bytes this channel wants to receive in total.
+    receiving_limit: Option<u64>,
+}
 
 /// The state for an Lcmux session for channels `0` to `NUM_CHANNELS - 1`.
 ///
@@ -46,6 +72,8 @@ where
     channel_states: [(client_logic::State, server_logic::State<Fixed<u8>>); NUM_CHANNELS],
     p: SharedProducer<PR, P>,
     c: SharedConsumer<CR, C>,
+    number_of_nonempty_urgent_channels: Cell<usize>,
+    no_urgency_notifier: TakeCell<()>, // empty while number_of_nonempty_urgent_channels is nonzero
 }
 
 impl<const NUM_CHANNELS: usize, P, PR, C, CR> State<NUM_CHANNELS, P, PR, C, CR>
@@ -58,31 +86,46 @@ where
     /// Create a new opaque state for an LCMUX session.
     ///
     /// The `buffer_capacity` specifies how many bytes each logical channel can buffer at most.
-    /// The `watermark` specifies how many guarantees must become granatble at least before they are actually granted.
+    /// The `watermark` specifies how many guarantees must become grantable at least before they are actually granted.
     pub fn new(
         p: SharedProducer<PR, P>,
         c: SharedConsumer<CR, C>,
-        buffer_capacity: usize,
-        watermark: u64,
+        options: [ChannelOptions; NUM_CHANNELS],
     ) -> Self {
         Self {
             channel_states: core::array::from_fn(|i| {
                 (
                     client_logic::State::new(i as u64),
                     server_logic::State::new(
-                        Fixed::new(buffer_capacity),
-                        buffer_capacity,
-                        watermark,
+                        Fixed::new(options[i].buffer_capacity),
+                        options[i].buffer_capacity,
+                        options[i].watermark,
                     ),
                 )
             }),
             p,
             c,
+            number_of_nonempty_urgent_channels: Cell::new(0),
+            no_urgency_notifier: TakeCell::new_with(()),
         }
+    }
+
+    fn decrement_urgent_count(&self) {
+        let old_count = self.number_of_nonempty_urgent_channels.get();
+        self.number_of_nonempty_urgent_channels.set(old_count - 1);
+
+        if old_count == 1 {
+            self.no_urgency_notifier.set(());
+        }
+    }
+
+    async fn wait_for_no_urgency(&self) {
+        self.no_urgency_notifier.take().await;
+        self.no_urgency_notifier.set(());
     }
 }
 
-/// All components for interacting with an LCMUX session.
+/// All components for interacting with an LCMUX session. Note that you must call (and poll to completion) the `init` method before working with the session.
 ///
 /// `NUM_CHANNELS` is the number of channels. `R` is the type by which to access the corresponding [`State`].
 /// `P` is the type of the producer of the underlying communication channel, and `PR` is the type of references to the shared state of the `SharedProducer<P>`.
@@ -90,11 +133,11 @@ where
 #[derive(Debug)]
 pub struct Session<
     const NUM_CHANNELS: usize,
-    R,
-    P,
-    PR,
-    C,
-    CR,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
 > {
@@ -130,7 +173,7 @@ where
     CR: Deref<Target = shared_consumer::State<C>> + Clone,
 {
     /// Creates a new LCMUX session.
-    pub fn new(state_ref: R) -> Self {
+    pub fn new(state_ref: R, which_channels_are_urgent: [bool; NUM_CHANNELS]) -> Self {
         let client_logics: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
             ClientLogic::new(ProjectIthClientState {
                 r: state_ref.clone(),
@@ -189,6 +232,8 @@ where
 
         // The silly dance is over. We have successfully decomposed two arrays into arrays of their components.
 
+        let mut i = 0;
+
         Self {
             bookkeeping: Bookkeeping {
                 state: state_ref.clone(),
@@ -203,12 +248,37 @@ where
                 state: state_ref.clone(),
                 client_receivers,
                 server_receivers,
+                urgent_channels: which_channels_are_urgent,
                 phantom: PhantomData,
             },
             channel_senders: client_senders.map(|send_to_channel| ChannelSender(send_to_channel)),
-            channel_receivers: server_received_datas
-                .map(|receive_data| ChannelReceiver(receive_data)),
+            channel_receivers: server_received_datas.map(|receive_data| {
+                let ret = ChannelReceiver {
+                    received_data: receive_data,
+                    session_state: state_ref.clone(),
+                    is_urgent: which_channels_are_urgent[i],
+                };
+                i += 1;
+                ret
+            }),
         }
+    }
+
+    /// Performs one-off transmissions at the start of the session. Call this method (and poll it to completion) before doing any other work with the session.
+    pub async fn init(&mut self, options: [InitOptions; NUM_CHANNELS]) -> Result<(), C::Error> {
+        for i in 0..NUM_CHANNELS {
+            if let Some(limit) = options[0].receiving_limit {
+                let frame = LimitReceiving {
+                    channel: i as u64,
+                    bound: limit,
+                };
+
+                let mut c = self.bookkeeping.state.deref().c.access_consumer().await;
+                frame.encode(&mut c).await?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -233,16 +303,16 @@ where
     where
         M: EncodableKnownSize,
     {
-        let mut consumer = self.0.state.r.c.clone();
-        self.0.send_to_channel(&mut consumer, message).await
+        let consumer = self.0.state.r.c.clone();
+        self.0.send_to_channel(&consumer, message).await
     }
 
     /// Send a `LimitSending` frame to the server.
     ///
     /// This method does not check that you send valid limits or that you respect them on the future.
     pub async fn limit_sending(&mut self, bound: u64) -> Result<(), C::Error> {
-        let mut consumer = self.0.state.r.c.clone();
-        self.0.limit_sending(&mut consumer, bound).await
+        let consumer = self.0.state.r.c.clone();
+        self.0.limit_sending(&consumer, bound).await
     }
 
     /// Same as `self.limit_sending(0)`.
@@ -252,9 +322,21 @@ where
 }
 
 #[derive(Debug)]
-pub struct ChannelReceiver<const NUM_CHANNELS: usize, R, P, PR, C, CR>(
-    server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>,
-);
+pub struct ChannelReceiver<
+    const NUM_CHANNELS: usize,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+> {
+    received_data:
+        server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>,
+    session_state: R,
+    is_urgent: bool,
+}
+
+// (server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>, bool);
 
 impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Producer
     for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
@@ -272,7 +354,23 @@ where
     type Error = ();
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
-        self.0.produce().await
+        loop {
+            if self.is_urgent {
+                match self.received_data.produce().await {
+                    Ok(Left(yay)) => {
+                        if self.received_data.is_buffer_empty() {
+                            self.session_state.deref().decrement_urgent_count();
+                            return Ok(Left(yay));
+                        }
+                    }
+                    other => return other,
+                }
+            } else if self.session_state.number_of_nonempty_urgent_channels.get() == 0 {
+                return self.received_data.produce().await;
+            } else {
+                self.session_state.deref().wait_for_no_urgency().await;
+            }
+        }
     }
 }
 
@@ -286,7 +384,7 @@ where
     CR: Deref<Target = shared_consumer::State<C>> + Clone,
 {
     async fn slurp(&mut self) -> Result<(), Self::Error> {
-        self.0.slurp().await
+        self.received_data.slurp().await
     }
 }
 
@@ -305,11 +403,23 @@ where
     where
         Self::Item: 'a,
     {
-        self.0.expose_items().await
+        loop {
+            if self.is_urgent || self.session_state.number_of_nonempty_urgent_channels.get() == 0 {
+                return self.received_data.expose_items().await;
+            } else {
+                self.session_state.deref().wait_for_no_urgency().await;
+            }
+        }
     }
 
     async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
-        self.0.consider_produced(amount).await
+        self.received_data.consider_produced(amount).await?;
+
+        if self.is_urgent && self.received_data.is_buffer_empty() {
+            self.session_state.deref().decrement_urgent_count();
+        }
+
+        Ok(())
     }
 }
 
@@ -499,11 +609,11 @@ pub trait GetGlobalNibble {
 #[derive(Debug)]
 pub struct GlobalMessageReceiver<
     const NUM_CHANNELS: usize,
-    R,
-    P,
-    PR,
-    C,
-    CR,
+    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
+    P: Producer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    C: Consumer,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
 > {
@@ -515,6 +625,7 @@ pub struct GlobalMessageReceiver<
         ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
         Fixed<u8>,
     >; NUM_CHANNELS],
+    urgent_channels: [bool; NUM_CHANNELS],
     phantom: PhantomData<(GlobalMessage, GlobalMessageDecodeErrorReason)>,
 }
 
@@ -644,7 +755,19 @@ where
                     length,
                 }) => {
                     if channel < (NUM_CHANNELS as u64) {
-                        self.server_receivers[channel as usize]
+                        let server_receiver = &mut self.server_receivers[channel as usize];
+
+                        if server_receiver.is_buffer_empty()
+                            && self.urgent_channels[channel as usize]
+                        {
+                            let old_count = self.state.number_of_nonempty_urgent_channels.get();
+                            self.state
+                                .number_of_nonempty_urgent_channels
+                                .set(old_count + 1);
+                            let _ = self.state.no_urgency_notifier.try_take();
+                        }
+
+                        server_receiver
                             .receive_send_to_channel(length, &mut p)
                             .await
                             .map_err(|err| match err {
@@ -781,8 +904,8 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            i: self.i.clone(),
-            phantom: self.phantom.clone(),
+            i: self.i,
+            phantom: self.phantom,
         }
     }
 }
@@ -818,8 +941,8 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            i: self.i.clone(),
-            phantom: self.phantom.clone(),
+            i: self.i,
+            phantom: self.phantom,
         }
     }
 }

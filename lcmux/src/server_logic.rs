@@ -6,7 +6,7 @@
 //!
 //! The implementation does not emit `Plead` messages, since it works with a fixed-capacity queue.
 
-use std::{cell::Cell, cmp::min, marker::PhantomData, ops::Deref, usize};
+use std::{cell::Cell, cmp::min, marker::PhantomData, ops::Deref};
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Producer};
 
@@ -30,6 +30,8 @@ pub(crate) struct State<Q> {
     start_dropping: TakeCell<Either<(), Result<(), ()>>>,
     // Tracks the voluntary bounds on guarantees that the client will use up at most. Updated whenever a new message arrives, and raises an error if the bound is violated. When the bound is reached, the byte buffer for this channel is closed.
     bound: GuaranteeBoundCell,
+    // A countdown to zero, decremented whenever receiving a byte on this channel. Once it reaches zero, we start dropping all incoming message bytes. IGnored while `None`.
+    receive_limit: Cell<Option<u64>>,
     // Guarantees that we can grant to the client. Updated whenever we interact with the receiver end of the buffer channel.
     guarantees: GuaranteeCellWithoutBound,
     /// Notify of guarantees to give only once accumulated guarantees have crossed this threshold.
@@ -48,6 +50,7 @@ impl<Q: Queue<Item = u8>> State<Q> {
             currently_dropping: Cell::new(false),
             start_dropping: TakeCell::new(),
             bound: GuaranteeBoundCell::new(),
+            receive_limit: Cell::new(None),
             guarantees,
             watermark,
             max_queue_capacity,
@@ -59,7 +62,11 @@ impl<Q: Queue<Item = u8>> State<Q> {
         if !self.spsc_state.has_been_closed_or_errored_yet() {
             self.spsc_state.close(());
         }
-        self.start_dropping.set(Right(Ok(())));
+
+        if self.receive_limit.get() != Some(0) {
+            self.start_dropping.set(Right(Ok(())));
+        }
+
         self.guarantees.set_final();
     }
 
@@ -71,16 +78,20 @@ impl<Q: Queue<Item = u8>> State<Q> {
         self.start_dropping.set(Right(Err(())));
         self.guarantees.set_error();
     }
+
+    pub(crate) fn is_buffer_empty(&self) -> bool {
+        self.spsc_state.is_empty()
+    }
 }
 
 /// Everything you need to correctly manage an LCMUX server.
 #[derive(Debug)]
-pub(crate) struct ServerLogic<R, Q> {
+pub(crate) struct ServerLogic<R: Deref<Target = State<Q>>, Q> {
     /// Inform the server logic about incoming messages (control and data) about this logical channel.
     pub receiver: MessageReceiver<R, Q>,
     /// You can await on this to be notified when the server should grant more guarantees to the client.
     pub guarantees_to_give: GuaranteesToGive<R, Q>,
-    /// A shelf that tells the server when to send `AnnounceDropping` frames. The final value indicates that that will never become necessary again, either because of a voluntary bound (Ok) or because of invalid message patterns (Err).
+    /// A producer that tells the server when to send `AnnounceDropping` frames. The final value indicates that that will never become necessary again, either because of a voluntary bound (Ok) or because of invalid message patterns (Err).
     pub start_dropping: StartDropping<R, Q>,
     /// All the data that was sent to this logical channel via SendToChannel frames.
     pub received_data: ReceivedData<R, Q>,
@@ -126,7 +137,7 @@ pub enum ReceiveSendToChannelError<ProducerFinal, ProducerError> {
 }
 
 #[derive(Debug)]
-pub struct MessageReceiver<R, Q> {
+pub struct MessageReceiver<R: Deref<Target = State<Q>>, Q> {
     state: R,
     buffer_sender: spsc::Sender<ProjectSpscState<R, Q>, Q, (), ()>,
 }
@@ -136,6 +147,10 @@ where
     R: Deref<Target = State<Q>>,
     Q: Queue<Item = u8>,
 {
+    pub(crate) fn is_buffer_empty(&self) -> bool {
+        self.state.deref().is_buffer_empty()
+    }
+
     /// Reads data from the producer into the buffer. To be called whenever receiving a `SendToChannel` header.
     pub async fn receive_send_to_channel<P: BulkProducer<Item = u8>>(
         &mut self,
@@ -172,6 +187,20 @@ where
                 }
                 Ok(_) => {
                     // Continue processing the data.
+                }
+            }
+
+            // Do we want to accept this many bytes?
+            if let Some(limit) = state.receive_limit.get() {
+                if length < limit {
+                    state.receive_limit.set(Some(limit - length));
+                } else if limit == length {
+                    state.receive_limit.set(Some(0));
+                    state.bound_of_zero();
+                } else {
+                    state.receive_limit.set(Some(0));
+                    state.bound_of_zero();
+                    return self.drop_producer_data(length, p).await;
                 }
             }
 
@@ -259,7 +288,7 @@ where
     pub fn receive_apologise(&mut self) -> Result<(), ()> {
         if !self.state.currently_dropping.get() {
             self.state.report_error();
-            return Err(());
+            Err(())
         } else {
             // We are currently dropping, but did we even notify the client about that yet?
             match self.state.start_dropping.peek() {
@@ -274,7 +303,7 @@ where
                 _ => {
                     // They definitely sent their message before we told them we were dropping. That's non-conformant!
                     self.state.report_error();
-                    return Err(());
+                    Err(())
                 }
             }
         }
@@ -320,7 +349,7 @@ where
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -377,9 +406,19 @@ where
 ///
 /// This is a wrapper around SharedState.buffer_out that also calls `increase_guarantees_to_give` for every produced byte.
 #[derive(Debug)]
-pub struct ReceivedData<R, Q> {
+pub struct ReceivedData<R: Deref<Target = State<Q>>, Q> {
     state: R,
     buffer_receiver: spsc::Receiver<ProjectSpscState<R, Q>, Q, (), ()>,
+}
+
+impl<R, Q> ReceivedData<R, Q>
+where
+    R: Deref<Target = State<Q>>,
+    Q: Queue<Item = u8>,
+{
+    pub(crate) fn is_buffer_empty(&self) -> bool {
+        self.state.deref().is_buffer_empty()
+    }
 }
 
 impl<R, Q> Producer for ReceivedData<R, Q>
@@ -457,7 +496,7 @@ where
     fn clone(&self) -> Self {
         Self {
             r: self.r.clone(),
-            phantom: self.phantom.clone(),
+            phantom: self.phantom,
         }
     }
 }
@@ -954,36 +993,3 @@ mod tests {
         });
     }
 }
-
-pub enum IngestionError<ProducerFinal, ProducerError> {
-    Producer(ProducerError),
-    UnexpectedEndOfInput(ProducerFinal),
-}
-
-/// A trait for types that can accept incoming channel message bytes.
-pub trait BufferIn: BulkConsumer<Item = u8, Error = Infallible> {
-    /// Returns how many guarantees the server can give for this channel at connection start.
-    fn initial_guarantees_to_give(&self) -> u64;
-
-    /// Synchronously accepts a notification that no more bytes will ever be put into this.
-    fn no_more_bytes_will_arrive(&mut self);
-
-    /// Synchronously accepts a notification that the client violated a voluntary bound on how many bytes it claimed to send in the future.
-    fn bound_was_violated(&mut self);
-
-    /// Attempts to ingest exactly `length` many bytes drawn from the given `producer`.
-    ///
-    /// Returns `Err(IngestionError::Producer(err))` if the producer emits an error `err`.
-    /// Returns `Err(IngestionError::UnexpectedEndOfInput(fin))` if the producer emits its final value `fin` before emitting `length` many bytes.
-    /// Returns `Ok(true)` if ingesting `length` many bytes worked.
-    /// Returns `Ok(false)` otherwise (if this endpoint could not store/process the bytes).
-    async fn accept_bytes<P>(
-        &mut self,
-        length: usize,
-        producer: P,
-    ) -> Result<bool, IngestionError<P::Final, P::Error>>
-    where
-        P: BulkProducer<Item = u8>;
-}
-
-// There is no corresponding BufferOut. But whichever thing works with incoming data must call `SharedState::increase_guarantees_to_give` somehow whenever it has processed data or can otherwise give out guarantees.
