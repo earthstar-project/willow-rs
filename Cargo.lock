@@ -1289,6 +1289,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "willow-transport-encryption"
+version = "0.1.0"
+dependencies = [
+ "either",
+ "ufotofu",
+ "ufotofu_codec",
+]
+
+[[package]]
 name = "willow_25"
 version = "0.1.1"
 dependencies = [
