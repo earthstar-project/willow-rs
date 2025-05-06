@@ -1,7 +1,7 @@
-use either::Either;
+use std::convert::Infallible;
 
 use ufotofu::{
-    consumer::IntoVec, BulkConsumer, BulkProducer, ConsumeAtLeastError, ProduceAtLeastError,
+    consumer::IntoVec, producer::FromSlice, BulkConsumer, BulkProducer, ConsumeAtLeastError,
 };
 use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync};
 
@@ -84,12 +84,12 @@ where
         &mut self,
         p: &mut P,
     ) -> Result<(), DecodeError<P::Final, P::Error, ()>> {
-        let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES + TAG_WIDTH_IN_BYTES];
+        let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut e[..]).await?;
 
-        self.repk = DH::PublicKey::decode_canonic(p)
+        self.repk = DH::PublicKey::decode_canonic(&mut FromSlice::new(&e[..]))
             .await
-            .map_err(|err| DecodeError::map_other(err, |_| ()))?;
+            .map_err(map_slice_err)?;
 
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &e[..]);
 
@@ -104,7 +104,7 @@ where
         const NONCE_WIDTH_IN_BYTES: usize,
         const IS_TAG_PREPENDED: bool,
         H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
-        C: BulkConsumer<Item = u8>,
+        C: BulkConsumer<Item = u8> + std::fmt::Debug,
     >(
         &mut self,
         c: &mut C,
@@ -114,13 +114,20 @@ where
     {
         // e
         let enc_epk = self.epk.encode_into_boxed_slice().await;
-        c.bulk_consume_full_slice(&enc_epk[..])
-            .await
-            .map_err(ConsumeAtLeastError::into_reason)?;
+        println!("u00");
+        println!("{:?}", &enc_epk[..]);
+        println!("{:?}", c);
+        c.consume(enc_epk[0]).await?;
+        // c.bulk_consume_full_slice(&enc_epk[..])
+        //     .await
+        //     .map_err(ConsumeAtLeastError::into_reason)?;
+        println!("huh?");
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &enc_epk[..]);
 
         // ee
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.repk));
+
+        println!("u10");
 
         // s
         Self::encrypt_key_then_send_and_hash::<
@@ -133,6 +140,8 @@ where
             C,
         >(&mut self.h, &self.k, &self.spk, c)
         .await?;
+
+        println!("u30");
 
         // es
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.ssk.dh(&self.repk));
@@ -148,7 +157,7 @@ where
         const NONCE_WIDTH_IN_BYTES: usize,
         const IS_TAG_PREPENDED: bool,
         H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
-        P: BulkProducer<Item = u8>,
+        P: BulkProducer<Item = u8> + std::fmt::Debug,
     >(
         &mut self,
         p: &mut P,
@@ -156,15 +165,21 @@ where
     where
         AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
     {
+        println!("f00");
+        println!("{:?}", p);
         // e
-        let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES + TAG_WIDTH_IN_BYTES];
+        let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut e[..]).await?;
 
-        self.repk = DH::PublicKey::decode_canonic(p)
+        println!("f10");
+
+        self.repk = DH::PublicKey::decode_canonic(&mut FromSlice::new(&e[..]))
             .await
-            .map_err(|err| DecodeError::map_other(err, |_| ()))?;
+            .map_err(map_slice_err)?;
 
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &e[..]);
+
+        println!("f20");
 
         // ee
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.repk));
@@ -180,6 +195,8 @@ where
             P,
         >(&mut self.h, &self.k, p)
         .await?;
+
+        println!("f30");
 
         // es
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.rspk));
@@ -386,12 +403,23 @@ where
         k.decrypt_inplace(&zero_nonce, h, &mut buf[..])
             .map_err(|_| DecodeError::Other(()))?;
 
-        return DH::PublicKey::decode_canonic(p)
+        return DH::PublicKey::decode_canonic(&mut FromSlice::new(&buf[..]))
             .await
-            .map_err(|err| DecodeError::map_other(err, |_| ()));
+            .map_err(map_slice_err);
     }
 }
 
+fn map_slice_err<Final, Producer, Other>(
+    err: DecodeError<(), Infallible, Other>,
+) -> DecodeError<Final, Producer, ()> {
+    match err {
+        DecodeError::Other(_) => DecodeError::Other(()),
+        DecodeError::Producer(_) => unreachable!(),
+        DecodeError::UnexpectedEndOfInput(_) => panic!(),
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
 pub struct Outcome<const HASHLEN_IN_BYTES: usize, AEAD> {
     h: [u8; HASHLEN_IN_BYTES],
     aeadk1: AEAD,
@@ -450,4 +478,88 @@ fn hkdf<
     (&mut input_key_material2[..HASHLEN_IN_BYTES]).copy_from_slice(out1);
     input_key_material2[HASHLEN_IN_BYTES] = 2;
     hmac::<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD, H>(&temp_key, &input_key_material2[..], out2);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_parameters::*;
+
+    use wb_async_utils::spsc::{self, new_spsc};
+
+    #[test]
+    fn handshake_produces_equal_results_for_both_peers() {
+        let mut ini = State::initial_state::<128, SillyHash>(
+            SillyDhSecretKey(33),
+            SillyDhPublicKey(33),
+            SillyDhSecretKey(8),
+            SillyDhPublicKey(9),
+            b"Nose_XX_foo_bar_baz",
+            &[1, 2, 3],
+        );
+        let mut res = State::initial_state::<128, SillyHash>(
+            SillyDhSecretKey(14),
+            SillyDhPublicKey(14),
+            SillyDhSecretKey(9),
+            SillyDhPublicKey(9),
+            b"Nose_XX_foo_bar_baz",
+            &[1, 2, 3],
+        );
+
+        let ini_to_res_state: spsc::State<_, (), ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (mut ini_to_res_sender, mut ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let res_to_ini_state: spsc::State<_, (), ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (mut res_to_ini_sender, mut res_to_ini_receiver) = new_spsc(&res_to_ini_state);
+
+        smol::block_on(futures::future::join(
+            async {
+                println!("a");
+                ini.ini_write_first_message::<128, SillyHash, _>(&mut ini_to_res_sender)
+                    .await
+                    .unwrap();
+                println!("b");
+                ini.ini_read_second_message::<128, 1, 1, 1, false, SillyHash, _>(
+                    &mut res_to_ini_receiver,
+                )
+                .await
+                .unwrap();
+                println!("c");
+                ini.ini_write_third_message::<128, 1, 1, 1, false, SillyHash, _>(
+                    &mut ini_to_res_sender,
+                )
+                .await
+                .unwrap();
+                println!("d");
+            },
+            async {
+                println!("1");
+                res.res_read_first_message::<128, 1, 1, SillyHash, _>(&mut ini_to_res_receiver)
+                    .await
+                    .unwrap();
+                println!("2");
+                res.res_write_second_message::<128, 1, 1, 1, false, SillyHash, _>(
+                    &mut res_to_ini_sender,
+                )
+                .await
+                .unwrap();
+                println!("3");
+                res.res_read_third_message::<128, 1, 1, 1, false, SillyHash, _>(
+                    &mut ini_to_res_receiver,
+                )
+                .await
+                .unwrap();
+                println!("4");
+            },
+        ));
+
+        println!("z");
+
+        let ini_outcome = ini.finalise::<128, SillyHash>();
+        let res_outcome = res.finalise::<128, SillyHash>();
+
+        assert_eq!(ini_outcome, res_outcome);
+    }
 }

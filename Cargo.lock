@@ -1197,9 +1197,9 @@ dependencies = [
 
 [[package]]
 name = "wb_async_utils"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0959f6010dffb28932c94fcf874ef3588aa9ca050cb0c04ac26622bfc7b2bea6"
+checksum = "eb5b854d25ea90a482d0bfe72ed68285f49cbce720916ef2c1ae513087fea40b"
 dependencies = [
  "either",
  "fairly_unsafe_cell",
@@ -1293,8 +1293,12 @@ name = "willow-transport-encryption"
 version = "0.1.0"
 dependencies = [
  "either",
+ "futures",
+ "smol",
  "ufotofu",
  "ufotofu_codec",
+ "ufotofu_queues",
+ "wb_async_utils",
 ]
 
 [[package]]

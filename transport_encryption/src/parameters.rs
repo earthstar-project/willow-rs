@@ -6,7 +6,7 @@ pub trait DiffieHellmanSecretKey {
     type PublicKey: DecodableCanonic + DecodableSync;
 
     /// Must commute in the sense that `sk1.dh(pk2) == sk2.dh(pk1)`.
-    fn dh(&self, dh: &Self::PublicKey) -> Self::PublicKey;
+    fn dh(&self, pk: &Self::PublicKey) -> Self::PublicKey;
 }
 
 /// The AEAD-related parameters. The type implementing this is the type of encryption keys.
@@ -29,7 +29,7 @@ pub trait AEADEncryptionKey<
         &self,
         nonce: &[u8; NONCE_LENGTH_IN_BYTES],
         ad: &[u8],
-        cyphertext_with_additional_space: &mut [u8],
+        cyphertext_with_tag: &mut [u8],
     ) -> Result<(), ()>;
 }
 
