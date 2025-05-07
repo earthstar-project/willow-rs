@@ -5,7 +5,177 @@ use ufotofu::{
 };
 use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync};
 
-use crate::parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing};
+use crate::{
+    encryption::{Decryptor, Encryptor},
+    parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
+};
+
+/// Runs the handshake for the WGPS. Returns the shared random bytestring, the static public key of the peer, and a producer and consumer which wrap the ones passed to this function and which automatically encrypt and decrypt all bytes.
+///
+/// Arguments:
+///
+/// - is_initiator: whether this peer is the initiator or the responder.
+/// - esk: the ephemeral secret key of the peer. Must be randomly selected for each new handshake.
+/// - epk: the public key corresponding to the `esk`.
+/// - ssk: the static secret key of the peer. May be chosen arbitrarily, and will constrain which capabilities can be synced later.
+/// - spk: the public key corresponding to the `spk`
+/// - protocol_name, prologue: see the spec
+/// - c, p: the consumer and producer that represent the channel over which to communicate with the peer.
+pub async fn run_handshake<
+    const HASHLEN_IN_BYTES: usize,
+    const BLOCKLEN_IN_BYTES: usize,
+    const PK_ENCODING_LENGTH_IN_BYTES: usize,
+    const TAG_WIDTH_IN_BYTES: usize,
+    const TAG_WIDTH_IN_BYTES_PLUS_2: usize,
+    const TAG_WIDTH_IN_BYTES_PLUS_4096: usize,
+    const NONCE_WIDTH_IN_BYTES: usize,
+    const IS_TAG_PREPENDED: bool,
+    H,
+    DH,
+    AEAD,
+    C,
+    P,
+>(
+    is_initiator: bool,
+    esk: DH,
+    epk: DH::PublicKey,
+    ssk: DH,
+    spk: DH::PublicKey,
+    protocol_name: &[u8],
+    prologue: &[u8],
+    mut c: C,
+    mut p: P,
+) -> Result<
+    (
+        [u8; HASHLEN_IN_BYTES],
+        DH::PublicKey,
+        Encryptor<
+            TAG_WIDTH_IN_BYTES,
+            TAG_WIDTH_IN_BYTES_PLUS_2,
+            TAG_WIDTH_IN_BYTES_PLUS_4096,
+            NONCE_WIDTH_IN_BYTES,
+            IS_TAG_PREPENDED,
+            AEAD,
+            C,
+        >,
+        Decryptor<
+            TAG_WIDTH_IN_BYTES,
+            TAG_WIDTH_IN_BYTES_PLUS_2,
+            TAG_WIDTH_IN_BYTES_PLUS_4096,
+            NONCE_WIDTH_IN_BYTES,
+            IS_TAG_PREPENDED,
+            AEAD,
+            P,
+        >,
+    ),
+    HandshakeError<C::Error, P::Final, P::Error>,
+>
+where
+    DH: DiffieHellmanSecretKey,
+    DH::PublicKey: Default + EncodableSync + EncodableKnownSize + DecodableCanonic,
+    AEAD: Default,
+    H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
+    AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
+    C: BulkConsumer<Item = u8>,
+    P: BulkProducer<Item = u8>,
+{
+    let mut state =
+        State::initial_state::<BLOCKLEN_IN_BYTES, H>(esk, epk, ssk, spk, protocol_name, prologue);
+
+    let outcome = if is_initiator {
+        state
+            .ini_write_first_message::<BLOCKLEN_IN_BYTES, H, C>(&mut c)
+            .await
+            .map_err(|err| HandshakeError::SendingError(err))?;
+
+        state
+            .ini_read_second_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, P>(&mut p)
+            .await
+            .map_err(|err| HandshakeError::ReceivingError(err))?;
+
+        state
+            .ini_write_third_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, C>(&mut c)
+            .await
+            .map_err(|err| HandshakeError::SendingError(err))?;
+
+        state.finalise::<BLOCKLEN_IN_BYTES, H>()
+    } else {
+        state
+            .res_read_first_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, H, P>(&mut p)
+            .await
+            .map_err(|err| HandshakeError::ReceivingError(err))?;
+
+        state
+            .res_write_second_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, C>(&mut c)
+            .await
+            .map_err(|err| HandshakeError::SendingError(err))?;
+
+        state
+            .res_read_third_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, P>(&mut p)
+            .await
+            .map_err(|err| HandshakeError::ReceivingError(err))?;
+
+        state.finalise::<BLOCKLEN_IN_BYTES, H>()
+    };
+
+    if is_initiator {
+        Ok((
+            outcome.h,
+            outcome.remote_static_pk,
+            Encryptor::new(outcome.aeadk1, c),
+            Decryptor::new(outcome.aeadk2, p),
+        ))
+    } else {
+        Ok((
+            outcome.h,
+            outcome.remote_static_pk,
+            Encryptor::new(outcome.aeadk2, c),
+            Decryptor::new(outcome.aeadk1, p),
+        ))
+    }
+}
+
+/// The possible errors emitted by an encryptor.
+#[derive(Debug, PartialEq, Eq)]
+pub enum HandshakeError<ConsumerError, ProducerFinal, ProducerError> {
+    /// Sending a handshake message failed because the inner consumer emitted an error.
+    SendingError(ConsumerError),
+    /// Receiving a handshake message failed.
+    ReceivingError(DecodeError<ProducerFinal, ProducerError, DecryptionFailed>),
+}
+
+impl<
+        ConsumerError: core::fmt::Display,
+        ProducerFinal: core::fmt::Display,
+        ProducerError: core::fmt::Display,
+    > core::fmt::Display for HandshakeError<ConsumerError, ProducerFinal, ProducerError>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HandshakeError::SendingError(err) => err.fmt(f),
+            HandshakeError::ReceivingError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl<
+        ConsumerError: std::error::Error,
+        ProducerFinal: std::error::Error,
+        ProducerError: std::error::Error,
+    > std::error::Error for HandshakeError<ConsumerError, ProducerFinal, ProducerError>
+{
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DecryptionFailed;
+
+impl core::fmt::Display for DecryptionFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Could not decrypt a handshake message")
+    }
+}
+
+impl std::error::Error for DecryptionFailed {}
 
 pub(crate) struct State<const HASHLEN_IN_BYTES: usize, DH: DiffieHellmanSecretKey, AEAD> {
     esk: DH,
@@ -83,7 +253,7 @@ where
     >(
         &mut self,
         p: &mut P,
-    ) -> Result<(), DecodeError<P::Final, P::Error, ()>> {
+    ) -> Result<(), DecodeError<P::Final, P::Error, DecryptionFailed>> {
         let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut e[..]).await?;
 
@@ -103,7 +273,7 @@ where
         const NONCE_WIDTH_IN_BYTES: usize,
         const IS_TAG_PREPENDED: bool,
         H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
-        C: BulkConsumer<Item = u8> + std::fmt::Debug,
+        C: BulkConsumer<Item = u8>,
     >(
         &mut self,
         c: &mut C,
@@ -146,11 +316,11 @@ where
         const NONCE_WIDTH_IN_BYTES: usize,
         const IS_TAG_PREPENDED: bool,
         H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
-        P: BulkProducer<Item = u8> + std::fmt::Debug,
+        P: BulkProducer<Item = u8>,
     >(
         &mut self,
         p: &mut P,
-    ) -> Result<(), DecodeError<P::Final, P::Error, ()>>
+    ) -> Result<(), DecodeError<P::Final, P::Error, DecryptionFailed>>
     where
         AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
     {
@@ -231,7 +401,7 @@ where
     >(
         &mut self,
         p: &mut P,
-    ) -> Result<(), DecodeError<P::Final, P::Error, ()>>
+    ) -> Result<(), DecodeError<P::Final, P::Error, DecryptionFailed>>
     where
         AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
     {
@@ -259,7 +429,7 @@ where
         H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
     >(
         self,
-    ) -> Outcome<HASHLEN_IN_BYTES, AEAD> {
+    ) -> Outcome<HASHLEN_IN_BYTES, AEAD, DH::PublicKey> {
         let mut tmp_k1 = [0; HASHLEN_IN_BYTES];
         let mut tmp_k2 = [0; HASHLEN_IN_BYTES];
         hkdf::<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD, H>(
@@ -271,6 +441,7 @@ where
 
         Outcome {
             h: self.h,
+            remote_static_pk: self.rspk,
             aeadk1: H::digest_to_aeadkey(&tmp_k1),
             aeadk2: H::digest_to_aeadkey(&tmp_k2),
         }
@@ -371,7 +542,7 @@ where
         h: &mut [u8; HASHLEN_IN_BYTES],
         k: &AEAD,
         p: &mut P,
-    ) -> Result<DH::PublicKey, DecodeError<P::Final, P::Error, ()>>
+    ) -> Result<DH::PublicKey, DecodeError<P::Final, P::Error, DecryptionFailed>>
     where
         AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
     {
@@ -383,7 +554,7 @@ where
 
         let zero_nonce = [0u8; NONCE_WIDTH_IN_BYTES];
         k.decrypt_inplace(&zero_nonce, &old_h, &mut buf[..])
-            .map_err(|_| DecodeError::Other(()))?;
+            .map_err(|_| DecodeError::Other(DecryptionFailed))?;
 
         return DH::PublicKey::decode_canonic(&mut FromSlice::new(&buf[..]))
             .await
@@ -393,19 +564,20 @@ where
 
 fn map_slice_err<Final, Producer, Other>(
     err: DecodeError<(), Infallible, Other>,
-) -> DecodeError<Final, Producer, ()> {
+) -> DecodeError<Final, Producer, DecryptionFailed> {
     match err {
-        DecodeError::Other(_) => DecodeError::Other(()),
+        DecodeError::Other(_) => DecodeError::Other(DecryptionFailed),
         DecodeError::Producer(_) => unreachable!(),
         DecodeError::UnexpectedEndOfInput(_) => panic!(),
     }
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub struct Outcome<const HASHLEN_IN_BYTES: usize, AEAD> {
-    h: [u8; HASHLEN_IN_BYTES],
-    aeadk1: AEAD,
-    aeadk2: AEAD,
+pub(crate) struct Outcome<const HASHLEN_IN_BYTES: usize, AEAD, DhPublicKey> {
+    pub h: [u8; HASHLEN_IN_BYTES],
+    pub remote_static_pk: DhPublicKey,
+    pub aeadk1: AEAD,
+    pub aeadk2: AEAD,
 }
 
 /*
