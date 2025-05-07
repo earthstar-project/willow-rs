@@ -92,7 +92,6 @@ where
             .map_err(map_slice_err)?;
 
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &e[..]);
-
         Ok(())
     }
 
@@ -114,20 +113,13 @@ where
     {
         // e
         let enc_epk = self.epk.encode_into_boxed_slice().await;
-        println!("u00");
-        println!("{:?}", &enc_epk[..]);
-        println!("{:?}", c);
-        c.consume(enc_epk[0]).await?;
-        // c.bulk_consume_full_slice(&enc_epk[..])
-        //     .await
-        //     .map_err(ConsumeAtLeastError::into_reason)?;
-        println!("huh?");
+        c.bulk_consume_full_slice(&enc_epk[..])
+            .await
+            .map_err(ConsumeAtLeastError::into_reason)?;
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &enc_epk[..]);
 
         // ee
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.repk));
-
-        println!("u10");
 
         // s
         Self::encrypt_key_then_send_and_hash::<
@@ -141,11 +133,8 @@ where
         >(&mut self.h, &self.k, &self.spk, c)
         .await?;
 
-        println!("u30");
-
         // es
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.ssk.dh(&self.repk));
-
         Ok(())
     }
 
@@ -165,21 +154,15 @@ where
     where
         AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
     {
-        println!("f00");
-        println!("{:?}", p);
         // e
         let mut e = vec![0; PK_ENCODING_LENGTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut e[..]).await?;
-
-        println!("f10");
 
         self.repk = DH::PublicKey::decode_canonic(&mut FromSlice::new(&e[..]))
             .await
             .map_err(map_slice_err)?;
 
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(&mut self.h, &e[..]);
-
-        println!("f20");
 
         // ee
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.repk));
@@ -195,8 +178,6 @@ where
             P,
         >(&mut self.h, &self.k, p)
         .await?;
-
-        println!("f30");
 
         // es
         self.mix_key::<BLOCKLEN_IN_BYTES, H>(&self.esk.dh(&self.rspk));
@@ -397,10 +378,11 @@ where
         let mut buf = vec![0; PK_ENCODING_LENGTH_IN_BYTES + TAG_WIDTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut buf[..]).await?;
 
+        let old_h = h.clone();
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(h, &buf[..]);
 
         let zero_nonce = [0u8; NONCE_WIDTH_IN_BYTES];
-        k.decrypt_inplace(&zero_nonce, h, &mut buf[..])
+        k.decrypt_inplace(&zero_nonce, &old_h, &mut buf[..])
             .map_err(|_| DecodeError::Other(()))?;
 
         return DH::PublicKey::decode_canonic(&mut FromSlice::new(&buf[..]))
@@ -516,46 +498,36 @@ mod tests {
 
         smol::block_on(futures::future::join(
             async {
-                println!("a");
                 ini.ini_write_first_message::<128, SillyHash, _>(&mut ini_to_res_sender)
                     .await
                     .unwrap();
-                println!("b");
                 ini.ini_read_second_message::<128, 1, 1, 1, false, SillyHash, _>(
                     &mut res_to_ini_receiver,
                 )
                 .await
                 .unwrap();
-                println!("c");
                 ini.ini_write_third_message::<128, 1, 1, 1, false, SillyHash, _>(
                     &mut ini_to_res_sender,
                 )
                 .await
                 .unwrap();
-                println!("d");
             },
             async {
-                println!("1");
                 res.res_read_first_message::<128, 1, 1, SillyHash, _>(&mut ini_to_res_receiver)
                     .await
                     .unwrap();
-                println!("2");
                 res.res_write_second_message::<128, 1, 1, 1, false, SillyHash, _>(
                     &mut res_to_ini_sender,
                 )
                 .await
                 .unwrap();
-                println!("3");
                 res.res_read_third_message::<128, 1, 1, 1, false, SillyHash, _>(
                     &mut ini_to_res_receiver,
                 )
                 .await
                 .unwrap();
-                println!("4");
             },
         ));
-
-        println!("z");
 
         let ini_outcome = ini.finalise::<128, SillyHash>();
         let res_outcome = res.finalise::<128, SillyHash>();
