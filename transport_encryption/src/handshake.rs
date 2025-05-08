@@ -673,12 +673,12 @@ mod tests {
                 ini.ini_write_first_message::<128, SillyHash, _>(&mut ini_to_res_sender)
                     .await
                     .unwrap();
-                ini.ini_read_second_message::<128, 1, 1, 1, false, SillyHash, _>(
+                ini.ini_read_second_message::<128, 1, 1, 8, false, SillyHash, _>(
                     &mut res_to_ini_receiver,
                 )
                 .await
                 .unwrap();
-                ini.ini_write_third_message::<128, 1, 1, 1, false, SillyHash, _>(
+                ini.ini_write_third_message::<128, 1, 1, 8, false, SillyHash, _>(
                     &mut ini_to_res_sender,
                 )
                 .await
@@ -688,12 +688,12 @@ mod tests {
                 res.res_read_first_message::<128, 1, 1, SillyHash, _>(&mut ini_to_res_receiver)
                     .await
                     .unwrap();
-                res.res_write_second_message::<128, 1, 1, 1, false, SillyHash, _>(
+                res.res_write_second_message::<128, 1, 1, 8, false, SillyHash, _>(
                     &mut res_to_ini_sender,
                 )
                 .await
                 .unwrap();
-                res.res_read_third_message::<128, 1, 1, 1, false, SillyHash, _>(
+                res.res_read_third_message::<128, 1, 1, 8, false, SillyHash, _>(
                     &mut ini_to_res_receiver,
                 )
                 .await

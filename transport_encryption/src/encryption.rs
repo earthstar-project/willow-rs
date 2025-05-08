@@ -679,9 +679,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![];
@@ -719,9 +719,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![];
@@ -761,9 +761,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![205, 39];
@@ -805,9 +805,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![205, 39];
@@ -846,9 +846,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![5, 6];
@@ -881,9 +881,9 @@ mod tests {
 
         let enc_key = SillyAead(17);
 
-        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut ini_enc: Encryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Encryptor::new(enc_key.clone(), ini_to_res_sender);
-        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+        let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
         let ini_data = vec![205, 39];

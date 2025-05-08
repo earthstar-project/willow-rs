@@ -74,7 +74,7 @@ fuzz_target!(|data: (
                     1,
                     3,
                     4097,
-                    1,
+                    8,
                     false,
                     SillyHash,
                     SillyDhSecretKey,
@@ -130,7 +130,7 @@ fuzz_target!(|data: (
                     1,
                     3,
                     4097,
-                    1,
+                    8,
                     false,
                     SillyHash,
                     SillyDhSecretKey,
@@ -266,10 +266,10 @@ impl DiffieHellmanSecretKey for SillyDhSecretKey {
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SillyAead(pub u8);
 
-impl AEADEncryptionKey<1, 1, false> for SillyAead {
+impl AEADEncryptionKey<1, 8, false> for SillyAead {
     fn encrypt_inplace(
         &self,
-        nonce: &[u8; 1],
+        nonce: &[u8; 8],
         ad: &[u8],
         plaintext_with_additional_space: &mut [u8],
     ) {
@@ -284,7 +284,7 @@ impl AEADEncryptionKey<1, 1, false> for SillyAead {
 
     fn decrypt_inplace(
         &self,
-        nonce: &[u8; 1],
+        nonce: &[u8; 8],
         ad: &[u8],
         cyphertext_with_tag: &mut [u8],
     ) -> Result<(), ()> {
