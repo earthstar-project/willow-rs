@@ -1282,6 +1282,7 @@ dependencies = [
  "willow-data-model",
  "willow-encoding",
  "willow-store-simple-sled",
+ "willow-transport-encryption",
 ]
 
 [[package]]

@@ -30,6 +30,7 @@ futures = { version = "0.3.31" }
 willow-store-simple-sled = { path = "../store_simple_sled" }
 sled = "0.34.7"
 tempdir = "0.3.7"
+willow-transport-encryption = { path = "../transport_encryption" }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -430,6 +431,17 @@ bench = false
 [[bin]]
 name = "control_events"
 path = "fuzz_targets/control_events.rs"
+test = false
+doc = false
+bench = false
+
+##############################
+# compactransport_encryption #
+##############################
+
+[[bin]]
+name = "transport_encryption"
+path = "fuzz_targets/transport_encryption.rs"
 test = false
 doc = false
 bench = false

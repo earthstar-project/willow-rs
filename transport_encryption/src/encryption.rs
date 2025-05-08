@@ -127,6 +127,8 @@ where
             .await
             .map_err(ConsumeAtLeastError::into_reason)?;
 
+        // println!("sent header {:?} (len {:?})", &buf[..], len);
+
         Ok(())
     }
 }
@@ -207,22 +209,24 @@ where
     AEADKey: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
 {
     async fn flush(&mut self) -> Result<(), Self::Error> {
-        self.send_header(self.buffered_count).await?;
+        if self.buffered_count != 0 {
+            self.send_header(self.buffered_count).await?;
 
-        let total_len = (self.buffered_count as usize) + TAG_WIDTH_IN_BYTES;
+            let total_len = (self.buffered_count as usize) + TAG_WIDTH_IN_BYTES;
 
-        self.key
-            .encrypt_inplace(&self.nonce, &[], &mut self.buf[..total_len]);
-        increment_nonce(&mut self.nonce).map_err(|()| EncryptionError::NoncesExhausted)?;
+            self.key
+                .encrypt_inplace(&self.nonce, &[], &mut self.buf[..total_len]);
+            increment_nonce(&mut self.nonce).map_err(|()| EncryptionError::NoncesExhausted)?;
 
-        self.c
-            .bulk_consume_full_slice(&self.buf[..total_len])
-            .await
-            .map_err(ConsumeAtLeastError::into_reason)?;
+            self.c
+                .bulk_consume_full_slice(&self.buf[..total_len])
+                .await
+                .map_err(ConsumeAtLeastError::into_reason)?;
 
-        self.buffered_count = 0;
+            self.buffered_count = 0;
 
-        self.c.flush().await?;
+            self.c.flush().await?;
+        }
 
         Ok(())
     }
@@ -263,7 +267,7 @@ where
         } else {
             0
         };
-        Ok(&mut self.buf[offset..(self.buffered_count as usize) + offset])
+        Ok(&mut self.buf[(self.buffered_count as usize) + offset..4096 + offset])
     }
 
     async fn consume_slots(&mut self, amount: usize) -> Result<(), Self::Error> {
@@ -399,48 +403,53 @@ where
     AEADKey: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
 {
     async fn fill_buffer(&mut self) -> Result<(), DecryptionError<P::Error>> {
-        let mut header_buf = [0; TAG_WIDTH_IN_BYTES_PLUS_2];
-        self.p
-            .bulk_overwrite_full_slice(&mut header_buf)
-            .await
-            .map_err(|err| match err.reason {
-                Left(_) => DecryptionError::UnauthenticatedEndOfStream,
-                Right(inner_err) => DecryptionError::Inner(inner_err),
-            })?;
+        // println!("start fill");
+        if self.buffered_count != self.current_chunk_len {
+            let mut header_buf = [0; TAG_WIDTH_IN_BYTES_PLUS_2];
+            self.p
+                .bulk_overwrite_full_slice(&mut header_buf)
+                .await
+                .map_err(|err| match err.reason {
+                    Left(_) => DecryptionError::UnauthenticatedEndOfStream,
+                    Right(inner_err) => DecryptionError::Inner(inner_err),
+                })?;
 
-        self.key
-            .decrypt_inplace(&self.nonce, &[], &mut header_buf[..])
-            .map_err(|()| DecryptionError::DecryptionFailure)?;
-        increment_nonce(&mut self.nonce).map_err(|()| DecryptionError::NoncesExhausted)?;
+            self.key
+                .decrypt_inplace(&self.nonce, &[], &mut header_buf[..])
+                .map_err(|()| DecryptionError::DecryptionFailure)?;
+            increment_nonce(&mut self.nonce).map_err(|()| DecryptionError::NoncesExhausted)?;
 
-        let offset = if IS_TAG_PREPENDED {
-            TAG_WIDTH_IN_BYTES
-        } else {
-            0
-        };
-        let len = u16::from_be_bytes([header_buf[offset], header_buf[offset + 1]]) as usize;
+            let offset = if IS_TAG_PREPENDED {
+                TAG_WIDTH_IN_BYTES
+            } else {
+                0
+            };
+            let len = u16::from_be_bytes([header_buf[offset], header_buf[offset + 1]]) as usize;
 
-        if len > 4096 {
-            return Err(DecryptionError::InvalidHeader);
-        } else if len == 0 {
-            return Ok(());
+            if len > 4096 {
+                return Err(DecryptionError::InvalidHeader);
+            } else if len == 0 {
+                self.buffered_count = len as u16;
+                self.current_chunk_len = len as u16;
+                return Ok(());
+            }
+
+            self.p
+                .bulk_overwrite_full_slice(&mut self.buf[..len + TAG_WIDTH_IN_BYTES])
+                .await
+                .map_err(|err| match err.reason {
+                    Left(_) => DecryptionError::UnauthenticatedEndOfStream,
+                    Right(inner_err) => DecryptionError::Inner(inner_err),
+                })?;
+
+            self.key
+                .decrypt_inplace(&self.nonce, &[], &mut self.buf[..len + TAG_WIDTH_IN_BYTES])
+                .map_err(|()| DecryptionError::DecryptionFailure)?;
+            increment_nonce(&mut self.nonce).map_err(|()| DecryptionError::NoncesExhausted)?;
+
+            self.buffered_count = len as u16;
+            self.current_chunk_len = len as u16;
         }
-
-        self.p
-            .bulk_overwrite_full_slice(&mut self.buf[..len + TAG_WIDTH_IN_BYTES])
-            .await
-            .map_err(|err| match err.reason {
-                Left(_) => DecryptionError::UnauthenticatedEndOfStream,
-                Right(inner_err) => DecryptionError::Inner(inner_err),
-            })?;
-
-        self.key
-            .decrypt_inplace(&self.nonce, &[], &mut self.buf[..len + TAG_WIDTH_IN_BYTES])
-            .map_err(|()| DecryptionError::DecryptionFailure)?;
-        increment_nonce(&mut self.nonce).map_err(|()| DecryptionError::NoncesExhausted)?;
-
-        self.buffered_count = len as u16;
-        self.current_chunk_len = len as u16;
 
         Ok(())
     }
@@ -482,8 +491,29 @@ where
             }
         }
 
+        // println!(
+        //     "pre-fill: chunklen {:?}, bufcount {:?}",
+        //     self.current_chunk_len, self.buffered_count
+        // );
+
         if self.buffered_count == 0 {
             self.fill_buffer().await?;
+        }
+
+        // println!(
+        //     "post-fill: chunklen {:?}, bufcount {:?}, {:?}",
+        //     self.current_chunk_len, self.buffered_count, self.buf
+        // );
+
+        if self.current_chunk_len == 0 {
+            match self.p.produce().await? {
+                Left(_) => return Err(DecryptionError::WeirdEndOfStream),
+                // Left(item) => {
+                //     println!("postfinal byte {:?}", item);
+                //     return Err(DecryptionError::WeirdEndOfStream);
+                // }
+                Right(fin) => return Ok(Right(fin)),
+            }
         }
 
         let offset = if IS_TAG_PREPENDED {
@@ -566,14 +596,22 @@ where
             self.fill_buffer().await?;
         }
 
+        if self.current_chunk_len == 0 {
+            match self.p.produce().await? {
+                Left(_) => return Err(DecryptionError::WeirdEndOfStream),
+                Right(fin) => return Ok(Right(fin)),
+            }
+        }
+
         let offset = if IS_TAG_PREPENDED {
             TAG_WIDTH_IN_BYTES
         } else {
             0
         };
         Ok(Left(
-            &mut self.buf
-                [offset..((self.current_chunk_len - self.buffered_count) as usize) + offset],
+            &mut self.buf[offset..(self.buffered_count as usize) + offset],
+            // &mut self.buf
+            //     [offset..((self.current_chunk_len - self.buffered_count) as usize) + offset],
         ))
     }
 
@@ -601,4 +639,224 @@ fn increment_nonce<const NONCE_WIDTH_IN_BYTES: usize>(
     }
 
     Err(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_parameters::*;
+
+    use ufotofu::{consumer, producer::{self, BulkProducerOperation}};
+    use wb_async_utils::spsc::{self, new_spsc};
+
+    #[test]
+    fn empty_stream() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let ini_data = vec![];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc.consume_full_slice(&ini_data[..]).await.unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
+                    let mut res_got = vec![0; ini_data_clone.len()];
+                    res_dec
+                        .overwrite_full_slice(&mut res_got[..])
+                        .await
+                        .unwrap();
+                    assert_eq!(&res_got[..], &ini_data_clone[..]);
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
+
+    #[test]
+    // just another day for you and me in paradise!
+    fn slurp_twice() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let ini_data = vec![];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc.consume_full_slice(&ini_data[..]).await.unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
+                    let mut res_got = vec![0; ini_data_clone.len()];
+
+                    res_dec.slurp().await.unwrap();
+                    res_dec.slurp().await.unwrap();
+                    res_dec
+                        .overwrite_full_slice(&mut res_got[..])
+                        .await
+                        .unwrap();
+                    assert_eq!(&res_got[..], &ini_data_clone[..]);
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
+
+    #[test]
+    fn bulk_consuming_works() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let ini_data = vec![205, 39];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc
+                        .bulk_consume_full_slice(&ini_data[..])
+                        .await
+                        .unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
+                    let mut res_got = vec![0; ini_data_clone.len()];
+
+                    res_dec.slurp().await.unwrap();
+                    res_dec
+                        .overwrite_full_slice(&mut res_got[..])
+                        .await
+                        .unwrap();
+                    assert_eq!(&res_got[..], &ini_data_clone[..]);
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
+
+    #[test]
+    fn bulk_producing_works() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let ini_data = vec![205, 39];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc.consume_full_slice(&ini_data[..]).await.unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
+                    let mut res_got = vec![0; ini_data_clone.len()];
+
+                    res_dec.slurp().await.unwrap();
+                    res_dec
+                        .bulk_overwrite_full_slice(&mut res_got[..])
+                        .await
+                        .unwrap();
+                    assert_eq!(&res_got[..], &ini_data_clone[..]);
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
+
+    #[test]
+    fn slurp_with_data() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let mut res_dec = producer::BulkScrambler::new(res_dec, vec![BulkProducerOperation::Slurp]);
+
+        let ini_data = vec![5, 6];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc.consume_full_slice(&ini_data[..]).await.unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
+                    let mut res_got = vec![0; ini_data_clone.len()];
+
+                    // res_dec.slurp().await.unwrap();
+                    // res_dec.slurp().await.unwrap();
+                    res_dec
+                        .overwrite_full_slice(&mut res_got[..])
+                        .await
+                        .unwrap();
+                    assert_eq!(&res_got[..], &ini_data_clone[..]);
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
 }

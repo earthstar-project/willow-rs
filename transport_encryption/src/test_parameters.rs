@@ -7,10 +7,10 @@ use ufotofu_codec::{
 use crate::parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing};
 
 // The corresponding public key is equal to the secret key.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SillyDhSecretKey(pub u8);
 
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
 pub struct SillyDhPublicKey(pub u8);
 
 impl Encodable for SillyDhPublicKey {
@@ -72,7 +72,7 @@ impl DiffieHellmanSecretKey for SillyDhSecretKey {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct SillyAead(pub u8);
 
 impl AEADEncryptionKey<1, 1, false> for SillyAead {
@@ -83,7 +83,7 @@ impl AEADEncryptionKey<1, 1, false> for SillyAead {
         plaintext_with_additional_space: &mut [u8],
     ) {
         let len = plaintext_with_additional_space.len();
-        for i in 0..(len-1) {
+        for i in 0..(len - 1) {
             plaintext_with_additional_space[i] = plaintext_with_additional_space[i]
                 .wrapping_add(self.0)
                 .wrapping_add(nonce[0]);

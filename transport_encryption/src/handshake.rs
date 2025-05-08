@@ -647,7 +647,7 @@ mod tests {
             SillyDhSecretKey(33),
             SillyDhPublicKey(33),
             SillyDhSecretKey(8),
-            SillyDhPublicKey(9),
+            SillyDhPublicKey(8),
             b"Nose_XX_foo_bar_baz",
             &[1, 2, 3],
         );
@@ -704,6 +704,10 @@ mod tests {
         let ini_outcome = ini.finalise::<128, SillyHash>();
         let res_outcome = res.finalise::<128, SillyHash>();
 
-        assert_eq!(ini_outcome, res_outcome);
+        assert_eq!(ini_outcome.h, res_outcome.h);
+        assert_eq!(ini_outcome.aeadk1, res_outcome.aeadk1);
+        assert_eq!(ini_outcome.aeadk2, res_outcome.aeadk2);
+        assert_eq!(ini_outcome.remote_static_pk, SillyDhPublicKey(9));
+        assert_eq!(res_outcome.remote_static_pk, SillyDhPublicKey(8));
     }
 }
