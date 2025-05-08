@@ -403,8 +403,11 @@ where
     AEADKey: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
 {
     async fn fill_buffer(&mut self) -> Result<(), DecryptionError<P::Error>> {
-        // println!("start fill");
-        if self.buffered_count != self.current_chunk_len {
+        // println!(
+        //     "start fill; buffered_count {:?}, current_chunk_len {:?}",
+        //     self.buffered_count, self.current_chunk_len
+        // );
+        if self.buffered_count == 0 && self.current_chunk_len != 0 {
             let mut header_buf = [0; TAG_WIDTH_IN_BYTES_PLUS_2];
             self.p
                 .bulk_overwrite_full_slice(&mut header_buf)
@@ -449,6 +452,11 @@ where
 
             self.buffered_count = len as u16;
             self.current_chunk_len = len as u16;
+
+            // println!(
+            //     "end active fill; buffered_count {:?}, current_chunk_len {:?}",
+            //     self.buffered_count, self.current_chunk_len
+            // );
         }
 
         Ok(())
@@ -522,6 +530,11 @@ where
             0
         };
         let item = self.buf[((self.current_chunk_len - self.buffered_count) as usize) + offset];
+        // println!(
+        //     "produce item at {:?}: {:?}",
+        //     ((self.current_chunk_len - self.buffered_count) as usize) + offset,
+        //     item
+        // );
         self.buffered_count -= 1;
 
         Ok(Left(item))
@@ -608,10 +621,16 @@ where
         } else {
             0
         };
+        // println!(
+        //     "exposing items from {:?} to {:?}: {:?}",
+        //     offset + ((self.current_chunk_len - self.buffered_count) as usize),
+        //     (self.current_chunk_len as usize) + offset,
+        //     &self.buf[offset + ((self.current_chunk_len - self.buffered_count) as usize)
+        //         ..(self.current_chunk_len as usize) + offset]
+        // );
         Ok(Left(
-            &mut self.buf[offset..(self.buffered_count as usize) + offset],
-            // &mut self.buf
-            //     [offset..((self.current_chunk_len - self.buffered_count) as usize) + offset],
+            &mut self.buf[offset + ((self.current_chunk_len - self.buffered_count) as usize)
+                ..(self.current_chunk_len as usize) + offset],
         ))
     }
 
@@ -646,7 +665,10 @@ mod tests {
     use super::*;
     use crate::test_parameters::*;
 
-    use ufotofu::{consumer, producer::{self, BulkProducerOperation}};
+    use ufotofu::{
+        consumer,
+        producer::{self, BulkProducerOperation},
+    };
     use wb_async_utils::spsc::{self, new_spsc};
 
     #[test]
@@ -817,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn slurp_with_data() {
+    fn slurp_in_between_data() {
         let ini_to_res_state: spsc::State<_, u16, ()> =
             spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
         let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
@@ -829,10 +851,7 @@ mod tests {
         let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
-        let mut res_dec = producer::BulkScrambler::new(res_dec, vec![BulkProducerOperation::Slurp]);
-
         let ini_data = vec![5, 6];
-        let ini_data_clone = ini_data.clone();
         let ini_fin = 9;
 
         smol::block_on(async {
@@ -842,10 +861,49 @@ mod tests {
                     ini_enc.close(ini_fin).await.unwrap();
                 },
                 async {
+                    assert_eq!(Left(5), res_dec.produce().await.unwrap());
+                    res_dec.slurp().await.unwrap();
+                    assert_eq!(Left(6), res_dec.produce().await.unwrap());
+
+                    let res_got_fin = res_dec.produce().await.unwrap().unwrap_right();
+                    assert_eq!(res_got_fin, ini_fin);
+                },
+            )
+            .await;
+        });
+    }
+
+    #[test]
+    fn flush_in_between_data() {
+        let ini_to_res_state: spsc::State<_, u16, ()> =
+            spsc::State::new(ufotofu_queues::Fixed::new(999 /* capacity */));
+        let (ini_to_res_sender, ini_to_res_receiver) = new_spsc(&ini_to_res_state);
+
+        let enc_key = SillyAead(17);
+
+        let mut ini_enc: Encryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Encryptor::new(enc_key.clone(), ini_to_res_sender);
+        let mut res_dec: Decryptor<1, 3, 4097, 1, false, SillyAead, _> =
+            Decryptor::new(enc_key.clone(), ini_to_res_receiver);
+
+        let ini_data = vec![205, 39];
+        let ini_data_clone = ini_data.clone();
+        let ini_fin = 9;
+
+        smol::block_on(async {
+            futures::future::join(
+                async {
+                    ini_enc.flush().await.unwrap();
+                    ini_enc.consume(ini_data[0]).await.unwrap();
+                    ini_enc.flush().await.unwrap();
+                    ini_enc.consume(ini_data[1]).await.unwrap();
+                    ini_enc.flush().await.unwrap();
+                    ini_enc.close(ini_fin).await.unwrap();
+                },
+                async {
                     let mut res_got = vec![0; ini_data_clone.len()];
 
-                    // res_dec.slurp().await.unwrap();
-                    // res_dec.slurp().await.unwrap();
+                    res_dec.slurp().await.unwrap();
                     res_dec
                         .overwrite_full_slice(&mut res_got[..])
                         .await
