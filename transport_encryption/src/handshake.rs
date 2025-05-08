@@ -86,34 +86,34 @@ where
         state
             .ini_write_first_message::<BLOCKLEN_IN_BYTES, H, C>(&mut c)
             .await
-            .map_err(|err| HandshakeError::SendingError(err))?;
+            .map_err(HandshakeError::SendingError)?;
 
         state
             .ini_read_second_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, P>(&mut p)
             .await
-            .map_err(|err| HandshakeError::ReceivingError(err))?;
+            .map_err(HandshakeError::ReceivingError)?;
 
         state
             .ini_write_third_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, C>(&mut c)
             .await
-            .map_err(|err| HandshakeError::SendingError(err))?;
+            .map_err(HandshakeError::SendingError)?;
 
         state.finalise::<BLOCKLEN_IN_BYTES, H>()
     } else {
         state
             .res_read_first_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, H, P>(&mut p)
             .await
-            .map_err(|err| HandshakeError::ReceivingError(err))?;
+            .map_err(HandshakeError::ReceivingError)?;
 
         state
             .res_write_second_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, C>(&mut c)
             .await
-            .map_err(|err| HandshakeError::SendingError(err))?;
+            .map_err(HandshakeError::SendingError)?;
 
         state
             .res_read_third_message::<BLOCKLEN_IN_BYTES, PK_ENCODING_LENGTH_IN_BYTES, TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED, H, P>(&mut p)
             .await
-            .map_err(|err| HandshakeError::ReceivingError(err))?;
+            .map_err(HandshakeError::ReceivingError)?;
 
         state.finalise::<BLOCKLEN_IN_BYTES, H>()
     };
@@ -207,7 +207,7 @@ where
         prologue: &[u8],
     ) -> Self {
         let h = H::hash(protocol_name);
-        let ck = h.clone();
+        let ck = h;
 
         let mut ret = State {
             esk,
@@ -629,7 +629,7 @@ fn hkdf<
     hmac::<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD, H>(&temp_key, &[1u8], out1);
 
     let mut input_key_material2 = vec![0_u8; HASHLEN_IN_BYTES + 1];
-    (&mut input_key_material2[..HASHLEN_IN_BYTES]).copy_from_slice(out1);
+    input_key_material2[..HASHLEN_IN_BYTES].copy_from_slice(out1);
     input_key_material2[HASHLEN_IN_BYTES] = 2;
     hmac::<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD, H>(&temp_key, &input_key_material2[..], out2);
 }

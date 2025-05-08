@@ -629,7 +629,7 @@ where
         //         ..(self.current_chunk_len as usize) + offset]
         // );
         Ok(Left(
-            &mut self.buf[offset + ((self.current_chunk_len - self.buffered_count) as usize)
+            &self.buf[offset + ((self.current_chunk_len - self.buffered_count) as usize)
                 ..(self.current_chunk_len as usize) + offset],
         ))
     }
