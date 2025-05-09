@@ -8,7 +8,8 @@ members = [
     "meadowcap",
     "wgps",
     "store_simple_sled",
-    "willow_25"
+    "willow_25",
+    "transport_encryption"
 ]
 resolver = "2"
 
