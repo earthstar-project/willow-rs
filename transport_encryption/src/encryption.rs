@@ -665,10 +665,6 @@ mod tests {
     use super::*;
     use crate::test_parameters::*;
 
-    use ufotofu::{
-        consumer,
-        producer::{self, BulkProducerOperation},
-    };
     use wb_async_utils::spsc::{self, new_spsc};
 
     #[test]
@@ -851,7 +847,7 @@ mod tests {
         let mut res_dec: Decryptor<1, 3, 4097, 8, false, SillyAead, _> =
             Decryptor::new(enc_key.clone(), ini_to_res_receiver);
 
-        let ini_data = vec![5, 6];
+        let ini_data = [5, 6];
         let ini_fin = 9;
 
         smol::block_on(async {
