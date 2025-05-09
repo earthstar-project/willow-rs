@@ -657,7 +657,7 @@ dependencies = [
  "ufotofu_codec",
  "ufotofu_codec_endian",
  "ufotofu_queues",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
  "willow-encoding",
 ]
 
@@ -1148,7 +1148,7 @@ dependencies = [
  "either",
  "pollster",
  "ufotofu",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
 ]
 
 [[package]]
@@ -1198,16 +1198,6 @@ dependencies = [
 
 [[package]]
 name = "wb_async_utils"
-version = "0.1.0"
-dependencies = [
- "either",
- "fairly_unsafe_cell",
- "ufotofu",
- "ufotofu_queues",
-]
-
-[[package]]
-name = "wb_async_utils"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bde870d22fde63569d9c9ded9b811ac2f5f70f28019c7a1a28cb8bd3c44e3c6c"
@@ -1230,7 +1220,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_queues",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
  "willow-data-model",
 ]
 
@@ -1246,7 +1236,7 @@ dependencies = [
  "smol",
  "ufotofu",
  "ufotofu_codec",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
  "willow-encoding",
 ]
 
@@ -1278,7 +1268,7 @@ dependencies = [
  "ufotofu_codec",
  "ufotofu_codec_endian",
  "ufotofu_queues",
- "wb_async_utils 0.1.0",
+ "wb_async_utils",
  "willow-data-model",
  "willow-encoding",
  "willow-store-simple-sled",
@@ -1295,7 +1285,7 @@ dependencies = [
  "ufotofu_codec",
  "ufotofu_codec_endian",
  "ufotofu_queues",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
  "willow-data-model",
  "willow_25",
 ]
@@ -1310,7 +1300,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_queues",
- "wb_async_utils 0.1.3",
+ "wb_async_utils",
 ]
 
 [[package]]
