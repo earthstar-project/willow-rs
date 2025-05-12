@@ -21,6 +21,7 @@ use crate::{
 /// - spk: the public key corresponding to the `spk`
 /// - protocol_name, prologue: see the spec
 /// - c, p: the consumer and producer that represent the channel over which to communicate with the peer.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_handshake<
     const HASHLEN_IN_BYTES: usize,
     const BLOCKLEN_IN_BYTES: usize,
@@ -482,6 +483,7 @@ where
         self.k = H::digest_to_aeadkey(&tmp_k);
     }
 
+    #[allow(clippy::same_item_push)] // I find the repeated push more clear than computing the correct sizes
     async fn encrypt_key_then_send_and_hash<
         const BLOCKLEN_IN_BYTES: usize,
         const PK_ENCODING_LENGTH_IN_BYTES: usize,
@@ -549,7 +551,7 @@ where
         let mut buf = vec![0; PK_ENCODING_LENGTH_IN_BYTES + TAG_WIDTH_IN_BYTES];
         p.bulk_overwrite_full_slice(&mut buf[..]).await?;
 
-        let old_h = h.clone();
+        let old_h = *h;
         Self::mix_hash::<BLOCKLEN_IN_BYTES, H>(h, &buf[..]);
 
         let zero_nonce = [0u8; NONCE_WIDTH_IN_BYTES];

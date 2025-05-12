@@ -25,6 +25,7 @@ pub trait AEADEncryptionKey<
     );
 
     /// If IS_TAG_PREPENDED, the bytes starting at TAG_WIDTH_IN_BYTES will hold the plaintext, otherwise, all but the final TAG_WIDTH_IN_BYTES bytes will hold the plaintext. cyphertext_with_additional_space must have a length of at least TAG_WIDTH_IN_BYTES.
+    #[allow(clippy::result_unit_err)]
     fn decrypt_inplace(
         &self,
         nonce: &[u8; NONCE_LENGTH_IN_BYTES],
