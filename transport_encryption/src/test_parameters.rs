@@ -76,6 +76,7 @@ impl DiffieHellmanSecretKey for SillyDhSecretKey {
 pub struct SillyAead(pub u8);
 
 impl AEADEncryptionKey<1, 8, false> for SillyAead {
+    #[allow(clippy::needless_range_loop)]
     fn encrypt_inplace(
         &self,
         nonce: &[u8; 8],
@@ -88,9 +89,10 @@ impl AEADEncryptionKey<1, 8, false> for SillyAead {
                 .wrapping_add(self.0)
                 .wrapping_add(nonce[0]);
         }
-        plaintext_with_additional_space[len - 1] = if ad.len() == 0 { self.0 } else { ad[0] };
+        plaintext_with_additional_space[len - 1] = if ad.is_empty() { self.0 } else { ad[0] };
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn decrypt_inplace(
         &self,
         nonce: &[u8; 8],
@@ -104,7 +106,7 @@ impl AEADEncryptionKey<1, 8, false> for SillyAead {
                 .wrapping_sub(nonce[0]);
         }
 
-        let valid = if ad.len() == 0 {
+        let valid = if ad.is_empty() {
             cyphertext_with_tag[len - 1] == self.0
         } else {
             cyphertext_with_tag[len - 1] == ad[0]
