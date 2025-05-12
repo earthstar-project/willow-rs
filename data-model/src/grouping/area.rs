@@ -204,7 +204,7 @@ where
             }
         }
 
-        if !(self.times().includes(&timestamp) || timestamp < self.times().start) {
+        if timestamp < self.times().start {
             return false;
         }
 

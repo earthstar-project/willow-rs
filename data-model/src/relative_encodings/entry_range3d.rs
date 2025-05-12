@@ -77,10 +77,10 @@ where
         }
 
         let time_diff_tag = Tag::min_tag(time_diff, TagWidth::two());
-        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::three());
 
-        header |= time_diff_tag.data_at_offset(4);
-        header |= payload_length_tag.data_at_offset(6);
+        header |= time_diff_tag.data_at_offset(3);
+        header |= payload_length_tag.data_at_offset(5);
 
         consumer.consume(header).await?;
 
@@ -231,7 +231,7 @@ where
             RangeEnd::Open => self.path().relative_len_of_encoding(&out.paths().start),
         };
 
-        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::two());
+        let payload_length_tag = Tag::min_tag(self.payload_length(), TagWidth::three());
         let payload_length_len = CompactU64(self.payload_length())
             .relative_len_of_encoding(&payload_length_tag.encoding_width());
 
@@ -303,12 +303,8 @@ where
     // Add time_diff to out.get_times().start, or subtract from out.get_times().end?
     let add_time_diff_to_start = is_bitflagged(header, 2);
 
-    if is_bitflagged(header, 3) {
-        return Err(DecodeError::Other(Blame::TheirFault));
-    }
-
-    let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 4);
-    let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
+    let time_diff_tag = Tag::from_raw(header, TagWidth::two(), 3);
+    let payload_length_tag = Tag::from_raw(header, TagWidth::three(), 5);
 
     let subspace_id = if is_subspace_encoded {
         if CANONIC {

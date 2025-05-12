@@ -8,10 +8,19 @@ Simple persistent storage for Willow data.
 - Uses [sled](https://docs.rs/sled/latest/sled/) under the hood.
 
 ```rs
-let db = sled::open("my_db").unwrap();
-let namespace = willow_25::NamespaceId25::new_communal();
+use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken25 };
 
-let store = StoreSimpleSled::new(namespace, db).unwrap();
+let db = sled::open("my_db").unwrap();
+let namespace = NamespaceId25::new_communal();
+let store = StoreSimpleSled::<
+    1024,
+    1024,
+    1024,
+    NamespaceId25,
+    SubspaceId25,
+    PayloadDigest25,
+    AuthorisationToken25
+>::new(&namespace, db).unwrap();
 ```
 
 # Performance considerations

@@ -20,9 +20,9 @@ pub struct PathBuilder<const MCL: usize, const MCC: usize, const MPL: usize> {
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC, MPL> {
     /// Creates a builder for a path of known total length and component count.
     /// The component data must be filled in before building.
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(total_length + component_count)`, performs a single allocation of `O(total_length + component_count)` bytes.
     pub fn new(total_length: usize, component_count: usize) -> Result<Self, InvalidPathError> {
         if total_length > MPL {
@@ -54,9 +54,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
 
     /// Creates a builder for a path of known total length and component count, efficiently prefilled with the first `prefix_component_count` components of a given `reference` path. Panics if there are not enough components in the `reference`.
     /// The missing component data must be filled in before building.
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(target_total_length + target_component_count)`, performs a single allocation of `O(total_length + component_count)` bytes.
     pub fn new_from_prefix(
         target_total_length: usize,
@@ -115,9 +115,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     }
 
     /// Appends data for a component of known length by reading data from a [`BulkProducer`] of bytes. Panics if `component_length > MCL`.
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(component_length)` time (assuming the producer takes `O(1)` time per byte). Performs no allocations.
     pub async fn append_component_from_bulk_producer<P>(
         &mut self,
@@ -172,9 +172,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     }
 
     /// Appends the data for the next component.
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(component_length)` time. Performs no allocations.
     pub fn append_component(&mut self, component: Component<MCL>) {
         // Compute the accumulated length for the new component.
@@ -201,9 +201,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// Turn this builder into an immutable [`Path`].
     ///
     /// Panics if the number of components or the total length does not match what was claimed in [`PathBuilder::new`].
-    /// 
+    ///
     /// #### Complexity
-    /// 
+    ///
     /// Runs in `O(1)` time. Performs no allocations.
     pub fn build(self) -> Path<MCL, MCC, MPL> {
         // Check whether we appended the correct number of components.
