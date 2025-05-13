@@ -15,16 +15,18 @@ pub use parameters::*;
 mod messages;
 pub use messages::*;
 
-mod commitment_scheme;
-use commitment_scheme::*;
-use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable};
+use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync};
+use willow_transport_encryption::{
+    parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
+    HandshakeError,
+};
 
 mod data_handles;
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
-    /// The received payload was invalid.
-    PreludeInvalid,
+    /// The handshake went wrong.
+    Handshake(HandshakeError<E, (), E>),
     /// The underlying transport emitted an error.
     Transport(E),
 }
@@ -39,14 +41,30 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WgpsError::Transport(transport_error) => write!(f, "{}", transport_error),
-            WgpsError::PreludeInvalid => write!(f, "The peer sent an invalid prelude."),
+            WgpsError::Handshake(hs_error) => match hs_error {
+                HandshakeError::SendingError(transport_error) => write!(f, "{}", transport_error),
+                HandshakeError::ReceivingError(DecodeError::UnexpectedEndOfInput(())) => write!(
+                    f,
+                    "The peer terminated the transport channel during the handshake."
+                ),
+                HandshakeError::ReceivingError(DecodeError::Producer(err)) => write!(f, "{}", err),
+                HandshakeError::ReceivingError(DecodeError::Other(err)) => write!(f, "{}", err),
+            },
         }
     }
 }
 
-pub struct SyncOptions<const CHALLENGE_LENGTH: usize> {
+pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
     max_payload_power: u8,
-    challenge_nonce: [u8; CHALLENGE_LENGTH],
+    /* Handshake Options */
+    is_initiator: bool,
+    esk: DH,
+    epk: DH::PublicKey,
+    ssk: DH,
+    spk: DH::PublicKey,
+    protocol_name: &'static [u8],
+    prologue: &'prologue [u8],
+    /* End of Handshake Options */
     /// For all lcmux buffers.
     max_queue_capacity: usize,
     /// Only start sending guarantees once the buffer capacity of a logical channel reaches this value.
@@ -55,65 +73,83 @@ pub struct SyncOptions<const CHALLENGE_LENGTH: usize> {
 }
 
 pub async fn sync_with_peer<
-    const CHALLENGE_LENGTH: usize,
-    const CHALLENGE_HASH_LENGTH: usize,
-    CH: ChallengeHash<CHALLENGE_LENGTH, CHALLENGE_HASH_LENGTH>,
+    'prologue,
+    const HASHLEN_IN_BYTES: usize,
+    const BLOCKLEN_IN_BYTES: usize,
+    const PK_ENCODING_LENGTH_IN_BYTES: usize,
+    const TAG_WIDTH_IN_BYTES: usize,
+    const TAG_WIDTH_IN_BYTES_PLUS_2: usize,
+    const TAG_WIDTH_IN_BYTES_PLUS_4096: usize,
+    const NONCE_WIDTH_IN_BYTES: usize,
+    const IS_TAG_PREPENDED: bool,
+    H,
+    DH,
+    AEAD,
     E,
-    C: BulkConsumer<Item = u8, Error = E>,
-    P: BulkProducer<Item = u8, Error = E>,
+    C,
+    P,
 >(
-    options: &SyncOptions<CHALLENGE_LENGTH>,
+    options: &SyncOptions<'prologue, DH>,
     consumer: Mutex<C>,
     producer: Mutex<P>,
-) -> Result<(), WgpsError<E>> {
-    // This is set to `()` once our own prelude has been sent.
-    let sent_own_prelude = OnceCell::<()>::new();
-    // This is set to the prelude received from the peer once it has arrived.
-    let received_prelude = OnceCell::<Prelude<CHALLENGE_HASH_LENGTH>>::new();
+) -> Result<(), WgpsError<E>>
+where
+    DH: DiffieHellmanSecretKey,
+    DH::PublicKey: Default + EncodableSync + EncodableKnownSize + DecodableCanonic,
+    AEAD: Default,
+    H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
+    AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
+    C: BulkConsumer<Item = u8, Error = E>,
+    P: BulkProducer<Item = u8, Error = E>,
+{
+    // // This is set to `()` once our own prelude has been sent.
+    // let max_payload_size = OnceCell::<()>::new();
+    // // This is set to the prelude received from the peer once it has arrived.
+    // let received_max_payload_size = OnceCell::<u64>::new();
 
-    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
-    // If one of these futures needs another unit of work to have been completed, this should be enforced by
-    // calling `some_cell.get().await` for one of the cells defined above.
-    //
-    // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
-    // Since type annotations for async blocks are not possible in today's rust, we instead provide
-    // a type annotation on the return value; that's why the last two lines of each of the following
-    // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
+    // // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    // // If one of these futures needs another unit of work to have been completed, this should be enforced by
+    // // calling `some_cell.get().await` for one of the cells defined above.
+    // //
+    // // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
+    // // Since type annotations for async blocks are not possible in today's rust, we instead provide
+    // // a type annotation on the return value; that's why the last two lines of each of the following
+    // // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
 
-    let _send_prelude = async {
-        let own_prelude = Prelude {
-            max_payload_power: options.max_payload_power,
-            commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
-        };
+    // let _send_prelude = async {
+    //     let own_prelude = Prelude {
+    //         max_payload_power: options.max_payload_power,
+    //         commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
+    //     };
 
-        // Encode our prelude and transmit it.
-        let mut c = consumer.write().await;
-        own_prelude.encode(c.deref_mut()).await?;
+    //     // Encode our prelude and transmit it.
+    //     let mut c = consumer.write().await;
+    //     own_prelude.encode(c.deref_mut()).await?;
 
-        // let mut encoder = SharedEncoder::new(&consumer);
-        // encoder.consume(own_prelude).await?;
+    //     // let mut encoder = SharedEncoder::new(&consumer);
+    //     // encoder.consume(own_prelude).await?;
 
-        // Notify other tasks that our prelude has been successfully sent.
-        let _ = sent_own_prelude.set(());
+    //     // Notify other tasks that our prelude has been successfully sent.
+    //     let _ = max_payload_size.set(());
 
-        let ret: Result<(), WgpsError<E>> = Ok(());
-        ret
-    };
+    //     let ret: Result<(), WgpsError<E>> = Ok(());
+    //     ret
+    // };
 
-    let _receive_prelude = async {
-        let mut p = producer.write().await;
+    // let _receive_prelude = async {
+    //     let mut p = producer.write().await;
 
-        match Prelude::decode_canonic(p.deref_mut()).await {
-            Ok(prelude) => {
-                let _ = received_prelude.set(prelude);
-            }
-            Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
-            Err(_) => return Err(WgpsError::PreludeInvalid),
-        }
+    //     match Prelude::decode_canonic(p.deref_mut()).await {
+    //         Ok(prelude) => {
+    //             let _ = received_max_payload_size.set(prelude);
+    //         }
+    //         Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
+    //         Err(_) => return Err(WgpsError::PreludeInvalid),
+    //     }
 
-        let ret: Result<(), WgpsError<E>> = Ok(());
-        ret
-    };
+    //     let ret: Result<(), WgpsError<E>> = Ok(());
+    //     ret
+    // };
 
     /*
     let lcmux_handling = async {

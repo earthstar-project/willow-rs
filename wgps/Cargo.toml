@@ -13,6 +13,7 @@ ufotofu_queues = { version = "0.6.0", features = ["std"] }
 futures = { version = "0.3.31" }
 either = "1.10.0"
 async_cell = "0.2.2"
+willow-transport-encryption = { path = "../transport_encryption" }
 
 [dev-dependencies]
 smol = "2.0.0"

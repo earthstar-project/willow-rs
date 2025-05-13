@@ -1222,6 +1222,7 @@ dependencies = [
  "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
+ "willow-transport-encryption",
 ]
 
 [[package]]
