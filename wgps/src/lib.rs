@@ -1,7 +1,14 @@
-use std::{future::Future, ops::DerefMut};
+use std::{
+    future::{Future, IntoFuture},
+    ops::DerefMut,
+};
 
+use either::Either::{self, Left, Right};
+use max_payload_size_handling::{
+    ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
+};
 //use lcmux::new_lcmux;
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{Mutex, OnceCell};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -15,10 +22,12 @@ pub use parameters::*;
 mod messages;
 pub use messages::*;
 
+mod max_payload_size_handling;
+
 use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
-    HandshakeError,
+    run_handshake, HandshakeError,
 };
 
 mod data_handles;
@@ -29,11 +38,19 @@ pub enum WgpsError<E> {
     Handshake(HandshakeError<E, (), E>),
     /// The underlying transport emitted an error.
     Transport(E),
+    /// The peer sent an invalid first byte, not indicating a valid max payload size.
+    InvalidMaxPayloadSize,
 }
 
 impl<E> From<E> for WgpsError<E> {
     fn from(value: E) -> Self {
         Self::Transport(value)
+    }
+}
+
+impl<E> From<HandshakeError<E, (), E>> for WgpsError<E> {
+    fn from(value: HandshakeError<E, (), E>) -> Self {
+        Self::Handshake(value)
     }
 }
 
@@ -50,6 +67,10 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
                 HandshakeError::ReceivingError(DecodeError::Producer(err)) => write!(f, "{}", err),
                 HandshakeError::ReceivingError(DecodeError::Other(err)) => write!(f, "{}", err),
             },
+            WgpsError::InvalidMaxPayloadSize => write!(
+                f,
+                "The peer sent an invalid first byte, not indicating a valid max payload size."
+            ),
         }
     }
 }
@@ -90,66 +111,68 @@ pub async fn sync_with_peer<
     P,
 >(
     options: &SyncOptions<'prologue, DH>,
-    consumer: Mutex<C>,
-    producer: Mutex<P>,
+    consumer: C,
+    producer: P,
 ) -> Result<(), WgpsError<E>>
 where
-    DH: DiffieHellmanSecretKey,
-    DH::PublicKey: Default + EncodableSync + EncodableKnownSize + DecodableCanonic,
+    DH: DiffieHellmanSecretKey + Clone,
+    DH::PublicKey: Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
     AEAD: Default,
     H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
     AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
-    C: BulkConsumer<Item = u8, Error = E>,
-    P: BulkProducer<Item = u8, Error = E>,
+    C: BulkConsumer<Item = u8, Final = (), Error = E>,
+    P: BulkProducer<Item = u8, Final = (), Error = E>,
 {
-    // // This is set to `()` once our own prelude has been sent.
-    // let max_payload_size = OnceCell::<()>::new();
-    // // This is set to the prelude received from the peer once it has arrived.
-    // let received_max_payload_size = OnceCell::<u64>::new();
+    let (salt_base, peer_capability_receiver, c, p) = run_handshake::<
+        HASHLEN_IN_BYTES,
+        BLOCKLEN_IN_BYTES,
+        PK_ENCODING_LENGTH_IN_BYTES,
+        TAG_WIDTH_IN_BYTES,
+        TAG_WIDTH_IN_BYTES_PLUS_2,
+        TAG_WIDTH_IN_BYTES_PLUS_4096,
+        NONCE_WIDTH_IN_BYTES,
+        IS_TAG_PREPENDED,
+        H,
+        DH,
+        AEAD,
+        C,
+        P,
+    >(
+        options.is_initiator,
+        options.esk.clone(),
+        options.epk.clone(),
+        options.ssk.clone(),
+        options.spk.clone(),
+        options.protocol_name,
+        options.prologue,
+        consumer,
+        producer,
+    )
+    .await?;
 
-    // // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
-    // // If one of these futures needs another unit of work to have been completed, this should be enforced by
-    // // calling `some_cell.get().await` for one of the cells defined above.
-    // //
-    // // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
-    // // Since type annotations for async blocks are not possible in today's rust, we instead provide
-    // // a type annotation on the return value; that's why the last two lines of each of the following
-    // // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
+    let (our_salt, their_salt) = if options.is_initiator {
+        (salt_base.clone(), invert_bytes(salt_base))
+    } else {
+        (invert_bytes(salt_base.clone()), salt_base)
+    };
 
-    // let _send_prelude = async {
-    //     let own_prelude = Prelude {
-    //         max_payload_power: options.max_payload_power,
-    //         commitment: CH::hash(&options.challenge_nonce), // Hash our challenge nonce to obtain the commitment to send.
-    //     };
+    // This is set to the max payload size received from the peer once it has arrived.
+    let received_max_payload_size = OnceCell::<u64>::new();
 
-    //     // Encode our prelude and transmit it.
-    //     let mut c = consumer.write().await;
-    //     own_prelude.encode(c.deref_mut()).await?;
+    let consumer = Mutex::new(ConsumerButFirstSendByte::new(options.max_payload_power, c));
+    let producer = Mutex::new(ConsumerButFirstSetReceivedMaxPayloadSize::new(
+        &received_max_payload_size,
+        p,
+    ));
 
-    //     // let mut encoder = SharedEncoder::new(&consumer);
-    //     // encoder.consume(own_prelude).await?;
-
-    //     // Notify other tasks that our prelude has been successfully sent.
-    //     let _ = max_payload_size.set(());
-
-    //     let ret: Result<(), WgpsError<E>> = Ok(());
-    //     ret
-    // };
-
-    // let _receive_prelude = async {
-    //     let mut p = producer.write().await;
-
-    //     match Prelude::decode_canonic(p.deref_mut()).await {
-    //         Ok(prelude) => {
-    //             let _ = received_max_payload_size.set(prelude);
-    //         }
-    //         Err(DecodeError::Producer(err)) => return Err(WgpsError::Transport(err)),
-    //         Err(_) => return Err(WgpsError::PreludeInvalid),
-    //     }
-
-    //     let ret: Result<(), WgpsError<E>> = Ok(());
-    //     ret
-    // };
+    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    // If one of these futures needs another unit of work to have been completed, this should be enforced by
+    // calling `some_cell.get().await` for one of the cells defined above.
+    //
+    // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
+    // Since type annotations for async blocks are not possible in today's rust, we instead provide
+    // a type annotation on the return value; that's why the last two lines of each of the following
+    // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
 
     /*
     let lcmux_handling = async {
@@ -186,6 +209,14 @@ where
     let ((), (), ()) = try_join!(send_prelude, receive_prelude, lcmux_handling)?;
     */
     Ok(())
+}
+
+fn invert_bytes<const LEN: usize>(mut bytes: [u8; LEN]) -> [u8; LEN] {
+    for byte in bytes.iter_mut() {
+        *byte = *byte ^ 255;
+    }
+
+    bytes
 }
 
 /// Options to specify how ranges should be partitioned.
