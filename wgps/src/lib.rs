@@ -1,20 +1,15 @@
-use std::{
-    future::{Future, IntoFuture},
-    ops::DerefMut,
-};
+use std::future::Future;
 
-use either::Either::{self, Left, Right};
 use futures::try_join;
 use lcmux::{ChannelOptions, Session};
 use max_payload_size_handling::{
     ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
 };
 //use lcmux::new_lcmux;
-use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
+use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
-    shared_producer::{self, SharedProducer},
-    Mutex, OnceCell,
+    shared_producer::{self, SharedProducer}, OnceCell,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -23,7 +18,6 @@ use willow_data_model::{
 };
 
 mod parameters;
-use parameters::*;
 
 mod messages;
 use messages::*;
@@ -31,7 +25,7 @@ use messages::*;
 mod max_payload_size_handling;
 
 use ufotofu_codec::{
-    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync,
 };
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
@@ -178,9 +172,9 @@ where
     .await?;
 
     let (our_salt, their_salt) = if options.is_initiator {
-        (salt_base.clone(), invert_bytes(salt_base))
+        (salt_base, invert_bytes(salt_base))
     } else {
-        (invert_bytes(salt_base.clone()), salt_base)
+        (invert_bytes(salt_base), salt_base)
     };
 
     // This is set to the max payload size received from the peer once it has arrived.
@@ -210,10 +204,10 @@ where
         Session::new(&lcmux_state, [false, false, true, true]);
     let Session {
         mut bookkeeping,
-        mut global_sender,
-        mut global_receiver,
-        mut channel_senders,
-        mut channel_receivers,
+        global_sender,
+        global_receiver,
+        channel_senders,
+        channel_receivers,
     } = lcmux_session;
 
     // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
@@ -237,7 +231,7 @@ where
 
 fn invert_bytes<const LEN: usize>(mut bytes: [u8; LEN]) -> [u8; LEN] {
     for byte in bytes.iter_mut() {
-        *byte = *byte ^ 255;
+        *byte ^= 255;
     }
 
     bytes
