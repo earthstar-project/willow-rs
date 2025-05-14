@@ -26,9 +26,7 @@ use futures::{
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{
-    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeDecodable, RelativeEncodable,
-};
+use ufotofu_codec::{Decodable, DecodeError, Encodable, EncodableKnownSize};
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -41,8 +39,6 @@ use crate::{
     frames::*,
     server_logic::{self, ReceiveSendToChannelError, ServerLogic},
 };
-
-pub use crate::frames::SendGlobalNibble;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelOptions {
@@ -582,27 +578,19 @@ where
     PR: Deref<Target = shared_producer::State<P>> + Clone,
     CR: Deref<Target = shared_consumer::State<C>> + Clone,
 {
-    pub async fn send_global_message<
-        CMessage: RelativeEncodable<SendGlobalNibble> + GetGlobalNibble,
-    >(
+    pub async fn send_global_message<CMessage: EncodableKnownSize>(
         &mut self,
         message: CMessage,
     ) -> Result<(), C::Error> {
         let mut c = self.state.deref().c.access_consumer().await;
 
-        let nibble = message.control_nibble();
         let header = SendGlobalHeader {
-            encoding_nibble: nibble,
+            length: message.len_of_encoding() as u64,
         };
         header.encode(&mut c).await?;
 
-        message.relative_encode(&mut c, &nibble).await
+        message.encode(&mut c).await
     }
-}
-
-/// A trait for encoding control messages: given a reference to a control message, yields the correspondong [`SendControlNibble`].
-pub trait GetGlobalNibble {
-    fn control_nibble(&self) -> SendGlobalNibble;
 }
 
 /// Receive global messenges from the other peer via the [`Producer`] implementation of this struct. The producer must constantly be read, as it internally decodes and processes all control messages.
@@ -647,7 +635,7 @@ where
     C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
     PR: Deref<Target = shared_producer::State<P>> + Clone,
     CR: Deref<Target = shared_consumer::State<C>> + Clone,
-    GlobalMessage: RelativeDecodable<SendGlobalNibble, GlobalMessageDecodeErrorReason>,
+    GlobalMessage: Decodable<ErrorReason = GlobalMessageDecodeErrorReason>,
 {
     type Item = GlobalMessage;
 
@@ -783,16 +771,14 @@ where
                 }
 
                 // When receiving a SendControl frame header, we can actually produce an item! Yay!
-                IncomingFrameHeader::SendGlobalHeader(SendGlobalHeader { encoding_nibble }) => {
+                IncomingFrameHeader::SendGlobalHeader(SendGlobalHeader { length: _ }) => {
                     // Did the producer end?
                     match p.expose_items().await? {
                         Left(_) => {} // no-op
                         Right(fin) => return Ok(Right(fin)),
                     }
 
-                    return Ok(Left(
-                        GlobalMessage::relative_decode(&mut p, &encoding_nibble).await?,
-                    ));
+                    return Ok(Left(GlobalMessage::decode(&mut p).await?));
                 }
             }
         }
