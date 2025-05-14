@@ -7,7 +7,7 @@ use ufotofu::{
 use crate::parameters::AEADEncryptionKey;
 
 /// The possible errors emitted by an encryptor.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EncryptionError<ConsumerError> {
     /// The inner consumer emitted an error.
     Inner(ConsumerError),

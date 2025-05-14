@@ -86,7 +86,7 @@ where
     pub fn new(
         p: SharedProducer<PR, P>,
         c: SharedConsumer<CR, C>,
-        options: [ChannelOptions; NUM_CHANNELS],
+        options: [&ChannelOptions; NUM_CHANNELS],
     ) -> Self {
         Self {
             channel_states: core::array::from_fn(|i| {

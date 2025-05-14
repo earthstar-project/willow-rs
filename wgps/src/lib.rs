@@ -4,12 +4,18 @@ use std::{
 };
 
 use either::Either::{self, Left, Right};
+use futures::try_join;
+use lcmux::{ChannelOptions, Session};
 use max_payload_size_handling::{
     ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
 };
 //use lcmux::new_lcmux;
 use ufotofu::{BufferedConsumer, BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
-use wb_async_utils::{Mutex, OnceCell};
+use wb_async_utils::{
+    shared_consumer::{self, SharedConsumer},
+    shared_producer::{self, SharedProducer},
+    Mutex, OnceCell,
+};
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
@@ -17,17 +23,19 @@ use willow_data_model::{
 };
 
 mod parameters;
-pub use parameters::*;
+use parameters::*;
 
 mod messages;
-pub use messages::*;
+use messages::*;
 
 mod max_payload_size_handling;
 
-use ufotofu_codec::{DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{
+    Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
-    run_handshake, HandshakeError,
+    run_handshake, EncryptionError, HandshakeError,
 };
 
 mod data_handles;
@@ -40,6 +48,10 @@ pub enum WgpsError<E> {
     Transport(E),
     /// The peer sent an invalid first byte, not indicating a valid max payload size.
     InvalidMaxPayloadSize,
+    /// The peer deviated from the WGPS in some fatal form.
+    PeerMisbehaved,
+    /// Sent or received more than 2^64 noise transport messages.
+    NonceExhausted,
 }
 
 impl<E> From<E> for WgpsError<E> {
@@ -71,6 +83,15 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
                 f,
                 "The peer sent an invalid first byte, not indicating a valid max payload size."
             ),
+            WgpsError::PeerMisbehaved => {
+                write!(f, "The peer deviated from the WGPS in some fatal form.")
+            }
+            WgpsError::NonceExhausted => {
+                write!(
+                    f,
+                    "We sent or received more than 2^64 noise transport messages."
+                )
+            }
         }
     }
 }
@@ -86,6 +107,11 @@ pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
     protocol_name: &'static [u8],
     prologue: &'prologue [u8],
     /* End of Handshake Options */
+    /* LCMUX channel options */
+    reconciliation_channel_options: ChannelOptions,
+    data_channel_options: ChannelOptions,
+    overlap_channel_options: ChannelOptions,
+    capability_channel_options: ChannelOptions,
     /// For all lcmux buffers.
     max_queue_capacity: usize,
     /// Only start sending guarantees once the buffer capacity of a logical channel reaches this value.
@@ -120,6 +146,7 @@ where
     AEAD: Default,
     H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
     AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
+    E: Clone,
     C: BulkConsumer<Item = u8, Final = (), Error = E>,
     P: BulkProducer<Item = u8, Final = (), Error = E>,
 {
@@ -159,55 +186,52 @@ where
     // This is set to the max payload size received from the peer once it has arrived.
     let received_max_payload_size = OnceCell::<u64>::new();
 
-    let consumer = Mutex::new(ConsumerButFirstSendByte::new(options.max_payload_power, c));
-    let producer = Mutex::new(ConsumerButFirstSetReceivedMaxPayloadSize::new(
-        &received_max_payload_size,
-        p,
-    ));
+    let consumer = ConsumerButFirstSendByte::new(options.max_payload_power, c);
+    let producer = ConsumerButFirstSetReceivedMaxPayloadSize::new(&received_max_payload_size, p);
+
+    let shared_consumer_state = shared_consumer::State::new(consumer);
+    let consumer = SharedConsumer::new(&shared_consumer_state);
+
+    let shared_producer_state = shared_producer::State::new(producer);
+    let producer = SharedProducer::new(&shared_producer_state);
+
+    let lcmux_state = lcmux::State::<4, _, _, _, _>::new(
+        producer,
+        consumer,
+        [
+            &options.reconciliation_channel_options,
+            &options.data_channel_options,
+            &options.overlap_channel_options,
+            &options.capability_channel_options,
+        ],
+    );
+
+    let lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> =
+        Session::new(&lcmux_state, [false, false, true, true]);
+    let Session {
+        mut bookkeeping,
+        mut global_sender,
+        mut global_receiver,
+        mut channel_senders,
+        mut channel_receivers,
+    } = lcmux_session;
 
     // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
-    // If one of these futures needs another unit of work to have been completed, this should be enforced by
-    // calling `some_cell.get().await` for one of the cells defined above.
-    //
-    // Each of the futures must evaluate to a `Result<(), WgpsError<E>>`.
-    // Since type annotations for async blocks are not possible in today's rust, we instead provide
-    // a type annotation on the return value; that's why the last two lines of each of the following
-    // async blocks are a weirdly overcomplicated way of returning `Ok(())`.
 
-    /*
-    let lcmux_handling = async {
-        // Everything in here needs to use lcmux.
-        // TODO replace the `i16` with an enum of all supported control messages to receive, once we support any!
-
-        let mut lcmux = new_lcmux::<7, _, _, i16>(
-            &producer,
-            &consumer,
-            options.max_queue_capacity,
-            options.watermark,
-        );
-
-        let reveal_commitment = async {
-            // Before revealing our commitment, we must have both sent our own prelude and received our peer's prelude.
-            let _ = sent_own_prelude.get().await;
-            let _ = received_prelude.get().await;
-
-            let msg = CommitmentReveal {
-                nonce: &options.challenge_nonce,
-            };
-            lcmux.control_message_sender.receive(msg).await?;
-
-            let ret: Result<(), WgpsError<E>> = Ok(());
-            ret
-        };
-
-        let _ = try_join!(reveal_commitment)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
-        Ok(())
+    let do_the_bookkeeping = async {
+        bookkeeping
+            .keep_the_books()
+            .await
+            .map_err::<WgpsError<E>, _>(|err| match err {
+                Some(EncryptionError::Inner(channel_err)) => WgpsError::from(channel_err),
+                Some(EncryptionError::NoncesExhausted) => WgpsError::NonceExhausted,
+                None => WgpsError::PeerMisbehaved,
+            })
     };
 
-    // Add each of the futures here. The macro polls them all to completion, until the first one hits
-    // an error, in which case this function immediately returns with that first error.
-    let ((), (), ()) = try_join!(send_prelude, receive_prelude, lcmux_handling)?;
-    */
+    // Actually run all the concurrent operations of the WGPS.
+    let _ = try_join!(do_the_bookkeeping)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
+
     Ok(())
 }
 
