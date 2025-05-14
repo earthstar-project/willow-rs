@@ -9,7 +9,8 @@ use max_payload_size_handling::{
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
-    shared_producer::{self, SharedProducer}, OnceCell,
+    shared_producer::{self, SharedProducer},
+    OnceCell,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -24,9 +25,7 @@ use messages::*;
 
 mod max_payload_size_handling;
 
-use ufotofu_codec::{
-    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync,
-};
+use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
     run_handshake, EncryptionError, HandshakeError,
