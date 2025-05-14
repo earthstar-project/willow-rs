@@ -26,7 +26,7 @@ pub(crate) struct State<Q> {
     spsc_state: spsc::State<Q, (), ()>,
     // Are we currently dropping all incoming data messages?
     currently_dropping: Cell<bool>,
-    // Notifications about announcing the dropping of messages: `Left(())` imdicates we should send an `AnnounceDropping` message. `Right(Ok(()))` indicates we will never have to do so again because the client signalled so. `<Right(Err(()))` indicates we will never have to do so again because of a client error.
+    // Notifications about announcing the dropping of messages: `Left(amount)` indicates we should send an `AnnounceDropping` message. `Right(Ok(()))` indicates we will never have to do so again because the client signalled so. `<Right(Err(()))` indicates we will never have to do so again because of a client error.
     start_dropping: TakeCell<Either<(), Result<(), ()>>>,
     // Tracks the voluntary bounds on guarantees that the client will use up at most. Updated whenever a new message arrives, and raises an error if the bound is violated. When the bound is reached, the byte buffer for this channel is closed.
     bound: GuaranteeBoundCell,
@@ -167,6 +167,13 @@ where
             if length > (state.max_queue_capacity - self.buffer_sender.len()) as u64 {
                 // Message is too large, drop it and all further messages until the next apology.
                 state.currently_dropping.set(true);
+                // Ensure that any outstanding guarantees will be given  before sending a StartedDropping message.
+                if state.guarantees.get_current_acc() > 0 {
+                    state.guarantees.must_clear();
+                }
+
+                // Signal we should announce dropping, but only after the notification that guarantees must be issued has been delivered.
+                // self.state.guarantees.wait_while_must_clear().await; TODO remove this if things work
                 state.start_dropping.set(Left(()));
 
                 // We need to actively read data from the producer and drop it, and report producer errors if necessary.
@@ -395,7 +402,11 @@ where
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         match self.state.start_dropping.take().await {
-            Left(()) => Ok(Left(())),
+            Left(()) => {
+                // Wait in case that there are guarantees which *must* be given before announcing the dropping.
+                self.state.guarantees.wait_while_must_clear().await;
+                Ok(Left(()))
+            }
             Right(Ok(())) => Ok(Right(())),
             Right(Err(())) => Err(()),
         }
