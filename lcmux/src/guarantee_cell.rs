@@ -236,11 +236,13 @@ mod tests {
 }
 
 /// Manages guarantees via interior mutability. Tracks available guarantees, and allows subscribing to a certain amount to become available.
+/// Also supports a signal to ignore thresholds and signal immediate processing.
 #[derive(Debug)]
 pub(crate) struct GuaranteeCellWithoutBound {
     acc: Cell<u64>,
     threshold: Cell<Option<u64>>,
     notify: TakeCell<Result<Either<(), ()>, ()>>,
+    must_notify: TakeCell<()>, // empty while must notify
 }
 
 impl GuaranteeCellWithoutBound {
@@ -250,6 +252,7 @@ impl GuaranteeCellWithoutBound {
             acc: Cell::new(0),
             threshold: Cell::new(None),
             notify: TakeCell::new(),
+            must_notify: TakeCell::new(),
         }
     }
 
@@ -264,26 +267,37 @@ impl GuaranteeCellWithoutBound {
                 self.acc.set(new_amount);
 
                 // Notify any waiting task if possible/necessary.
-                self.notify_threshold();
+                self.notify_threshold(false);
 
                 Ok(())
             }
         }
     }
 
-    /// Park the task until the given threshold has been reached, reports the value of acc, then reduce acc down to zero.
+    /// Park the task until the given threshold has been reached or self.must_clear() has been called, reports the value of acc, then reduce acc down to zero.
     pub async fn await_threshold_clear(&self, threshold: u64) -> Result<Either<u64, ()>, ()> {
         self.threshold.set(Some(threshold));
-        self.notify_threshold();
+        self.notify_threshold(false);
         let notification = self.notify.take().await;
 
         notification.map(|yay| {
             yay.map_left(|_| {
                 let acc = self.acc.get();
                 self.acc.set(0);
+                self.must_notify.set(());
                 acc
             })
         })
+    }
+
+    pub fn must_clear(&self) {
+        self.notify_threshold(true);
+        let _ = self.must_notify.try_take();
+    }
+
+    pub async fn wait_while_must_clear(&self) {
+        self.must_notify.take().await;
+        self.must_notify.set(());
     }
 
     pub fn get_current_acc(&self) -> u64 {
@@ -298,7 +312,7 @@ impl GuaranteeCellWithoutBound {
         self.notify.set(Err(()))
     }
 
-    fn notify_threshold(&self) {
+    fn notify_threshold(&self, force_notification: bool) {
         // Should we notify anyone?
         if let Some(threshold) = self.threshold.get() {
             // Only do anything if the last value hasn't been set yet.
@@ -306,7 +320,7 @@ impl GuaranteeCellWithoutBound {
                 Some(Ok(Right(()))) | Some(Err(())) => {}
                 _ => {
                     let acc = self.acc.get();
-                    if acc >= threshold {
+                    if acc >= threshold || force_notification {
                         // Yes, and we have enough guarantees.
                         // Notify the waiting task, and reset the threshold. When the task is notified, it decreases the accumulated value again.
                         self.notify.set(Ok(Left(())));
