@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use futures::try_join;
-use lcmux::{ChannelOptions, Session};
+use lcmux::{ChannelOptions, InitOptions, Session};
 use max_payload_size_handling::{
     ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
 };
@@ -28,7 +28,7 @@ mod max_payload_size_handling;
 use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
-    run_handshake, EncryptionError, HandshakeError,
+    run_handshake, DecryptionError, EncryptionError, HandshakeError,
 };
 
 mod data_handles;
@@ -45,11 +45,37 @@ pub enum WgpsError<E> {
     PeerMisbehaved,
     /// Sent or received more than 2^64 noise transport messages.
     NonceExhausted,
+    /// Received invalid cyphertexts or encryption framing data.
+    InvalidEncryption,
+    /// The incoming data stream ended but the end was not cryptographically authenticated. A malicious actor may have cut things off.
+    UnauthenticatedEndOfStream,
 }
 
 impl<E> From<E> for WgpsError<E> {
     fn from(value: E) -> Self {
         Self::Transport(value)
+    }
+}
+
+impl<E> From<EncryptionError<E>> for WgpsError<E> {
+    fn from(value: EncryptionError<E>) -> Self {
+        match value {
+            EncryptionError::Inner(err) => WgpsError::Transport(err),
+            EncryptionError::NoncesExhausted => WgpsError::NonceExhausted,
+        }
+    }
+}
+
+impl<E> From<DecryptionError<E>> for WgpsError<E> {
+    fn from(value: DecryptionError<E>) -> Self {
+        match value {
+            DecryptionError::Inner(err) => WgpsError::Transport(err),
+            DecryptionError::NoncesExhausted => WgpsError::NonceExhausted,
+            DecryptionError::DecryptionFailure
+            | DecryptionError::WeirdEndOfStream
+            | DecryptionError::InvalidHeader => WgpsError::InvalidEncryption,
+            DecryptionError::UnauthenticatedEndOfStream => WgpsError::UnauthenticatedEndOfStream,
+        }
     }
 }
 
@@ -85,31 +111,39 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
                     "We sent or received more than 2^64 noise transport messages."
                 )
             }
+            WgpsError::InvalidEncryption => {
+                write!(
+                    f,
+                    "The peer sent invalid cyphertexts or encryption framing data."
+                )
+            }
+            WgpsError::UnauthenticatedEndOfStream => {
+                write!(f, "The incoming data stream ended, but its end was not cryptographically authenticated. A malicious actor may have cut things off.")
+            }
         }
     }
 }
 
 pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
-    max_payload_power: u8,
+    pub max_payload_power: u8,
     /* Handshake Options */
-    is_initiator: bool,
-    esk: DH,
-    epk: DH::PublicKey,
-    ssk: DH,
-    spk: DH::PublicKey,
-    protocol_name: &'static [u8],
-    prologue: &'prologue [u8],
+    pub is_initiator: bool,
+    pub esk: DH,
+    pub epk: DH::PublicKey,
+    pub ssk: DH,
+    pub spk: DH::PublicKey,
+    pub protocol_name: &'static [u8],
+    pub prologue: &'prologue [u8],
     /* End of Handshake Options */
     /* LCMUX channel options */
-    reconciliation_channel_options: ChannelOptions,
-    data_channel_options: ChannelOptions,
-    overlap_channel_options: ChannelOptions,
-    capability_channel_options: ChannelOptions,
-    /// For all lcmux buffers.
-    max_queue_capacity: usize,
-    /// Only start sending guarantees once the buffer capacity of a logical channel reaches this value.
-    /// Must be at most the max_queue_capacity, or we will never grant any guarantees.
-    watermark: usize,
+    pub reconciliation_channel_options: ChannelOptions,
+    pub data_channel_options: ChannelOptions,
+    pub overlap_channel_options: ChannelOptions,
+    pub capability_channel_options: ChannelOptions,
+    /// How many message bytes to receive at most on the overlap channel.
+    pub overlap_channel_receiving_limit: u64,
+    /// How many message bytes to receive at most on the capability channel.
+    pub capability_channel_receiving_limit: u64,
 }
 
 pub async fn sync_with_peer<
@@ -199,8 +233,26 @@ where
         ],
     );
 
-    let lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> =
+    let mut lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> =
         Session::new(&lcmux_state, [false, false, true, true]);
+
+    lcmux_session
+        .init([
+            InitOptions {
+                receiving_limit: None,
+            },
+            InitOptions {
+                receiving_limit: None,
+            },
+            InitOptions {
+                receiving_limit: Some(options.overlap_channel_receiving_limit),
+            },
+            InitOptions {
+                receiving_limit: Some(options.capability_channel_receiving_limit),
+            },
+        ])
+        .await?;
+
     let Session {
         mut bookkeeping,
         global_sender,

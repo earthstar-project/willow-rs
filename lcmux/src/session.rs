@@ -51,7 +51,7 @@ pub struct ChannelOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InitOptions {
     /// Is there, from the start, an upper bound on how many bytes this channel wants to receive in total.
-    receiving_limit: Option<u64>,
+    pub receiving_limit: Option<u64>,
 }
 
 /// The state for an Lcmux session for channels `0` to `NUM_CHANNELS - 1`.
