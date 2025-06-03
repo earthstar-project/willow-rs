@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 
 use either::Either;
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use ufotofu::{bulk_pipe, BulkConsumer, BulkProducer, Producer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
     RelativeDecodable, RelativeEncodable,
@@ -112,19 +112,24 @@ where
 
     let mut entries_count = 0;
 
+    // TODO: Order / maybe even merge given areas to create the highest probability of efficiently relatively encoded entries.
+
+    // Doing this so we can loop over areas twice.
     let mut next_areas_vec: Vec<Area<MCL, MCC, MPL, S>> = Vec::new();
 
+    // Get the total number of included entries.
     for area in areas {
         entries_count += store.count_area(&area.clone().into()).await;
-
         next_areas_vec.push(area);
     }
 
+    // And encode them into the drop.
     U64BE(entries_count)
         .encode(&mut encrypted_consumer)
         .await
         .map_err(CreateDropError::ConsumerProblem)?;
 
+    // Set the initial entry to relatively encode against
     let mut entry_to_encode_against = Entry::new(
         N::default(),
         S::default(),
@@ -134,9 +139,11 @@ where
         PD::default(),
     );
 
+    // For each area,
     for area in next_areas_vec {
         let aoi: AreaOfInterest<MCL, MCC, MPL, S> = area.into();
 
+        // Get the producer of entries from this area
         let mut entry_producer = store.query_area(
             &aoi,
             &QueryOrder::Subspace,
@@ -152,7 +159,7 @@ where
                 Ok(Either::Left(lengthy)) => {
                     let authed_entry = lengthy.entry();
 
-                    // Encode entry
+                    // Encode entry relative to previously encoded entry
                     let entry = authed_entry.entry();
                     entry
                         .relative_encode(&mut encrypted_consumer, &entry_to_encode_against)
@@ -169,7 +176,12 @@ where
                         .map_err(CreateDropError::ConsumerProblem)?;
 
                     // Consume payload
-                    todo!("Pipe the payload bytes")
+                    let mut payload = store
+                        .payload(entry.payload_digest())
+                        .await
+                        .ok_or(CreateDropError::StoreErr)?;
+
+                    bulk_pipe(&mut payload, &mut encrypted_consumer).await?;
                 }
                 Ok(Either::Right(_)) => {
                     break;
