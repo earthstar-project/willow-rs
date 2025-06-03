@@ -1277,6 +1277,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "willow-sideload"
+version = "0.1.0"
+dependencies = [
+ "ufotofu_codec",
+ "willow-data-model",
+]
+
+[[package]]
 name = "willow-store-simple-sled"
 version = "0.1.0"
 dependencies = [

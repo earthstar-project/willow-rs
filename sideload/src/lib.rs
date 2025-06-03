@@ -1,5 +1,6 @@
-use ufotofu::{Consumer, Producer};
-use ufotofu_codec::{Decodable, EncodableKnownSize, EncodableSync};
+use ufotofu::{BulkConsumer, Consumer, Producer};
+use ufotofu_codec::{Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::Area, AuthorisationToken, NamespaceId, PayloadDigest, Store, SubspaceId,
 };
@@ -35,11 +36,12 @@ pub trait SideloadAuthorisationToken<
 {
 }
 
-pub enum CreateDropError {
+pub enum CreateDropError<ConsumerError> {
     EmptyDrop,
+    ConsumerProblem(ConsumerError),
 }
 
-fn create_drop<
+async fn create_drop<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -57,14 +59,29 @@ fn create_drop<
     encrypt: EncryptFn,
     areas: AreaIterator,
     store: &StoreType,
-) -> Result<(), CreateDropError>
+) -> Result<(), CreateDropError<EncryptedC::Error>>
 where
-    C: Consumer<Item = u8>,
+    C: BulkConsumer<Item = u8>,
+    EncryptedC: BulkConsumer<Item = u8>,
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     AreaIterator: IntoIterator<Item = Area<MCL, MCC, MPL, S>>,
     EncryptFn: Fn(C) -> EncryptedC,
 {
     // https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
+
+    let mut encrypted_consumer = encrypt(consumer);
+
+    let mut entries_count = 0;
+
+    for area in areas {
+        entries_count += store.count_area(&area.into()).await;
+    }
+
+    U64BE(entries_count)
+        .encode(&mut encrypted_consumer)
+        .await
+        .map_err(|err| CreateDropError::ConsumerProblem(err))?;
+
     todo!()
 }
 
