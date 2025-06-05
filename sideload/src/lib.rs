@@ -1,12 +1,12 @@
 use std::convert::Infallible;
 
+use compact_u64::CompactU64;
 use either::Either;
 use ufotofu::{bulk_pipe, BulkConsumer, BulkProducer, Producer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
     RelativeDecodable, RelativeEncodable,
 };
-use ufotofu_codec_endian::U64BE;
 use willow_data_model::{
     grouping::{Area, AreaOfInterest},
     AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, Path, PayloadDigest,
@@ -96,6 +96,7 @@ pub async fn create_drop<
 >(
     consumer: C,
     encrypt: EncryptFn,
+    namespace_id: N,
     areas: AreaIterator,
     store: &StoreType,
 ) -> Result<(), CreateDropError<EncryptedC::Error>>
@@ -124,14 +125,19 @@ where
     }
 
     // And encode them into the drop.
-    U64BE(entries_count)
+    CompactU64(entries_count)
+        .encode(&mut encrypted_consumer)
+        .await
+        .map_err(CreateDropError::ConsumerProblem)?;
+
+    namespace_id
         .encode(&mut encrypted_consumer)
         .await
         .map_err(CreateDropError::ConsumerProblem)?;
 
     // Set the initial entry to relatively encode against
     let mut entry_to_encode_against = Entry::new(
-        N::default(),
+        namespace_id,
         S::default(),
         Path::<MCL, MCC, MPL>::new_empty(),
         0,

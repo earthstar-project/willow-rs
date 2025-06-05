@@ -1280,6 +1280,9 @@ dependencies = [
 name = "willow-sideload"
 version = "0.1.0"
 dependencies = [
+ "compact_u64",
+ "either",
+ "ufotofu",
  "ufotofu_codec",
  "willow-data-model",
 ]
