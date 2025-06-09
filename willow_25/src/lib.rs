@@ -37,3 +37,9 @@ pub use authorisation_token::*;
 
 mod signature;
 pub use signature::*;
+
+pub mod data_model;
+pub use data_model::{
+    Area, AreaOfInterest, AuthorisedEntry, Component, Entry, LengthyAuthorisedEntry, LengthyEntry,
+    OwnedComponent, Path, Range, Range3d, Timestamp,
+};
