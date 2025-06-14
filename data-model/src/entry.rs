@@ -100,6 +100,26 @@ where
     }
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
+where
+    N: PartialEq,
+    S: PartialEq,
+    PD: PartialOrd,
+{
+    /// Returns if this [`Entry`] would be [prefix pruned](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning) by the other.
+    pub fn is_pruned_by(&self, other: &Self) -> bool {
+        if self.namespace_id() == other.namespace_id()
+            && self.subspace_id() == other.subspace_id()
+            && other.is_newer_than(self)
+            && self.path.is_prefixed_by(other.path())
+        {
+            return true;
+        }
+
+        false
+    }
+}
+
 use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
