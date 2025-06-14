@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use ufotofu::BulkProducer;
 use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use willow_data_model::PayloadDigest;
