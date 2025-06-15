@@ -1312,6 +1312,7 @@ dependencies = [
  "blake3",
  "compact_u64",
  "ed25519-dalek",
+ "either",
  "meadowcap",
  "rand 0.8.5",
  "signature",
