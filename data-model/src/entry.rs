@@ -118,6 +118,11 @@ where
 
         false
     }
+
+    /// Returns if this [`Entry`] would cause the other to be [prefix pruned](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning).
+    pub fn prunes(&self, other: &Self) -> bool {
+        other.is_pruned_by(self)
+    }
 }
 
 use ufotofu::{BulkConsumer, BulkProducer};
