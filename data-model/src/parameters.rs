@@ -1,4 +1,5 @@
-use crate::entry::Entry;
+use crate::grouping::Range;
+use crate::{entry::Entry, grouping::RangeEnd};
 use core::fmt::Debug;
 
 /// A type for identifying [namespaces](https://willowprotocol.org/specs/data-model/index.html#namespace).
@@ -18,6 +19,17 @@ pub trait NamespaceId: Eq + Default + Clone + Debug {}
 pub trait SubspaceId: Ord + Default + Clone + Debug {
     /// Returns the next possible value in the set of all [`SubspaceId`], i.e. the (unique) least value that is strictly greater than `self`. Only if there is no greater value at all may this method return `None`.
     fn successor(&self) -> Option<Self>;
+
+    /// Returns a range which *only* [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) the value of `self`.
+    fn singleton_range(&self) -> Range<Self> {
+        match self.successor() {
+            Some(successor) => Range {
+                start: self.clone(),
+                end: RangeEnd::Closed(successor),
+            },
+            None => Range::new_open(self.clone()),
+        }
+    }
 }
 
 /// A totally ordered type for [content-addressing](https://en.wikipedia.org/wiki/Content_addressing) the data that Willow stores.
