@@ -609,7 +609,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Ok(builder.build())
     }
 
-    /// Returns a range which *only* [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) the value of `self`.
+    /// Returns a range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) **exactly** one value, which is that of `self`.
     pub fn singleton_range(&self) -> Range<Self> {
         match self.successor() {
             Some(successor) => Range {
