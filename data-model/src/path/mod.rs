@@ -24,6 +24,8 @@ pub use component::*;
 mod codec; // Nothing to import, the file only provides trait implementations.
 pub use codec::{decode_path_extends_path, encode_path_extends_path};
 
+use crate::grouping::{Range, RangeEnd};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// An error arising from trying to construct a invalid [`Path`] from valid components.
 pub enum InvalidPathError {
@@ -605,6 +607,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         }
 
         Ok(builder.build())
+    }
+
+    /// Returns a range which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range_include) **exactly** one value, which is that of `self`.
+    pub fn singleton_range(&self) -> Range<Self> {
+        match self.successor() {
+            Some(successor) => Range {
+                start: self.clone(),
+                end: RangeEnd::Closed(successor),
+            },
+            None => Range::new_open(self.clone()),
+        }
     }
 }
 
