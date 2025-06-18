@@ -42,4 +42,6 @@ pub use data_model::{
 };
 
 pub mod meadowcap;
-pub use meadowcap::{AuthorisationToken, Capability, CommunalCapability, OwnedCapability};
+pub use meadowcap::{
+    AccessMode, AuthorisationToken, Capability, CommunalCapability, OwnedCapability,
+};
