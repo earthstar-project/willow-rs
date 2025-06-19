@@ -1,4 +1,4 @@
-use crate::{AuthorisationToken25, NamespaceId25, PayloadDigest25, SubspaceId25};
+use crate::{AuthorisationToken, NamespaceId25, PayloadDigest25, SubspaceId25};
 
 pub type Component<'a> = willow_data_model::Component<'a, 1024>;
 pub type OwnedComponent = willow_data_model::OwnedComponent<1024>;
@@ -15,7 +15,7 @@ pub type AuthorisedEntry = willow_data_model::AuthorisedEntry<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
 >;
 pub type LengthyAuthorisedEntry = willow_data_model::LengthyAuthorisedEntry<
     1024,
@@ -24,7 +24,7 @@ pub type LengthyAuthorisedEntry = willow_data_model::LengthyAuthorisedEntry<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
 >;
 
 // Grouping
@@ -51,7 +51,7 @@ pub type EventSystem<Err> = willow_data_model::EventSystem<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
     Err,
 >;
 
@@ -62,7 +62,7 @@ pub type Subscriber<Err> = willow_data_model::Subscriber<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
     Err,
 >;
 
@@ -73,7 +73,7 @@ pub type EntryIngestionSuccess = willow_data_model::EntryIngestionSuccess<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
 >;
 
 pub type StoreEvent = willow_data_model::StoreEvent<
@@ -83,10 +83,11 @@ pub type StoreEvent = willow_data_model::StoreEvent<
     NamespaceId25,
     SubspaceId25,
     PayloadDigest25,
-    AuthorisationToken25,
+    AuthorisationToken,
 >;
 
 // Straight re-exports for convenience' sake.
+pub use willow_data_model::grouping::AreaSubspace;
 pub use willow_data_model::grouping::Range;
 pub use willow_data_model::AreaNotAlmostIncludedError;
 pub use willow_data_model::ComponentsNotRelatedError;
