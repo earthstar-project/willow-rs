@@ -87,6 +87,7 @@ pub type StoreEvent = willow_data_model::StoreEvent<
 >;
 
 // Straight re-exports for convenience' sake.
+pub use willow_data_model::grouping::AreaSubspace;
 pub use willow_data_model::grouping::Range;
 pub use willow_data_model::AreaNotAlmostIncludedError;
 pub use willow_data_model::ComponentsNotRelatedError;
