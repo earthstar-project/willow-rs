@@ -10,7 +10,6 @@ use crate::{SillyPublicKey, SillySig};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
-use either::Either;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
@@ -18,6 +17,37 @@ use ufotofu_codec::{
 };
 use willow_data_model::{grouping::Area, Entry, PayloadDigest, TrustedRelativeDecodable};
 use willow_encoding::is_bitflagged;
+
+/// Returned when a [`AuthorisationToken`] could not be created for a given [`Entry`] using `self`.
+#[derive(Debug)]
+pub enum TokenCreationError<SE> {
+    NotAWriteCapability,
+    WrongNamespace,
+    OutsideGrantedArea,
+    SigningError(SE),
+}
+
+impl<SE: std::fmt::Display> core::fmt::Display for TokenCreationError<SE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenCreationError::NotAWriteCapability => write!(
+                f,
+                "Tried to create an authorisation token (which are only for writing entries) with a read capability."
+            ),
+            TokenCreationError::WrongNamespace => write!(
+                f,
+                "Entry's namespace ID did not match capability's namespace ID."
+            ),
+            TokenCreationError::OutsideGrantedArea => write!(
+                f,
+                "Entry was not included by the capability's granted area."
+            ),
+            TokenCreationError::SigningError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl<SE: std::fmt::Display + std::fmt::Debug> std::error::Error for TokenCreationError<SE> {}
 
 /// Returned when an operation only applicable to a capability with access mode [`AccessMode::Write`] was called on a capability with access mode [`AccessMode::Read`].
 #[derive(Debug)]
@@ -262,14 +292,22 @@ where
             UserPublicKey,
             UserSignature,
         >,
-        Either<NotAWriteCapabilityError, SignatureError>,
+        TokenCreationError<SignatureError>,
     >
     where
         UserSecret: Signer<UserSignature>,
         PD: PayloadDigest + EncodableSync + EncodableKnownSize,
     {
+        if entry.namespace_id() != self.granted_namespace() {
+            return Err(TokenCreationError::WrongNamespace);
+        }
+
+        if !self.granted_area().includes_entry(entry) {
+            return Err(TokenCreationError::OutsideGrantedArea);
+        }
+
         match self.access_mode() {
-            AccessMode::Read => Err(Either::Left(NotAWriteCapabilityError)),
+            AccessMode::Read => Err(TokenCreationError::NotAWriteCapability),
             AccessMode::Write => {
                 let message = entry.sync_encode_into_boxed_slice();
 
@@ -277,7 +315,7 @@ where
 
                 self.receiver()
                     .verify(&message, &signature)
-                    .map_err(Either::Right)?;
+                    .map_err(TokenCreationError::SigningError)?;
 
                 Ok(McAuthorisationToken {
                     capability: self.clone(),
