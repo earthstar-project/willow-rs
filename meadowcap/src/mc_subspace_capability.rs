@@ -238,23 +238,12 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        let mut header = 0;
-
         let delegations_count = self.delegations.len() as u64;
-
-        let tag = Tag::min_tag(delegations_count, TagWidth::eight());
-
-        header |= tag.data();
-
-        consumer.consume(header).await?;
 
         Encodable::encode(&self.namespace_key, consumer).await?;
         Encodable::encode(&self.user_key, consumer).await?;
         Encodable::encode(&self.initial_authorisation, consumer).await?;
-
-        CompactU64(delegations_count)
-            .relative_encode(consumer, &tag.encoding_width())
-            .await?;
+        CompactU64(delegations_count).encode(consumer).await?;
 
         for delegation in self.delegations.iter() {
             Encodable::encode(delegation.user(), consumer).await?;
@@ -290,7 +279,8 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        Self::decode_canonic(producer).await
+        todo!("must not be canonic only");
+        // Self::decode_canonic(producer).await
     }
 }
 
@@ -319,8 +309,6 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let header = producer.produce_item().await?;
-
         let namespace_key = NamespacePublicKey::decode_canonic(producer)
             .await
             .map_err(DecodeError::map_other_from)?;
@@ -334,9 +322,7 @@ where
         let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
             .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
 
-        let tag = Tag::from_raw(header, TagWidth::eight(), 0);
-
-        let delegations_to_decode = CompactU64::relative_decode_canonic(producer, &tag)
+        let delegations_to_decode = CompactU64::decode_canonic(producer)
             .await
             .map_err(DecodeError::map_other_from)?
             .0;
@@ -418,7 +404,7 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        consumer.consume(0x2).await?;
+        consumer.consume(0x4).await?;
         self.0.encode(consumer).await?;
 
         Ok(())
