@@ -1,6 +1,11 @@
 use signature::Verifier;
-use ufotofu_codec::{EncodableKnownSize, EncodableSync};
-use willow_data_model::{AuthorisationToken, Entry, PayloadDigest};
+use ufotofu_codec::{
+    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable,
+};
+use willow_data_model::{
+    grouping::Area, AuthorisationToken, Entry, PayloadDigest, TrustedDecodable,
+    TrustedRelativeDecodable,
+};
 
 use crate::{mc_capability::McCapability, AccessMode, McNamespacePublicKey, McPublicUserKey};
 
@@ -126,6 +131,91 @@ where
         }
 
         true
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Encodable
+    for McAuthorisationToken<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: Encodable,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        self.capability
+            .relative_encode(consumer, &Area::new_full())
+            .await?;
+        self.signature.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > TrustedDecodable
+    for McAuthorisationToken<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    Blame: From<NamespacePublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorCanonic>
+        + From<NamespaceSignature::ErrorReason>
+        + From<UserSignature::ErrorReason>,
+{
+    async unsafe fn trusted_decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        let capability = McCapability::trusted_relative_decode(producer, &Area::new_full()).await?;
+        let signature = UserSignature::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(McAuthorisationToken {
+            capability,
+            signature,
+        })
     }
 }
 
