@@ -127,7 +127,7 @@ impl<
                 });
             }
 
-            if p.subspace_id().is_any() {
+            if !p.subspace_id().is_any() {
                 let relaxation = prefix_interest.relax();
                 let snd_hash = (self.h)(&relaxation, &self.their_salt());
 
@@ -175,7 +175,9 @@ impl<
                 // Overlap does not count if neither peer is actually interested.
                 if info.not_a_relaxation || actually_interested {
                     overlaps.push(Overlap {
-                        actually_equal: info.not_a_relaxation && actually_interested,
+                        actually_equal: info.has_original_path
+                            && info.not_a_relaxation
+                            && actually_interested,
                         awkward: !actually_interested,
                         my_interesting_handle: info.interesting_handle,
                         their_handle,
@@ -369,7 +371,13 @@ mod tests {
         );
 
         // me: gemma, l   they: gemma, m
-        assert_mine(&mut my_registry, &namespace, Some(&subspace), &["l"], vec![]);
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["l"],
+            vec![],
+        );
         assert_theirs(
             &mut my_registry,
             &mut their_registry,
@@ -381,7 +389,13 @@ mod tests {
         );
 
         // me: gemma, n   they: gemma, n/o
-        assert_mine(&mut my_registry, &namespace, Some(&subspace), &["n"], vec![]);
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["n"],
+            vec![],
+        );
         assert_theirs(
             &mut my_registry,
             &mut their_registry,
@@ -393,7 +407,13 @@ mod tests {
         );
 
         // me: gemma, p   they: dalton, q
-        assert_mine(&mut my_registry, &namespace, Some(&subspace), &["p"], vec![]);
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["p"],
+            vec![],
+        );
         assert_theirs(
             &mut my_registry,
             &mut their_registry,
@@ -405,7 +425,13 @@ mod tests {
         );
 
         // me: gemma, r   they: dalton, r/s
-        assert_mine(&mut my_registry, &namespace, Some(&subspace), &["r"], vec![]);
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["r"],
+            vec![],
+        );
         assert_theirs(
             &mut my_registry,
             &mut their_registry,
@@ -415,6 +441,193 @@ mod tests {
             vec![],
             vec![],
         );
+    }
+
+    // The examples from the pio spec, but fromthe perspective of the right peer!
+    #[test]
+    fn spec_examples_reversed() {
+        let my_salt = [0u8; 16];
+        let their_salt = [255u8; 16];
+        let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
+            HashRegistry::new(my_salt, h);
+        let mut their_registry: HashRegistry<
+            16,
+            32,
+            1024,
+            1024,
+            1024,
+            NamespaceId25,
+            SubspaceId25,
+        > = HashRegistry::new(their_salt, h);
+
+        let namespace = NamespaceId25::new_communal();
+        let (subspace, _) = SubspaceId25::new();
+        let (other_subspace, _) = SubspaceId25::new();
+
+        // me: gemma, a   they: gemma, a
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![Overlap {
+                actually_equal: true,
+                awkward: false,
+                my_interesting_handle: 0,
+                their_handle: 0,
+            }],
+            vec![],
+        );
+
+        // me: any, c   they: any, b
+        assert_mine(&mut my_registry, &namespace, None, &["c"], vec![]);
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["b"],
+            vec![],
+            vec![],
+        );
+
+        // me: any, d/e   they: any, d
+        assert_mine(&mut my_registry, &namespace, None, &["d", "e"], vec![]);
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["d"],
+            vec![Overlap {
+                actually_equal: false,
+                awkward: false,
+                my_interesting_handle: 3,
+                their_handle: 3,
+            }],
+            vec![],
+        );
+
+        // // me: any, f   they: gemma, g
+        // assert_mine(&mut my_registry, &namespace, None, &["f"], vec![]);
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["g"],
+        //     vec![],
+        //     vec![],
+        // );
+
+        // // me: any, h   they: gemma, h/i
+        // assert_mine(&mut my_registry, &namespace, None, &["h"], vec![]);
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["h", "i"],
+        //     vec![],
+        //     vec![],
+        // );
+
+        // // me: any, j/k   they: gemma, j   awkward!
+        // assert_mine(&mut my_registry, &namespace, None, &["j", "k"], vec![]);
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["j"],
+        //     vec![],
+        //     vec![Overlap {
+        //         actually_equal: false,
+        //         awkward: true,
+        //         my_interesting_handle: 6,
+        //         their_handle: 9,
+        //     }],
+        // );
+
+        // // me: gemma, l   they: gemma, m
+        // assert_mine(
+        //     &mut my_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["l"],
+        //     vec![],
+        // );
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["m"],
+        //     vec![],
+        //     vec![],
+        // );
+
+        // // me: gemma, n   they: gemma, n/o
+        // assert_mine(
+        //     &mut my_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["n"],
+        //     vec![],
+        // );
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["n", "o"],
+        //     vec![],
+        //     vec![],
+        // );
+
+        // // me: gemma, p   they: dalton, q
+        // assert_mine(
+        //     &mut my_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["p"],
+        //     vec![],
+        // );
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&other_subspace),
+        //     &["q"],
+        //     vec![],
+        //     vec![],
+        // );
+
+        // // me: gemma, r   they: dalton, r/s
+        // assert_mine(
+        //     &mut my_registry,
+        //     &namespace,
+        //     Some(&subspace),
+        //     &["r"],
+        //     vec![],
+        // );
+        // assert_theirs(
+        //     &mut my_registry,
+        //     &mut their_registry,
+        //     &namespace,
+        //     Some(&other_subspace),
+        //     &["r", "s"],
+        //     vec![],
+        //     vec![],
+        // );
     }
 
     fn assert_mine(
@@ -456,6 +669,7 @@ mod tests {
             ));
 
         let fst_overlaps = my_registry.add_their_incoming_binding(fst_hash, true);
+        // println!("fst: {:?}, {:?}, {:?}", namespace, subspace, path_components);
         assert_eq!(
             fst_overlaps, fst_expected,
             "fst_hash: {:?}\n{:#?}",
@@ -463,8 +677,10 @@ mod tests {
         );
 
         if let Some(snd) = snd_hash {
+            // println!("snd: {:?}, {:?}, {:?}", namespace, subspace, path_components);
             let snd_overlaps = my_registry.add_their_incoming_binding(snd, false);
-            assert_eq!(snd_overlaps, snd_expected);
+            assert_eq!(snd_overlaps, snd_expected, "snd_hash: {:?}\n{:#?}",
+            snd, my_registry);
         }
     }
 
