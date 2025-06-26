@@ -2,15 +2,10 @@ use std::future::Future;
 
 use futures::try_join;
 use lcmux::{ChannelOptions, InitOptions, Session};
-use max_payload_size_handling::{
-    ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
-};
-//use lcmux::new_lcmux;
 use ufotofu::{BulkConsumer, BulkProducer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    OnceCell,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -23,15 +18,14 @@ mod parameters;
 mod messages;
 use messages::*;
 
-mod max_payload_size_handling;
-
 use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
     run_handshake, DecryptionError, EncryptionError, HandshakeError,
 };
 
-mod data_handles;
+pub mod data_handles;
+mod pio;
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
@@ -125,7 +119,6 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
 }
 
 pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
-    pub max_payload_power: u8,
     /* Handshake Options */
     pub is_initiator: bool,
     pub esk: DH,
@@ -210,16 +203,10 @@ where
         (invert_bytes(salt_base), salt_base)
     };
 
-    // This is set to the max payload size received from the peer once it has arrived.
-    let received_max_payload_size = OnceCell::<u64>::new();
-
-    let consumer = ConsumerButFirstSendByte::new(options.max_payload_power, c);
-    let producer = ConsumerButFirstSetReceivedMaxPayloadSize::new(&received_max_payload_size, p);
-
-    let shared_consumer_state = shared_consumer::State::new(consumer);
+    let shared_consumer_state = shared_consumer::State::new(c);
     let consumer = SharedConsumer::new(&shared_consumer_state);
 
-    let shared_producer_state = shared_producer::State::new(producer);
+    let shared_producer_state = shared_producer::State::new(p);
     let producer = SharedProducer::new(&shared_producer_state);
 
     let lcmux_state = lcmux::State::<4, _, _, _, _>::new(

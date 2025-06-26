@@ -12,7 +12,7 @@ use willow_data_model::SubspaceId;
 use arbitrary::Arbitrary;
 
 /// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) public key suitable for the Willow Data Model's [`SubspaceId`](https://willowprotocol.org/specs/data-model/index.html#SubspaceId) parameter, and Meadowcap's [`UserPublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#UserPublicKey) parameter.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct SubspaceId25([u8; PUBLIC_KEY_LENGTH]);
 

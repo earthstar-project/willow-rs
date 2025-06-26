@@ -377,7 +377,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Representation::total_length(&self.data, component_count)
     }
 
-    /// Creates an iterator over all prefixes of this path (including th empty path and the path itself).
+    /// Creates an iterator over all prefixes of this path (including the empty path and the path itself).
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///

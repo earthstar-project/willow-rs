@@ -11,7 +11,7 @@ use crate::{
     Entry, NamespaceId, Path, PayloadDigest, PrivatePathContext, SubspaceId,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 /// Confidential data that relates to determining the AreasOfInterest that peers might be interested in synchronising.
 // TODO: Move this all to WGPS?
 pub struct PrivateInterest<
@@ -29,6 +29,14 @@ pub struct PrivateInterest<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
     PrivateInterest<MCL, MCC, MPL, N, S>
 {
+    pub fn new(namespace_id: N, subspace_id: AreaSubspace<S>, path: Path<MCL, MCC, MPL>) -> Self {
+        Self {
+            namespace_id,
+            subspace_id,
+            path,
+        }
+    }
+
     pub fn namespace_id(&self) -> &N {
         &self.namespace_id
     }
@@ -106,6 +114,17 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
         };
 
         subspace_is_fine && self.path.is_related(area.path())
+    }
+
+    /// Clones self, but replaces the subspace id with `any`.
+    pub fn relax(&self) -> Self {
+        let mut cloned = self.clone();
+
+        if !self.subspace_id.is_any() {
+            cloned.subspace_id = AreaSubspace::Any;
+        }
+
+        return cloned;
     }
 }
 

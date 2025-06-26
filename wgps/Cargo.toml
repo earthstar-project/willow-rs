@@ -14,9 +14,11 @@ futures = { version = "0.3.31" }
 either = "1.10.0"
 async_cell = "0.2.2"
 willow-transport-encryption = { path = "../transport_encryption" }
+multimap = "0.10.1"
 
 [dev-dependencies]
 smol = "2.0.0"
+willow_25 = { path = "../willow_25" }
 
 [lints]
 workspace = true
