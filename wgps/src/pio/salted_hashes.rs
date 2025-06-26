@@ -21,10 +21,10 @@ pub(crate) struct HashRegistry<
     my_handles: HashMapHandleStore<MyHandleInfo<MCL, MCC, MPL, N, S>>,
     my_local_hashes: MultiMap<[u8; INTEREST_HASH_LENGTH], LocalHashInfo>,
     their_handles: HashMapHandleStore<bool>,
-    their_hashes: HashMap<
+    their_hashes: MultiMap<
         [u8; INTEREST_HASH_LENGTH],
         (
-            u64,  /* handles in self.their_handles */
+            u64,  /* handle in self.their_handles */
             bool, /* actually interested */
         ),
     >,
@@ -52,7 +52,7 @@ impl<
             h,
             my_handles: HashMapHandleStore::new(u64::MAX),
             my_local_hashes: MultiMap::new(),
-            their_hashes: HashMap::new(),
+            their_hashes: MultiMap::new(),
             their_handles: HashMapHandleStore::new(u64::MAX),
         }
     }
@@ -116,15 +116,16 @@ impl<
                 },
             );
 
-            if let Some((their_handle, they_are_actually_interested)) =
-                self.their_hashes.get(&fst_hash)
-            {
-                overlaps.push(Overlap {
-                    actually_equal: is_original && *they_are_actually_interested,
-                    awkward: !they_are_actually_interested,
-                    my_interesting_handle: interesting_handle,
-                    their_handle: *their_handle,
-                });
+            if let Some(their_stuff) = self.their_hashes.get_vec(&fst_hash) {
+                for (their_handle, they_are_actually_interested) in their_stuff {
+                    overlaps.push(Overlap {
+                        should_request_capability: !is_original,
+                        should_send_capability: is_original,
+                        awkward: !they_are_actually_interested && !is_original,
+                        my_interesting_handle: interesting_handle,
+                        their_handle: *their_handle,
+                    });
+                }
             }
 
             if !p.subspace_id().is_any() {
@@ -140,16 +141,17 @@ impl<
                     },
                 );
 
-                if let Some((their_handle, they_are_actually_interested)) =
-                    self.their_hashes.get(&snd_hash)
-                {
-                    if *they_are_actually_interested {
-                        overlaps.push(Overlap {
-                            actually_equal: false,
-                            awkward: false,
-                            my_interesting_handle: interesting_handle,
-                            their_handle: *their_handle,
-                        });
+                if let Some(their_stuff) = self.their_hashes.get_vec(&snd_hash) {
+                    for (their_handle, they_are_actually_interested) in their_stuff {
+                        if *they_are_actually_interested {
+                            overlaps.push(Overlap {
+                                should_request_capability: !is_original,
+                                should_send_capability: false,
+                                awkward: false,
+                                my_interesting_handle: interesting_handle,
+                                their_handle: *their_handle,
+                            });
+                        }
                     }
                 }
             }
@@ -175,10 +177,9 @@ impl<
                 // Overlap does not count if neither peer is actually interested.
                 if info.not_a_relaxation || actually_interested {
                     overlaps.push(Overlap {
-                        actually_equal: info.has_original_path
-                            && info.not_a_relaxation
-                            && actually_interested,
-                        awkward: !actually_interested,
+                        should_request_capability: !info.has_original_path,
+                        should_send_capability: info.has_original_path && info.not_a_relaxation,
+                        awkward: !actually_interested && !info.has_original_path,
                         my_interesting_handle: info.interesting_handle,
                         their_handle,
                     });
@@ -244,8 +245,8 @@ pub struct MyInterestingHandleInfo<
 /// Information to report when an overlap has been detected.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Overlap {
-    /// The interest of ours and of theirs that resulted in this overlap were equal.
-    pub actually_equal: bool,
+    pub should_request_capability: bool,
+    pub should_send_capability: bool,
     /// This overlap corresponds to an awkward pair.
     pub awkward: bool,
     /// The resource handle we sent with boolean `true` that correspond to this hash.
@@ -297,7 +298,8 @@ mod tests {
             Some(&subspace),
             &["a"],
             vec![Overlap {
-                actually_equal: true,
+                should_request_capability: false,
+                should_send_capability: true,
                 awkward: false,
                 my_interesting_handle: 0,
                 their_handle: 0,
@@ -363,7 +365,8 @@ mod tests {
             &["j"],
             vec![],
             vec![Overlap {
-                actually_equal: false,
+                should_request_capability: true,
+                should_send_capability: false,
                 awkward: true,
                 my_interesting_handle: 6,
                 their_handle: 9,
@@ -441,11 +444,243 @@ mod tests {
             vec![],
             vec![],
         );
+
+        // me: any, t   they: gemma, t
+        assert_mine(&mut my_registry, &namespace, None, &["t"], vec![]);
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["t"],
+            vec![],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: true,
+                awkward: false,
+                my_interesting_handle: 15,
+                their_handle: 19,
+            }],
+        );
     }
 
-    // The examples from the pio spec, but fromthe perspective of the right peer!
+    // In this test, the right peer sends its messages first.
     #[test]
     fn spec_examples_reversed() {
+        let my_salt = [0u8; 16];
+        let their_salt = [255u8; 16];
+        let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
+            HashRegistry::new(my_salt, h);
+        let mut their_registry: HashRegistry<
+            16,
+            32,
+            1024,
+            1024,
+            1024,
+            NamespaceId25,
+            SubspaceId25,
+        > = HashRegistry::new(their_salt, h);
+
+        let namespace = NamespaceId25::new_communal();
+        let (subspace, _) = SubspaceId25::new();
+        let (other_subspace, _) = SubspaceId25::new();
+
+        // they: gemma, a   me: gemma, a
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: true,
+                awkward: false,
+                my_interesting_handle: 0,
+                their_handle: 0,
+            }],
+        );
+
+        // they: any, c   me: any, b
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["c"],
+            vec![],
+            vec![],
+        );
+        assert_mine(&mut my_registry, &namespace, None, &["b"], vec![]);
+
+        // they: any, d/e   me: any, d
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["d", "e"],
+            vec![],
+            vec![],
+        );
+        assert_mine(&mut my_registry, &namespace, None, &["d"], vec![]);
+
+        // they: gemma, g   me: any, f
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["g"],
+            vec![],
+            vec![],
+        );
+        assert_mine(&mut my_registry, &namespace, None, &["f"], vec![]);
+
+        // they: gemma, h/i   me: any, h
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["h", "i"],
+            vec![],
+            vec![],
+        );
+        assert_mine(&mut my_registry, &namespace, None, &["h"], vec![]);
+
+        // they: gemma, j   me: any, j/k   awkward!
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["j"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            None,
+            &["j", "k"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: true,
+                my_interesting_handle: 6,
+                their_handle: 9,
+            }],
+        );
+
+        // they: gemma, m   me: gemma, l
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["m"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["l"],
+            vec![],
+        );
+
+        // they: gemma, n/o   me: gemma, n
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["n", "o"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["n"],
+            vec![],
+        );
+
+        // they: dalton, q   me: gemma, p
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["q"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["p"],
+            vec![],
+        );
+
+        // they: dalton, r/s   me: gemma, r
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["r", "s"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["r"],
+            vec![],
+        );
+
+        // they: gemma, t   me: any, t
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["t"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            None,
+            &["t"],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: true,
+                awkward: false,
+                my_interesting_handle: 15,
+                their_handle: 19,
+            }],
+        );
+    }
+
+    // The examples from the pio spec, but from the perspective of the right peer!
+    #[test]
+    fn spec_examples_mirrored() {
         let my_salt = [0u8; 16];
         let their_salt = [255u8; 16];
         let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
@@ -479,7 +714,8 @@ mod tests {
             Some(&subspace),
             &["a"],
             vec![Overlap {
-                actually_equal: true,
+                should_request_capability: false,
+                should_send_capability: true,
                 awkward: false,
                 my_interesting_handle: 0,
                 their_handle: 0,
@@ -508,7 +744,8 @@ mod tests {
             None,
             &["d"],
             vec![Overlap {
-                actually_equal: false,
+                should_request_capability: true,
+                should_send_capability: false,
                 awkward: false,
                 my_interesting_handle: 3,
                 their_handle: 3,
@@ -516,118 +753,536 @@ mod tests {
             vec![],
         );
 
-        // // me: any, f   they: gemma, g
-        // assert_mine(&mut my_registry, &namespace, None, &["f"], vec![]);
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["g"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: gemma, g   they: any, f
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["g"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["f"],
+            vec![],
+            vec![],
+        );
 
-        // // me: any, h   they: gemma, h/i
-        // assert_mine(&mut my_registry, &namespace, None, &["h"], vec![]);
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["h", "i"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: gemma, h/i   they: any, h
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["h", "i"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["h"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 6,
+                their_handle: 5,
+            }],
+            vec![],
+        );
 
-        // // me: any, j/k   they: gemma, j   awkward!
-        // assert_mine(&mut my_registry, &namespace, None, &["j", "k"], vec![]);
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["j"],
-        //     vec![],
-        //     vec![Overlap {
-        //         actually_equal: false,
-        //         awkward: true,
-        //         my_interesting_handle: 6,
-        //         their_handle: 9,
-        //     }],
-        // );
+        // me: gemma, j   they: any, j/k   awkward!
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["j"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["j", "k"],
+            vec![],
+            vec![],
+        );
 
-        // // me: gemma, l   they: gemma, m
-        // assert_mine(
-        //     &mut my_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["l"],
-        //     vec![],
-        // );
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["m"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: gemma, m   they: gemma, l
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["m"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["l"],
+            vec![],
+            vec![],
+        );
 
-        // // me: gemma, n   they: gemma, n/o
-        // assert_mine(
-        //     &mut my_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["n"],
-        //     vec![],
-        // );
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["n", "o"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: gemma, n/o   they: gemma, n
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["n", "o"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["n"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 12,
+                their_handle: 9,
+            }],
+            vec![],
+        );
 
-        // // me: gemma, p   they: dalton, q
-        // assert_mine(
-        //     &mut my_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["p"],
-        //     vec![],
-        // );
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&other_subspace),
-        //     &["q"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: dalton, q   they: gemma, p
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["q"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["p"],
+            vec![],
+            vec![],
+        );
 
-        // // me: gemma, r   they: dalton, r/s
-        // assert_mine(
-        //     &mut my_registry,
-        //     &namespace,
-        //     Some(&subspace),
-        //     &["r"],
-        //     vec![],
-        // );
-        // assert_theirs(
-        //     &mut my_registry,
-        //     &mut their_registry,
-        //     &namespace,
-        //     Some(&other_subspace),
-        //     &["r", "s"],
-        //     vec![],
-        //     vec![],
-        // );
+        // me: dalton, r/s  they:  gemma, r
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["r", "s"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["r"],
+            vec![],
+            vec![],
+        );
+
+        // me: gemma, t   they: any, t
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["t"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["t"],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 18,
+                their_handle: 15,
+            }],
+            vec![],
+        );
+    }
+
+    // The examples from the pio spec, but from the perspective of the right peer, and with the right peer sending first.
+    #[test]
+    fn spec_examples_mirrored_reversed() {
+        let my_salt = [0u8; 16];
+        let their_salt = [255u8; 16];
+        let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
+            HashRegistry::new(my_salt, h);
+        let mut their_registry: HashRegistry<
+            16,
+            32,
+            1024,
+            1024,
+            1024,
+            NamespaceId25,
+            SubspaceId25,
+        > = HashRegistry::new(their_salt, h);
+
+        let namespace = NamespaceId25::new_communal();
+        let (subspace, _) = SubspaceId25::new();
+        let (other_subspace, _) = SubspaceId25::new();
+
+        // they: gemma, a   me: gemma, a
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: true,
+                awkward: false,
+                my_interesting_handle: 0,
+                their_handle: 0,
+            }],
+        );
+
+        // they: any, b   me: any, c
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["b"],
+            vec![],
+            vec![],
+        );
+        assert_mine(&mut my_registry, &namespace, None, &["c"], vec![]);
+
+        // they: any, d   me: any, d/e
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["d"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            None,
+            &["d", "e"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 3,
+                their_handle: 3,
+            }],
+        );
+
+        // they: any, f   me: gemma, g
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["f"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["g"],
+            vec![],
+        );
+
+        // they: any, h   me: gemma, h/i
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["h"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["h", "i"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 6,
+                their_handle: 5,
+            }],
+        );
+
+        // they: any, j/k   me: gemma, j   awkward!
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["j", "k"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["j"],
+            vec![],
+        );
+
+        // they: gemma, l   me: gemma, m
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["l"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["m"],
+            vec![],
+        );
+
+        // they: gemma, n   me: gemma, n/o
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["n"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["n", "o"],
+            vec![Overlap {
+                should_request_capability: true,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 12,
+                their_handle: 9,
+            }],
+        );
+
+        // they: gemma, p   me: dalton, q
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["p"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["q"],
+            vec![],
+        );
+
+        // hey:  gemma, r   me: dalton, r/s
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["r"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["r", "s"],
+            vec![],
+        );
+
+        // they: any, t   me: gemma, t
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["t"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["t"],
+            vec![Overlap {
+                should_request_capability: false,
+                should_send_capability: false,
+                awkward: false,
+                my_interesting_handle: 18,
+                their_handle: 15,
+            }],
+        );
+    }
+
+    // Things work when a single private interest triggers multiple overlaps.
+    #[test]
+    fn multiple_matches() {
+        let my_salt = [0u8; 16];
+        let their_salt = [255u8; 16];
+        let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
+            HashRegistry::new(my_salt, h);
+        let mut their_registry: HashRegistry<
+            16,
+            32,
+            1024,
+            1024,
+            1024,
+            NamespaceId25,
+            SubspaceId25,
+        > = HashRegistry::new(their_salt, h);
+
+        let namespace = NamespaceId25::new_communal();
+        let (subspace, _) = SubspaceId25::new();
+        let (other_subspace, _) = SubspaceId25::new();
+
+        // me: gemma, a; me: dalton, a;   they: any, a
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["a"],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            None,
+            &["a"],
+            vec![
+                Overlap {
+                    should_request_capability: false,
+                    should_send_capability: false,
+                    awkward: false,
+                    my_interesting_handle: 0,
+                    their_handle: 0,
+                },
+                Overlap {
+                    should_request_capability: false,
+                    should_send_capability: false,
+                    awkward: false,
+                    my_interesting_handle: 2,
+                    their_handle: 0,
+                },
+            ],
+            vec![],
+        );
+    }
+
+    #[test]
+    fn multiple_matches_reversed() {
+        let my_salt = [0u8; 16];
+        let their_salt = [255u8; 16];
+        let mut my_registry: HashRegistry<16, 32, 1024, 1024, 1024, NamespaceId25, SubspaceId25> =
+            HashRegistry::new(my_salt, h);
+        let mut their_registry: HashRegistry<
+            16,
+            32,
+            1024,
+            1024,
+            1024,
+            NamespaceId25,
+            SubspaceId25,
+        > = HashRegistry::new(their_salt, h);
+
+        let namespace = NamespaceId25::new_communal();
+        let (subspace, _) = SubspaceId25::new();
+        let (other_subspace, _) = SubspaceId25::new();
+
+        // they: gemma, a; dalton; a   me: any, a
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&subspace),
+            &["a"],
+            vec![],
+            vec![],
+        );
+        assert_theirs(
+            &mut my_registry,
+            &mut their_registry,
+            &namespace,
+            Some(&other_subspace),
+            &["a"],
+            vec![],
+            vec![],
+        );
+        assert_mine(
+            &mut my_registry,
+            &namespace,
+            None,
+            &["a"],
+            vec![
+                Overlap {
+                    should_request_capability: false,
+                    should_send_capability: true,
+                    awkward: false,
+                    my_interesting_handle: 0,
+                    their_handle: 1,
+                },
+                Overlap {
+                    should_request_capability: false,
+                    should_send_capability: true,
+                    awkward: false,
+                    my_interesting_handle: 0,
+                    their_handle: 3,
+                },
+            ],
+        );
     }
 
     fn assert_mine(
@@ -645,7 +1300,7 @@ mod tests {
             },
             Path::from_slices(path_components).unwrap(),
         ));
-        assert_eq!(overlaps, expected);
+        assert_eq!(overlaps, expected, "registry: {:?}", registry);
     }
 
     /// Asserts that `my_registry` reports the correct overlaps after calling my_registry.add_their_incoming_binding for both the `(hash, true)` pair sent by the "other peer" (`fst_expected`), and for the `(hash, false)` pair it sends if any (`snd_expected`, ignored when no such pair is sent) when it adds the given private interest.
@@ -679,8 +1334,11 @@ mod tests {
         if let Some(snd) = snd_hash {
             // println!("snd: {:?}, {:?}, {:?}", namespace, subspace, path_components);
             let snd_overlaps = my_registry.add_their_incoming_binding(snd, false);
-            assert_eq!(snd_overlaps, snd_expected, "snd_hash: {:?}\n{:#?}",
-            snd, my_registry);
+            assert_eq!(
+                snd_overlaps, snd_expected,
+                "snd_hash: {:?}\n{:#?}",
+                snd, my_registry
+            );
         }
     }
 
