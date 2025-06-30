@@ -705,7 +705,6 @@ version = "0.2.0"
 dependencies = [
  "arbitrary",
  "compact_u64",
- "either",
  "signature",
  "ufotofu",
  "ufotofu_codec",
