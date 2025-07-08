@@ -1193,7 +1193,7 @@ where
 
                 return None;
             }
-            Err(err) => panic!("Unexpected error: {err}"),
+            Err(err) => panic!("Unexpected error: {err:?}"),
         }
     }
 }
