@@ -111,7 +111,7 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
                 write!(f, "The complete payload's digest is not what was expected.")
             }
             PayloadAppendError::SourceError { source_error, .. } => {
-                write!(f, "The payload source emitted an error: {}", source_error)
+                write!(f, "The payload source emitted an error: {source_error}")
             }
             PayloadAppendError::OperationError(err) => std::fmt::Display::fmt(err, f),
         }

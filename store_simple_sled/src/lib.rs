@@ -8,7 +8,7 @@
 //!
 //! ```
 //! # use willow_store_simple_sled::StoreSimpleSled;
-//! use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken25 };
+//! use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken };
 //!
 //! let db = sled::open("my_db").unwrap();
 //! let namespace = NamespaceId25::new_communal();
@@ -20,7 +20,7 @@
 //!     NamespaceId25,
 //!     SubspaceId25,
 //!     PayloadDigest25,
-//!     AuthorisationToken25
+//!     AuthorisationToken
 //! >::new(&namespace, db).unwrap();
 //! ```
 //!
@@ -1193,7 +1193,7 @@ where
 
                 return None;
             }
-            Err(err) => panic!("Unexpected error: {:?}", err),
+            Err(err) => panic!("Unexpected error: {err:?}"),
         }
     }
 }
