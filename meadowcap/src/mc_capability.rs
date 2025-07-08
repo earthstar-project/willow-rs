@@ -277,7 +277,7 @@ where
         }
     }
 
-    /// Returns a new [`McAuthorisationToken`], or an error if given entry was not included by the granted namespace or area, or if the resulting signature was not for the capability's receiver.
+    /// Returns a new [`McAuthorisationToken`], or an error if the given entry was not included by the granted namespace or area, or if the resulting signature was not for the capability's receiver.
     pub fn authorisation_token<UserSecret, PD>(
         &self,
         entry: &Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
