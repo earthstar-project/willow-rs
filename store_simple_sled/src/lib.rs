@@ -32,7 +32,9 @@
 use either::Either;
 use std::{cell::RefCell, rc::Rc};
 use ufotofu::BufferedProducer;
-use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError, TrustedDecodable};
+use willow_data_model::{
+    ForgetEntryError, ForgetPayloadError, Payload, PayloadError, TrustedDecodable,
+};
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -930,7 +932,7 @@ where
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
-        impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
+        Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
         let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
@@ -942,7 +944,7 @@ where
 
         match (maybe_entry, maybe_payload) {
             (Some((_entry_key, entry_value)), Some((_payload_key, payload_value))) => {
-                let (_length, digest, _token, _local_length) =
+                let (length, digest, _token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
                 if let Some(expected) = expected_digest {
@@ -950,12 +952,23 @@ where
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-                Ok(PayloadProducer::new(payload_value, offset))
+
+                if length == local_length {
+                    Ok(Payload::Complete(PayloadProducer::new(
+                        payload_value,
+                        offset,
+                    )))
+                } else {
+                    Ok(Payload::Incomplete(PayloadProducer::new(
+                        payload_value,
+                        offset,
+                    )))
+                }
             }
 
             (Some((_entry_key, entry_value)), None) => {
                 // check expected digest.
-                let (_length, digest, _token, _local_length) =
+                let (length, digest, _token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
                 if let Some(expected) = expected_digest {
@@ -964,7 +977,14 @@ where
                     }
                 }
 
-                Ok(PayloadProducer::new(IVec::default(), 0))
+                if length == local_length {
+                    Ok(Payload::Complete(PayloadProducer::new(IVec::default(), 0)))
+                } else {
+                    Ok(Payload::Incomplete(PayloadProducer::new(
+                        IVec::default(),
+                        0,
+                    )))
+                }
             }
             (None, None) => Err(PayloadError::NoSuchEntry),
             (None, Some(_)) => {

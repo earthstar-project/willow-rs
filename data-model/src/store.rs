@@ -288,6 +288,14 @@ pub struct QueryIgnoreParams {
     pub ignore_empty_payloads: bool,
 }
 
+/// A payload associated with an [`Entry`].
+pub enum Payload<E, P: BulkProducer<Item = u8, Final = (), Error = E>> {
+    /// A payload for which all bytes are available locally.
+    Complete(P),
+    /// A payload for which fewer bytes than the known length of the payload are available locally.
+    Incomplete(P),
+}
+
 impl QueryIgnoreParams {
     // An entry for which no payload bytes are available.
     fn ignores_fresh_entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>(
@@ -455,7 +463,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         expected_digest: Option<PD>,
     ) -> impl Future<
         Output = Result<
-            impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
+            Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
             PayloadError<Self::Error>,
         >,
     >;
