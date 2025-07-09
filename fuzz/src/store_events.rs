@@ -16,7 +16,7 @@ use crate::{
 use either::Either::{Left, Right};
 use ufotofu::{producer::FromSlice, Producer};
 use willow_data_model::{
-    grouping::Area, LengthyAuthorisedEntry, QueryIgnoreParams, Store, StoreEvent,
+    grouping::Area, LengthyAuthorisedEntry, Payload, QueryIgnoreParams, Store, StoreEvent,
 };
 
 /// A function for testing whether a store correctly emits events. Panics if it doesn't.
@@ -194,7 +194,8 @@ pub fn check_store_events(
                                         )
                                         .await
                                     {
-                                        Ok(new_payload_bytes_producer) => {
+                                        Ok(Payload::Complete(new_payload_bytes_producer))
+                                        | Ok(Payload::Incomplete(new_payload_bytes_producer)) => {
                                             let mut limited = ufotofu::producer::Limit::new(
                                                 new_payload_bytes_producer,
                                                 (now_available - previous_available) as usize,
