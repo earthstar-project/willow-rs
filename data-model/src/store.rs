@@ -292,7 +292,7 @@ pub struct QueryIgnoreParams {
 pub enum Payload<E, P: BulkProducer<Item = u8, Final = (), Error = E>> {
     /// A payload for which all bytes are available locally.
     Complete(P),
-    /// A payload for which fewer bytes than the known length of the payload are available locally.
+    /// A payload for which fewer bytes than the known length of the payload are available locally (at the time at which the store was queried). If the payload becomes fully available before the user code has exhausted the producer, then this variant might indeed yield the complete payload despite its name.
     Incomplete(P),
 }
 
