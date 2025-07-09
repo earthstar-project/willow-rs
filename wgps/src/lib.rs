@@ -15,7 +15,7 @@ use willow_data_model::{
 
 mod parameters;
 
-mod messages;
+pub mod messages;
 use messages::*;
 
 use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};

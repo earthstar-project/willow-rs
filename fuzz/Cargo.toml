@@ -30,7 +30,7 @@ willow-store-simple-sled = { path = "../store_simple_sled" }
 sled = "0.34.7"
 tempdir = "0.3.7"
 willow-transport-encryption = { path = "../transport_encryption" }
-wgps = { path = "../wgps" }
+wgps = { path = "../wgps", features = ["dev"] }
 
 [dependencies.willow-data-model]
 path = "../data-model"

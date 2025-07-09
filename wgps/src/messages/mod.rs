@@ -1,3 +1,6 @@
+#[cfg(feature = "dev")]
+use arbitrary::Arbitrary;
+
 use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
 use willow_encoding::is_bitflagged;
 
@@ -81,7 +84,9 @@ impl Decodable for DataSetEagerness {
 }
 
 /// Bind data to an OverlapHandle for performing private interest overlap detection.
-pub(crate) struct PioBindHash<const INTEREST_HASH_LENGTH: usize> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct PioBindHash<const INTEREST_HASH_LENGTH: usize> {
     /// The result of applying hash_interests to a PrivateInterest.
     hash: [u8; INTEREST_HASH_LENGTH],
 
@@ -145,7 +150,7 @@ impl<const INTEREST_HASH_LENGTH: usize> Decodable for PioBindHash<INTEREST_HASH_
 }
 
 /// Send an overlap announcement, including its announcement authentication and an optional enumeration capability.
-pub(crate) struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapability> {
+pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapability> {
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
     sender_handle: u64,
 

@@ -1221,6 +1221,7 @@ dependencies = [
 name = "wgps"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "async_cell",
  "either",
  "futures",
