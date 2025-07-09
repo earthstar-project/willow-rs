@@ -1,3 +1,5 @@
+// Pure logic of exchanging salted hashes based on PrivateInterests, and detecting overlaps thereof. No actual message sending.
+
 use std::collections::HashMap;
 
 use multimap::MultiMap;
@@ -5,7 +7,7 @@ use willow_data_model::{NamespaceId, PrivateInterest, SubspaceId};
 
 use crate::data_handles::handle_store::{HandleStore, HashMapHandleStore};
 
-/// Tell this struct about your own PrivateInterests and about the salted hashes you receive from the other peer, and this struct tells you when there are overlaps. How nice of it. Does not perform any IO, only implements the logic of the core layer of pio.
+/// Tell this struct about your own PrivateInterests and about the salted hashes you receive from the other peer, and this struct tells you which messages to send and where there are overlaps. How nice of it. Does not perform any IO, only implements the logic of the core layer of pio.
 #[derive(Debug)]
 pub(crate) struct HashRegistry<
     const SALT_LENGTH: usize,
@@ -65,17 +67,11 @@ impl<
         return salt;
     }
 
-    /// Call this when you want to add a PrivateInterest. Returns the one or two salted hashes to send to the peer. They must be sent to the peer in the same order as this method call, otherwise resource handles will be mixed up and everything breaks. The first hash must be sent with associated bool `true`, the second hash (if there is one) must be sent with associated bool `false`. Also returns any detected matches.
+    /// Call this when you want to add a PrivateInterest. Returns the one or two salted hashes to send to the peer, and the associated handles.The first hash must be sent with associated bool `true`, the second hash (if there is one) must be sent with associated bool `false`. Also returns any detected matches.
     pub(crate) fn submit_private_interest(
         &mut self,
         p: &PrivateInterest<MCL, MCC, MPL, N, S>,
-    ) -> (
-        [u8; INTEREST_HASH_LENGTH],
-        Option<[u8; INTEREST_HASH_LENGTH]>,
-        Vec<Overlap>,
-    ) {
-        let mut overlaps = vec![];
-
+    ) -> PioBindHashInformation<INTEREST_HASH_LENGTH> {
         // The two hashes to send to the peer (first has associated bool true, the second, optional one has associated bool false).
         let fst = (self.h)(p, &self.my_salt);
         let snd = if p.subspace_id().is_any() {
@@ -85,18 +81,40 @@ impl<
         };
 
         // Add handles to handle store for the one or two hash(es) we send.
-        let interesting_handle = self
+        let fst_handle = self
             .my_handles
             .bind(MyHandleInfo::Interesting(MyInterestingHandleInfo {
                 private_interest: p.clone(),
             }))
             .unwrap();
 
-        if let Some(_) = snd {
-            let _ = self.my_handles.bind(MyHandleInfo::Uninteresting {
-                interesting_handle: interesting_handle,
-            });
-        }
+        let snd_handle = if let Some(_) = snd {
+            Some(
+                self.my_handles
+                    .bind(MyHandleInfo::Uninteresting {
+                        interesting_handle: fst_handle,
+                    })
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+
+        return ((fst, fst_handle), snd.map(|snd| (snd, snd_handle.unwrap())));
+    }
+
+    /// Call this after sending both PioBindHash messages (only one if only a single hash and handle was returned by `submit_private_interest`).
+    ///
+    /// Returns any detected matches.
+    pub fn sent_pio_bind_hash_msgs(&mut self, fst_handle: u64) -> Vec<Overlap> {
+        let mut overlaps = vec![];
+
+        let p = match self.my_handles.get(fst_handle).unwrap().unwrap() {
+            MyHandleInfo::Interesting(MyInterestingHandleInfo { private_interest }) => {
+                private_interest.clone()
+            }
+            _ => unreachable!(),
+        };
 
         // Compute local hashes and store them.
         // If they match a hash bound by the other peer, note the overlap.
@@ -112,7 +130,7 @@ impl<
                 LocalHashInfo {
                     not_a_relaxation: true,
                     has_original_path: is_original,
-                    interesting_handle: interesting_handle,
+                    interesting_handle: fst_handle,
                 },
             );
 
@@ -122,7 +140,7 @@ impl<
                         should_request_capability: !is_original,
                         should_send_capability: is_original,
                         awkward: !they_are_actually_interested && !is_original,
-                        my_interesting_handle: interesting_handle,
+                        my_interesting_handle: fst_handle,
                         their_handle: *their_handle,
                     });
                 }
@@ -137,7 +155,7 @@ impl<
                     LocalHashInfo {
                         not_a_relaxation: false,
                         has_original_path: is_original,
-                        interesting_handle: interesting_handle,
+                        interesting_handle: fst_handle,
                     },
                 );
 
@@ -148,7 +166,7 @@ impl<
                                 should_request_capability: !is_original,
                                 should_send_capability: false,
                                 awkward: false,
-                                my_interesting_handle: interesting_handle,
+                                my_interesting_handle: fst_handle,
                                 their_handle: *their_handle,
                             });
                         }
@@ -157,11 +175,11 @@ impl<
             }
         }
 
-        return (fst, snd, overlaps);
+        overlaps
     }
 
-    /// Call this whenever the peer sends a PioBindHash message. Returns any detected matches.
-    fn add_their_incoming_binding(
+    /// Call this whenever we received a PioBindHash message. Returns any detected matches.
+    pub fn received_pio_bind_hash_msg(
         &mut self,
         hash: [u8; INTEREST_HASH_LENGTH],
         actually_interested: bool,
@@ -190,8 +208,8 @@ impl<
         return overlaps;
     }
 
-    /// Only call this when we know we have bound info, this unwarps the retrieved value.
-    fn get_interesting_handle_info(
+    /// Only call this when we know we have bound info, this unwraps the retrieved value.
+    pub(crate) fn get_interesting_handle_info(
         &self,
         my_handle: u64,
     ) -> &MyInterestingHandleInfo<MCL, MCC, MPL, N, S> {
@@ -205,6 +223,12 @@ impl<
         }
     }
 }
+
+/// Information about which PioBindHash messages we must send.
+pub(crate) type PioBindHashInformation<const INTEREST_HASH_LENGTH: usize> = (
+    ([u8; INTEREST_HASH_LENGTH], u64),
+    Option<([u8; INTEREST_HASH_LENGTH], u64)>,
+);
 
 /// Information to which to map the locally computed hashes.
 #[derive(Debug)]
@@ -243,7 +267,7 @@ pub struct MyInterestingHandleInfo<
 }
 
 /// Information to report when an overlap has been detected.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub(crate) struct Overlap {
     pub should_request_capability: bool,
     pub should_send_capability: bool,
@@ -1292,7 +1316,7 @@ mod tests {
         path_components: &[&'static str],
         expected: Vec<Overlap>,
     ) {
-        let (_, _, overlaps) = registry.submit_private_interest(&PrivateInterest::new(
+        let (fst, _snd) = registry.submit_private_interest(&PrivateInterest::new(
             namespace.clone(),
             match subspace {
                 Some(id) => AreaSubspace::Id(id.clone()),
@@ -1300,6 +1324,7 @@ mod tests {
             },
             Path::from_slices(path_components).unwrap(),
         ));
+        let overlaps = registry.sent_pio_bind_hash_msgs(fst.1);
         assert_eq!(overlaps, expected, "registry: {:?}", registry);
     }
 
@@ -1313,27 +1338,26 @@ mod tests {
         fst_expected: Vec<Overlap>,
         snd_expected: Vec<Overlap>,
     ) {
-        let (fst_hash, snd_hash, _) =
-            their_registry.submit_private_interest(&PrivateInterest::new(
-                namespace.clone(),
-                match subspace {
-                    Some(id) => AreaSubspace::Id(id.clone()),
-                    None => AreaSubspace::Any,
-                },
-                Path::from_slices(path_components).unwrap(),
-            ));
+        let (fst, snd) = their_registry.submit_private_interest(&PrivateInterest::new(
+            namespace.clone(),
+            match subspace {
+                Some(id) => AreaSubspace::Id(id.clone()),
+                None => AreaSubspace::Any,
+            },
+            Path::from_slices(path_components).unwrap(),
+        ));
 
-        let fst_overlaps = my_registry.add_their_incoming_binding(fst_hash, true);
+        let fst_overlaps = my_registry.received_pio_bind_hash_msg(fst.0, true);
         // println!("fst: {:?}, {:?}, {:?}", namespace, subspace, path_components);
         assert_eq!(
             fst_overlaps, fst_expected,
             "fst_hash: {:?}\n{:#?}",
-            fst_hash, my_registry
+            fst.0, my_registry
         );
 
-        if let Some(snd) = snd_hash {
+        if let Some((snd, _)) = snd {
             // println!("snd: {:?}, {:?}, {:?}", namespace, subspace, path_components);
-            let snd_overlaps = my_registry.add_their_incoming_binding(snd, false);
+            let snd_overlaps = my_registry.received_pio_bind_hash_msg(snd, false);
             assert_eq!(
                 snd_overlaps, snd_expected,
                 "snd_hash: {:?}\n{:#?}",

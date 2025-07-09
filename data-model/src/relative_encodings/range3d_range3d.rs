@@ -119,7 +119,7 @@ where
             header_2 |= 0b1000_0000;
         }
 
-        // Bit 9 -Add or subtract start_time_diff?
+        // Bit 9 - Add or subtract start_time_diff?
         if is_bitflagged(header_2, 0) && self.times().start >= r.times().start
             || !is_bitflagged(header_2, 0) && self.times().start >= r.times().end
         {
@@ -144,7 +144,7 @@ where
             header_2 |= 0b0000_0100;
         }
 
-        // Bits 14, 15 - ignored, or 2-bit integer n such that 2^n gives compact_width(end_time_diff)
+        // Bits 14, 15 - ignored, or the width-2 tag for end_time_diff
         if self.times().end == RangeEnd::Open {
             // do nothing
         } else {

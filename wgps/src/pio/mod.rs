@@ -4,6 +4,7 @@ use willow_data_model::{
     Path,
 };
 
+mod capable_aois;
 mod salted_hashes;
 
 // /// This function is the entry point to our implementation of private interest overlap detection.
@@ -44,7 +45,7 @@ mod salted_hashes;
 // // Poi works based on PrivateInterests, not CapableAois. This struct takes care of the conversion.
 // //
 // // When given a CapableAoi C, it computes the corresponding PrivateInterest P. Now, there are three cases:
-// // 
+// //
 // // - P is completely fresh, it has not yet been submitted to the poi process. In this case, we send a PioBindHash message and then proceed to the next case.
 // // - P has already been submitted to the poi process, but we have not (yet) detected an overlap. If (or when) we do detect an overlap for P, we need to emit C on the corresponding `OverlappingAoiOutput`. To be able to do so, we add C to a mapping from P to all the CapableAois that had P as their PrivateInterest. When an overlap with P is detected, we can purge the CapableAois from the mapping, keeping only the information that P has been matched (we keep this information to be able to detect and correctly handle the following third case).
 // // - P has already been submitted to the poi process, and we have already detected an overlap. We can immediately emit C on the `OverlappingAoiOutput` and forget about it.

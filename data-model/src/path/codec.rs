@@ -42,7 +42,7 @@ where
         .relative_encode(consumer, &component_count_tag.encoding_width())
         .await?;
 
-    // Then, encode the components. Each is prefixed by its lenght as an 8-bit-tag CompactU64, except for the final component.
+    // Then, encode the components. Each is prefixed by its length as an 8-bit-tag CompactU64, except for the final component.
     for (i, component) in components.enumerate() {
         // The length of the final component is omitted (because a decoder can infer it from the total length and all prior components' lengths).
         if i as u64 + 1 != component_count {
