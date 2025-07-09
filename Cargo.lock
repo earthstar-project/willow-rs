@@ -1232,6 +1232,7 @@ dependencies = [
  "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
+ "willow-encoding",
  "willow-transport-encryption",
  "willow_25",
 ]
@@ -1281,6 +1282,7 @@ dependencies = [
  "ufotofu_codec_endian",
  "ufotofu_queues",
  "wb_async_utils",
+ "wgps",
  "willow-data-model",
  "willow-encoding",
  "willow-store-simple-sled",

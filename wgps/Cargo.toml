@@ -15,6 +15,7 @@ either = "1.10.0"
 async_cell = "0.2.2"
 willow-transport-encryption = { path = "../transport_encryption" }
 multimap = "0.10.1"
+willow-encoding = { path = "../encoding", version = "0.1.0" }
 
 [dev-dependencies]
 smol = "2.0.0"
