@@ -63,7 +63,7 @@ where
     pub(crate) fn submit_capable_aoi(
         &mut self,
         caoi: CapableAoi<MCL, MCC, MPL, ReadCap>,
-    ) -> Either<PioBindHashInformation<INTEREST_HASH_LENGTH>, &HashSet<Overlap>> {
+    ) -> Option<PioBindHashInformation<INTEREST_HASH_LENGTH>> {
         // Convert to PrivateInterest, do salted hash stuff if the PrivateInterest is new (otherwise, deduplicate and do not report salted hash stuff).
         let p = caoi.to_private_interest();
 
@@ -76,25 +76,18 @@ where
             // Record information about this private interest (the `caoi` is the only CapableAoi that yielded it so far, and we have not yet detected any overlaps with the other peer's private interests).
             let mut caois = HashSet::new();
             caois.insert(caoi);
-            self.my_interests.insert(
-                p,
-                PrivateInterestState {
-                    caois,
-                    overlaps: HashSet::new(),
-                },
-            );
+            self.my_interests.insert(p, PrivateInterestState { caois });
 
-            return Left(salted_hash_stuff);
+            return Some(salted_hash_stuff);
         } else {
             // No need to do salted hash stuff in this branch.
 
             let pi_state = self.my_interests.get_mut(&p).unwrap(); // can unwrap because `!p_is_fresh`
 
-            // Add the new CapableAoi to the state of its PrivateInterest...
+            // Add the new CapableAoi to the state of its PrivateInterest.
             pi_state.caois.insert(caoi);
 
-            // ...and report all overlaps.
-            return Right(&pi_state.overlaps);
+            return None;
         }
     }
 
@@ -105,17 +98,9 @@ where
     /// `private_interest` is the PrivateInterest obtained via `caoi.to_private_interest()`, where `caoi` is the CapableAoi for which you called `submit_capable_aoi` (whose return value instructed you to call this method).
     ///
     /// Returns any detected matches.
-    pub fn sent_pio_bind_hash_msgs(
-        &mut self,
-        fst_handle: u64,
-        private_interest: &PrivateInterest<MCL, MCC, MPL, N, S>,
-    ) -> &HashSet<Overlap> {
+    pub fn sent_pio_bind_hash_msgs(&mut self, fst_handle: u64) -> Vec<Overlap> {
         let overlaps = self.hash_registry.sent_pio_bind_hash_msgs(fst_handle);
-
-        let pi_state = self.my_interests.get_mut(private_interest).unwrap();
-        pi_state.overlaps.extend(overlaps);
-
-        return &pi_state.overlaps;
+        return overlaps;
     }
 
     /// Call this whenever we received a PioBindHash message. Returns any detected matches.
@@ -128,18 +113,6 @@ where
             .hash_registry
             .received_pio_bind_hash_msg(hash, actually_interested);
 
-        // Add the overlap information to `self.my_interests`.
-        for overlap in overlaps.iter() {
-            let private_interest_info = self
-                .hash_registry
-                .get_interesting_handle_info(overlap.my_interesting_handle);
-            let pi_state = self
-                .my_interests
-                .get_mut(&private_interest_info.private_interest)
-                .unwrap();
-            pi_state.overlaps.insert(*overlap);
-        }
-
         return overlaps;
     }
 }
@@ -148,8 +121,6 @@ where
 struct PrivateInterestState<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
     /// All CapableAois we have [submitted](submit_capable_aoi) which resulted in the PrivateInterest of this state.
     caois: HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>>,
-    /// All overlaps with this Private Interest and PrivateInterests registered by the other peer.
-    overlaps: HashSet<Overlap>,
 }
 
 /// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
