@@ -1,7 +1,12 @@
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+use compact_u64::{CompactU64, TagWidth};
 
-use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use crate::pio::EnumerationCapability;
+use ufotofu_codec::{
+    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
+    RelativeEncodable, RelativeEncodableKnownSize,
+};
 use willow_encoding::is_bitflagged;
 
 pub(crate) enum GlobalMessage {
@@ -150,6 +155,8 @@ impl<const INTEREST_HASH_LENGTH: usize> Decodable for PioBindHash<INTEREST_HASH_
 }
 
 /// Send an overlap announcement, including its announcement authentication and an optional enumeration capability.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapability> {
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
     sender_handle: u64,
@@ -161,7 +168,155 @@ pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapa
     authentication: [u8; INTEREST_HASH_LENGTH],
 
     /// The enumeration capability if this overlap announcement is for an awkward pair, or none otherwise.
-    enumeration_capability: Option<EnumerationCapability>,
+    pub enumeration_capability: Option<EnumerationCapability>,
+}
+
+impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodable<(N, R)>
+    for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
+where
+    N: PartialEq,
+    R: PartialEq,
+    EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodable<(N, R)>,
+{
+    async fn relative_encode<C>(&self, consumer: &mut C, r: &(N, R)) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let mut header = 0x0;
+
+        if self.enumeration_capability.is_some() {
+            header |= 0b0100_0000;
+        }
+
+        let sender_handle_tag =
+            compact_u64::Tag::min_tag(self.sender_handle, compact_u64::TagWidth::three());
+
+        header |= sender_handle_tag.data_at_offset(2);
+
+        let receiver_handle_tag =
+            compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::three());
+
+        header |= receiver_handle_tag.data_at_offset(5);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.sender_handle)
+            .relative_encode(consumer, &sender_handle_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.receiver_handle)
+            .relative_encode(consumer, &receiver_handle_tag.encoding_width())
+            .await?;
+
+        consumer
+            .bulk_consume_full_slice(&self.authentication)
+            .await
+            .map_err(|err| err.into_reason())?;
+
+        if let Some(enumeration_capability) = &self.enumeration_capability {
+            let pair = (
+                enumeration_capability.granted_namespace(),
+                enumeration_capability.receiver(),
+            );
+
+            assert!(r == &pair);
+
+            enumeration_capability
+                .relative_encode(consumer, &pair)
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodableKnownSize<(N, R)>
+    for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
+where
+    N: PartialEq,
+    R: PartialEq,
+    EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodableKnownSize<(N, R)>,
+{
+    fn relative_len_of_encoding(&self, r: &(N, R)) -> usize {
+        let sender_handle_tag =
+            compact_u64::Tag::min_tag(self.sender_handle, compact_u64::TagWidth::three());
+
+        let receiver_handle_tag =
+            compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::three());
+
+        let sender_handle_len = CompactU64(self.sender_handle)
+            .relative_len_of_encoding(&sender_handle_tag.encoding_width());
+
+        let receiver_handle_len = CompactU64(self.receiver_handle)
+            .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
+
+        let auth_len = self.authentication.len();
+
+        let enum_cap_len = if let Some(enumeration_capability) = &self.enumeration_capability {
+            enumeration_capability.relative_len_of_encoding(r)
+        } else {
+            0
+        };
+
+        1 + sender_handle_len + receiver_handle_len + auth_len + enum_cap_len
+    }
+}
+
+impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeDecodable<(N, R), Blame>
+    for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
+where
+    EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeDecodable<(N, R), Blame>,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &(N, R),
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        let has_enumeration_cap = is_bitflagged(header, 1);
+
+        let sender_handle_tag =
+            compact_u64::Tag::from_raw(header, compact_u64::TagWidth::three(), 2);
+        let receiver_handle_tag =
+            compact_u64::Tag::from_raw(header, compact_u64::TagWidth::three(), 5);
+
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let mut authentication = [0x0; INTEREST_HASH_LENGTH];
+
+        producer
+            .bulk_overwrite_full_slice(&mut authentication)
+            .await?;
+
+        let enumeration_capability = if has_enumeration_cap {
+            let cap = EC::relative_decode(producer, r)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+
+            Some(cap)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            authentication,
+            sender_handle,
+            receiver_handle,
+            enumeration_capability,
+        })
+    }
 }
 
 // TODO: ReadCapability param should use the actual trait.

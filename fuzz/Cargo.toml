@@ -452,3 +452,10 @@ path = "fuzz_targets/enc_piobindhash_abs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_pioannounceoverlap_rel_pair"
+path = "fuzz_targets/enc_pioannounceoverlap_rel_pair.rs"
+test = false
+doc = false
+bench = false

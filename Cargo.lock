@@ -1223,6 +1223,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "async_cell",
+ "compact_u64",
  "either",
  "futures",
  "lcmux",

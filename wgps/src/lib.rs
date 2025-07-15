@@ -27,6 +27,8 @@ use willow_transport_encryption::{
 pub mod data_handles;
 mod pio;
 
+pub use pio::EnumerationCapability;
+
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
     /// The handshake went wrong.
