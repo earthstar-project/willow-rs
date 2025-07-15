@@ -350,6 +350,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> AreaMap<MCL, MC
 where
     S: Clone + Eq + std::hash::Hash,
 {
+    /// Insert a new value along with its associated [`Area`].
     pub fn insert(&mut self, area: &Area<MCL, MCC, MPL, S>, value: T) {
         match self.subspaces.get_mut(&area.subspace) {
             Some(subspace_map) => match subspace_map.get_mut(area.path()) {
@@ -377,6 +378,7 @@ where
         };
     }
 
+    /// Retrieve all values with [`Area`]s which intersect with the given [`Area`].
     pub fn intersecting_values(&self, area: &Area<MCL, MCC, MPL, S>) -> Option<Vec<&T>> {
         match area.subspace() {
             AreaSubspace::Any => {
@@ -421,6 +423,87 @@ where
                             for (times, value) in values {
                                 if let Some(_intersection) = times.intersection(area.times()) {
                                     values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if values_vec.is_empty() {
+                    None
+                } else {
+                    Some(values_vec)
+                }
+            }
+        }
+    }
+
+    /// Retrieve all values and their [`Area`]s which intersect with the given [`Area`].
+    pub fn intersecting_pairs(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+        match area.subspace() {
+            AreaSubspace::Any => {
+                let mut values_vec = Vec::new();
+
+                for (area_subspace, subspace_map) in &self.subspaces {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: area_subspace.clone(),
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(values_vec)
+            }
+            AreaSubspace::Id(_area_subspace) => {
+                let mut values_vec = Vec::new();
+
+                if let Some(subspace_map) = self.subspaces.get(&AreaSubspace::Any) {
+                    for (path, values) in subspace_map {
+                        //println!("hello");
+
+                        if area.path().is_related(path) {
+                            //println!("bello");
+
+                            for (times, value) in values {
+                                //println!("cello");
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: AreaSubspace::Any,
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(subspace_map) = self.subspaces.get(area.subspace()) {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: area.subspace().clone(),
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
                                 }
                             }
                         }
