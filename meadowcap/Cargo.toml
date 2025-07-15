@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = []
-dev = ["dep:arbitrary", "willow-data-model/dev"]
+dev = ["dep:arbitrary", "willow-data-model/dev", "willow-pio/dev"]
 
 [dependencies]
 signature = "2.2.0"
@@ -17,9 +17,10 @@ either = "1.13.0"
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 willow-data-model = { path = "../data-model", version = "0.2.0" }
 compact_u64 = { version = "0.1.0", features = [ "std", "dev" ] }
+willow-pio = {version = "0.1.0", path = "../pio" }
 
 [dependencies.ufotofu_codec]
-version = "0.1.0"
+version = "0.1.1"
 features = ["alloc"]
 
 

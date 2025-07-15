@@ -9,7 +9,8 @@ members = [
     "wgps",
     "store_simple_sled",
     "willow_25",
-    "transport_encryption"
+    "transport_encryption",
+    "pio"
 ]
 resolver = "2"
 

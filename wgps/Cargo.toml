@@ -22,6 +22,7 @@ willow-transport-encryption = { path = "../transport_encryption" }
 multimap = "0.10.1"
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 compact_u64 = { version = "0.1.0", features = [ "std", "dev" ] }
+willow-pio = {version = "0.1.0", path = "../pio" }
 
 [dev-dependencies]
 smol = "2.0.0"

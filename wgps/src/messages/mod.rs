@@ -1,13 +1,15 @@
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, TagWidth};
+use willow_data_model::{NamespaceId, SubspaceId};
 
-use crate::pio::EnumerationCapability;
+use crate::pio::{EnumerationCapability, ReadCapability};
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_encoding::is_bitflagged;
+use willow_pio::PersonalPrivateInterest;
 
 pub(crate) enum GlobalMessage {
     ResourceHandleFree(ResourceHandleFree),
@@ -319,9 +321,11 @@ where
     }
 }
 
-// TODO: ReadCapability param should use the actual trait.
 /// Bind a read capability for an overlap between two PrivateInterests. Additionally, this message specifies an AreaOfInterest which the sender wants to sync.
-struct PioBindReadCapability<ReadCapability> {
+struct PioBindReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, RC>
+where
+    RC: ReadCapability<MCL, MCC, MPL>,
+{
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
     sender_handle: u64,
 
@@ -329,7 +333,7 @@ struct PioBindReadCapability<ReadCapability> {
     receiver_handle: u64,
 
     /// The ReadCapability to bind. Its granted namespace must be the (shared) namespace_id of the two PrivateInterests. Its granted area must be included in the less specific of the two PrivateInterests.
-    capability: ReadCapability,
+    capability: RC,
 
     /// The max_count of the AreaOfInterest that the sender wants to sync.
     max_count: u64,
@@ -339,4 +343,23 @@ struct PioBindReadCapability<ReadCapability> {
 
     /// When the receiver of this message eagerly transmits Entries for the AreaOfInterest defined by this message, it must not include the Payload of Entries whose payload_length is strictly greater than two to the power of the max_payload_power. We call the resulting number the sender’s maximum payload size for this AreaOfInterest.
     max_payload_power: u8,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, RC>
+    RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, RC>>
+    for PioBindReadCapability<MCL, MCC, MPL, RC>
+where
+    N: NamespaceId,
+    RC: ReadCapability<MCL, MCC, MPL> + SubspaceId,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, RC>,
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
 }
