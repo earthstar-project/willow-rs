@@ -520,6 +520,73 @@ where
     }
 }
 
+pub struct NamespacedAreaMap<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    namespaces: HashMap<N, AreaMap<MCL, MCC, MPL, S, T>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T> Default
+    for NamespacedAreaMap<MCL, MCC, MPL, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    fn default() -> Self {
+        Self {
+            namespaces: HashMap::new(),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T>
+    NamespacedAreaMap<MCL, MCC, MPL, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    /// Insert a new value along with its associated NamespaceId and [`Area`].
+    pub fn insert(&mut self, namespace: &N, area: &Area<MCL, MCC, MPL, S>, value: T) {
+        match self.namespaces.get_mut(namespace) {
+            Some(area_map) => {
+                area_map.insert(area, value);
+            }
+            None => {
+                let mut area_map: AreaMap<MCL, MCC, MPL, S, T> = AreaMap::default();
+                area_map.insert(area, value);
+
+                self.namespaces.insert(namespace.clone(), area_map);
+            }
+        }
+    }
+
+    /// Retrieve all values with namespaced [`Area`]s which intersect with the given namespaced [`Area`].
+    pub fn intersecting_values(
+        &self,
+        namespace: &N,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<&T>> {
+        match self.namespaces.get(namespace) {
+            Some(area_map) => area_map.intersecting_values(area),
+            None => None,
+        }
+    }
+
+    /// Retrieve all values and their namespaced [`Area`]s which intersect with the given namespaced [`Area`].
+    pub fn intersecting_pairs(
+        &self,
+        namespace: &N,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+        match self.namespaces.get(namespace) {
+            Some(area_map) => area_map.intersecting_pairs(area),
+            None => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
