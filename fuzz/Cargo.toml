@@ -444,3 +444,10 @@ path = "fuzz_targets/transport_encryption.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "area_map"
+path = "fuzz_targets/area_map.rs"
+test = false
+doc = false
+bench = false

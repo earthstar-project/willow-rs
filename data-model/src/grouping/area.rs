@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[cfg(feature = "dev")]
 use crate::{grouping::RangeEnd, parameters::SubspaceId, PathBuilder};
 #[cfg(feature = "dev")]
@@ -322,6 +324,117 @@ where
     };
 
     Ok(Area::new(subspace, included_path, times))
+}
+
+#[derive(Debug)]
+pub struct AreaMap<const MCL: usize, const MCC: usize, const MPL: usize, S, T>
+where
+    S: Eq + std::hash::Hash,
+{
+    subspaces: HashMap<AreaSubspace<S>, HashMap<Path<MCL, MCC, MPL>, Vec<(Range<u64>, T)>>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> Default
+    for AreaMap<MCL, MCC, MPL, S, T>
+where
+    S: Clone + Eq + std::hash::Hash,
+{
+    fn default() -> Self {
+        Self {
+            subspaces: HashMap::new(),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> AreaMap<MCL, MCC, MPL, S, T>
+where
+    S: Clone + Eq + std::hash::Hash,
+{
+    pub fn insert(&mut self, area: &Area<MCL, MCC, MPL, S>, value: T) {
+        match self.subspaces.get_mut(&area.subspace) {
+            Some(subspace_map) => match subspace_map.get_mut(area.path()) {
+                Some(path_vec) => {
+                    path_vec.push((*area.times(), value));
+                }
+                None => {
+                    subspace_map.insert(area.path().clone(), vec![(*area.times(), value)]);
+                }
+            },
+            None => {
+                let mut map: HashMap<Path<MCL, MCC, MPL>, Vec<(Range<u64>, T)>> = HashMap::new();
+
+                map.insert(area.path().clone(), vec![(*area.times(), value)]);
+
+                match area.subspace() {
+                    AreaSubspace::Any => {
+                        self.subspaces.insert(AreaSubspace::Any, map);
+                    }
+                    AreaSubspace::Id(id) => {
+                        self.subspaces.insert(AreaSubspace::Id(id.clone()), map);
+                    }
+                }
+            }
+        };
+    }
+
+    pub fn intersecting_values(&self, area: &Area<MCL, MCC, MPL, S>) -> Option<Vec<&T>> {
+        match area.subspace() {
+            AreaSubspace::Any => {
+                let mut values_vec = Vec::new();
+
+                for subspace_map in self.subspaces.values() {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(values_vec)
+            }
+            AreaSubspace::Id(_area_subspace) => {
+                let mut values_vec = Vec::new();
+
+                if let Some(subspace_map) = self.subspaces.get(&AreaSubspace::Any) {
+                    for (path, values) in subspace_map {
+                        //println!("hello");
+
+                        if area.path().is_related(path) {
+                            //println!("bello");
+
+                            for (times, value) in values {
+                                //println!("cello");
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(subspace_map) = self.subspaces.get(area.subspace()) {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if values_vec.is_empty() {
+                    None
+                } else {
+                    Some(values_vec)
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
