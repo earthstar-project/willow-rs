@@ -322,44 +322,182 @@ where
 }
 
 /// Bind a read capability for an overlap between two PrivateInterests. Additionally, this message specifies an AreaOfInterest which the sender wants to sync.
-struct PioBindReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, RC>
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct PioBindReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, RC>
 where
     RC: ReadCapability<MCL, MCC, MPL>,
 {
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
-    sender_handle: u64,
+    pub sender_handle: u64,
 
     /// The OverlapHandle (bound by the receiver of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
-    receiver_handle: u64,
+    pub receiver_handle: u64,
 
     /// The ReadCapability to bind. Its granted namespace must be the (shared) namespace_id of the two PrivateInterests. Its granted area must be included in the less specific of the two PrivateInterests.
-    capability: RC,
+    pub capability: RC,
 
     /// The max_count of the AreaOfInterest that the sender wants to sync.
-    max_count: u64,
+    pub max_count: u64,
 
     /// The max_size of the AreaOfInterest that the sender wants to sync.
-    max_size: u64,
+    pub max_size: u64,
 
     /// When the receiver of this message eagerly transmits Entries for the AreaOfInterest defined by this message, it must not include the Payload of Entries whose payload_length is strictly greater than two to the power of the max_payload_power. We call the resulting number the sender’s maximum payload size for this AreaOfInterest.
-    max_payload_power: u8,
+    pub max_payload_power: u8,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, RC>
-    RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, RC>>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, RC>
+    RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>
     for PioBindReadCapability<MCL, MCC, MPL, RC>
 where
     N: NamespaceId,
-    RC: ReadCapability<MCL, MCC, MPL> + SubspaceId,
+    S: SubspaceId,
+    RC: ReadCapability<MCL, MCC, MPL>
+        + RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
 {
     async fn relative_encode<C>(
         &self,
         consumer: &mut C,
-        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, RC>,
+        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, S>,
     ) -> Result<(), C::Error>
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header = 0x0;
+
+        let sender_handle_tag =
+            compact_u64::Tag::min_tag(self.sender_handle, compact_u64::TagWidth::two());
+        header |= sender_handle_tag.data_at_offset(0);
+
+        let receiver_handle_tag =
+            compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::two());
+        header |= receiver_handle_tag.data_at_offset(2);
+
+        let max_count_tag = compact_u64::Tag::min_tag(self.max_count, compact_u64::TagWidth::two());
+        header |= max_count_tag.data_at_offset(4);
+
+        let max_size_tag = compact_u64::Tag::min_tag(self.max_size, compact_u64::TagWidth::two());
+        header |= max_size_tag.data_at_offset(6);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.sender_handle)
+            .relative_encode(consumer, &sender_handle_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.receiver_handle)
+            .relative_encode(consumer, &receiver_handle_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.max_count)
+            .relative_encode(consumer, &max_count_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.max_size)
+            .relative_encode(consumer, &max_size_tag.encoding_width())
+            .await?;
+
+        consumer.consume(self.max_payload_power).await?;
+
+        self.capability.relative_encode(consumer, r).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, RC>
+    RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>
+    for PioBindReadCapability<MCL, MCC, MPL, RC>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    RC: ReadCapability<MCL, MCC, MPL>
+        + SubspaceId
+        + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
+{
+    fn relative_len_of_encoding(&self, r: &PersonalPrivateInterest<MCL, MCC, MPL, N, S>) -> usize {
+        let sender_handle_tag =
+            compact_u64::Tag::min_tag(self.sender_handle, compact_u64::TagWidth::two());
+        let receiver_handle_tag =
+            compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::two());
+        let max_count_tag = compact_u64::Tag::min_tag(self.max_count, compact_u64::TagWidth::two());
+        let max_size_tag = compact_u64::Tag::min_tag(self.max_size, compact_u64::TagWidth::two());
+
+        let sender_handle_len = CompactU64(self.sender_handle)
+            .relative_len_of_encoding(&sender_handle_tag.encoding_width());
+
+        let receiver_handle_len = CompactU64(self.receiver_handle)
+            .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
+
+        let max_count_len =
+            CompactU64(self.max_count).relative_len_of_encoding(&max_count_tag.encoding_width());
+
+        let max_size_len =
+            CompactU64(self.max_size).relative_len_of_encoding(&max_size_tag.encoding_width());
+
+        let cap_len = self.capability.relative_len_of_encoding(r);
+
+        1 + sender_handle_len + receiver_handle_len + max_count_len + max_size_len + 1 + cap_len
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, RC>
+    RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
+    for PioBindReadCapability<MCL, MCC, MPL, RC>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+    RC: ReadCapability<MCL, MCC, MPL>
+        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &PersonalPrivateInterest<MCL, MCC, MPL, N, S>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        let sender_handle_tag = compact_u64::Tag::from_raw(header, compact_u64::TagWidth::two(), 0);
+        let receiver_handle_tag =
+            compact_u64::Tag::from_raw(header, compact_u64::TagWidth::two(), 2);
+        let max_count_tag = compact_u64::Tag::from_raw(header, compact_u64::TagWidth::two(), 4);
+        let max_size_tag = compact_u64::Tag::from_raw(header, compact_u64::TagWidth::two(), 6);
+
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let max_count = CompactU64::relative_decode(producer, &max_count_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let max_size = CompactU64::relative_decode(producer, &max_size_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let max_payload_power = producer.produce_item().await?;
+
+        let capability = RC::relative_decode(producer, r).await?;
+
+        Ok(Self {
+            sender_handle,
+            receiver_handle,
+            max_count,
+            max_size,
+            max_payload_power,
+            capability,
+        })
     }
 }

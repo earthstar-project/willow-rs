@@ -460,3 +460,10 @@ path = "fuzz_targets/enc_pioannounceoverlap_rel_pair.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_piobindreadcapability_rel_ppi"
+path = "fuzz_targets/enc_piobindreadcapability_rel_ppi.rs"
+test = false
+doc = false
+bench = false

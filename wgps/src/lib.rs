@@ -27,7 +27,7 @@ use willow_transport_encryption::{
 pub mod data_handles;
 mod pio;
 
-pub use pio::EnumerationCapability;
+pub use pio::{EnumerationCapability, ReadCapability};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
