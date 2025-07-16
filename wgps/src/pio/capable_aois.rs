@@ -11,7 +11,9 @@ use either::Either::{self, Left, Right};
 use multimap::MultiMap;
 use willow_data_model::{grouping::Area, NamespaceId, PrivateInterest, SubspaceId};
 
-use crate::pio::salted_hashes::{HashRegistry, Overlap, PioBindHashInformation};
+use crate::pio::salted_hashes::{
+    HashRegistry, MyInterestingHandleInfo, Overlap, PioBindHashInformation,
+};
 
 /// Tell this struct about your own capable AOIs, and the PIO messages received from the other peer, and this struct tells you which messages to send and where there are overlaps of areas of interest. Does not perform any IO, only implements the logic of pio.
 #[derive(Debug)]
@@ -109,13 +111,13 @@ where
         &mut self,
         fst_handle: u64,
         private_interest: &PrivateInterest<MCL, MCC, MPL, N, S>,
-    ) -> &HashSet<Overlap> {
+    ) -> Vec<Overlap> {
         let overlaps = self.hash_registry.sent_pio_bind_hash_msgs(fst_handle);
 
         let pi_state = self.my_interests.get_mut(private_interest).unwrap();
-        pi_state.overlaps.extend(overlaps);
+        pi_state.overlaps.extend(overlaps.iter());
 
-        return &pi_state.overlaps;
+        return overlaps;
     }
 
     /// Call this whenever we received a PioBindHash message. Returns any detected matches.
@@ -142,6 +144,65 @@ where
 
         return overlaps;
     }
+
+    /// Call this whenever we received a PioAnnounceOverlap message. Returns any detected matches, or an error if the message data was invalid.
+    pub fn received_pio_announce_overlap_msg(
+        &mut self,
+        their_handle: u64,
+        my_handle: u64,
+        authentication: [u8; INTEREST_HASH_LENGTH],
+        enum_cap: Option<u16>,
+    ) -> Result<Vec<Overlap>, ReceivedAnnouncementError> {
+        // Retrieve information stored with my_handle, error if they provided a fake one.
+        match self.hash_registry.try_get_our_handle_info(my_handle) {
+            None => return Err(ReceivedAnnouncementError::UnboundMyHandle),
+            Some((MyInterestingHandleInfo { private_interest }, was_primary)) => {
+                // Our handle is real!
+
+                // We can verify their authentication.
+                let expected_authentication =
+                    (self.hash_registry.h)(private_interest, &self.hash_registry.their_salt());
+
+                if authentication != expected_authentication {
+                    return Err(ReceivedAnnouncementError::InvalidAuthentication);
+                }
+
+                // Next, verify that `their_handle` is valid and corresponds to the same hash as `my_handle`.
+                match self.hash_registry.get_their_handle(their_handle) {
+                    None => return Err(ReceivedAnnouncementError::UnboundTheirHandle),
+                    Some((their_hash, their_primary)) => {
+                        // Their handle is real!
+
+                        // Does is indeed correspond to the same hash as our handle?
+                        let expected_hash =
+                            (self.hash_registry.h)(private_interest, &self.hash_registry.my_salt);
+
+                        if their_hash != &expected_hash {
+                            return Err(ReceivedAnnouncementError::MismatchedHandles);
+                        }
+
+                        // Now, check whether there is an enum_cap and there *should* be one. TODO DESIGN can this be moved into decoding? is the explicit flag in the encoding needed?
+                        // Nothing to do with the enum_cap, oddly enough: its validity was checked during decoding, its receiver and namespace were checked during decoding (the namespace being taken from the same `private_interest` as we retrieved above).
+                        // The namespace of the private interest must correspond to that of the enumeration capability (see above though, so no need to check this?).
+                        todo!();
+                    }
+                }
+            }
+        }
+
+        return todo!();
+    }
+}
+
+pub(crate) enum ReceivedAnnouncementError {
+    // The peer's message claimed we had bound a certain OverlapHandle, but we did not.
+    UnboundMyHandle,
+    // The peer's message claimed they had bound a certain OverlapHandle, but they did not.
+    UnboundTheirHandle,
+    // The peer's PioAnnounceOverlap message contained an invalid `authentication`.
+    InvalidAuthentication,
+    // Their handle and my my handle did not correspond to equal private interests.
+    MismatchedHandles,
 }
 
 #[derive(Debug)]
