@@ -1,0 +1,23 @@
+EncodedPair {
+    actual_value: Path(
+        [
+            Component(
+                [],
+            ),
+            Component(
+                [],
+            ),
+            Component(
+                [
+                    178,
+                ],
+            ),
+            Component(
+                [],
+            ),
+        ],
+    ),
+    relative_to: Path(
+        [],
+    ),
+}

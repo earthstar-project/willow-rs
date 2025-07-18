@@ -1,0 +1,24 @@
+Path(
+    [
+        Component(
+            [
+                1,
+            ],
+        ),
+        Component(
+            [
+                20,
+            ],
+        ),
+        Component(
+            [
+                248,
+            ],
+        ),
+        Component(
+            [
+                0,
+            ],
+        ),
+    ],
+)
