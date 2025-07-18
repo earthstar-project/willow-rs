@@ -1,6 +1,6 @@
 # Willow Test Vector
 
-This repository contains test vectors for Willow, primarily for its [encodings](https://willowprotocol.org/specs/encodings).
+This repository contains test vectors for Willow, primarily for its [encodings](https://willowprotocol.org/specs/encodings). All data sets use Willow25 parameters.
 
 The different kinds of test data sets:
 
