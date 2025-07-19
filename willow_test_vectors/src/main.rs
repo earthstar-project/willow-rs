@@ -13,17 +13,17 @@ mod path_extends_path;
 fn main() {
     pollster::block_on(async {
         let readme = include_str!("./vector_repo_readme.md");
-        write_file_create_parent_dirs("./generated_testvectors/README.md", readme).unwrap();
+        write_file_create_parent_dirs("../generated_testvectors/README.md", readme).unwrap();
 
         generate_test_vectors_absolute::<Path<MCL25, MCC25, MPL25>, _, _>(
             "./fuzz/corpus/testvector_EncodePath",
-            "./generated_testvectors/EncodePath",
+            "../generated_testvectors/EncodePath",
         )
         .await;
 
         generate_test_vectors_canonic_absolute::<Path<MCL25, MCC25, MPL25>, _, _>(
             "./fuzz/corpus/testvector_encode_path",
-            "./generated_testvectors/encode_path",
+            "../generated_testvectors/encode_path",
         )
         .await;
 
@@ -35,7 +35,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodePathRelativePath",
-            "./generated_testvectors/EncodePathRelativePath",
+            "../generated_testvectors/EncodePathRelativePath",
         )
         .await;
 
@@ -48,19 +48,19 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_path_rel_path",
-            "./generated_testvectors/path_rel_path",
+            "../generated_testvectors/path_rel_path",
         )
         .await;
 
         path_extends_path::generate_path_extends_path_vectors(
             "./fuzz/corpus/testvector_EncodePathExtendsPath",
-            "./generated_testvectors/EncodePathExtendsPath",
+            "../generated_testvectors/EncodePathExtendsPath",
         )
         .await;
 
         path_extends_path::generate_path_extends_path_canonic_vectors(
             "./fuzz/corpus/testvector_path_extends_path",
-            "./generated_testvectors/path_extends_path",
+            "../generated_testvectors/path_extends_path",
         )
         .await;
 
@@ -70,7 +70,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodeEntry",
-            "./generated_testvectors/EncodeEntry",
+            "../generated_testvectors/EncodeEntry",
         )
         .await;
 
@@ -80,7 +80,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_encode_entry",
-            "./generated_testvectors/encode_entry",
+            "../generated_testvectors/encode_entry",
         )
         .await;
 
@@ -92,7 +92,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodeEntryRelativeEntry",
-            "./generated_testvectors/EncodeEntryRelativeEntry",
+            "../generated_testvectors/EncodeEntryRelativeEntry",
         )
         .await;
 
@@ -109,7 +109,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodeCommunalCapability",
-            "./generated_testvectors/EncodeCommunalCapability",
+            "../generated_testvectors/EncodeCommunalCapability",
         )
         .await;
 
@@ -127,7 +127,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodeOwnedCapability",
-            "./generated_testvectors/EncodeOwnedCapability",
+            "../generated_testvectors/EncodeOwnedCapability",
         )
         .await;
 
@@ -145,7 +145,7 @@ fn main() {
             _,
         >(
             "./fuzz/corpus/testvector_EncodeMcCapability",
-            "./generated_testvectors/EncodeMcCapability",
+            "../generated_testvectors/EncodeMcCapability",
         )
         .await;
     });
