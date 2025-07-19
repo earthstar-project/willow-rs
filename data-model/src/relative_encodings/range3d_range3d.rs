@@ -8,8 +8,8 @@ use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
     Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
-    RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync, RelativeEncodable,
-    RelativeEncodableKnownSize, RelativeEncodableSync,
+    RelativeDecodable, RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize,
+    RelativeEncodableSync,
 };
 use willow_encoding::is_bitflagged;
 
