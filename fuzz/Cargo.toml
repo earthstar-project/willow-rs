@@ -535,6 +535,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "testvector_EncodeEntryInNamespace3dRange"
+path = "fuzz_targets/testvector_EncodeEntryInNamespace3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "testvector_EncodeCommunalCapability"
 path = "fuzz_targets/testvector_EncodeCommunalCapability.rs"
 test = false

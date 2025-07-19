@@ -1,12 +1,15 @@
 use meadowcap::{UnverifiedCommunalCapability, UnverifiedMcCapability, UnverifiedOwnedCapability};
+use ufotofu::consumer::IntoVec;
 /// This program generates the test vector repository for Willow. Requires that the fuzz tests from which we extract the test vectors have been run. They live in the `fuzz` directory of our willor-rs workspace.
 use willow_25::{NamespaceId25, PayloadDigest25, Signature25, SubspaceId25, MCC25, MCL25, MPL25};
-use willow_data_model::{Entry, Path};
+use willow_data_model::{grouping::Range3d, Entry, Path};
 
 use ufotofu_codec::test_vector_generation::{
     generate_test_vectors_absolute, generate_test_vectors_canonic_absolute,
     generate_test_vectors_canonic_relative, generate_test_vectors_relative,
+    generate_test_vectors_relative_custom_serialisation,
 };
+use ufotofu_codec::Encodable;
 
 mod path_extends_path;
 
@@ -96,6 +99,19 @@ fn main() {
         )
         .await;
 
+        generate_test_vectors_relative_custom_serialisation::<
+            Entry<MCL25, MCC25, MPL25, NamespaceId25, SubspaceId25, PayloadDigest25>,
+            (NamespaceId25, Range3d<MCL25, MCC25, MPL25, SubspaceId25>),
+            _,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_EncodeEntryInNamespace3dRange",
+            "../generated_testvectors/EncodeEntryInNamespace3dRange",
+            encode_ns_3drange,
+        )
+        .await;
+
         generate_test_vectors_absolute::<
             UnverifiedCommunalCapability<
                 MCL25,
@@ -160,4 +176,13 @@ where
     std::fs::create_dir_all(prefix).unwrap();
 
     std::fs::write(file, contents)
+}
+
+fn encode_ns_3drange(r: &(NamespaceId25, Range3d<MCL25, MCC25, MPL25, SubspaceId25>)) -> Vec<u8> {
+    pollster::block_on(async {
+        let mut consumer = IntoVec::new();
+        r.0.encode(&mut consumer).await.unwrap();
+        r.1.encode(&mut consumer).await.unwrap();
+        consumer.into_vec()
+    })
 }
