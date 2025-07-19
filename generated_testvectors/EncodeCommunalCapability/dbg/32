@@ -57,7 +57,7 @@ UnverifiedCommunalCapability {
                         ],
                     ),
                     times: Range {
-                        start: 18446744073709551614,
+                        start: 18446744073709551615,
                         end: Closed(
                             18446744073709551358,
                         ),
@@ -65,6 +65,7 @@ UnverifiedCommunalCapability {
                 },
                 user: SubspaceId25(
                     [
+                        1,
                         1,
                         1,
                         255,
@@ -96,13 +97,12 @@ UnverifiedCommunalCapability {
                         255,
                         255,
                         157,
-                        157,
                     ],
                 ),
                 signature: Signature25(
                     ed25519::Signature {
-                        R: 0x9d9d9d9d9d9d9d9d9d9d9d9d9d9d2b859d9dffffffffffffffffffff9d9d9d9d,
-                        s: 0x9d7575757501010196010101010101010101010101010101010101010101d9d9,
+                        R: 0x9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d2b859d9dffffffffffffffffffff9d9d9d,
+                        s: 0x9d9d7575757501010196010101010101010101010101010101010101010101d9,
                     },
                 ),
             },

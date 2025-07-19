@@ -1,4 +1,4 @@
-use meadowcap::UnverifiedCommunalCapability;
+use meadowcap::{UnverifiedCommunalCapability, UnverifiedOwnedCapability};
 /// This program generates the test vector repository for Willow. Requires that the fuzz tests from which we extract the test vectors have been run. They live in the `fuzz` directory of our willor-rs workspace.
 use willow_25::{NamespaceId25, PayloadDigest25, Signature25, SubspaceId25, MCC25, MCL25, MPL25};
 use willow_data_model::{Entry, Path};
@@ -110,6 +110,24 @@ fn main() {
         >(
             "./fuzz/corpus/testvector_EncodeCommunalCapability",
             "./generated_testvectors/EncodeCommunalCapability",
+        )
+        .await;
+
+        generate_test_vectors_absolute::<
+            UnverifiedOwnedCapability<
+                MCL25,
+                MCC25,
+                MPL25,
+                NamespaceId25,
+                Signature25,
+                SubspaceId25,
+                Signature25,
+            >,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_EncodeOwnedCapability",
+            "./generated_testvectors/EncodeOwnedCapability",
         )
         .await;
     });

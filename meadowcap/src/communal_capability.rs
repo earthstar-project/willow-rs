@@ -485,7 +485,7 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: Encodable + EncodableKnownSize,
+    UserSignature: Encodable,
 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where

@@ -1,0 +1,56 @@
+UnverifiedOwnedCapability {
+    inner: OwnedCapability {
+        access_mode: Read,
+        namespace_key: NamespaceId25(
+            VerifyingKey(CompressedEdwardsY: [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 63, 255, 255, 255, 103, 103, 103, 255, 255, 255, 255, 255, 255, 255, 255, 255]), EdwardsPoint{
+            	X: FieldElement51([1482443189270511, 1035616770040441, 1795871038411437, 1620989377294516, 2197550614558938]),
+            	Y: FieldElement51([2251799813685247, 2251799813685247, 2251786928783359, 2251798533616639, 2251799813685247]),
+            	Z: FieldElement51([1, 0, 0, 0, 0]),
+            	T: FieldElement51([1940402657770758, 2078067148454687, 670130110224042, 2155871860567802, 1053375827738414])
+            }),
+        ),
+        user_key: SubspaceId25(
+            [
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+                255,
+            ],
+        ),
+        initial_authorisation: Signature25(
+            ed25519::Signature {
+                R: 0xffffffffffffffff05fffffffffffffffffffffffffffff7ffffffffffffffff,
+                s: 0xffffffffffffffffffffffffffffffffffffffffffffffe9e9e99191ffffff07,
+            },
+        ),
+        delegations: [],
+    },
+}
