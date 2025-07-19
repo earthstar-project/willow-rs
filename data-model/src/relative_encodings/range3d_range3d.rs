@@ -374,12 +374,6 @@ where
                 },
             };
 
-            let end_to_start = time_end.abs_diff(r.times().start);
-            let end_to_end = match &r.times().end {
-                RangeEnd::Closed(ref_end) => time_end.abs_diff(*ref_end),
-                RangeEnd::Open => u64::MAX,
-            };
-
             RangeEnd::Closed(time_end)
         };
 
