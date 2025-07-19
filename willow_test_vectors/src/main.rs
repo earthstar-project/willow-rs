@@ -1,4 +1,7 @@
-use meadowcap::{UnverifiedCommunalCapability, UnverifiedMcCapability, UnverifiedOwnedCapability};
+use meadowcap::{
+    UnverifiedCommunalCapability, UnverifiedMcCapability, UnverifiedMcEnumerationCapability,
+    UnverifiedOwnedCapability,
+};
 use ufotofu::consumer::IntoVec;
 /// This program generates the test vector repository for Willow. Requires that the fuzz tests from which we extract the test vectors have been run. They live in the `fuzz` directory of our willor-rs workspace.
 use willow_25::{NamespaceId25, PayloadDigest25, Signature25, SubspaceId25, MCC25, MCL25, MPL25};
@@ -142,7 +145,7 @@ fn main() {
         )
         .await;
 
-    generate_test_vectors_relative::<
+        generate_test_vectors_relative::<
             Range3d<MCL25, MCC25, MPL25, SubspaceId25>,
             Range3d<MCL25, MCC25, MPL25, SubspaceId25>,
             _,
@@ -208,6 +211,21 @@ fn main() {
         >(
             "./fuzz/corpus/testvector_EncodeMcCapability",
             "../generated_testvectors/EncodeMcCapability",
+        )
+        .await;
+
+        generate_test_vectors_absolute::<
+            UnverifiedMcEnumerationCapability<
+                NamespaceId25,
+                Signature25,
+                SubspaceId25,
+                Signature25,
+            >,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_EncodeMcEnumerationCapability",
+            "../generated_testvectors/EncodeMcEnumerationCapability",
         )
         .await;
     });

@@ -380,8 +380,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_mcsubspacecapability_abs"
-path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+name = "enc_mcenumerationcapability_abs"
+path = "fuzz_targets/enc_mcenumerationcapability_abs.rs"
 test = false
 doc = false
 bench = false
@@ -422,8 +422,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_subspacecapability_rel_personalprivateinterest"
-path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
+name = "enc_enumerationcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_enumerationcapability_rel_personalprivateinterest.rs"
 test = false
 doc = false
 bench = false
@@ -579,6 +579,13 @@ bench = false
 [[bin]]
 name = "testvector_EncodeMcCapability"
 path = "fuzz_targets/testvector_EncodeMcCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcEnumerationCapability"
+path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
 test = false
 doc = false
 bench = false
