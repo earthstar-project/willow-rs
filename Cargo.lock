@@ -1335,6 +1335,7 @@ name = "willow_test_vectors"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "meadowcap",
  "pollster",
  "ufotofu",
  "ufotofu_codec",

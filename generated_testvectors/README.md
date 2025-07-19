@@ -1,6 +1,6 @@
 # Willow Test Vector
 
-This repository contains test vectors for Willow, primarily for its [encodings](https://willowprotocol.org/specs/encodings).
+This repository contains test vectors for Willow, primarily for its [encodings](https://willowprotocol.org/specs/encodings). All data sets use Willow25 parameters.
 
 The different kinds of test data sets:
 
@@ -38,3 +38,7 @@ For relative encoding relations, e.g. `EncodePathRelativePath`, the directory fo
 ## Relative Encoding Functions
 
 For relative encoding functions, e.g. `path_rel_path`, the directory for the funciton is structured the same way as for relative encoding *relations*.
+
+# Gotchas
+
+Test vectors for encoding and decoding capabilities ignore whether the signatures contained in those capabilities are correct.
