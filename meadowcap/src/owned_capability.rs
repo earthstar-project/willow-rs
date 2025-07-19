@@ -663,10 +663,6 @@ impl<
         UserPublicKey,
         UserSignature,
     >
-where
-    NamespacePublicKey: McNamespacePublicKey,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
     pub unsafe fn into_verifified_unchecked(
         self,
@@ -680,6 +676,20 @@ where
         UserSignature,
     > {
         self.inner
+    }
+
+    pub fn from_verified(
+        cap: OwnedCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+    ) -> Self {
+        Self { inner: cap }
     }
 }
 

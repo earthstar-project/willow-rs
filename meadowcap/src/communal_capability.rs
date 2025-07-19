@@ -453,16 +453,19 @@ impl<
         NamespacePublicKey,
         UserPublicKey,
         UserSignature,
-    > UnverifiedCommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    >
+    UnverifiedCommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
 {
     pub unsafe fn into_verifified_unchecked(
         self,
     ) -> CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature> {
         self.inner
+    }
+
+    pub fn from_verified(
+        cap: CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>,
+    ) -> Self {
+        Self { inner: cap }
     }
 }
 

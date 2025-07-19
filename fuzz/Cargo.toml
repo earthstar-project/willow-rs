@@ -449,6 +449,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "enc_unverified_mc_capability_abs"
+path = "fuzz_targets/enc_unverified_mc_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
 ##############################
 # compactransport_encryption #
 ##############################
@@ -537,6 +544,13 @@ bench = false
 [[bin]]
 name = "testvector_EncodeOwnedCapability"
 path = "fuzz_targets/testvector_EncodeOwnedCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcCapability"
+path = "fuzz_targets/testvector_EncodeMcCapability.rs"
 test = false
 doc = false
 bench = false
