@@ -542,6 +542,27 @@ doc = false
 bench = false
 
 [[bin]]
+name = "testvector_EncodeAreaInArea"
+path = "fuzz_targets/testvector_EncodeAreaInArea.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_area_in_area"
+path = "fuzz_targets/testvector_area_in_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_Encode3dRangeRelative3dRange"
+path = "fuzz_targets/testvector_Encode3dRangeRelative3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "testvector_EncodeCommunalCapability"
 path = "fuzz_targets/testvector_EncodeCommunalCapability.rs"
 test = false

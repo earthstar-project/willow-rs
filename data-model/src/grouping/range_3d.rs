@@ -164,7 +164,7 @@ where
     }
 }
 
-/// This is an "inofficial" encoding not on the enocindgs spec page.
+/// This is an "inofficial" encoding not on the encodings spec page.
 ///
 /// ## An Absolute Encoding Relation for 3dRange
 ///
@@ -177,8 +177,8 @@ where
 /// - encoding of the end of the subspace range, or empty string if the subspace range is open
 /// - encoding of the start of the path range
 /// - encoding of the end of the path range, or empty string if the path range is open
-/// - encoding of the start of the timestamp range as an 8-byte little-endian integer
-/// - encoding of the end of the timestamp range as an 8-byte little-endian integer, or empty string if the timestamp range is open
+/// - encoding of the start of the timestamp range as an 8-byte big-endian integer
+/// - encoding of the end of the timestamp range as an 8-byte big-endian integer, or empty string if the timestamp range is open
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodable
     for Range3d<MCL, MCC, MPL, S>
 {
@@ -192,10 +192,10 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodab
             header |= 0b1000_0000;
         }
         if self.paths().is_open() {
-            header |= 0b1000_0000;
+            header |= 0b0100_0000;
         }
         if self.times().is_open() {
-            header |= 0b1000_0000;
+            header |= 0b0010_0000;
         }
 
         consumer.consume(header).await?;

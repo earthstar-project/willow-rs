@@ -2,6 +2,7 @@ use meadowcap::{UnverifiedCommunalCapability, UnverifiedMcCapability, Unverified
 use ufotofu::consumer::IntoVec;
 /// This program generates the test vector repository for Willow. Requires that the fuzz tests from which we extract the test vectors have been run. They live in the `fuzz` directory of our willor-rs workspace.
 use willow_25::{NamespaceId25, PayloadDigest25, Signature25, SubspaceId25, MCC25, MCL25, MPL25};
+use willow_data_model::grouping::Area;
 use willow_data_model::{grouping::Range3d, Entry, Path};
 
 use ufotofu_codec::test_vector_generation::{
@@ -17,6 +18,10 @@ fn main() {
     pollster::block_on(async {
         let readme = include_str!("./vector_repo_readme.md");
         write_file_create_parent_dirs("../generated_testvectors/README.md", readme).unwrap();
+
+        //////////////////////////
+        // Data Model Encodings //
+        //////////////////////////
 
         generate_test_vectors_absolute::<Path<MCL25, MCC25, MPL25>, _, _>(
             "./fuzz/corpus/testvector_EncodePath",
@@ -111,6 +116,47 @@ fn main() {
             encode_ns_3drange,
         )
         .await;
+
+        generate_test_vectors_relative::<
+            Area<MCL25, MCC25, MPL25, SubspaceId25>,
+            Area<MCL25, MCC25, MPL25, SubspaceId25>,
+            _,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_EncodeAreaInArea",
+            "../generated_testvectors/EncodeAreaInArea",
+        )
+        .await;
+
+        generate_test_vectors_canonic_relative::<
+            Area<MCL25, MCC25, MPL25, SubspaceId25>,
+            Area<MCL25, MCC25, MPL25, SubspaceId25>,
+            _,
+            _,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_area_in_area",
+            "../generated_testvectors/area_in_area",
+        )
+        .await;
+
+    generate_test_vectors_relative::<
+            Range3d<MCL25, MCC25, MPL25, SubspaceId25>,
+            Range3d<MCL25, MCC25, MPL25, SubspaceId25>,
+            _,
+            _,
+            _,
+        >(
+            "./fuzz/corpus/testvector_Encode3dRangeRelative3dRange",
+            "../generated_testvectors/Encode3dRangeRelative3dRange",
+        )
+        .await;
+
+        /////////////////////////
+        // Meadowcap Encodings //
+        /////////////////////////
 
         generate_test_vectors_absolute::<
             UnverifiedCommunalCapability<

@@ -58,5 +58,16 @@ Encodings we need for test vector information but which are not defined in the w
 - encoding of the end of the subspace range, or empty string if the subspace range is open
 - encoding of the start of the path range
 - encoding of the end of the path range, or empty string if the path range is open
-- encoding of the start of the timestamp range as an 8-byte little-endian integer
-- encoding of the end of the timestamp range as an 8-byte little-endian integer, or empty string if the timestamp range is open
+- encoding of the start of the timestamp range as an 8-byte big-endian integer
+- encoding of the end of the timestamp range as an 8-byte big-endian integer, or empty string if the timestamp range is open
+
+## An Absolute Encoding Relation for Area
+
+- First byte is a header of bitflags:
+    - most significant bit: `1` iff the subspace is `any`.
+    - third-most significant bit: `1` iff the timestamp range is open.
+    - remaining six bits: arbitrary.
+- encoding of the subspace id, or empty string if the subspace is `any`
+- encoding of the path
+- encoding of the start of the timestamp range as an 8-byte big-endian integer
+- encoding of the end of the timestamp range as an 8-byte big-endian integer, or empty string if the timestamp range is open

@@ -2,6 +2,8 @@
 use crate::{grouping::RangeEnd, parameters::SubspaceId, PathBuilder};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+use ufotofu_codec::Encodable;
+use ufotofu_codec_endian::U64BE;
 
 use crate::{
     entry::{Entry, Timestamp},
@@ -322,6 +324,51 @@ where
     };
 
     Ok(Area::new(subspace, included_path, times))
+}
+
+/// This is an "inofficial" encoding not on the encodings spec page.
+///
+/// ## An Absolute Encoding Relation for Area
+///
+/// - First byte is a header of bitflags:
+///     - most significant bit: `1` iff the subspace is `any`.
+///     - third-most significant bit: `1` iff the timestamp range is open.
+///     - remaining six bits: arbitrary.
+/// - encoding of the subspace id, or empty string if the subspace is `any`
+/// - encoding of the path
+/// - encoding of the start of the timestamp range as an 8-byte big-endian integer
+/// - encoding of the end of the timestamp range as an 8-byte big-endian integer, or empty string if the timestamp range is open
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodable
+    for Area<MCL, MCC, MPL, S>
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let mut header = 0;
+
+        if self.subspace().is_any() {
+            header |= 0b1000_0000;
+        }
+        if self.times().is_open() {
+            header |= 0b0100_0000;
+        }
+
+        consumer.consume(header).await?;
+
+        if let AreaSubspace::Id(id) = self.subspace() {
+            id.encode(consumer).await?;
+        }
+
+        self.path().encode(consumer).await?;
+
+        U64BE(self.times().start).encode(consumer).await?;
+        if let Some(end) = self.times().get_end() {
+            U64BE(*end).encode(consumer).await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
