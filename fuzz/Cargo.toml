@@ -463,6 +463,7 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
 name = "namespaced_area_map"
 path = "fuzz_targets/namespaced_area_map.rs"
 test = false
