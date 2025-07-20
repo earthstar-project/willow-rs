@@ -61,7 +61,7 @@ where
         }
     }
 
-    /// Call this when you want to add a CapableAoi. Returns TODO
+    /// Call this when you want to add a CapableAoi.
     pub(crate) fn submit_capable_aoi(
         &mut self,
         caoi: CapableAoi<MCL, MCC, MPL, ReadCap>,
@@ -145,19 +145,20 @@ where
         return overlaps;
     }
 
-    /// Call this whenever we received a PioAnnounceOverlap message. Returns any detected matches, or an error if the message data was invalid.
+    /// Call this whenever we received a PioAnnounceOverlap message. Returns the indicated overlap, or an error if the message data was invalid.
     pub fn received_pio_announce_overlap_msg(
         &mut self,
         their_handle: u64,
         my_handle: u64,
         authentication: [u8; INTEREST_HASH_LENGTH],
         enum_cap: Option<u16>,
-    ) -> Result<Vec<Overlap>, ReceivedAnnouncementError> {
+    ) -> Result<Overlap, ReceivedAnnouncementError> {
         // Retrieve information stored with my_handle, error if they provided a fake one.
         match self.hash_registry.try_get_our_handle_info(my_handle) {
             None => return Err(ReceivedAnnouncementError::UnboundMyHandle),
-            Some((MyInterestingHandleInfo { private_interest }, was_primary)) => {
+            Some((MyInterestingHandleInfo { private_interest }, my_interesting_handle)) => {
                 // Our handle is real!
+                let was_primary = my_interesting_handle == my_handle;
 
                 // We can verify their authentication.
                 let expected_authentication =
@@ -181,28 +182,45 @@ where
                             return Err(ReceivedAnnouncementError::MismatchedHandles);
                         }
 
-                        // Now, check whether there is an enum_cap and there *should* be one. TODO DESIGN can this be moved into decoding? is the explicit flag in the encoding needed?
-                        // Nothing to do with the enum_cap, oddly enough: its validity was checked during decoding, its receiver and namespace were checked during decoding (the namespace being taken from the same `private_interest` as we retrieved above).
-                        // The namespace of the private interest must correspond to that of the enumeration capability (see above though, so no need to check this?).
-                        todo!();
+                        // Now, check whether there is an enum_cap and there *should* be one.
+                        let awkward = !was_primary && !*their_primary;
+                        if awkward && enum_cap.is_none() {
+                            return Err(ReceivedAnnouncementError::MissingEnumerationCapability);
+                        }
+                        // Nothing to do with the enum_cap beyond checking its existence, oddly enough: its validity was checked during decoding, its receiver and namespace were checked during decoding (the namespace being taken from the same `private_interest` as we retrieved above) as well.
+
+                        // All checks passed. Now we can notify our surrounding code about the overlap this message informs us about.
+                        let pi_state = self.my_interests.get_mut(private_interest).unwrap();
+
+                        let overlap = Overlap {
+                            should_request_capability: false,
+                            should_send_capability: true,
+                            awkward: awkward,
+                            my_interesting_handle: my_interesting_handle,
+                            their_handle: their_handle,
+                        };
+
+                        pi_state.overlaps.insert(overlap);
+
+                        return Ok(overlap);
                     }
                 }
             }
         }
-
-        return todo!();
     }
 }
 
 pub(crate) enum ReceivedAnnouncementError {
-    // The peer's message claimed we had bound a certain OverlapHandle, but we did not.
+    /// The peer's message claimed we had bound a certain OverlapHandle, but we did not.
     UnboundMyHandle,
-    // The peer's message claimed they had bound a certain OverlapHandle, but they did not.
+    /// The peer's message claimed they had bound a certain OverlapHandle, but they did not.
     UnboundTheirHandle,
-    // The peer's PioAnnounceOverlap message contained an invalid `authentication`.
+    /// The peer's PioAnnounceOverlap message contained an invalid `authentication`.
     InvalidAuthentication,
-    // Their handle and my my handle did not correspond to equal private interests.
+    /// Their handle and my my handle did not correspond to equal private interests.
     MismatchedHandles,
+    /// Their message should have had an enumeration capability, but it didn't.
+    MissingEnumerationCapability,
 }
 
 #[derive(Debug)]

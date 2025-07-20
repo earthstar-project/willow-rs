@@ -1,7 +1,5 @@
 // Pure logic of exchanging salted hashes based on PrivateInterests, and detecting overlaps thereof. No actual message sending.
 
-use std::collections::HashMap;
-
 use multimap::MultiMap;
 use willow_data_model::{NamespaceId, PrivateInterest, SubspaceId};
 
@@ -227,11 +225,11 @@ impl<
         }
     }
 
-    /// The returned boolean is `true` iff this was an interesting handle. Whole thing returns None if the argument handle is not one we have bound.
+    /// The returned u64 is the interesting handle (i.e., it is equal to the argument `my_handle` iff `my_handle` is an interesting handle). Whole thing returns None if the argument handle is not one we have bound.
     pub(crate) fn try_get_our_handle_info(
         &self,
         my_handle: u64,
-    ) -> Option<(&MyInterestingHandleInfo<MCL, MCC, MPL, N, S>, bool)> {
+    ) -> Option<(&MyInterestingHandleInfo<MCL, MCC, MPL, N, S>, u64)> {
         let my_handle_info = self.my_handles.get(my_handle).unwrap()?;
 
         match my_handle_info {
@@ -242,11 +240,13 @@ impl<
                 match my_interesting_handle_info {
                     MyHandleInfo::Uninteresting { .. } => unreachable!(),
                     MyHandleInfo::Interesting(my_interesting_handle_info) => {
-                        return Some((my_interesting_handle_info, false))
+                        return Some((my_interesting_handle_info, *interesting_handle))
                     }
                 }
             }
-            MyHandleInfo::Interesting(interesting_info) => return Some((interesting_info, true)),
+            MyHandleInfo::Interesting(interesting_info) => {
+                return Some((interesting_info, my_handle))
+            }
         }
     }
 
