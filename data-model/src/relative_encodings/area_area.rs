@@ -8,8 +8,9 @@ use ufotofu_codec::{
 use willow_encoding::is_bitflagged;
 
 use crate::{
+    decode_path_extends_path, decode_path_extends_path_canonic, encode_path_extends_path,
     grouping::{Area, AreaSubspace, Range, RangeEnd},
-    Path, SubspaceId,
+    path_extends_path_encoding_len, SubspaceId,
 };
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
@@ -83,8 +84,6 @@ where
             }
         }
 
-        self.path().relative_encode(consumer, r.path()).await?;
-
         CompactU64(start_diff)
             .relative_encode(consumer, &start_diff_tag.encoding_width())
             .await?;
@@ -94,6 +93,8 @@ where
                 .relative_encode(consumer, &end_diff_tag.encoding_width())
                 .await?;
         }
+
+        encode_path_extends_path(consumer, self.path(), r.path()).await?;
 
         Ok(())
     }
@@ -174,8 +175,6 @@ where
             }
         };
 
-        let path_len = self.path().relative_len_of_encoding(r.path());
-
         let start_diff_len =
             CompactU64(start_diff).relative_len_of_encoding(&start_diff_tag.encoding_width());
 
@@ -184,6 +183,8 @@ where
         } else {
             0
         };
+
+        let path_len = path_extends_path_encoding_len(self.path(), r.path());
 
         1 + subspace_len + path_len + start_diff_len + end_diff_len
     }
@@ -290,21 +291,6 @@ where
         }
     }
 
-    let path = if CANONIC {
-        Path::relative_decode_canonic(producer, r.path())
-            .await
-            .map_err(DecodeError::map_other_from)?
-    } else {
-        Path::relative_decode(producer, r.path())
-            .await
-            .map_err(DecodeError::map_other_from)?
-    };
-
-    // Verify the decoded path is prefixed by the reference path
-    if !path.is_prefixed_by(r.path()) {
-        return Err(DecodeError::Other(Blame::TheirFault));
-    }
-
     let start_diff = if CANONIC {
         CompactU64::relative_decode_canonic(producer, &start_time_diff_tag)
             .await
@@ -409,6 +395,21 @@ where
     if !r.times().includes_range(&times) {
         return Err(DecodeError::Other(Blame::TheirFault));
     }
+
+    let path = if CANONIC {
+        decode_path_extends_path_canonic(producer, r.path())
+            .await
+            .map_err(DecodeError::map_other_from)?
+    } else {
+        decode_path_extends_path(producer, r.path())
+            .await
+            .map_err(DecodeError::map_other_from)?
+    };
+
+    // // Verify the decoded path is prefixed by the reference path
+    // if !path.is_prefixed_by(r.path()) {
+    //     return Err(DecodeError::Other(Blame::TheirFault));
+    // }
 
     Ok(Area::new(subspace, path, times))
 }

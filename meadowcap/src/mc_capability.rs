@@ -3,14 +3,14 @@ use crate::{
     mc_authorisation_token::McAuthorisationToken,
     owned_capability::{OwnedCapability, OwnedCapabilityCreationError},
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
-    McPublicUserKey,
+    McPublicUserKey, UnverifiedCommunalCapability, UnverifiedOwnedCapability,
 };
 #[cfg(feature = "dev")]
 use crate::{SillyPublicKey, SillySig};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
-use either::Either;
+use either::Either::{self, Left, Right};
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
@@ -712,6 +712,217 @@ where
 #[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
     for McCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let is_communal: bool = Arbitrary::arbitrary(u)?;
+
+        if is_communal {
+            Ok(Self::Communal(Arbitrary::arbitrary(u)?))
+        } else {
+            Ok(Self::Owned(Arbitrary::arbitrary(u)?))
+        }
+    }
+}
+
+/// An [`McCapability`] whose signatures have not been verified yet.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum UnverifiedMcCapability<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    NamespacePublicKey,
+    NamespaceSignature,
+    UserPublicKey,
+    UserSignature,
+> {
+    Communal(
+        UnverifiedCommunalCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            UserPublicKey,
+            UserSignature,
+        >,
+    ),
+    Owned(
+        UnverifiedOwnedCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+    ),
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+    UnverifiedMcCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+{
+    pub unsafe fn into_verifified_unchecked(
+        self,
+    ) -> McCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > {
+        match self {
+            UnverifiedMcCapability::Communal(inner) => {
+                McCapability::Communal(inner.into_verifified_unchecked())
+            }
+            UnverifiedMcCapability::Owned(inner) => {
+                McCapability::Owned(inner.into_verifified_unchecked())
+            }
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Encodable
+    for UnverifiedMcCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    NamespaceSignature: Encodable + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + EncodableKnownSize,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        match self {
+            UnverifiedMcCapability::Communal(inner_cap) => return inner_cap.encode(consumer).await,
+            UnverifiedMcCapability::Owned(inner_cap) => return inner_cap.encode(consumer).await,
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature: Encodable + EncodableKnownSize,
+        UserPublicKey,
+        UserSignature: Encodable + EncodableKnownSize,
+    > EncodableKnownSize
+    for UnverifiedMcCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        match self {
+            UnverifiedMcCapability::Communal(inner_cap) => return inner_cap.len_of_encoding(),
+            UnverifiedMcCapability::Owned(inner_cap) => return inner_cap.len_of_encoding(),
+        }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Decodable
+    for UnverifiedMcCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    NamespaceSignature: Decodable,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Decodable,
+    Blame: From<NamespacePublicKey::ErrorReason>
+        + From<NamespaceSignature::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorCanonic>
+        + From<UserSignature::ErrorReason>,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        match producer.expose_items().await? {
+            Left(bytes) => {
+                if bytes[0] < 128 {
+                    return Ok(UnverifiedMcCapability::Communal(
+                        UnverifiedCommunalCapability::decode(producer).await?,
+                    ));
+                } else {
+                    return Ok(UnverifiedMcCapability::Owned(
+                        UnverifiedOwnedCapability::decode(producer).await?,
+                    ));
+                }
+            }
+            Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
+        }
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for UnverifiedMcCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let is_communal: bool = Arbitrary::arbitrary(u)?;

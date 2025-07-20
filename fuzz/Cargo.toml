@@ -30,6 +30,7 @@ willow-store-simple-sled = { path = "../store_simple_sled" }
 sled = "0.34.7"
 tempdir = "0.3.7"
 willow-transport-encryption = { path = "../transport_encryption" }
+willow_25 = { path = "../willow_25", features = ["dev"] }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -379,8 +380,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_mcsubspacecapability_abs"
-path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+name = "enc_mcenumerationcapability_abs"
+path = "fuzz_targets/enc_mcenumerationcapability_abs.rs"
 test = false
 doc = false
 bench = false
@@ -421,8 +422,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_subspacecapability_rel_personalprivateinterest"
-path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
+name = "enc_enumerationcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_enumerationcapability_rel_personalprivateinterest.rs"
 test = false
 doc = false
 bench = false
@@ -434,6 +435,27 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "enc_unverified_communal_capability_abs"
+path = "fuzz_targets/enc_unverified_communal_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_unverified_owned_capability_abs"
+path = "fuzz_targets/enc_unverified_owned_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_unverified_mc_capability_abs"
+path = "fuzz_targets/enc_unverified_mc_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
 ##############################
 # compactransport_encryption #
 ##############################
@@ -441,6 +463,129 @@ bench = false
 [[bin]]
 name = "transport_encryption"
 path = "fuzz_targets/transport_encryption.rs"
+test = false
+doc = false
+bench = false
+
+####################################
+# willow 25 test vector generation #
+####################################
+
+[[bin]]
+name = "testvector_EncodePath"
+path = "fuzz_targets/testvector_EncodePath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_encode_path"
+path = "fuzz_targets/testvector_encode_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodePathRelativePath"
+path = "fuzz_targets/testvector_EncodePathRelativePath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_path_rel_path"
+path = "fuzz_targets/testvector_path_rel_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodePathExtendsPath"
+path = "fuzz_targets/testvector_EncodePathExtendsPath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_path_extends_path"
+path = "fuzz_targets/testvector_path_extends_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntry"
+path = "fuzz_targets/testvector_EncodeEntry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_encode_entry"
+path = "fuzz_targets/testvector_encode_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntryRelativeEntry"
+path = "fuzz_targets/testvector_EncodeEntryRelativeEntry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntryInNamespace3dRange"
+path = "fuzz_targets/testvector_EncodeEntryInNamespace3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeAreaInArea"
+path = "fuzz_targets/testvector_EncodeAreaInArea.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_area_in_area"
+path = "fuzz_targets/testvector_area_in_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_Encode3dRangeRelative3dRange"
+path = "fuzz_targets/testvector_Encode3dRangeRelative3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeCommunalCapability"
+path = "fuzz_targets/testvector_EncodeCommunalCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeOwnedCapability"
+path = "fuzz_targets/testvector_EncodeOwnedCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcCapability"
+path = "fuzz_targets/testvector_EncodeMcCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcEnumerationCapability"
+path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
 test = false
 doc = false
 bench = false
