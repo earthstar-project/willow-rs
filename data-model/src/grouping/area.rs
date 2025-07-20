@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[cfg(feature = "dev")]
 use crate::{grouping::RangeEnd, parameters::SubspaceId, PathBuilder};
 #[cfg(feature = "dev")]
@@ -326,6 +328,267 @@ where
     Ok(Area::new(subspace, included_path, times))
 }
 
+#[derive(Debug)]
+pub struct AreaMap<const MCL: usize, const MCC: usize, const MPL: usize, S, T>
+where
+    S: Eq + std::hash::Hash,
+{
+    subspaces: HashMap<AreaSubspace<S>, HashMap<Path<MCL, MCC, MPL>, Vec<(Range<u64>, T)>>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> Default
+    for AreaMap<MCL, MCC, MPL, S, T>
+where
+    S: Clone + Eq + std::hash::Hash,
+{
+    fn default() -> Self {
+        Self {
+            subspaces: HashMap::new(),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> AreaMap<MCL, MCC, MPL, S, T>
+where
+    S: Clone + Eq + std::hash::Hash,
+{
+    /// Insert a new value along with its associated [`Area`].
+    pub fn insert(&mut self, area: &Area<MCL, MCC, MPL, S>, value: T) {
+        match self.subspaces.get_mut(&area.subspace) {
+            Some(subspace_map) => match subspace_map.get_mut(area.path()) {
+                Some(path_vec) => {
+                    path_vec.push((*area.times(), value));
+                }
+                None => {
+                    subspace_map.insert(area.path().clone(), vec![(*area.times(), value)]);
+                }
+            },
+            None => {
+                let mut map: HashMap<Path<MCL, MCC, MPL>, Vec<(Range<u64>, T)>> = HashMap::new();
+
+                map.insert(area.path().clone(), vec![(*area.times(), value)]);
+
+                match area.subspace() {
+                    AreaSubspace::Any => {
+                        self.subspaces.insert(AreaSubspace::Any, map);
+                    }
+                    AreaSubspace::Id(id) => {
+                        self.subspaces.insert(AreaSubspace::Id(id.clone()), map);
+                    }
+                }
+            }
+        };
+    }
+
+    /// Retrieve all values with [`Area`]s which intersect with the given [`Area`].
+    pub fn intersecting_values(&self, area: &Area<MCL, MCC, MPL, S>) -> Option<Vec<&T>> {
+        match area.subspace() {
+            AreaSubspace::Any => {
+                let mut values_vec = Vec::new();
+
+                for subspace_map in self.subspaces.values() {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(values_vec)
+            }
+            AreaSubspace::Id(_area_subspace) => {
+                let mut values_vec = Vec::new();
+
+                if let Some(subspace_map) = self.subspaces.get(&AreaSubspace::Any) {
+                    for (path, values) in subspace_map {
+                        //println!("hello");
+
+                        if area.path().is_related(path) {
+                            //println!("bello");
+
+                            for (times, value) in values {
+                                //println!("cello");
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(subspace_map) = self.subspaces.get(area.subspace()) {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    values_vec.push(value)
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if values_vec.is_empty() {
+                    None
+                } else {
+                    Some(values_vec)
+                }
+            }
+        }
+    }
+
+    /// Retrieve all values and their [`Area`]s which intersect with the given [`Area`].
+    pub fn intersecting_pairs(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+        match area.subspace() {
+            AreaSubspace::Any => {
+                let mut values_vec = Vec::new();
+
+                for (area_subspace, subspace_map) in &self.subspaces {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: area_subspace.clone(),
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(values_vec)
+            }
+            AreaSubspace::Id(_area_subspace) => {
+                let mut values_vec = Vec::new();
+
+                if let Some(subspace_map) = self.subspaces.get(&AreaSubspace::Any) {
+                    for (path, values) in subspace_map {
+                        //println!("hello");
+
+                        if area.path().is_related(path) {
+                            //println!("bello");
+
+                            for (times, value) in values {
+                                //println!("cello");
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: AreaSubspace::Any,
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(subspace_map) = self.subspaces.get(area.subspace()) {
+                    for (path, values) in subspace_map {
+                        if area.path().is_related(path) {
+                            for (times, value) in values {
+                                if let Some(_intersection) = times.intersection(area.times()) {
+                                    let area = Area {
+                                        subspace: area.subspace().clone(),
+                                        path: path.clone(),
+                                        times: *times,
+                                    };
+
+                                    values_vec.push((area, value))
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if values_vec.is_empty() {
+                    None
+                } else {
+                    Some(values_vec)
+                }
+            }
+        }
+    }
+}
+
+pub struct NamespacedAreaMap<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    namespaces: HashMap<N, AreaMap<MCL, MCC, MPL, S, T>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T> Default
+    for NamespacedAreaMap<MCL, MCC, MPL, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    fn default() -> Self {
+        Self {
+            namespaces: HashMap::new(),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T>
+    NamespacedAreaMap<MCL, MCC, MPL, N, S, T>
+where
+    N: Clone + Eq + std::hash::Hash,
+    S: Clone + Eq + std::hash::Hash,
+{
+    /// Insert a new value along with its associated NamespaceId and [`Area`].
+    pub fn insert(&mut self, namespace: &N, area: &Area<MCL, MCC, MPL, S>, value: T) {
+        match self.namespaces.get_mut(namespace) {
+            Some(area_map) => {
+                area_map.insert(area, value);
+            }
+            None => {
+                let mut area_map: AreaMap<MCL, MCC, MPL, S, T> = AreaMap::default();
+                area_map.insert(area, value);
+
+                self.namespaces.insert(namespace.clone(), area_map);
+            }
+        }
+    }
+
+    /// Retrieve all values with namespaced [`Area`]s which intersect with the given namespaced [`Area`].
+    pub fn intersecting_values(
+        &self,
+        namespace: &N,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<&T>> {
+        match self.namespaces.get(namespace) {
+            Some(area_map) => area_map.intersecting_values(area),
+            None => None,
+        }
+    }
+
+    /// Retrieve all values and their namespaced [`Area`]s which intersect with the given namespaced [`Area`].
+    pub fn intersecting_pairs(
+        &self,
+        namespace: &N,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+        match self.namespaces.get(namespace) {
+            Some(area_map) => area_map.intersecting_pairs(area),
+            None => None,
+        }
+    }
+}
+
 /// This is an "inofficial" encoding not on the encodings spec page.
 ///
 /// ## An Absolute Encoding Relation for Area
@@ -368,7 +631,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodab
         }
 
         Ok(())
-    }
+  }
 }
 
 #[cfg(test)]

@@ -456,6 +456,19 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "area_map"
+path = "fuzz_targets/area_map.rs"
+test = false
+doc = false
+bench = false
+
+name = "namespaced_area_map"
+path = "fuzz_targets/namespaced_area_map.rs"
+test = false
+doc = false
+bench = false
+
 ##############################
 # compactransport_encryption #
 ##############################
