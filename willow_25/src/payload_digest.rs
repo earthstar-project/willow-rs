@@ -1,4 +1,6 @@
-use ufotofu_codec::{Blame, Decodable, Encodable, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+};
 use willow_data_model::PayloadDigest;
 
 #[cfg(feature = "dev")]
@@ -70,6 +72,24 @@ impl Decodable for PayloadDigest25 {
     async fn decode<P>(
         producer: &mut P,
     ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let mut out_slice: [u8; blake3::OUT_LEN] = [0; blake3::OUT_LEN];
+
+        producer.bulk_overwrite_full_slice(&mut out_slice).await?;
+
+        Ok(Self(blake3::Hash::from_bytes(out_slice)))
+    }
+}
+
+impl DecodableCanonic for PayloadDigest25 {
+    type ErrorCanonic = Blame;
+
+    async fn decode_canonic<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
     where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,

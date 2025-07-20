@@ -237,8 +237,8 @@ pub use mc_capability::*;
 mod owned_capability;
 pub use owned_capability::*;
 
-mod mc_subspace_capability;
-pub use mc_subspace_capability::*;
+mod mc_enumeration_capability;
+pub use mc_enumeration_capability::*;
 
 mod parameters;
 pub use parameters::*;

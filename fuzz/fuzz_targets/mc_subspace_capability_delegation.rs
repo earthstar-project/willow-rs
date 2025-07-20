@@ -1,13 +1,13 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::McSubspaceCapability;
+use meadowcap::McEnumerationCapability;
 use meadowcap::{SillyPublicKey, SillySecret, SillySig};
 
 fuzz_target!(|data: (
     SillySecret,
     SillyPublicKey,
-    McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
+    McEnumerationCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>,
     Vec<SillyPublicKey>
 )| {
     let (secret, new_user, mc_subspace_cap, delegees) = data;

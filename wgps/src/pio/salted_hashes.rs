@@ -18,11 +18,12 @@ pub(crate) struct HashRegistry<
     N: NamespaceId,
     S: SubspaceId,
 > {
-    my_salt: [u8; SALT_LENGTH],
-    h: fn(&PrivateInterest<MCL, MCC, MPL, N, S>, &[u8; SALT_LENGTH]) -> [u8; INTEREST_HASH_LENGTH],
+    pub(crate) my_salt: [u8; SALT_LENGTH],
+    pub(crate) h:
+        fn(&PrivateInterest<MCL, MCC, MPL, N, S>, &[u8; SALT_LENGTH]) -> [u8; INTEREST_HASH_LENGTH],
     my_handles: HashMapHandleStore<MyHandleInfo<MCL, MCC, MPL, N, S>>,
     my_local_hashes: MultiMap<[u8; INTEREST_HASH_LENGTH], LocalHashInfo>,
-    their_handles: HashMapHandleStore<bool>,
+    their_handles: HashMapHandleStore<([u8; INTEREST_HASH_LENGTH], bool)>,
     their_hashes: MultiMap<
         [u8; INTEREST_HASH_LENGTH],
         (
@@ -59,7 +60,7 @@ impl<
         }
     }
 
-    fn their_salt(&self) -> [u8; SALT_LENGTH] {
+    pub(crate) fn their_salt(&self) -> [u8; SALT_LENGTH] {
         let mut salt = self.my_salt.clone();
         for byte in salt.iter_mut() {
             *byte = *byte ^ 255;
@@ -186,7 +187,10 @@ impl<
     ) -> Vec<Overlap> {
         let mut overlaps = vec![];
 
-        let their_handle = self.their_handles.bind(actually_interested).unwrap();
+        let their_handle = self
+            .their_handles
+            .bind((hash, actually_interested))
+            .unwrap();
         self.their_hashes
             .insert(hash, (their_handle, actually_interested));
 
@@ -221,6 +225,36 @@ impl<
             }
             MyHandleInfo::Interesting(interesting_info) => interesting_info,
         }
+    }
+
+    /// The returned boolean is `true` iff this was an interesting handle. Whole thing returns None if the argument handle is not one we have bound.
+    pub(crate) fn try_get_our_handle_info(
+        &self,
+        my_handle: u64,
+    ) -> Option<(&MyInterestingHandleInfo<MCL, MCC, MPL, N, S>, bool)> {
+        let my_handle_info = self.my_handles.get(my_handle).unwrap()?;
+
+        match my_handle_info {
+            MyHandleInfo::Uninteresting { interesting_handle } => {
+                let my_interesting_handle_info =
+                    self.my_handles.get(*interesting_handle).unwrap()?;
+
+                match my_interesting_handle_info {
+                    MyHandleInfo::Uninteresting { .. } => unreachable!(),
+                    MyHandleInfo::Interesting(my_interesting_handle_info) => {
+                        return Some((my_interesting_handle_info, false))
+                    }
+                }
+            }
+            MyHandleInfo::Interesting(interesting_info) => return Some((interesting_info, true)),
+        }
+    }
+
+    pub(crate) fn get_their_handle(
+        &self,
+        their_handle: u64,
+    ) -> Option<&([u8; INTEREST_HASH_LENGTH], bool)> {
+        self.their_handles.get(their_handle).unwrap()
     }
 }
 
@@ -263,6 +297,7 @@ pub struct MyInterestingHandleInfo<
     N: NamespaceId,
     S: SubspaceId,
 > {
+    /// The private interest which resulted in this primary handle.
     pub private_interest: PrivateInterest<MCL, MCC, MPL, N, S>,
 }
 
@@ -1384,7 +1419,4 @@ mod tests {
 
         return ret;
     }
-
-    // TODO: spec examples the other way around
-    // TODO: multiple overlaps in a single addition
 }

@@ -22,7 +22,10 @@ mod component;
 pub use component::*;
 
 mod codec; // Nothing to import, the file only provides trait implementations.
-pub use codec::{decode_path_extends_path, encode_path_extends_path};
+pub use codec::{
+    decode_path_extends_path, decode_path_extends_path_canonic, encode_path_extends_path,
+    path_extends_path_encoding_len,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// An error arising from trying to construct a invalid [`Path`] from valid components.

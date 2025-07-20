@@ -4,13 +4,10 @@ use compact_u64::TagWidth;
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::Blame;
 use ufotofu_codec::Decodable;
-use ufotofu_codec::DecodableCanonic;
 use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
 use ufotofu_codec::EncodableSync;
-use ufotofu_codec::RelativeDecodableCanonic;
-use ufotofu_codec::RelativeEncodable;
 use ufotofu_codec::RelativeEncodableKnownSize;
 use willow_data_model::SubspaceId;
 
@@ -27,7 +24,7 @@ use arbitrary::{Arbitrary, Error as ArbitraryError};
 /// A [delegation](https://willowprotocol.org/specs/pai/index.html#subspace_cap_delegations) of read access for arbitrary `SubspaceId`s to a `UserPublicKey`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
-pub struct SubspaceDelegation<UserPublicKey, UserSignature>
+pub struct EnumerationDelegation<UserPublicKey, UserSignature>
 where
     UserPublicKey: SubspaceId,
 {
@@ -35,7 +32,7 @@ where
     signature: UserSignature,
 }
 
-impl<UserPublicKey, UserSignature> SubspaceDelegation<UserPublicKey, UserSignature>
+impl<UserPublicKey, UserSignature> EnumerationDelegation<UserPublicKey, UserSignature>
 where
     UserPublicKey: SubspaceId,
 {
@@ -58,7 +55,7 @@ where
 ///
 /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_capability)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct McSubspaceCapability<
+pub struct McEnumerationCapability<
     NamespacePublicKey,
     NamespaceSignature,
     UserPublicKey,
@@ -72,11 +69,11 @@ pub struct McSubspaceCapability<
     namespace_key: NamespacePublicKey,
     user_key: UserPublicKey,
     initial_authorisation: NamespaceSignature,
-    delegations: Vec<SubspaceDelegation<UserPublicKey, UserSignature>>,
+    delegations: Vec<EnumerationDelegation<UserPublicKey, UserSignature>>,
 }
 
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-    McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    McEnumerationCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
 
@@ -90,13 +87,18 @@ where
         namespace_secret: &NamespaceSecret,
         user_key: UserPublicKey,
     ) -> Result<
-        McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>,
+        McEnumerationCapability<
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
         SignatureError,
     >
     where
         NamespaceSecret: Signer<NamespaceSignature>,
     {
-        let init_auth = SubspaceInitialAuthorisationMsg(&user_key);
+        let init_auth = EnumerationInitialAuthorisationMsg(&user_key);
 
         let message = init_auth.sync_encode_into_boxed_slice();
 
@@ -104,7 +106,7 @@ where
 
         namespace_key.verify(&message, &signature)?;
 
-        Ok(McSubspaceCapability {
+        Ok(McEnumerationCapability {
             namespace_key: namespace_key.clone(),
             user_key,
             initial_authorisation: signature,
@@ -118,7 +120,7 @@ where
         user_key: UserPublicKey,
         initial_authorisation: NamespaceSignature,
     ) -> Result<Self, SignatureError> {
-        let init_auth = SubspaceInitialAuthorisationMsg(&user_key);
+        let init_auth = EnumerationInitialAuthorisationMsg(&user_key);
 
         let message = init_auth.sync_encode_into_boxed_slice();
 
@@ -163,7 +165,7 @@ where
     {
         let prev_user = self.receiver();
 
-        let handover = SubspaceHandover {
+        let handover = EnumerationHandover {
             subspace_cap: self,
             user: new_user,
         };
@@ -176,7 +178,7 @@ where
 
         let mut new_delegations = self.delegations.clone();
 
-        new_delegations.push(SubspaceDelegation::new(new_user.clone(), signature));
+        new_delegations.push(EnumerationDelegation::new(new_user.clone(), signature));
 
         Ok(Self {
             namespace_key: self.namespace_key.clone(),
@@ -189,12 +191,12 @@ where
     /// Appends an existing delegation to an existing capability, or return an error if the delegation is invalid.
     pub fn append_existing_delegation(
         &mut self,
-        delegation: SubspaceDelegation<UserPublicKey, UserSignature>,
+        delegation: EnumerationDelegation<UserPublicKey, UserSignature>,
     ) -> Result<(), SignatureError> {
         let new_user = &delegation.user();
         let new_sig = &delegation.signature();
 
-        let handover = SubspaceHandover {
+        let handover = EnumerationHandover {
             subspace_cap: self,
             user: new_user,
         };
@@ -213,7 +215,7 @@ where
     /// Returns a slice of all [`SubspaceDelegation`]s made to this capability.
     pub fn delegations(
         &self,
-    ) -> impl ExactSizeIterator<Item = &SubspaceDelegation<UserPublicKey, UserSignature>> {
+    ) -> impl ExactSizeIterator<Item = &EnumerationDelegation<UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 
@@ -226,177 +228,11 @@ where
     }
 }
 
-impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
-    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: Encodable + Encodable + Clone,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: Encodable + Encodable + Clone,
-{
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
-    where
-        C: ufotofu::BulkConsumer<Item = u8>,
-    {
-        let delegations_count = self.delegations.len() as u64;
-
-        Encodable::encode(&self.namespace_key, consumer).await?;
-        Encodable::encode(&self.user_key, consumer).await?;
-        Encodable::encode(&self.initial_authorisation, consumer).await?;
-        CompactU64(delegations_count).encode(consumer).await?;
-
-        for delegation in self.delegations.iter() {
-            Encodable::encode(delegation.user(), consumer).await?;
-            Encodable::encode(delegation.signature(), consumer).await?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
-    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>
-        + From<NamespacePublicKey::ErrorCanonic>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorCanonic>
-        + From<UserSignature::ErrorCanonic>,
-{
-    type ErrorReason = Blame;
-
-    async fn decode<P>(
-        producer: &mut P,
-    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
-    where
-        P: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        todo!("must not be canonic only");
-        // Self::decode_canonic(producer).await
-    }
-}
-
-impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> DecodableCanonic
-    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>
-        + From<NamespacePublicKey::ErrorCanonic>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorCanonic>
-        + From<UserSignature::ErrorCanonic>,
-{
-    type ErrorCanonic = Blame;
-
-    async fn decode_canonic<P>(
-        producer: &mut P,
-    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorCanonic>>
-    where
-        P: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        let namespace_key = NamespacePublicKey::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let user_key = UserPublicKey::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let initial_authorisation = NamespaceSignature::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-
-        let mut base_cap = Self::from_existing(namespace_key, user_key, initial_authorisation)
-            .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
-
-        let delegations_to_decode = CompactU64::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0;
-
-        /*
-        let expected_tag = Tag::min_tag(delegations_to_decode, TagWidth::eight());
-
-        if expected_tag != tag {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-        */
-
-        let mut delegations_decoded = 0;
-
-        for _ in 0..delegations_to_decode {
-            let user = UserPublicKey::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let signature = UserSignature::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let delegation = SubspaceDelegation::new(user, signature);
-
-            base_cap
-                .append_existing_delegation(delegation)
-                .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
-
-            delegations_decoded += 1;
-        }
-
-        if delegations_decoded != delegations_to_decode {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
-        Ok(base_cap)
-    }
-}
-
-impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
-    for McSubspaceCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableKnownSize + Clone,
-    UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableKnownSize + Clone,
-{
-    fn len_of_encoding(&self) -> usize {
-        let delegations_count = self.delegations.len() as u64;
-
-        let namespace_len = self.namespace_key.len_of_encoding();
-        let user_len = self.user_key.len_of_encoding();
-        let init_auth_len = self.initial_authorisation.len_of_encoding();
-
-        let tag = Tag::min_tag(delegations_count, TagWidth::eight());
-
-        let delegation_count_len =
-            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width());
-
-        let mut delegations_len = 0;
-
-        for delegation in self.delegations.iter() {
-            delegations_len += delegation.user.len_of_encoding();
-            delegations_len += delegation.signature().len_of_encoding();
-        }
-
-        1 + namespace_len + user_len + init_auth_len + delegation_count_len + delegations_len
-    }
-}
-
-struct SubspaceInitialAuthorisationMsg<'a, UserPublicKey>(&'a UserPublicKey)
+struct EnumerationInitialAuthorisationMsg<'a, UserPublicKey>(&'a UserPublicKey)
 where
     UserPublicKey: EncodableSync + EncodableKnownSize;
 
-impl<UserPublicKey> Encodable for SubspaceInitialAuthorisationMsg<'_, UserPublicKey>
+impl<UserPublicKey> Encodable for EnumerationInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: EncodableSync + EncodableKnownSize,
 {
@@ -411,7 +247,7 @@ where
     }
 }
 
-impl<UserPublicKey> EncodableKnownSize for SubspaceInitialAuthorisationMsg<'_, UserPublicKey>
+impl<UserPublicKey> EncodableKnownSize for EnumerationInitialAuthorisationMsg<'_, UserPublicKey>
 where
     UserPublicKey: EncodableSync + EncodableKnownSize,
 {
@@ -420,7 +256,7 @@ where
     }
 }
 
-impl<UserPublicKey> EncodableSync for SubspaceInitialAuthorisationMsg<'_, UserPublicKey> where
+impl<UserPublicKey> EncodableSync for EnumerationInitialAuthorisationMsg<'_, UserPublicKey> where
     UserPublicKey: EncodableSync + EncodableKnownSize
 {
 }
@@ -428,14 +264,14 @@ impl<UserPublicKey> EncodableSync for SubspaceInitialAuthorisationMsg<'_, UserPu
 /// Can be encoded to a bytestring to be signed for a new subspace capability delegation.
 ///
 /// [Definition](https://willowprotocol.org/specs/pai/index.html#subspace_handover)
-struct SubspaceHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+struct EnumerationHandover<'a, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
 {
-    subspace_cap: &'a McSubspaceCapability<
+    subspace_cap: &'a McEnumerationCapability<
         NamespacePublicKey,
         NamespaceSignature,
         UserPublicKey,
@@ -445,7 +281,13 @@ where
 }
 
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
-    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    for EnumerationHandover<
+        '_,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -481,7 +323,13 @@ where
 }
 
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
-    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    for EnumerationHandover<
+        '_,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -512,7 +360,13 @@ where
 }
 
 impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableSync
-    for SubspaceHandover<'_, NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    for EnumerationHandover<
+        '_,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -523,14 +377,14 @@ where
 
 #[cfg(feature = "dev")]
 impl<'a> Arbitrary<'a>
-    for McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+    for McEnumerationCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let namespace_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let user_key: SillyPublicKey = Arbitrary::arbitrary(u)?;
         let initial_authorisation: SillySig = Arbitrary::arbitrary(u)?;
 
-        let init_auth = SubspaceInitialAuthorisationMsg(&user_key);
+        let init_auth = EnumerationInitialAuthorisationMsg(&user_key);
         let message = init_auth.sync_encode_into_boxed_slice();
 
         namespace_key
@@ -557,5 +411,209 @@ impl<'a> Arbitrary<'a>
         }
 
         Ok(cap)
+    }
+}
+
+/// An unverified [`McEnumerationCapability`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UnverifiedMcEnumerationCapability<
+    NamespacePublicKey,
+    NamespaceSignature,
+    UserPublicKey,
+    UserSignature,
+> where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: Encodable + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + Clone,
+{
+    inner: McEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >,
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    UnverifiedMcEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: Encodable + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + Clone,
+{
+    pub unsafe fn into_verifified_unchecked(
+        self,
+    ) -> McEnumerationCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    {
+        self.inner
+    }
+
+    pub fn from_verified(
+        cap: McEnumerationCapability<
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+    ) -> Self {
+        Self { inner: cap }
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Encodable
+    for UnverifiedMcEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: Encodable + Encodable + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + Encodable + Clone,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let delegations_count = self.inner.delegations.len() as u64;
+
+        Encodable::encode(&self.inner.namespace_key, consumer).await?;
+        Encodable::encode(&self.inner.user_key, consumer).await?;
+        Encodable::encode(&self.inner.initial_authorisation, consumer).await?;
+        CompactU64(delegations_count).encode(consumer).await?;
+
+        for delegation in self.inner.delegations.iter() {
+            Encodable::encode(delegation.user(), consumer).await?;
+            Encodable::encode(delegation.signature(), consumer).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decodable
+    for UnverifiedMcEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
+    Blame: From<NamespacePublicKey::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<NamespaceSignature::ErrorReason>
+        + From<UserSignature::ErrorReason>,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let namespace_key = NamespacePublicKey::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let user_key = UserPublicKey::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let initial_authorisation = NamespaceSignature::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let mut base_cap =
+            McEnumerationCapability::from_existing(namespace_key, user_key, initial_authorisation)
+                .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let delegations_to_decode = CompactU64::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let mut delegations_decoded = 0;
+
+        for _ in 0..delegations_to_decode {
+            let user = UserPublicKey::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+            let signature = UserSignature::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+            let delegation = EnumerationDelegation::new(user, signature);
+
+            base_cap
+                .append_existing_delegation(delegation)
+                .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+            delegations_decoded += 1;
+        }
+
+        if delegations_decoded != delegations_to_decode {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
+        Ok(Self { inner: base_cap })
+    }
+}
+
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> EncodableKnownSize
+    for UnverifiedMcEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableKnownSize + Clone,
+{
+    fn len_of_encoding(&self) -> usize {
+        let delegations_count = self.inner.delegations.len() as u64;
+
+        let namespace_len = self.inner.namespace_key.len_of_encoding();
+        let user_len = self.inner.user_key.len_of_encoding();
+        let init_auth_len = self.inner.initial_authorisation.len_of_encoding();
+
+        let tag = Tag::min_tag(delegations_count, TagWidth::eight());
+
+        let delegation_count_len =
+            CompactU64(delegations_count).relative_len_of_encoding(&tag.encoding_width());
+
+        let mut delegations_len = 0;
+
+        for delegation in self.inner.delegations.iter() {
+            delegations_len += delegation.user.len_of_encoding();
+            delegations_len += delegation.signature().len_of_encoding();
+        }
+
+        1 + namespace_len + user_len + init_auth_len + delegation_count_len + delegations_len
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a> Arbitrary<'a>
+    for UnverifiedMcEnumerationCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(UnverifiedMcEnumerationCapability {
+            inner: Arbitrary::arbitrary(u)?,
+        })
     }
 }
