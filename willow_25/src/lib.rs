@@ -32,8 +32,16 @@ pub use subspace::*;
 mod payload_digest;
 pub use payload_digest::*;
 
-mod authorisation_token;
-pub use authorisation_token::*;
-
 mod signature;
 pub use signature::*;
+
+pub mod data_model;
+pub use data_model::{
+    Area, AreaOfInterest, AreaSubspace, AuthorisedEntry, Component, Entry, LengthyAuthorisedEntry,
+    LengthyEntry, OwnedComponent, Path, Range, Range3d, Timestamp,
+};
+
+pub mod meadowcap;
+pub use meadowcap::{
+    AccessMode, AuthorisationToken, Capability, CommunalCapability, OwnedCapability,
+};

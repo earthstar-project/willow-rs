@@ -705,7 +705,6 @@ version = "0.2.0"
 dependencies = [
  "arbitrary",
  "compact_u64",
- "either",
  "signature",
  "ufotofu",
  "ufotofu_codec",
@@ -1323,6 +1322,7 @@ dependencies = [
  "blake3",
  "compact_u64",
  "ed25519-dalek",
+ "either",
  "meadowcap",
  "rand 0.8.5",
  "signature",
