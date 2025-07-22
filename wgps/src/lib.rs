@@ -15,7 +15,7 @@ use willow_data_model::{
 
 mod parameters;
 
-mod messages;
+pub mod messages;
 use messages::*;
 
 use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};
@@ -26,6 +26,8 @@ use willow_transport_encryption::{
 
 pub mod data_handles;
 mod pio;
+
+pub use pio::{EnumerationCapability, ReadCapability};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {

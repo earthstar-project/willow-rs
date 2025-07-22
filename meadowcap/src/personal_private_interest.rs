@@ -8,8 +8,9 @@ use ufotofu_codec::{
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    NamespaceId, PrivateAreaContext, PrivateInterest, SubspaceId,
+    NamespaceId, SubspaceId,
 };
+use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
     AccessMode, CommunalCapability, Delegation, McNamespacePublicKey, McPublicUserKey,

@@ -31,6 +31,8 @@ sled = "0.34.7"
 tempdir = "0.3.7"
 willow-transport-encryption = { path = "../transport_encryption" }
 willow_25 = { path = "../willow_25", features = ["dev"] }
+wgps = { path = "../wgps", features = ["dev"] }
+willow-pio = {version = "0.1.0", path = "../pio", features = ["dev"] }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -466,6 +468,27 @@ bench = false
 [[bin]]
 name = "namespaced_area_map"
 path = "fuzz_targets/namespaced_area_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_piobindhash_abs"
+path = "fuzz_targets/enc_piobindhash_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_pioannounceoverlap_rel_pair"
+path = "fuzz_targets/enc_pioannounceoverlap_rel_pair.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_piobindreadcapability_rel_ppi"
+path = "fuzz_targets/enc_piobindreadcapability_rel_ppi.rs"
 test = false
 doc = false
 bench = false

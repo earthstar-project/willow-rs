@@ -71,12 +71,21 @@ mod salted_hashes;
 //     max_payload_power: u8,
 // }
 
-// /// The semantics that a valid read capability must provide to be usable with the WGPS.
-// pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
-//     type Receiver;
-//     type NamespaceId;
-//     type SubspaceId;
+/// The semantics that a valid read capability must provide to be usable with the WGPS.
+pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
+    type Receiver;
+    type NamespaceId;
+    type SubspaceId;
 
-//     fn granted_area(&self) -> Area<MCL, MCC, MPL, Self::SubspaceId>;
-//     fn granted_namespace(&self) -> Self::NamespaceId;
-// }
+    fn granted_area(&self) -> Area<MCL, MCC, MPL, Self::SubspaceId>;
+    fn granted_namespace(&self) -> Self::NamespaceId;
+}
+
+/// The semantics that a valid enumeration capability must provide to be usable with the WGPS.
+pub trait EnumerationCapability {
+    type Receiver;
+    type NamespaceId;
+
+    fn granted_namespace(&self) -> Self::NamespaceId;
+    fn receiver(&self) -> Self::Receiver;
+}

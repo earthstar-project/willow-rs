@@ -6,14 +6,15 @@ use ufotofu_codec::{
 };
 use willow_encoding::is_bitflagged;
 
-use crate::{
+use willow_data_model::{
     grouping::{Area, AreaSubspace, Range, RangeEnd},
-    Entry, NamespaceId, Path, PayloadDigest, PrivatePathContext, SubspaceId,
+    Entry, NamespaceId, Path, PayloadDigest, SubspaceId,
 };
+
+use crate::PrivatePathContext;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 /// Confidential data that relates to determining the AreasOfInterest that peers might be interested in synchronising.
-// TODO: Move this all to WGPS?
 pub struct PrivateInterest<
     const MCL: usize,
     const MCC: usize,

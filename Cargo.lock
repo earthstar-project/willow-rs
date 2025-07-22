@@ -711,6 +711,7 @@ dependencies = [
  "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
+ "willow-pio",
 ]
 
 [[package]]
@@ -1218,7 +1219,9 @@ dependencies = [
 name = "wgps"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "async_cell",
+ "compact_u64",
  "either",
  "futures",
  "lcmux",
@@ -1229,6 +1232,8 @@ dependencies = [
  "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
+ "willow-encoding",
+ "willow-pio",
  "willow-transport-encryption",
  "willow_25",
 ]
@@ -1279,11 +1284,26 @@ dependencies = [
  "ufotofu_codec_endian",
  "ufotofu_queues",
  "wb_async_utils",
+ "wgps",
  "willow-data-model",
  "willow-encoding",
+ "willow-pio",
  "willow-store-simple-sled",
  "willow-transport-encryption",
  "willow_25",
+]
+
+[[package]]
+name = "willow-pio"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "compact_u64",
+ "pollster",
+ "ufotofu",
+ "ufotofu_codec",
+ "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]

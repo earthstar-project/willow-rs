@@ -243,5 +243,5 @@ pub use mc_enumeration_capability::*;
 mod parameters;
 pub use parameters::*;
 
-mod private_interest_intersection;
-pub use private_interest_intersection::*;
+mod personal_private_interest;
+pub use personal_private_interest::*;

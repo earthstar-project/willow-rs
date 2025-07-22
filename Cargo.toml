@@ -9,8 +9,11 @@ members = [
     "wgps",
     "store_simple_sled",
     "willow_25",
-    "transport_encryption"
-, "willow_test_vectors"]
+    "transport_encryption",
+    "pio",
+    "willow_test_vectors"
+]
+
 resolver = "2"
 
 [patch.crates-io]

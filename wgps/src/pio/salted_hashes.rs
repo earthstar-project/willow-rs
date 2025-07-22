@@ -1,7 +1,8 @@
 // Pure logic of exchanging salted hashes based on PrivateInterests, and detecting overlaps thereof. No actual message sending.
 
 use multimap::MultiMap;
-use willow_data_model::{NamespaceId, PrivateInterest, SubspaceId};
+use willow_data_model::{NamespaceId, SubspaceId};
+use willow_pio::PrivateInterest;
 
 use crate::data_handles::handle_store::{HandleStore, HashMapHandleStore};
 
