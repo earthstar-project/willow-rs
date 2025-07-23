@@ -9,10 +9,16 @@ use std::{
 
 use either::Either::{self, Left, Right};
 use multimap::MultiMap;
-use willow_data_model::{grouping::Area, NamespaceId, PrivateInterest, SubspaceId};
+use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
+use willow_pio::PrivateInterest;
 
-use crate::pio::salted_hashes::{
-    HashRegistry, MyInterestingHandleInfo, Overlap, PioBindHashInformation,
+use crate::{
+    messages::PioBindReadCapability,
+    pio::{
+        salted_hashes::{HashRegistry, MyInterestingHandleInfo, Overlap, PioBindHashInformation},
+        CapableAoi,
+    },
+    ReadCapability,
 };
 
 /// Tell this struct about your own capable AOIs, and the PIO messages received from the other peer, and this struct tells you which messages to send and where there are overlaps of areas of interest. Does not perform any IO, only implements the logic of pio.
@@ -208,6 +214,54 @@ where
             }
         }
     }
+
+    /// Call this whenever we received a PioBindReadCapability message. Returns the indicated overlap, or an error if the message data was invalid.
+    pub fn received_pio_bind_read_capability_msg<RC: ReadCapability<MCL, MCC, MPL>>(
+        &mut self,
+        msg: &PioBindReadCapability<MCL, MCC, MPL, RC>,
+    ) -> Result<Overlap, ReceivedBindCapabilityError> {
+        let my_handle = msg.receiver_handle;
+        let their_handle = msg.sender_handle;
+
+        // Retrieve information stored with my_handle, error if they provided a fake one.
+        match self.hash_registry.try_get_our_handle_info(my_handle) {
+            None => return Err(ReceivedBindCapabilityError::UnboundMyHandle),
+            Some((MyInterestingHandleInfo { private_interest }, my_interesting_handle)) => {
+                // Our handle is real!
+
+                // Next, verify that `their_handle` is valid and corresponds to the same hash as `my_handle`.
+                match self.hash_registry.get_their_handle(their_handle) {
+                    None => return Err(ReceivedBindCapabilityError::UnboundTheirHandle),
+                    Some((their_hash, _their_primary)) => {
+                        // Their handle is real!
+
+                        // Does is indeed correspond to the same hash as our handle?
+                        let expected_hash =
+                            (self.hash_registry.h)(private_interest, &self.hash_registry.my_salt);
+
+                        if their_hash != &expected_hash {
+                            return Err(ReceivedBindCapabilityError::MismatchedHandles);
+                        }
+
+                        // All checks passed. Now we can notify our surrounding code about the overlap this message informs us about.
+                        let pi_state = self.my_interests.get_mut(private_interest).unwrap();
+
+                        let overlap = Overlap {
+                            should_request_capability: false,
+                            should_send_capability: true,
+                            awkward: false, // whatever, unused
+                            my_interesting_handle: my_interesting_handle,
+                            their_handle: their_handle,
+                        };
+
+                        pi_state.overlaps.insert(overlap);
+
+                        return Ok(overlap);
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub(crate) enum ReceivedAnnouncementError {
@@ -223,49 +277,19 @@ pub(crate) enum ReceivedAnnouncementError {
     MissingEnumerationCapability,
 }
 
+pub(crate) enum ReceivedBindCapabilityError {
+    /// The peer's message claimed we had bound a certain OverlapHandle, but we did not.
+    UnboundMyHandle,
+    /// The peer's message claimed they had bound a certain OverlapHandle, but they did not.
+    UnboundTheirHandle,
+    /// Their handle and my my handle did not correspond to equal private interests.
+    MismatchedHandles,
+}
+
 #[derive(Debug)]
 struct PrivateInterestState<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
     /// All CapableAois we have [submitted](submit_capable_aoi) which resulted in the PrivateInterest of this state.
     caois: HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>>,
     /// All overlaps with this Private Interest and PrivateInterests registered by the other peer.
     overlaps: HashSet<Overlap>,
-}
-
-/// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
-#[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
-    /// The read capability for the area one is interested in.
-    capability: ReadCap,
-    /// The max_count of the AreaOfInterest that the sender wants to sync.
-    max_count: u64,
-    /// The max_size of the AreaOfInterest that the sender wants to sync.
-    max_size: u64,
-    max_payload_power: u8,
-}
-
-impl<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, N, S>
-    CapableAoi<MCL, MCC, MPL, ReadCap>
-where
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
-    N: NamespaceId,
-    S: SubspaceId,
-{
-    fn to_private_interest(&self) -> PrivateInterest<MCL, MCC, MPL, N, S> {
-        let area = self.capability.granted_area();
-        PrivateInterest::new(
-            self.capability.granted_namespace().clone(),
-            area.subspace().clone(),
-            area.path().clone(),
-        )
-    }
-}
-
-/// The semantics that a valid read capability must provide to be usable with the WGPS.
-pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
-    type Receiver;
-    type NamespaceId;
-    type SubspaceId;
-
-    fn granted_area(&self) -> Area<MCL, MCC, MPL, Self::SubspaceId>;
-    fn granted_namespace(&self) -> Self::NamespaceId;
 }

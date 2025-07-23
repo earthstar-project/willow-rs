@@ -1,75 +1,295 @@
-use ufotofu::{Consumer, Producer};
+use std::{cell::RefCell, hash::Hash, ops::Deref};
+
+use ufotofu::{BulkConsumer, Consumer, Producer};
+use wb_async_utils::{
+    shared_consumer::{self, SharedConsumer},
+    shared_producer::{self, SharedProducer},
+};
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    Path,
+    NamespaceId, Path, SubspaceId,
 };
+use willow_pio::PrivateInterest;
+
+use crate::pio::capable_aois::InterestRegistry;
 
 mod capable_aois;
 mod salted_hashes;
 
-// /// This function is the entry point to our implementation of private interest overlap detection.
-// ///
-// /// While the internals are somewhat complex, the outer interface of PIO is fairly simple: peers exchange PioBindReadCapability messages. Each of these is essentially an AreaOfInterest together with a read capability for that AoI.
-// ///
-// /// This function returns:
-// ///
-// /// - a [`MyAoiInput`], where you can put in the AoIs you'd like to sync (with backpressure applied based on the other peer's guarantees on the OverlapChannel),
-// /// - a [`OverlappingAoiOutput`], a producer which emits the AoIs submitted both by the other peer and yourself for which there is an overlap, and
-// /// - an [`AoiHandles`], which lets you resolve your and your peer's read capability handles to Aois.
-// ///
-// /// Internally, everything undergoes a bunch of cryptographic verification, and resource-handle-based backpressure.
-// ///
-// /// In the WGPS, peers can not only *submit* AoIs but also *revoke* them again (via ResourceHandleFree messages). This implementation punts on that functionality. You cannot undeclare any interest, and all requests by the other peer to remove an AoI will be ignored. This makes us shitty peers, and long-term this functionality should be implemented.
-// pub(crate) async fn pio<
-//     const SALT_LENGTH: usize,
-//     const INTEREST_HASH_LENGTH: usize,
-//     const MCL: usize,
-//     const MCC: usize,
-//     const MPL: usize,
-//     N,
-//     S,
-//     ReadCap,
-// >() -> (
-//     MyAoiInput<MCL, MCC, MPL, N, S, ReadCap>,
-//     OverlappingAoiOutput,
-//     AoiHandles,
-// )
-// where
-//     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
-// {
-//     todo!()
-// }
+/// The state for a PIO session.
+///
+/// This struct is opaque, but we expose it to allow for control over where it is allocated.
+#[derive(Debug)]
+pub struct State<
+    const SALT_LENGTH: usize,
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    ReadCap,
+    P,
+    PR,
+    C,
+    CR,
+> where
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    p: SharedProducer<PR, P>,
+    c: SharedConsumer<CR, C>,
+    interest_registry:
+        RefCell<InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap>>,
+}
 
-// /// This is where you submit your own AoIs. More specifically, you asynchronously (backpressure based on the OverlapChannel) submit [`CapableAoi`]s. When a submitted AoI overlaps an AoI transmitted by the peer, both are emitted on the [`OverlappingAoiOutput`] corresponding to self.
-// //
-// // Poi works based on PrivateInterests, not CapableAois. This struct takes care of the conversion.
-// //
-// // When given a CapableAoi C, it computes the corresponding PrivateInterest P. Now, there are three cases:
-// //
-// // - P is completely fresh, it has not yet been submitted to the poi process. In this case, we send a PioBindHash message and then proceed to the next case.
-// // - P has already been submitted to the poi process, but we have not (yet) detected an overlap. If (or when) we do detect an overlap for P, we need to emit C on the corresponding `OverlappingAoiOutput`. To be able to do so, we add C to a mapping from P to all the CapableAois that had P as their PrivateInterest. When an overlap with P is detected, we can purge the CapableAois from the mapping, keeping only the information that P has been matched (we keep this information to be able to detect and correctly handle the following third case).
-// // - P has already been submitted to the poi process, and we have already detected an overlap. We can immediately emit C on the `OverlappingAoiOutput` and forget about it.
-// //
-// // In summary, we need to maintain a `Map<PrivateInterest, Option<Set<CapableAoi>>>` (where `None` indicates that we have already detected an overlap).
-// pub(crate) struct MyAoiInput<const MCL: usize, const MCC: usize, const MPL: usize, N, S, ReadCap>;
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        ReadCap,
+        P,
+        PR,
+        C,
+        CR,
+    > State<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, P, PR, C, CR>
+where
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    /// Create a new opaque state for a PIO session.
+    pub fn new(
+        p: SharedProducer<PR, P>,
+        c: SharedConsumer<CR, C>,
+        my_salt: [u8; SALT_LENGTH],
+        h: fn(
+            &PrivateInterest<MCL, MCC, MPL, N, S>,
+            &[u8; SALT_LENGTH],
+        ) -> [u8; INTEREST_HASH_LENGTH],
+    ) -> Self {
+        Self {
+            p,
+            c,
+            interest_registry: RefCell::new(InterestRegistry::new(my_salt, h)),
+        }
+    }
+}
 
-// pub(crate) struct OverlappingAoiOutput;
+/// Everything that makes up a single pio session.
+struct PioSession<
+    const SALT_LENGTH: usize,
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    ReadCap,
+    P,
+    PR,
+    C,
+    CR,
+    StateRef: Deref<
+        Target = State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            ReadCap,
+            P,
+            PR,
+            C,
+            CR,
+        >,
+    >,
+> where
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    my_aoi_input: MyAoiInput<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        ReadCap,
+        P,
+        PR,
+        C,
+        CR,
+        StateRef,
+    >,
+    overlap_output: OverlappingAoiOutput,
+    capability_handles: AoiHandles,
+}
 
-// pub(crate) struct AoiHandles;
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N: NamespaceId + Hash,
+        S: SubspaceId + Hash,
+        ReadCap,
+        P,
+        PR,
+        C,
+        CR,
+        StateRef,
+    >
+    PioSession<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        ReadCap,
+        P,
+        PR,
+        C,
+        CR,
+        StateRef,
+    >
+where
+    P: Producer,
+    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    StateRef: Deref<
+            Target = State<
+                SALT_LENGTH,
+                INTEREST_HASH_LENGTH,
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                ReadCap,
+                P,
+                PR,
+                C,
+                CR,
+            >,
+        > + Clone,
+{
+    /// This function is the entry point to our implementation of private interest overlap detection.
+    ///
+    /// While the internals are somewhat complex, the outer interface of PIO is fairly simple: peers exchange PioBindReadCapability messages. Each of these is essentially an AreaOfInterest together with a read capability for that AoI.
+    ///
+    /// This function returns:
+    ///
+    /// - a [`MyAoiInput`], where you can put in the AoIs you'd like to sync (with backpressure applied based on the other peer's guarantees on the OverlapChannel),
+    /// - an [`OverlappingAoiOutput`], a producer which emits the AoIs submitted both by the other peer and yourself for which there is an overlap, and
+    /// - an [`AoiHandles`], which lets you resolve your and your peer's read capability handles to Aois.
+    ///
+    /// Internally, everything undergoes a bunch of cryptographic verification, and resource-handle-based backpressure.
+    ///
+    /// In the WGPS, peers can not only *submit* AoIs but also *revoke* them again (via ResourceHandleFree messages). This implementation punts on that functionality. You cannot undeclare any interest, and all requests by the other peer to remove an AoI will be ignored. This makes us selfish peers, and long-term this functionality should be implemented.
+    pub fn new(state_ref: StateRef) -> Self {
+        Self {
+            my_aoi_input: MyAoiInput {
+                session_state: state_ref.clone(),
+            },
+            overlap_output: todo!(),
+            capability_handles: todo!(),
+        }
+    }
+}
 
-// /// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
-// pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap>
-// // where
-// //     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
-// {
-//     /// The read capability for the area one is interested in.
-//     capability: ReadCap,
-//     /// The max_count of the AreaOfInterest that the sender wants to sync.
-//     max_count: u64,
-//     /// The max_size of the AreaOfInterest that the sender wants to sync.
-//     max_size: u64,
-//     max_payload_power: u8,
-// }
+/// This is where you submit your own capable AoIs. More specifically, you asynchronously (backpressure based on the OverlapChannel) submit [`CapableAoi`]s. When a submitted AoI overlaps an AoI transmitted by the peer, both are emitted on the [`OverlappingAoiOutput`] corresponding to self.
+pub(crate) struct MyAoiInput<
+    const SALT_LENGTH: usize,
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    ReadCap,
+    P,
+    PR,
+    C,
+    CR,
+    StateRef: Deref<
+        Target = State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            ReadCap,
+            P,
+            PR,
+            C,
+            CR,
+        >,
+    >,
+> where
+    P: Producer,
+    C: Consumer,
+    PR: Deref<Target = shared_producer::State<P>> + Clone,
+    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+{
+    session_state: StateRef,
+}
+
+pub(crate) struct OverlappingAoiOutput;
+
+pub(crate) struct AoiHandles;
+
+/// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
+#[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
+    /// The read capability for the area one is interested in.
+    capability: ReadCap,
+    /// The max_count of the AreaOfInterest that the sender wants to sync.
+    max_count: u64,
+    /// The max_size of the AreaOfInterest that the sender wants to sync.
+    max_size: u64,
+    max_payload_power: u8,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, N, S>
+    CapableAoi<MCL, MCC, MPL, ReadCap>
+where
+    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
+    N: NamespaceId,
+    S: SubspaceId,
+{
+    fn to_private_interest(&self) -> PrivateInterest<MCL, MCC, MPL, N, S> {
+        let area = self.capability.granted_area();
+        PrivateInterest::new(
+            self.capability.granted_namespace().clone(),
+            area.subspace().clone(),
+            area.path().clone(),
+        )
+    }
+}
 
 /// The semantics that a valid read capability must provide to be usable with the WGPS.
 pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
