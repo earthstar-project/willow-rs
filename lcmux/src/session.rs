@@ -26,7 +26,9 @@ use futures::{
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{Decodable, DecodeError, Encodable, EncodableKnownSize};
+use ufotofu_codec::{
+    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeEncodableKnownSize,
+};
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -35,10 +37,12 @@ use wb_async_utils::{
 };
 
 use crate::{
-    client_logic::{self, ClientLogic, LogicalChannelClientError},
+    client_logic::{self, ClientLogic},
     frames::*,
     server_logic::{self, ReceiveSendToChannelError, ServerLogic},
 };
+
+pub use crate::client_logic::LogicalChannelClientError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelOptions {
@@ -301,6 +305,21 @@ where
     {
         let consumer = self.0.state.r.c.clone();
         self.0.send_to_channel(&consumer, message).await
+    }
+
+    /// Send a message to a logical channel, using a relative encoding. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel_relative<M, RelativeTo>(
+        &mut self,
+        message: &M,
+        relative_to: &RelativeTo,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        M: RelativeEncodableKnownSize<RelativeTo>,
+    {
+        let consumer = self.0.state.r.c.clone();
+        self.0
+            .send_to_channel_relative(&consumer, message, relative_to)
+            .await
     }
 
     /// Send a `LimitSending` frame to the server.

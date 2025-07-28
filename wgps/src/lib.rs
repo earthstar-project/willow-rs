@@ -250,7 +250,7 @@ where
         channel_receivers,
     } = lcmux_session;
 
-    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block.
 
     let do_the_bookkeeping = async {
         bookkeeping

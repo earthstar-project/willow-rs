@@ -262,6 +262,28 @@ where
             }
         }
     }
+
+    /// `my_handle` must be bound by us, panics otherwise!
+    pub(crate) fn caois_for_my_interesting_handle(
+        &self,
+        my_handle: u64,
+    ) -> &HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>> {
+        let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
+        let pi_state = self
+            .my_interests
+            .get(&handle_info.private_interest)
+            .unwrap();
+        &pi_state.caois
+    }
+
+    /// `my_handle` must be bound by us, panics otherwise!
+    pub(crate) fn private_interest_for_my_interesting_handle(
+        &self,
+        my_handle: u64,
+    ) -> &PrivateInterest<MCL, MCC, MPL, N, S> {
+        let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
+        &handle_info.private_interest
+    }
 }
 
 pub(crate) enum ReceivedAnnouncementError {
@@ -287,7 +309,12 @@ pub(crate) enum ReceivedBindCapabilityError {
 }
 
 #[derive(Debug)]
-struct PrivateInterestState<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
+pub(crate) struct PrivateInterestState<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    ReadCap,
+> {
     /// All CapableAois we have [submitted](submit_capable_aoi) which resulted in the PrivateInterest of this state.
     caois: HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>>,
     /// All overlaps with this Private Interest and PrivateInterests registered by the other peer.

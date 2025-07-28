@@ -95,10 +95,10 @@ impl Decodable for DataSetEagerness {
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct PioBindHash<const INTEREST_HASH_LENGTH: usize> {
     /// The result of applying hash_interests to a PrivateInterest.
-    hash: [u8; INTEREST_HASH_LENGTH],
+    pub hash: [u8; INTEREST_HASH_LENGTH],
 
     /// Whether the peer is directly interested in the hashed PrivateInterest, or whether it is merely a relaxation.
-    actually_interested: bool,
+    pub actually_interested: bool,
 }
 
 impl<const INTEREST_HASH_LENGTH: usize> Encodable for PioBindHash<INTEREST_HASH_LENGTH> {
@@ -413,7 +413,6 @@ where
     N: NamespaceId,
     S: SubspaceId,
     RC: ReadCapability<MCL, MCC, MPL>
-        + SubspaceId
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
 {
     fn relative_len_of_encoding(&self, r: &PersonalPrivateInterest<MCL, MCC, MPL, N, S>) -> usize {

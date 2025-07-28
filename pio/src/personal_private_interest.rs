@@ -11,8 +11,8 @@ pub struct PersonalPrivateInterest<
     N: NamespaceId,
     UserPublicKey: SubspaceId,
 > {
-    private_interest: PrivateInterest<MCL, MCC, MPL, N, UserPublicKey>,
-    user_key: UserPublicKey,
+    pub private_interest: PrivateInterest<MCL, MCC, MPL, N, UserPublicKey>,
+    pub user_key: UserPublicKey,
 }
 
 impl<

@@ -18,7 +18,7 @@ use ufotofu::BulkConsumer;
 
 use either::Either::*;
 
-use ufotofu_codec::{Encodable, EncodableKnownSize};
+use ufotofu_codec::{Encodable, EncodableKnownSize, RelativeEncodableKnownSize};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shelf::{self, new_shelf},
@@ -173,6 +173,37 @@ where
         let mut c = consumer.access_consumer().await;
         header.encode(&mut c).await?;
         message.encode(&mut c).await?;
+
+        Ok(())
+    }
+
+    /// Send a message to a logical channel, using a relative encoding. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel_relative<CR, C, M, RelativeTo>(
+        &mut self,
+        consumer: &SharedConsumer<CR, C>,
+        message: &M,
+        relative_to: &RelativeTo,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
+        CR: Deref<Target = shared_consumer::State<C>> + Clone,
+        M: RelativeEncodableKnownSize<RelativeTo>,
+    {
+        let size = message.relative_len_of_encoding(relative_to) as u64;
+
+        // Wait for the necessary guarantees to become available.
+        if let Err(()) = self.wait_for_guarantees(size).await {
+            return Err(LogicalChannelClientError::LogicalChannelClosed);
+        }
+
+        let header = SendToChannelHeader {
+            channel: self.state.deref().channel_id,
+            length: size,
+        };
+
+        let mut c = consumer.access_consumer().await;
+        header.encode(&mut c).await?;
+        message.relative_encode(&mut c, relative_to).await?;
 
         Ok(())
     }
