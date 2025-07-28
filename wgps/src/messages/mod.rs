@@ -161,13 +161,13 @@ impl<const INTEREST_HASH_LENGTH: usize> Decodable for PioBindHash<INTEREST_HASH_
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapability> {
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
-    sender_handle: u64,
+    pub sender_handle: u64,
 
     /// The OverlapHandle (bound by the receiver of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
-    receiver_handle: u64,
+    pub receiver_handle: u64,
 
     /// The announcement authentication for this overlap announcement.
-    authentication: [u8; INTEREST_HASH_LENGTH],
+    pub authentication: [u8; INTEREST_HASH_LENGTH],
 
     /// The enumeration capability if this overlap announcement is for an awkward pair, or none otherwise.
     pub enumeration_capability: Option<EnumerationCapability>,

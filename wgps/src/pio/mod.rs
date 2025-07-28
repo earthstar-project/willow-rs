@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashSet, hash::Hash, ops::Deref};
 use either::Either::{Left, Right};
 use lcmux::ChannelSender;
 use ufotofu::{BulkConsumer, Consumer, Producer};
-use ufotofu_codec::{Encodable, RelativeEncodableKnownSize};
+use ufotofu_codec::{Encodable, RelativeEncodable, RelativeEncodableKnownSize};
 use wb_async_utils::{
     rw::WriteGuard,
     shared_consumer::{self, SharedConsumer},
@@ -17,7 +17,7 @@ use willow_data_model::{
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 
 use crate::{
-    messages::{PioBindHash, PioBindReadCapability},
+    messages::{PioAnnounceOverlap, PioBindHash, PioBindReadCapability},
     pio::{capable_aois::InterestRegistry, salted_hashes::Overlap},
 };
 
@@ -37,6 +37,7 @@ pub struct State<
     N,
     S,
     ReadCap,
+    EnumCap,
     P,
     PR,
     C,
@@ -52,11 +53,13 @@ pub struct State<
 {
     p: SharedProducer<PR, P>,
     c: SharedConsumer<CR, C>,
-    interest_registry:
-        RwLock<InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap>>,
+    interest_registry: RwLock<
+        InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>,
+    >,
     caois_for_which_we_already_sent_a_bind_read_capability_message:
-        RefCell<HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>>>,
+        RefCell<HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>>>,
     capability_channel_sender: Mutex<ChannelSender<4, LcmuxStateRef, P, PR, C, CR>>,
+    my_public_key: S,
     their_public_key: S,
 }
 
@@ -69,6 +72,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -84,6 +88,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -94,6 +99,7 @@ where
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
+    EnumCap: Eq + Hash,
     P: Producer,
     C: Consumer,
     PR: Deref<Target = shared_producer::State<P>> + Clone,
@@ -108,6 +114,7 @@ where
             &PrivateInterest<MCL, MCC, MPL, N, S>,
             &[u8; SALT_LENGTH],
         ) -> [u8; INTEREST_HASH_LENGTH],
+        my_public_key: S,
         their_public_key: S,
         capability_channel_sender: ChannelSender<4, LcmuxStateRef, P, PR, C, CR>,
     ) -> Self {
@@ -119,6 +126,7 @@ where
                 HashSet::new(),
             ),
             capability_channel_sender: Mutex::new(capability_channel_sender),
+            my_public_key,
             their_public_key,
         }
     }
@@ -133,6 +141,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -148,6 +157,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -162,6 +172,11 @@ where
         + Hash
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
+    EnumCap: Eq
+        + Hash
+        + Clone
+        + EnumerationCapability<Receiver = S, NamespaceId = N>
+        + RelativeEncodableKnownSize<(N, S)>,
     P: Producer,
     C: Consumer<Item = u8> + BulkConsumer,
     C::Final: Clone,
@@ -176,14 +191,25 @@ where
         overlap: &Overlap,
         interest_registry: &mut WriteGuard<
             'lock,
-            InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap>,
+            InterestRegistry<
+                SALT_LENGTH,
+                INTEREST_HASH_LENGTH,
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                ReadCap,
+                EnumCap,
+            >,
         >,
     ) -> Result<(), ProcessOverlapError<C::Error>> {
+        let caois =
+            interest_registry.caois_for_my_interesting_handle(overlap.my_interesting_handle);
+        let private_interest = interest_registry
+            .private_interest_for_my_interesting_handle(overlap.my_interesting_handle);
+
         if overlap.should_send_capability {
-            let caois =
-                interest_registry.caois_for_my_interesting_handle(overlap.my_interesting_handle);
-            let private_interest = interest_registry
-                .private_interest_for_my_interesting_handle(overlap.my_interesting_handle);
             let ppi = PersonalPrivateInterest {
                 private_interest: private_interest.clone(),
                 user_key: self.their_public_key.clone(),
@@ -222,7 +248,42 @@ where
         } else {
             debug_assert!(overlap.should_request_capability);
 
-            todo!()
+            let pair = (
+                private_interest.namespace_id().clone(),
+                self.my_public_key.clone(),
+            );
+
+            for caoi in caois {
+                let enumeration_capability = if overlap.awkward {
+                    Some(
+                        caoi.enum_cap
+                            .clone()
+                            .ok_or(ProcessOverlapError::NoEnumerationCapability)?,
+                    )
+                } else {
+                    None
+                };
+
+                let authentication = (interest_registry.hash_registry.h)(
+                    private_interest,
+                    &interest_registry.hash_registry.my_salt,
+                );
+
+                let msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap> = PioAnnounceOverlap {
+                    sender_handle: overlap.my_interesting_handle,
+                    receiver_handle: overlap.their_handle,
+                    authentication,
+                    enumeration_capability,
+                };
+
+                self.capability_channel_sender
+                    .write()
+                    .await
+                    .send_to_channel_relative(&msg, &pair)
+                    .await?;
+            }
+
+            Ok(())
         }
     }
 }
@@ -237,6 +298,7 @@ pub struct PioSession<
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
     ReadCap,
+    EnumCap,
     P,
     PR,
     C,
@@ -251,6 +313,7 @@ pub struct PioSession<
             N,
             S,
             ReadCap,
+            EnumCap,
             P,
             PR,
             C,
@@ -274,6 +337,7 @@ pub struct PioSession<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -294,6 +358,7 @@ impl<
         N: NamespaceId + Hash,
         S: SubspaceId + Hash,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -310,6 +375,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -332,6 +398,7 @@ where
                 N,
                 S,
                 ReadCap,
+                EnumCap,
                 P,
                 PR,
                 C,
@@ -378,6 +445,7 @@ pub(crate) struct MyAoiInput<
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
     ReadCap,
+    EnumCap,
     P,
     PR,
     C,
@@ -392,6 +460,7 @@ pub(crate) struct MyAoiInput<
             N,
             S,
             ReadCap,
+            EnumCap,
             P,
             PR,
             C,
@@ -419,6 +488,7 @@ impl<
         N: NamespaceId + Hash,
         S: SubspaceId + Hash,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -433,6 +503,7 @@ impl<
                 N,
                 S,
                 ReadCap,
+                EnumCap,
                 P,
                 PR,
                 C,
@@ -451,6 +522,7 @@ impl<
         N,
         S,
         ReadCap,
+        EnumCap,
         P,
         PR,
         C,
@@ -464,6 +536,11 @@ where
         + Hash
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
+    EnumCap: Clone
+        + Eq
+        + Hash
+        + EnumerationCapability<Receiver = S, NamespaceId = N>
+        + RelativeEncodableKnownSize<(N, S)>,
     P: Producer,
     C: Consumer<Item = u8> + BulkConsumer,
     C::Final: Clone,
@@ -472,7 +549,7 @@ where
     CR: Deref<Target = shared_consumer::State<C>> + Clone,
     LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>>,
 {
-    type Item = CapableAoi<MCL, MCC, MPL, ReadCap>;
+    type Item = CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>;
 
     type Final = ();
 
@@ -538,7 +615,8 @@ pub(crate) struct AoiHandles;
 
 /// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
 #[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap> {
+pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, EnumCap>
+{
     /// The read capability for the area one is interested in.
     capability: ReadCap,
     /// The max_count of the AreaOfInterest that the sender wants to sync.
@@ -546,10 +624,12 @@ pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usiz
     /// The max_size of the AreaOfInterest that the sender wants to sync.
     max_size: u64,
     max_payload_power: u8,
+    /// Must only be `None` if it is impossible to have an awkward pair with the PrivateInterest derived from the `capability`. Otherwise, things may panic.
+    enum_cap: Option<EnumCap>,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, N, S>
-    CapableAoi<MCL, MCC, MPL, ReadCap>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, EnumCap, N, S>
+    CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>
 where
     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     N: NamespaceId,
@@ -593,6 +673,8 @@ pub enum AoiInputError<TransportError> {
     /// The peer has closed the CapabilityChannel, so we cannot send on it any longer.
     /// This error is non-fatal. You must not attempt inputting more Aois, but the remainder of the sync session can continue running without problems.
     CapabilityChannelClosed,
+    /// We have to supply an enumeration capability, but the submitted CapableAoi didn't supply one.
+    NoEnumerationCapability,
 }
 
 impl<TransportError> From<lcmux::LogicalChannelClientError<TransportError>>
@@ -613,6 +695,8 @@ enum ProcessOverlapError<TransportError> {
     /// The peer has closed the CapabilityChannel, so we cannot send on it any longer.
     /// This error is non-fatal. You must not attempt inputting more Aois, but the remainder of the sync session can continue running without problems.
     CapabilityChannelClosed,
+    /// We have to supply an enumeration capability, but the submitted CapableAoi didn't supply one.
+    NoEnumerationCapability,
 }
 
 impl<TransportError> From<lcmux::LogicalChannelClientError<TransportError>>
@@ -635,6 +719,7 @@ impl<TransportError> From<ProcessOverlapError<TransportError>> for AoiInputError
         match value {
             ProcessOverlapError::Transport(err) => AoiInputError::Transport(err),
             ProcessOverlapError::CapabilityChannelClosed => AoiInputError::CapabilityChannelClosed,
+            ProcessOverlapError::NoEnumerationCapability => AoiInputError::NoEnumerationCapability,
         }
     }
 }

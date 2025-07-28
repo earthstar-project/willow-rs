@@ -4,12 +4,10 @@ use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     iter::Extend,
-    ops::Sub,
 };
 
 use either::Either::{self, Left, Right};
-use multimap::MultiMap;
-use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
+use willow_data_model::{NamespaceId, SubspaceId};
 use willow_pio::PrivateInterest;
 
 use crate::{
@@ -32,11 +30,14 @@ pub(crate) struct InterestRegistry<
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
     ReadCap,
+    EnumCap,
 > {
-    hash_registry: HashRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S>,
+    pub hash_registry: HashRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S>,
     /// Tracks information associated with each PrivateInterest to which at least one of our submitted CapableAois has hashed.
-    my_interests:
-        HashMap<PrivateInterest<MCL, MCC, MPL, N, S>, PrivateInterestState<MCL, MCC, MPL, ReadCap>>,
+    my_interests: HashMap<
+        PrivateInterest<MCL, MCC, MPL, N, S>,
+        PrivateInterestState<MCL, MCC, MPL, ReadCap, EnumCap>,
+    >,
 }
 
 impl<
@@ -48,9 +49,11 @@ impl<
         N: NamespaceId + Hash,
         S: SubspaceId + Hash,
         ReadCap,
-    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap>
+        EnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
 where
     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
+    EnumCap: Eq + Hash,
     N: NamespaceId,
     S: SubspaceId,
 {
@@ -70,7 +73,7 @@ where
     /// Call this when you want to add a CapableAoi.
     pub(crate) fn submit_capable_aoi(
         &mut self,
-        caoi: CapableAoi<MCL, MCC, MPL, ReadCap>,
+        caoi: CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>,
     ) -> Either<PioBindHashInformation<INTEREST_HASH_LENGTH>, &HashSet<Overlap>> {
         // Convert to PrivateInterest, do salted hash stuff if the PrivateInterest is new (otherwise, deduplicate and do not report salted hash stuff).
         let p = caoi.to_private_interest();
@@ -267,7 +270,7 @@ where
     pub(crate) fn caois_for_my_interesting_handle(
         &self,
         my_handle: u64,
-    ) -> &HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>> {
+    ) -> &HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>> {
         let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
         let pi_state = self
             .my_interests
@@ -314,9 +317,10 @@ pub(crate) struct PrivateInterestState<
     const MCC: usize,
     const MPL: usize,
     ReadCap,
+    EnumCap,
 > {
     /// All CapableAois we have [submitted](submit_capable_aoi) which resulted in the PrivateInterest of this state.
-    caois: HashSet<CapableAoi<MCL, MCC, MPL, ReadCap>>,
+    caois: HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>>,
     /// All overlaps with this Private Interest and PrivateInterests registered by the other peer.
     overlaps: HashSet<Overlap>,
 }
