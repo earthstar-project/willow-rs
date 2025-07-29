@@ -16,6 +16,7 @@ arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 willow-data-model = { path = "../data-model", version = "0.2.0" }
 compact_u64 = { version = "0.1.0", features = [ "std", "dev" ] }
+either = "1.15.0"
 
 [dependencies.ufotofu_codec]
 version = "0.1.0"
