@@ -1,4 +1,8 @@
+use crate::PayloadDigest25;
 use crate::{NamespaceId25, Signature25, SubspaceId25};
+use ufotofu_codec::Encodable;
+use willow_data_model::NamespaceId;
+use willow_sideload::SideloadAuthorisationToken;
 
 pub type CommunalCapability =
     meadowcap::CommunalCapability<1024, 1024, 1024, NamespaceId25, SubspaceId25, Signature25>;
@@ -17,6 +21,11 @@ pub type AuthorisationToken = meadowcap::McAuthorisationToken<
     SubspaceId25,
     Signature25,
 >;
+
+impl SideloadAuthorisationToken<1024, 1024, 1024, NamespaceId25, SubspaceId25, PayloadDigest25>
+    for AuthorisationToken
+{
+}
 
 pub type SubspaceCapability =
     meadowcap::McSubspaceCapability<NamespaceId25, Signature25, SubspaceId25, Signature25>;

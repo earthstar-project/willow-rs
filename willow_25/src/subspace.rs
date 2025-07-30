@@ -10,6 +10,7 @@ use willow_data_model::SubspaceId;
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+use willow_sideload::SideloadSubspaceId;
 
 use crate::SigningKey25;
 
@@ -77,6 +78,12 @@ impl SubspaceId for SubspaceId25 {
 }
 
 impl McPublicUserKey<crate::Signature25> for SubspaceId25 {}
+
+impl SideloadSubspaceId for SubspaceId25 {
+    fn default_subspace_id() -> Self {
+        Self(*VerifyingKey::default().as_bytes())
+    }
+}
 
 impl Encodable for SubspaceId25 {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>

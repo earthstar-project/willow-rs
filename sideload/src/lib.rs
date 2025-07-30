@@ -8,30 +8,23 @@ use ufotofu_codec::{
     RelativeDecodable, RelativeEncodable,
 };
 use willow_data_model::{
-    grouping::{Area, AreaOfInterest},
-    AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, Path, PayloadDigest,
-    QueryIgnoreParams, QueryOrder, Store, SubspaceId, UnauthorisedWriteError,
+    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, Path, PayloadDigest,
+    QueryIgnoreParams, Store, SubspaceId, UnauthorisedWriteError,
 };
 
-pub trait SideloadNamespaceId:
-    NamespaceId + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
-{
+pub trait SideloadNamespaceId: NamespaceId + Decodable {
     /// The least element of the set of namespace IDs.
-    const DEFAULT_NAMESPACE_ID: Self;
+    fn default_namespace_id() -> Self;
 }
 
-pub trait SideloadSubspaceId:
-    SubspaceId + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
-{
+pub trait SideloadSubspaceId: SubspaceId + EncodableSync + EncodableKnownSize + Decodable {
     /// The least element of the set of subspace IDs.
-    const DEFAULT_SUBSPACE_ID: Self;
+    fn default_subspace_id() -> Self;
 }
 
-pub trait SideloadPayloadDigest:
-    PayloadDigest + EncodableSync + EncodableKnownSize + Decodable + DecodableCanonic
-{
+pub trait SideloadPayloadDigest: PayloadDigest + Decodable {
     /// The least element of the set of payload digests.
-    const DEFAULT_PAYLOAD_DIGEST: Self;
+    fn default_payload_digest() -> Self;
 }
 
 pub trait SideloadAuthorisationToken<
@@ -41,21 +34,18 @@ pub trait SideloadAuthorisationToken<
     N: SideloadNamespaceId,
     S: SideloadSubspaceId,
     PD: SideloadPayloadDigest,
->:
-    AuthorisationToken<MCL, MCC, MPL, N, S, PD>
-    + EncodableSync
-    + EncodableKnownSize
-    + Decodable
-    + DecodableCanonic
+>: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Decodable
 {
 }
 
+#[derive(Debug)]
 pub enum CreateDropError<ConsumerError> {
     EmptyDrop,
     StoreErr,
     ConsumerProblem(ConsumerError),
 }
 
+#[derive(Debug)]
 pub enum IngestDropError<ProducerError> {
     StoreErr,
     UnexpectedEndOfInput,
@@ -109,6 +99,7 @@ where
 {
     // https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
 
+    /*
     let mut encrypted_consumer = encrypt(consumer);
 
     let mut entries_count = 0;
@@ -147,18 +138,17 @@ where
 
     // For each area,
     for area in next_areas_vec {
-        let aoi: AreaOfInterest<MCL, MCC, MPL, S> = area.into();
-
         // Get the producer of entries from this area
-        let mut entry_producer = store.query_area(
-            &aoi,
-            &QueryOrder::Subspace,
-            false,
-            Some(QueryIgnoreParams {
-                ignore_incomplete_payloads: true,
-                ignore_empty_payloads: true,
-            }),
-        );
+        let mut entry_producer = store
+            .query_area(
+                &area,
+                QueryIgnoreParams {
+                    ignore_incomplete_payloads: true,
+                    ignore_empty_payloads: true,
+                },
+            )
+            .await
+            .map_err(|_err| CreateDropError::StoreErr)?;
 
         loop {
             match entry_producer.produce().await {
@@ -183,11 +173,23 @@ where
 
                     // Consume payload
                     let mut payload = store
-                        .payload(entry.payload_digest())
+                        .payload(
+                            entry.subspace_id(),
+                            entry.path(),
+                            0,
+                            Some(entry.payload_digest().clone()),
+                        )
                         .await
-                        .ok_or(CreateDropError::StoreErr)?;
+                        .map_err(|_err| CreateDropError::StoreErr)?;
 
-                    bulk_pipe(&mut payload, &mut encrypted_consumer).await?;
+                    match payload {
+                        willow_data_model::Payload::Complete(payload) => {
+                            let well = bulk_pipe(&mut payload, &mut encrypted_consumer).await;
+                        }
+                        willow_data_model::Payload::Incomplete(payload) => {
+                            // If we have no bytes, we need a none marker.
+                        }
+                    }
                 }
                 Ok(Either::Right(_)) => {
                     break;
@@ -198,6 +200,9 @@ where
     }
 
     Ok(())
+    */
+
+    todo!()
 }
 
 pub async fn ingest_drop<
@@ -212,7 +217,6 @@ pub async fn ingest_drop<
     DecryptedP,
     DecryptFn,
     StoreType,
-    AreaIterator,
 >(
     producer: P,
     decrypt: DecryptFn,
@@ -223,15 +227,11 @@ where
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     DecryptFn: Fn(P) -> DecryptedP,
     DecryptedP: BulkProducer<Item = u8>,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
 {
     // do the inverse of https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
 
+    /*
     let mut entry_to_decode_against = Entry::new(
         N::default(),
         S::default(),
@@ -243,7 +243,7 @@ where
 
     let mut decrypted_producer = decrypt(producer);
 
-    let entries_count = U64BE::decode(&mut decrypted_producer).await?;
+    let entries_count = CompactU64::decode(&mut decrypted_producer).await?;
 
     // For each entry we expect,
     for _ in 0..entries_count.0 {
@@ -275,4 +275,7 @@ where
     }
 
     Ok(())
+    */
+
+    todo!()
 }

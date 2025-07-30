@@ -8,6 +8,7 @@ use ufotofu_codec::{
     EncodableSync,
 };
 use willow_data_model::NamespaceId;
+use willow_sideload::SideloadNamespaceId;
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
@@ -61,6 +62,11 @@ impl Verifier<crate::Signature25> for NamespaceId25 {
 
 impl NamespaceId for NamespaceId25 {}
 impl McNamespacePublicKey for NamespaceId25 {}
+impl SideloadNamespaceId for NamespaceId25 {
+    fn default_namespace_id() -> Self {
+        Self(VerifyingKey::default())
+    }
+}
 
 impl IsCommunal for NamespaceId25 {
     /// Returns true if the last bit of the first byte is zero.
