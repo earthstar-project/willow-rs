@@ -1,17 +1,17 @@
-use std::convert::Infallible;
-use std::future::Future;
-
 use compact_u64::{CompactU64, Tag, TagWidth};
 use either::Either;
+use std::future::Future;
 use ufotofu::{bulk_pipe, BulkConsumer, BulkProducer, Producer};
 use ufotofu_codec::{
-    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
-    RelativeDecodable, RelativeEncodable,
+    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
+    RelativeEncodable,
 };
 use willow_data_model::{
-    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, Path, PayloadDigest,
-    QueryIgnoreParams, Store, SubspaceId, UnauthorisedWriteError,
+    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, NamespaceId,
+    Path, PayloadAppendError, PayloadDigest, QueryIgnoreParams, Store, SubspaceId,
+    UnauthorisedWriteError,
 };
+use willow_encoding::is_bitflagged;
 
 pub trait SideloadNamespaceId: NamespaceId + Encodable + Decodable {
     /// The least element of the set of namespace IDs.
@@ -42,7 +42,13 @@ pub trait SideloadAuthorisationToken<
     + RelativeEncodable<(
         AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
         Entry<MCL, MCC, MPL, N, S, PD>,
-    )>
+    )> + RelativeDecodable<
+        (
+            AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+            Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+        Blame,
+    >
 {
 }
 
@@ -67,21 +73,23 @@ pub enum CreateDropError<ConsumerError> {
 }
 
 #[derive(Debug)]
-pub enum IngestDropError<ProducerError> {
-    StoreErr,
+pub enum IngestDropError<ProducerError, StoreErr> {
+    WrongNamespace,
     UnexpectedEndOfInput,
     ProducerProblem(ProducerError),
     UnauthorisedEntry(UnauthorisedWriteError),
     Other,
+    EntryIngestion(EntryIngestionError<StoreErr>),
+    PayloadIngestion(PayloadAppendError<ProducerError, StoreErr>),
 }
 
-impl<E> From<UnauthorisedWriteError> for IngestDropError<E> {
+impl<E, SE> From<UnauthorisedWriteError> for IngestDropError<E, SE> {
     fn from(value: UnauthorisedWriteError) -> Self {
         IngestDropError::UnauthorisedEntry(value)
     }
 }
 
-impl<F, E, O> From<DecodeError<F, E, O>> for IngestDropError<E> {
+impl<F, E, O, SE> From<DecodeError<F, E, O>> for IngestDropError<E, SE> {
     fn from(value: DecodeError<F, E, O>) -> Self {
         match value {
             DecodeError::UnexpectedEndOfInput(_) => IngestDropError::UnexpectedEndOfInput,
@@ -180,22 +188,12 @@ where
             let has_full_payload = lengthy.available() == authed_entry.entry().payload_length();
             let has_different_subspace =
                 authed_entry.entry().subspace_id() != prev_authed_entry.entry().subspace_id();
+            let timestamp_larger_than_prev_timestamp =
+                authed_entry.entry().timestamp() > prev_authed_entry.entry().timestamp();
             let timestamp_diff = authed_entry
                 .entry()
                 .timestamp()
                 .abs_diff(prev_authed_entry.entry().timestamp());
-            // Cloning this here as we'll need it later - after prev_auth_entry has been moved.
-            let prev_path = prev_authed_entry.entry().path().clone();
-
-            // Encode auth token relative to previous authed entry and current entry.
-            authed_entry
-                .token()
-                .relative_encode(
-                    &mut encrypted_consumer,
-                    &(prev_authed_entry, authed_entry.entry().clone()),
-                )
-                .await
-                .map_err(CreateDropError::ConsumerProblem)?;
 
             // And then a header.
             let mut header = 0;
@@ -206,6 +204,10 @@ where
 
             if has_different_subspace {
                 header |= 0b0100_0000;
+            }
+
+            if timestamp_larger_than_prev_timestamp {
+                header |= 0b0010_0000;
             }
 
             let timestamp_diff_tag = Tag::min_tag(timestamp_diff, TagWidth::two());
@@ -236,7 +238,7 @@ where
             authed_entry
                 .entry()
                 .path()
-                .relative_encode(&mut encrypted_consumer, &prev_path)
+                .relative_encode(&mut encrypted_consumer, prev_authed_entry.entry().path())
                 .await
                 .map_err(CreateDropError::ConsumerProblem)?;
 
@@ -266,6 +268,16 @@ where
                 .await
                 .map_err(CreateDropError::ConsumerProblem)?;
 
+            // Encode auth token relative to previous authed entry and current entry.
+            authed_entry
+                .token()
+                .relative_encode(
+                    &mut encrypted_consumer,
+                    &(prev_authed_entry, authed_entry.entry().clone()),
+                )
+                .await
+                .map_err(CreateDropError::ConsumerProblem)?;
+
             if has_full_payload {
                 let payload = store
                     .payload(
@@ -291,110 +303,7 @@ where
         }
     }
 
-    /*
-    let mut encrypted_consumer = encrypt(consumer);
-
-    let mut entries_count = 0;
-
-    // TODO: Order / maybe even merge given areas to create the highest probability of efficiently relatively encoded entries.
-
-    // Doing this so we can loop over areas twice.
-    let mut next_areas_vec: Vec<Area<MCL, MCC, MPL, S>> = Vec::new();
-
-    // Get the total number of included entries.
-    for area in areas {
-        entries_count += store.count_area(&area.clone().into()).await;
-        next_areas_vec.push(area);
-    }
-
-    // And encode them into the drop.
-    CompactU64(entries_count)
-        .encode(&mut encrypted_consumer)
-        .await
-        .map_err(CreateDropError::ConsumerProblem)?;
-
-    namespace_id
-        .encode(&mut encrypted_consumer)
-        .await
-        .map_err(CreateDropError::ConsumerProblem)?;
-
-    // Set the initial entry to relatively encode against
-    let mut entry_to_encode_against = Entry::new(
-        namespace_id,
-        S::default(),
-        Path::<MCL, MCC, MPL>::new_empty(),
-        0,
-        0,
-        PD::default(),
-    );
-
-    // For each area,
-    for area in next_areas_vec {
-        // Get the producer of entries from this area
-        let mut entry_producer = store
-            .query_area(
-                &area,
-                QueryIgnoreParams {
-                    ignore_incomplete_payloads: true,
-                    ignore_empty_payloads: true,
-                },
-            )
-            .await
-            .map_err(|_err| CreateDropError::StoreErr)?;
-
-        loop {
-            match entry_producer.produce().await {
-                Ok(Either::Left(lengthy)) => {
-                    let authed_entry = lengthy.entry();
-
-                    // Encode entry relative to previously encoded entry
-                    let entry = authed_entry.entry();
-                    entry
-                        .relative_encode(&mut encrypted_consumer, &entry_to_encode_against)
-                        .await
-                        .map_err(CreateDropError::ConsumerProblem)?;
-
-                    entry_to_encode_against = entry.clone();
-
-                    // Encode token
-                    let token = authed_entry.token();
-                    token
-                        .encode(&mut encrypted_consumer)
-                        .await
-                        .map_err(CreateDropError::ConsumerProblem)?;
-
-                    // Consume payload
-                    let mut payload = store
-                        .payload(
-                            entry.subspace_id(),
-                            entry.path(),
-                            0,
-                            Some(entry.payload_digest().clone()),
-                        )
-                        .await
-                        .map_err(|_err| CreateDropError::StoreErr)?;
-
-                    match payload {
-                        willow_data_model::Payload::Complete(payload) => {
-                            let well = bulk_pipe(&mut payload, &mut encrypted_consumer).await;
-                        }
-                        willow_data_model::Payload::Incomplete(payload) => {
-                            // If we have no bytes, we need a none marker.
-                        }
-                    }
-                }
-                Ok(Either::Right(_)) => {
-                    break;
-                }
-                Err(_) => return Err(CreateDropError::StoreErr),
-            };
-        }
-    }
-
     Ok(())
-    */
-
-    todo!()
 }
 
 pub async fn ingest_drop<
@@ -413,18 +322,28 @@ pub async fn ingest_drop<
     producer: P,
     decrypt: DecryptFn,
     store: &StoreType,
-) -> Result<(), IngestDropError<DecryptedP::Error>>
+) -> Result<(), IngestDropError<DecryptedP::Error, StoreType::Error>>
 where
     P: Producer<Item = u8>,
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     DecryptFn: Fn(P) -> DecryptedP,
     DecryptedP: BulkProducer<Item = u8>,
     Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+    AT:,
 {
     // do the inverse of https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
 
-    /*
-    let mut entry_to_decode_against = Entry::new(
+    let mut decrypted_producer = decrypt(producer);
+
+    let entries_count = CompactU64::decode(&mut decrypted_producer).await?;
+
+    let namespace_id = N::decode(&mut decrypted_producer).await?;
+
+    if &namespace_id != store.namespace_id() {
+        return Err(IngestDropError::WrongNamespace);
+    }
+
+    let entry_minus_one = Entry::new(
         N::default(),
         S::default(),
         Path::<MCL, MCC, MPL>::new_empty(),
@@ -433,41 +352,101 @@ where
         PD::default(),
     );
 
-    let mut decrypted_producer = decrypt(producer);
+    let auth_minus_one = AT::default();
 
-    let entries_count = CompactU64::decode(&mut decrypted_producer).await?;
+    let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 
-    // For each entry we expect,
     for _ in 0..entries_count.0 {
-        // Decode entry and token
-        let entry =
-            Entry::relative_decode(&mut decrypted_producer, &entry_to_decode_against).await?;
-        let token = AT::decode(&mut decrypted_producer).await?;
-
-        entry_to_decode_against = entry.clone();
-
-        // Fail if the entry isn't authorised.
-        let authed_entry = AuthorisedEntry::new(entry, token)?;
-
-        // Ingest entry
-        store
-            .ingest_entry(authed_entry, false)
+        let header = decrypted_producer
+            .produce_item()
             .await
-            .map_err(|_| IngestDropError::StoreErr)?;
+            .map_err(|err| match err.reason {
+                Either::Left(_) => IngestDropError::UnexpectedEndOfInput,
+                Either::Right(err) => IngestDropError::ProducerProblem(err),
+            })?;
 
-        // Ingest payload
+        let payload_is_encoded = is_bitflagged(header, 0);
+        let subspace_is_encoded = is_bitflagged(header, 1);
+        let add_timestamp_diff = is_bitflagged(header, 2);
+        let timestamp_diff_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
+
+        let subspace = if subspace_is_encoded {
+            S::decode(&mut decrypted_producer).await?
+        } else {
+            prev_authed_entry.entry().subspace_id().clone()
+        };
+
+        let path = Path::relative_decode(&mut decrypted_producer, prev_authed_entry.entry().path())
+            .await?;
+
+        let timestamp_diff =
+            CompactU64::relative_decode(&mut decrypted_producer, &timestamp_diff_tag).await?;
+
+        let timestamp = if add_timestamp_diff {
+            prev_authed_entry
+                .entry()
+                .timestamp()
+                .checked_add(timestamp_diff.0)
+                .ok_or(IngestDropError::Other)?
+        } else {
+            prev_authed_entry
+                .entry()
+                .timestamp()
+                .checked_sub(timestamp_diff.0)
+                .ok_or(IngestDropError::Other)?
+        };
+
+        let payload_length =
+            CompactU64::relative_decode(&mut decrypted_producer, &payload_length_tag)
+                .await?
+                .0;
+
+        let payload_digest = PD::decode(&mut decrypted_producer).await?;
+
+        let entry = Entry::new(
+            namespace_id.clone(),
+            subspace,
+            path,
+            timestamp,
+            payload_length,
+            payload_digest,
+        );
+
+        let pair = (prev_authed_entry, entry);
+
+        let token = AT::relative_decode(&mut decrypted_producer, &pair).await?;
+
+        let authed_entry = AuthorisedEntry::new(pair.1, token)?;
+
         store
-            .append_payload(
-                entry_to_decode_against.payload_digest(),
-                entry_to_decode_against.payload_length(),
-                &mut decrypted_producer,
+            .ingest_entry(
+                authed_entry.clone(),
+                false,
+                willow_data_model::EntryOrigin::Local,
             )
             .await
-            .map_err(|_| IngestDropError::StoreErr)?;
+            .map_err(IngestDropError::EntryIngestion)?;
+
+        if payload_is_encoded {
+            let mut payload_producer =
+                ufotofu::producer::Limit::new(decrypted_producer, payload_length as usize);
+
+            store
+                .append_payload(
+                    authed_entry.entry().subspace_id(),
+                    authed_entry.entry().path(),
+                    Some(authed_entry.entry().payload_digest().clone()),
+                    &mut payload_producer,
+                )
+                .await
+                .map_err(IngestDropError::PayloadIngestion)?;
+
+            decrypted_producer = payload_producer.into_inner();
+        }
+
+        prev_authed_entry = authed_entry;
     }
 
     Ok(())
-    */
-
-    todo!()
 }

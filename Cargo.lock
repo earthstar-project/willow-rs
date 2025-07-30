@@ -1285,6 +1285,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "willow-data-model",
+ "willow-encoding",
 ]
 
 [[package]]
