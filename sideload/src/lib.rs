@@ -56,20 +56,24 @@ pub trait SideloadStore<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: SideloadNamespaceId,
-    S: SideloadSubspaceId,
-    PD: SideloadPayloadDigest,
+    N: NamespaceId,
+    S: SubspaceId,
+    PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 >: Store<MCL, MCC, MPL, N, S, PD, AT>
 {
-    fn count_area(&self, area: &Area<MCL, MCC, MPL, S>) -> impl Future<Output = usize>;
+    fn count_area(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+    ) -> impl Future<Output = Result<usize, Self::Error>>;
 }
 
 #[derive(Debug)]
-pub enum CreateDropError<ConsumerError> {
+pub enum CreateDropError<ConsumerError, StoreErr> {
     EmptyDrop,
-    StoreErr,
+    StoreErr(StoreErr),
     ConsumerProblem(ConsumerError),
+    Other,
 }
 
 #[derive(Debug)]
@@ -118,7 +122,7 @@ pub async fn create_drop<
     namespace_id: N,
     areas: AreaIterator,
     store: &StoreType,
-) -> Result<(), CreateDropError<EncryptedC::Error>>
+) -> Result<(), CreateDropError<EncryptedC::Error, StoreType::Error>>
 where
     C: BulkConsumer<Item = u8>,
     EncryptedC: BulkConsumer<Item = u8, Final = ()>,
@@ -139,8 +143,15 @@ where
 
     // Get the total number of included entries.
     for area in areas {
-        entries_count += store.count_area(&area).await;
+        entries_count += store
+            .count_area(&area)
+            .await
+            .map_err(CreateDropError::StoreErr)?;
         next_areas_vec.push(area);
+    }
+
+    if entries_count == 0 {
+        return Err(CreateDropError::EmptyDrop);
     }
 
     // And encode them into the drop.
@@ -180,7 +191,7 @@ where
                 },
             )
             .await
-            .map_err(|_err| CreateDropError::StoreErr)?;
+            .map_err(CreateDropError::StoreErr)?;
 
         while let Ok(lengthy) = entry_producer.produce_item().await {
             let authed_entry = lengthy.entry();
@@ -287,12 +298,24 @@ where
                         Some(authed_entry.entry().payload_digest().clone()),
                     )
                     .await
-                    .map_err(|_err| CreateDropError::StoreErr)?;
+                    .map_err(|err| match err {
+                        willow_data_model::PayloadError::OperationError(err) => {
+                            CreateDropError::StoreErr(err)
+                        }
+                        _ => {
+                            panic!("Could not retrieve entry payload from store, even though we expected to be able to do so.")
+                        }
+                    })?;
 
                 if let willow_data_model::Payload::Complete(mut payload) = payload {
                     bulk_pipe(&mut payload, &mut encrypted_consumer)
                         .await
-                        .map_err(|_err| CreateDropError::StoreErr)?;
+                        .map_err(|err| match err {
+                            ufotofu::PipeError::Producer(err) => CreateDropError::StoreErr(err),
+                            ufotofu::PipeError::Consumer(err) => {
+                                CreateDropError::ConsumerProblem(err)
+                            }
+                        })?;
                 } else {
                     // We apparently had the full payload according to the lengthy.available, but the store says it is incomplete! Problems! no-one will be able to decode this!
                     panic!("The store said it had all the bytes for a given payload, but this turned out not to be true!")

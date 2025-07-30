@@ -52,6 +52,7 @@ use willow_data_model::{
     PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
     SubspaceId,
 };
+use willow_sideload::SideloadStore;
 
 /// A simple, [sled](https://docs.rs/sled/latest/sled/)-powered Willow data [store](https://willowprotocol.org/specs/data-model/index.html#store) implementing the [willow_data_model::Store] trait.
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -1482,6 +1483,50 @@ where
                 }
                 Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
                 None => return Ok(Either::Right(())),
+            }
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    SideloadStore<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
+    S::ErrorReason: core::fmt::Debug,
+    PD::ErrorReason: core::fmt::Debug,
+{
+    async fn count_area(&self, area: &Area<MCL, MCC, MPL, S>) -> Result<usize, Self::Error> {
+        let entry_tree = self.entry_tree()?;
+
+        let mut entry_iterator = match area.subspace() {
+            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                entry_tree.scan_prefix(&matching_subspace_path)
+            }
+        };
+
+        let mut counted = 0;
+
+        loop {
+            let result = entry_iterator.next();
+
+            match result {
+                Some(Ok((key, _value))) => {
+                    let (subspace, path, timestamp) =
+                        decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+
+                    if area.includes_triplet(&subspace, &path, timestamp) {
+                        counted += 1;
+                    }
+                }
+                Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
+                None => return Ok(counted),
             }
         }
     }

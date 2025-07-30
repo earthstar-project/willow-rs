@@ -1300,6 +1300,7 @@ dependencies = [
  "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
+ "willow-sideload",
  "willow_25",
 ]
 
