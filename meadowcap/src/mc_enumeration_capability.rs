@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use compact_u64::CompactU64;
 use compact_u64::Tag;
 use compact_u64::TagWidth;
@@ -8,6 +10,8 @@ use ufotofu_codec::DecodeError;
 use ufotofu_codec::Encodable;
 use ufotofu_codec::EncodableKnownSize;
 use ufotofu_codec::EncodableSync;
+use ufotofu_codec::RelativeDecodable;
+use ufotofu_codec::RelativeEncodable;
 use ufotofu_codec::RelativeEncodableKnownSize;
 use willow_data_model::SubspaceId;
 
@@ -18,6 +22,7 @@ use crate::McPublicUserKey;
 use crate::SillyPublicKey;
 #[cfg(feature = "dev")]
 use crate::SillySig;
+use crate::UnverifiedMcCapability;
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 
@@ -76,7 +81,6 @@ impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
     McEnumerationCapability<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
     UserPublicKey: McPublicUserKey<UserSignature>,
     UserSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -607,6 +611,48 @@ where
     }
 }
 
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    RelativeEncodable<(NamespacePublicKey, UserPublicKey)>
+    for UnverifiedMcEnumerationCapability<
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature> + PartialEq,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableKnownSize + EncodableSync + Clone,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        _r: &(NamespacePublicKey, UserPublicKey),
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let delegations_count = self.inner.delegations.len() as u64;
+        CompactU64(delegations_count).encode(consumer).await?;
+        Encodable::encode(&self.inner.initial_authorisation, consumer).await?;
+
+        if delegations_count > 0 {
+            Encodable::encode(&self.inner.user_key, consumer).await?;
+        }
+
+        for (i, delegation) in self.inner.delegations.iter().enumerate() {
+            if (i as u64) < delegations_count - 1 {
+                Encodable::encode(delegation.user(), consumer).await?;
+            }
+
+            Encodable::encode(delegation.signature(), consumer).await?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(feature = "dev")]
 impl<'a> Arbitrary<'a>
     for UnverifiedMcEnumerationCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
@@ -614,6 +660,93 @@ impl<'a> Arbitrary<'a>
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(UnverifiedMcEnumerationCapability {
             inner: Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
+/// A unit struct which indicates that we successfully relatively decoded a *valid* McEnumerationCapability
+pub struct DecodedMcEnumCap<NamespaceSignature, UserSignature> {
+    _namespace_sig: PhantomData<NamespaceSignature>,
+    _user_sig: PhantomData<UserSignature>,
+}
+
+/// This impl decodes an McEnumerationCapability and errors if it is invalid (i.e. signatures are faulty).
+impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
+    RelativeDecodable<(NamespacePublicKey, UserPublicKey), Blame>
+    for DecodedMcEnumCap<NamespaceSignature, UserSignature>
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature> + PartialEq,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature> + Decodable,
+    UserSignature: EncodableKnownSize + EncodableSync + Decodable + Clone,
+    Blame: From<NamespaceSignature::ErrorReason>
+        + From<UserPublicKey::ErrorReason>
+        + From<UserSignature::ErrorReason>,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &(NamespacePublicKey, UserPublicKey),
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let (r_namespace, r_receiver) = r;
+
+        let header = producer.produce_item().await?;
+
+        let tag = Tag::from_raw(header, TagWidth::eight(), 0);
+
+        let delegations_len = CompactU64::relative_decode(producer, &tag)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let namespace_sig = NamespaceSignature::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let user_key = if delegations_len.0 > 0 {
+            UserPublicKey::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        } else {
+            r_receiver.clone()
+        };
+
+        let mut base_cap =
+            McEnumerationCapability::from_existing(r_namespace.clone(), user_key, namespace_sig)
+                .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+        let mut delegations_decoded = 0;
+
+        for i in 0..delegations_len.0 {
+            let user = if i < delegations_len.0 - 1 {
+                UserPublicKey::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?
+            } else {
+                r_receiver.clone()
+            };
+
+            let signature = UserSignature::decode(producer)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+            let delegation = EnumerationDelegation::new(user, signature);
+
+            base_cap
+                .append_existing_delegation(delegation)
+                .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
+
+            delegations_decoded += 1;
+        }
+
+        if delegations_decoded != delegations_len.0 {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
+        Ok(Self {
+            _namespace_sig: PhantomData,
+            _user_sig: PhantomData,
         })
     }
 }
