@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashSet, hash::Hash, ops::Deref};
 use either::Either::{Left, Right};
 use lcmux::ChannelSender;
 use ufotofu::{BulkConsumer, Consumer, Producer};
-use ufotofu_codec::{Encodable, RelativeEncodable, RelativeEncodableKnownSize};
+use ufotofu_codec::{Encodable, RelativeDecodable, RelativeEncodable, RelativeEncodableKnownSize};
 use wb_async_utils::{
     rw::WriteGuard,
     shared_consumer::{self, SharedConsumer},
@@ -604,8 +604,12 @@ where
         }
     }
 
-    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
-        todo!()
+    async fn close(&mut self, _fin: Self::Final) -> Result<(), Self::Error> {
+        self.overlap_channel_sender
+            .close()
+            .await
+            .map_err(|err| AoiInputError::Transport(err))?;
+        Ok(())
     }
 }
 
