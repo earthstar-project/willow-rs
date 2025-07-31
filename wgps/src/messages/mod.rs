@@ -324,10 +324,7 @@ where
 /// Bind a read capability for an overlap between two PrivateInterests. Additionally, this message specifies an AreaOfInterest which the sender wants to sync.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
-pub struct PioBindReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, RC>
-where
-    RC: ReadCapability<MCL, MCC, MPL>,
-{
+pub struct PioBindReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, RC> {
     /// The OverlapHandle (bound by the sender of this message) which is part of the overlap. If there are two handles available, use the one that was bound with actually_interested == true.
     pub sender_handle: u64,
 

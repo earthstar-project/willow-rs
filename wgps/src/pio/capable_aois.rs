@@ -159,8 +159,8 @@ where
         &mut self,
         their_handle: u64,
         my_handle: u64,
-        authentication: [u8; INTEREST_HASH_LENGTH],
-        enum_cap: Option<u16>,
+        authentication: &[u8; INTEREST_HASH_LENGTH],
+        enum_cap: &Option<EnumCap>,
     ) -> Result<Overlap, ReceivedAnnouncementError> {
         // Retrieve information stored with my_handle, error if they provided a fake one.
         match self.hash_registry.try_get_our_handle_info(my_handle) {
@@ -173,7 +173,7 @@ where
                 let expected_authentication =
                     (self.hash_registry.h)(private_interest, &self.hash_registry.their_salt());
 
-                if authentication != expected_authentication {
+                if authentication != &expected_authentication {
                     return Err(ReceivedAnnouncementError::InvalidAuthentication);
                 }
 
