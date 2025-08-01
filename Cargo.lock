@@ -252,7 +252,7 @@ checksum = "cfe61992c4cb9ec764c74faebcec021b1e112a785c413431799052d1c05ee47f"
 dependencies = [
  "arbitrary",
  "either",
- "ufotofu",
+ "ufotofu 0.6.7",
  "ufotofu_codec",
  "ufotofu_codec_endian",
 ]
@@ -653,10 +653,10 @@ dependencies = [
  "either",
  "futures",
  "smol",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wb_async_utils",
  "willow-encoding",
 ]
@@ -707,7 +707,7 @@ dependencies = [
  "compact_u64",
  "either",
  "signature",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
@@ -1161,22 +1161,35 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ufotofu"
-version = "0.6.6"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2df1ac34770637a020a951ea1736f0a97af311fc4723b0c4b46daa43293f7a2"
+dependencies = [
+ "either",
+ "futures",
+ "pin-project",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "ufotofu"
+version = "0.7.0"
 dependencies = [
  "arbitrary",
  "either",
  "futures",
  "pin-project",
+ "ufotofu_queues 0.6.0",
 ]
 
 [[package]]
 name = "ufotofu_codec"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arbitrary",
  "either",
  "pollster",
- "ufotofu",
+ "ufotofu 0.7.0",
  "wb_async_utils",
 ]
 
@@ -1188,9 +1201,13 @@ checksum = "4cb93cb00d9ae0a3d7ba45f779de03faf8aab584c68b4d4266b3377fa90d027d"
 dependencies = [
  "arbitrary",
  "either",
- "ufotofu",
+ "ufotofu 0.6.7",
  "ufotofu_codec",
 ]
+
+[[package]]
+name = "ufotofu_queues"
+version = "0.6.0"
 
 [[package]]
 name = "ufotofu_queues"
@@ -1227,14 +1244,14 @@ dependencies = [
 
 [[package]]
 name = "wb_async_utils"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde870d22fde63569d9c9ded9b811ac2f5f70f28019c7a1a28cb8bd3c44e3c6c"
+checksum = "29d07b9a0090d19edefbe07a6f7b19e7ba3f883dc2ef69f31e4edcb366b36ad8"
 dependencies = [
  "either",
  "fairly_unsafe_cell",
- "ufotofu",
- "ufotofu_queues",
+ "ufotofu 0.7.0",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1249,9 +1266,9 @@ dependencies = [
  "lcmux",
  "multimap",
  "smol",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
- "ufotofu_queues",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wb_async_utils",
  "willow-data-model",
  "willow-encoding",
@@ -1270,7 +1287,7 @@ dependencies = [
  "either",
  "slab",
  "smol",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "ufotofu_codec_endian",
  "wb_async_utils",
@@ -1280,11 +1297,6 @@ dependencies = [
 [[package]]
 name = "willow-encoding"
 version = "0.1.0"
-dependencies = [
- "either",
- "pollster",
- "ufotofu",
-]
 
 [[package]]
 name = "willow-fuzz"
@@ -1301,10 +1313,10 @@ dependencies = [
  "sled",
  "syncify",
  "tempdir",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wb_async_utils",
  "wgps",
  "willow-data-model",
@@ -1322,7 +1334,7 @@ dependencies = [
  "arbitrary",
  "compact_u64",
  "pollster",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
@@ -1334,10 +1346,10 @@ version = "0.1.0"
 dependencies = [
  "either",
  "sled",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wb_async_utils",
  "willow-data-model",
  "willow_25",
@@ -1350,9 +1362,9 @@ dependencies = [
  "either",
  "futures",
  "smol",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
- "ufotofu_queues",
+ "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wb_async_utils",
 ]
 
@@ -1367,7 +1379,7 @@ dependencies = [
  "meadowcap",
  "rand 0.8.5",
  "signature",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "willow-data-model",
  "willow-encoding",
@@ -1380,7 +1392,7 @@ dependencies = [
  "arbitrary",
  "meadowcap",
  "pollster",
- "ufotofu",
+ "ufotofu 0.7.0",
  "ufotofu_codec",
  "willow-data-model",
  "willow_25",
