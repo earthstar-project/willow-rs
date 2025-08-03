@@ -38,8 +38,8 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId,
-        S: SubspaceId,
+        N,
+        S,
     > HashRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S>
 {
     pub(crate) fn new(
@@ -67,6 +67,100 @@ impl<
         return salt;
     }
 
+    /// Call this whenever we received a PioBindHash message. Returns any detected matches.
+    pub fn received_pio_bind_hash_msg(
+        &mut self,
+        hash: [u8; INTEREST_HASH_LENGTH],
+        actually_interested: bool,
+    ) -> Vec<Overlap> {
+        let mut overlaps = vec![];
+
+        let their_handle = self
+            .their_handles
+            .bind((hash, actually_interested))
+            .unwrap();
+        self.their_hashes
+            .insert(hash, (their_handle, actually_interested));
+
+        if let Some(matches) = self.my_local_hashes.get_vec(&hash) {
+            for info in matches.iter() {
+                // Overlap does not count if neither peer is actually interested.
+                if info.not_a_relaxation || actually_interested {
+                    overlaps.push(Overlap {
+                        should_request_capability: !info.has_original_path,
+                        should_send_capability: info.has_original_path && info.not_a_relaxation,
+                        awkward: !actually_interested && !info.has_original_path,
+                        my_interesting_handle: info.interesting_handle,
+                        their_handle,
+                    });
+                }
+            }
+        }
+
+        return overlaps;
+    }
+
+    /// Only call this when we know we have bound info, this unwraps the retrieved value.
+    pub(crate) fn get_interesting_handle_info(
+        &self,
+        my_handle: u64,
+    ) -> &MyInterestingHandleInfo<MCL, MCC, MPL, N, S> {
+        let my_handle_info = self.my_handles.get(my_handle).unwrap().unwrap();
+
+        match my_handle_info {
+            MyHandleInfo::Uninteresting { interesting_handle } => {
+                return self.get_interesting_handle_info(*interesting_handle)
+            }
+            MyHandleInfo::Interesting(interesting_info) => interesting_info,
+        }
+    }
+
+    /// The returned u64 is the interesting handle (i.e., it is equal to the argument `my_handle` iff `my_handle` is an interesting handle). Whole thing returns None if the argument handle is not one we have bound.
+    pub(crate) fn try_get_our_handle_info(
+        &self,
+        my_handle: u64,
+    ) -> Option<(&MyInterestingHandleInfo<MCL, MCC, MPL, N, S>, u64)> {
+        let my_handle_info = self.my_handles.get(my_handle).unwrap()?;
+
+        match my_handle_info {
+            MyHandleInfo::Uninteresting { interesting_handle } => {
+                let my_interesting_handle_info =
+                    self.my_handles.get(*interesting_handle).unwrap()?;
+
+                match my_interesting_handle_info {
+                    MyHandleInfo::Uninteresting { .. } => unreachable!(),
+                    MyHandleInfo::Interesting(my_interesting_handle_info) => {
+                        return Some((my_interesting_handle_info, *interesting_handle))
+                    }
+                }
+            }
+            MyHandleInfo::Interesting(interesting_info) => {
+                return Some((interesting_info, my_handle))
+            }
+        }
+    }
+
+    pub(crate) fn get_their_handle(
+        &self,
+        their_handle: u64,
+    ) -> Option<&([u8; INTEREST_HASH_LENGTH], bool)> {
+        self.their_handles.get(their_handle).unwrap()
+    }
+}
+
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+    > HashRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S>
+where
+    N: NamespaceId,
+    S: SubspaceId,
+{
     /// Call this when you want to add a PrivateInterest. Returns the one or two salted hashes to send to the peer, and the associated handles.The first hash must be sent with associated bool `true`, the second hash (if there is one) must be sent with associated bool `false`. Also returns any detected matches.
     pub(crate) fn submit_private_interest(
         &mut self,
@@ -177,86 +271,6 @@ impl<
 
         overlaps
     }
-
-    /// Call this whenever we received a PioBindHash message. Returns any detected matches.
-    pub fn received_pio_bind_hash_msg(
-        &mut self,
-        hash: [u8; INTEREST_HASH_LENGTH],
-        actually_interested: bool,
-    ) -> Vec<Overlap> {
-        let mut overlaps = vec![];
-
-        let their_handle = self
-            .their_handles
-            .bind((hash, actually_interested))
-            .unwrap();
-        self.their_hashes
-            .insert(hash, (their_handle, actually_interested));
-
-        if let Some(matches) = self.my_local_hashes.get_vec(&hash) {
-            for info in matches.iter() {
-                // Overlap does not count if neither peer is actually interested.
-                if info.not_a_relaxation || actually_interested {
-                    overlaps.push(Overlap {
-                        should_request_capability: !info.has_original_path,
-                        should_send_capability: info.has_original_path && info.not_a_relaxation,
-                        awkward: !actually_interested && !info.has_original_path,
-                        my_interesting_handle: info.interesting_handle,
-                        their_handle,
-                    });
-                }
-            }
-        }
-
-        return overlaps;
-    }
-
-    /// Only call this when we know we have bound info, this unwraps the retrieved value.
-    pub(crate) fn get_interesting_handle_info(
-        &self,
-        my_handle: u64,
-    ) -> &MyInterestingHandleInfo<MCL, MCC, MPL, N, S> {
-        let my_handle_info = self.my_handles.get(my_handle).unwrap().unwrap();
-
-        match my_handle_info {
-            MyHandleInfo::Uninteresting { interesting_handle } => {
-                return self.get_interesting_handle_info(*interesting_handle)
-            }
-            MyHandleInfo::Interesting(interesting_info) => interesting_info,
-        }
-    }
-
-    /// The returned u64 is the interesting handle (i.e., it is equal to the argument `my_handle` iff `my_handle` is an interesting handle). Whole thing returns None if the argument handle is not one we have bound.
-    pub(crate) fn try_get_our_handle_info(
-        &self,
-        my_handle: u64,
-    ) -> Option<(&MyInterestingHandleInfo<MCL, MCC, MPL, N, S>, u64)> {
-        let my_handle_info = self.my_handles.get(my_handle).unwrap()?;
-
-        match my_handle_info {
-            MyHandleInfo::Uninteresting { interesting_handle } => {
-                let my_interesting_handle_info =
-                    self.my_handles.get(*interesting_handle).unwrap()?;
-
-                match my_interesting_handle_info {
-                    MyHandleInfo::Uninteresting { .. } => unreachable!(),
-                    MyHandleInfo::Interesting(my_interesting_handle_info) => {
-                        return Some((my_interesting_handle_info, *interesting_handle))
-                    }
-                }
-            }
-            MyHandleInfo::Interesting(interesting_info) => {
-                return Some((interesting_info, my_handle))
-            }
-        }
-    }
-
-    pub(crate) fn get_their_handle(
-        &self,
-        their_handle: u64,
-    ) -> Option<&([u8; INTEREST_HASH_LENGTH], bool)> {
-        self.their_handles.get(their_handle).unwrap()
-    }
 }
 
 /// Information about which PioBindHash messages we must send.
@@ -277,13 +291,7 @@ struct LocalHashInfo {
 
 /// Information to associate with the OverlapHandles that we bind.
 #[derive(Debug)]
-enum MyHandleInfo<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-> {
+enum MyHandleInfo<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
     /// For the handles we sent with boolean `false`, all we store is the corresponding handle which we sent with the boolean `true`.
     Uninteresting { interesting_handle: u64 },
     /// A handle we sent with boolean `true`.
@@ -291,13 +299,7 @@ enum MyHandleInfo<
 }
 
 #[derive(Debug)]
-pub struct MyInterestingHandleInfo<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-> {
+pub struct MyInterestingHandleInfo<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
     /// The private interest which resulted in this primary handle.
     pub private_interest: PrivateInterest<MCL, MCC, MPL, N, S>,
 }

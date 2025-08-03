@@ -27,8 +27,8 @@ pub(crate) struct InterestRegistry<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId + Hash,
-    S: SubspaceId + Hash,
+    N,
+    S,
     ReadCap,
     EnumCap,
 > {
@@ -46,16 +46,11 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Hash,
-        S: SubspaceId + Hash,
+        N,
+        S,
         ReadCap,
         EnumCap,
     > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
-where
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
-    EnumCap: Eq + Hash,
-    N: NamespaceId,
-    S: SubspaceId,
 {
     pub fn new(
         my_salt: [u8; SALT_LENGTH],
@@ -69,46 +64,45 @@ where
             my_interests: HashMap::new(),
         }
     }
+}
 
-    /// Call this when you want to add a CapableAoi.
-    pub(crate) fn submit_capable_aoi(
-        &mut self,
-        caoi: CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>,
-    ) -> Either<PioBindHashInformation<INTEREST_HASH_LENGTH>, &HashSet<Overlap>> {
-        // Convert to PrivateInterest, do salted hash stuff if the PrivateInterest is new (otherwise, deduplicate and do not report salted hash stuff).
-        let p = caoi.to_private_interest();
-
-        let p_is_fresh = self.my_interests.contains_key(&p);
-        if p_is_fresh {
-            // Do salted hash stuff!
-            // We don't really care what that means, we simply delegate to `self.hash_registry` and forward the results.
-            let salted_hash_stuff = self.hash_registry.submit_private_interest(&p);
-
-            // Record information about this private interest (the `caoi` is the only CapableAoi that yielded it so far, and we have not yet detected any overlaps with the other peer's private interests).
-            let mut caois = HashSet::new();
-            caois.insert(caoi);
-            self.my_interests.insert(
-                p,
-                PrivateInterestState {
-                    caois,
-                    overlaps: HashSet::new(),
-                },
-            );
-
-            return Left(salted_hash_stuff);
-        } else {
-            // No need to do salted hash stuff in this branch.
-
-            let pi_state = self.my_interests.get_mut(&p).unwrap(); // can unwrap because `!p_is_fresh`
-
-            // Add the new CapableAoi to the state of its PrivateInterest...
-            pi_state.caois.insert(caoi);
-
-            // ...and report all overlaps.
-            return Right(&pi_state.overlaps);
-        }
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        ReadCap,
+        EnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+{
+    /// `my_handle` must be bound by us, panics otherwise!
+    pub(crate) fn private_interest_for_my_interesting_handle(
+        &self,
+        my_handle: u64,
+    ) -> &PrivateInterest<MCL, MCC, MPL, N, S> {
+        let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
+        &handle_info.private_interest
     }
+}
 
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        ReadCap,
+        EnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+where
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+{
     /// Call this after sending both PioBindHash messages (only one if only a single hash and handle was returned by `submit_private_interest`).
     ///
     /// `fst_handle` is the overlap handle bound by the PioBindHash message with associated boolean `true`.
@@ -278,14 +272,62 @@ where
             .unwrap();
         &pi_state.caois
     }
+}
 
-    /// `my_handle` must be bound by us, panics otherwise!
-    pub(crate) fn private_interest_for_my_interesting_handle(
-        &self,
-        my_handle: u64,
-    ) -> &PrivateInterest<MCL, MCC, MPL, N, S> {
-        let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
-        &handle_info.private_interest
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        ReadCap,
+        EnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+where
+    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
+    EnumCap: Eq + Hash,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+{
+    /// Call this when you want to add a CapableAoi.
+    pub(crate) fn submit_capable_aoi(
+        &mut self,
+        caoi: CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>,
+    ) -> Either<PioBindHashInformation<INTEREST_HASH_LENGTH>, &HashSet<Overlap>> {
+        // Convert to PrivateInterest, do salted hash stuff if the PrivateInterest is new (otherwise, deduplicate and do not report salted hash stuff).
+        let p = caoi.to_private_interest();
+
+        let p_is_fresh = self.my_interests.contains_key(&p);
+        if p_is_fresh {
+            // Do salted hash stuff!
+            // We don't really care what that means, we simply delegate to `self.hash_registry` and forward the results.
+            let salted_hash_stuff = self.hash_registry.submit_private_interest(&p);
+
+            // Record information about this private interest (the `caoi` is the only CapableAoi that yielded it so far, and we have not yet detected any overlaps with the other peer's private interests).
+            let mut caois = HashSet::new();
+            caois.insert(caoi);
+            self.my_interests.insert(
+                p,
+                PrivateInterestState {
+                    caois,
+                    overlaps: HashSet::new(),
+                },
+            );
+
+            return Left(salted_hash_stuff);
+        } else {
+            // No need to do salted hash stuff in this branch.
+
+            let pi_state = self.my_interests.get_mut(&p).unwrap(); // can unwrap because `!p_is_fresh`
+
+            // Add the new CapableAoi to the state of its PrivateInterest...
+            pi_state.caois.insert(caoi);
+
+            // ...and report all overlaps.
+            return Right(&pi_state.overlaps);
+        }
     }
 }
 

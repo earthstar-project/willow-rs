@@ -6,7 +6,7 @@ use core::fmt::Debug;
 /// When an implementing type implements [`PartialOrd`], then `Self::default()` must return a least element with respect to the ordering.
 ///
 /// [Definition](https://willowprotocol.org/specs/data-model/index.html#NamespaceId).
-pub trait NamespaceId: Eq + Default + Clone + Debug {}
+pub trait NamespaceId: Eq + Default + Clone + Debug + 'static {}
 
 /// A type for identifying [subspaces](https://willowprotocol.org/specs/data-model/index.html#subspace).
 ///
@@ -15,7 +15,7 @@ pub trait NamespaceId: Eq + Default + Clone + Debug {}
 /// ## Implementation notes
 ///
 /// The [`Default`] implementation **must** return the least element in the total order of [`SubspaceId`].
-pub trait SubspaceId: Ord + Default + Clone + Debug {
+pub trait SubspaceId: Ord + Default + Clone + Debug + 'static {
     /// Returns the next possible value in the set of all [`SubspaceId`], i.e. the (unique) least value that is strictly greater than `self`. Only if there is no greater value at all may this method return `None`.
     fn successor(&self) -> Option<Self>;
 }
@@ -29,7 +29,7 @@ pub trait SubspaceId: Ord + Default + Clone + Debug {
 /// ## Implementation notes
 ///
 /// The [`Default`] implementation **must** return the least element in the total order of [`PayloadDigest`].
-pub trait PayloadDigest: Ord + Default + Clone + Debug {
+pub trait PayloadDigest: Ord + Default + Clone + Debug + 'static {
     /// The state for hashing slices of bytes.
     type Hasher;
 
