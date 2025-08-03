@@ -8,20 +8,15 @@ pub struct PersonalPrivateInterest<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    UserPublicKey: SubspaceId,
+    N,
+    UserPublicKey,
 > {
     pub private_interest: PrivateInterest<MCL, MCC, MPL, N, UserPublicKey>,
     pub user_key: UserPublicKey,
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        N: NamespaceId,
-        UserPublicKey: SubspaceId,
-    > PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, UserPublicKey>
+    PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>
 {
     pub fn private_interest(&self) -> &PrivateInterest<MCL, MCC, MPL, N, UserPublicKey> {
         &self.private_interest
@@ -33,11 +28,11 @@ impl<
 }
 
 #[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
-    Arbitrary<'a> for PersonalPrivateInterest<MCL, MCC, MPL, N, S>
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S> Arbitrary<'a>
+    for PersonalPrivateInterest<MCL, MCC, MPL, N, S>
 where
-    N: NamespaceId + Arbitrary<'a>,
-    S: SubspaceId + Arbitrary<'a>,
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {

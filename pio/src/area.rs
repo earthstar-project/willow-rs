@@ -147,8 +147,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: Clone, S: Clone>
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S> Arbitrary<'a>
     for PrivateInterest<MCL, MCC, MPL, N, S>
 where
-    N: NamespaceId + Arbitrary<'a>,
-    S: SubspaceId + Arbitrary<'a>,
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let namespace_id: N = Arbitrary::arbitrary(u)?;
@@ -165,13 +165,7 @@ where
 
 #[derive(Debug)]
 /// The context necessary to privately encode Areas.
-pub struct PrivateAreaContext<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-> {
+pub struct PrivateAreaContext<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
     /// The PrivateInterest to be kept private.
     private: PrivateInterest<MCL, MCC, MPL, N, S>,
 
@@ -182,7 +176,7 @@ pub struct PrivateAreaContext<
 #[derive(Debug)]
 pub struct AreaNotAlmostIncludedError;
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S>
     PrivateAreaContext<MCL, MCC, MPL, N, S>
 {
     pub fn new(
@@ -206,11 +200,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
 }
 
 #[cfg(feature = "dev")]
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
-    Arbitrary<'a> for PrivateAreaContext<MCL, MCC, MPL, N, S>
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S> Arbitrary<'a>
+    for PrivateAreaContext<MCL, MCC, MPL, N, S>
 where
-    N: NamespaceId + Arbitrary<'a>,
-    S: SubspaceId + Arbitrary<'a>,
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(Self {
@@ -220,7 +214,7 @@ where
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S: PartialEq + Clone>
     RelativeEncodable<PrivateAreaContext<MCL, MCC, MPL, N, S>> for Area<MCL, MCC, MPL, S>
 where
     S: Encodable,
@@ -361,7 +355,7 @@ where
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S: Clone>
     RelativeDecodable<PrivateAreaContext<MCL, MCC, MPL, N, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
     S: Decodable,

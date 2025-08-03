@@ -14,8 +14,8 @@ pub(crate) struct HashRegistry<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
+    N,
+    S,
 > {
     pub(crate) my_salt: [u8; SALT_LENGTH],
     pub(crate) h:
