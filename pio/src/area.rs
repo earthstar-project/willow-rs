@@ -15,19 +15,13 @@ use crate::PrivatePathContext;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 /// Confidential data that relates to determining the AreasOfInterest that peers might be interested in synchronising.
-pub struct PrivateInterest<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    N: NamespaceId,
-    S: SubspaceId,
-> {
+pub struct PrivateInterest<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
     namespace_id: N,
     subspace_id: AreaSubspace<S>,
     path: Path<MCL, MCC, MPL>,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S>
     PrivateInterest<MCL, MCC, MPL, N, S>
 {
     pub fn new(namespace_id: N, subspace_id: AreaSubspace<S>, path: Path<MCL, MCC, MPL>) -> Self {
@@ -49,28 +43,15 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
     pub fn path(&self) -> &Path<MCL, MCC, MPL> {
         &self.path
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N: PartialEq, S: PartialEq + Clone>
+    PrivateInterest<MCL, MCC, MPL, N, S>
+{
     pub fn is_more_specific(&self, other: &Self) -> bool {
         self.namespace_id == other.namespace_id
             && other.subspace_id.includes_area_subspace(&self.subspace_id)
             && self.path.is_prefixed_by(&other.path)
-    }
-
-    pub fn is_less_specific(&self, other: &Self) -> bool {
-        other.is_more_specific(self)
-    }
-
-    pub fn is_comparable(&self, other: &Self) -> bool {
-        self.is_more_specific(other) || other.is_more_specific(other)
-    }
-
-    pub fn includes_entry<PD: PayloadDigest>(
-        &self,
-        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
-    ) -> bool {
-        &self.namespace_id == entry.namespace_id()
-            && self.subspace_id.includes(entry.subspace_id())
-            && self.path.is_prefix_of(entry.path())
     }
 
     pub fn is_disjoint(&self, other: &Self) -> bool {
@@ -93,11 +74,36 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
         false
     }
 
+    pub fn is_less_specific(&self, other: &Self) -> bool {
+        other.is_more_specific(self)
+    }
+
+    pub fn is_comparable(&self, other: &Self) -> bool {
+        self.is_more_specific(other) || other.is_more_specific(other)
+    }
+
     pub fn awkward(&self, other: &Self) -> bool {
         // We say that p1 and p2 are awkward if they are neither comparable nor disjoint. This is the case if and only if one of them has subspace_id any and a path p, and the other has a non-any subspace_id and a path which is a strict prefix of p.
         !self.is_comparable(other) && !self.is_disjoint(other)
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N: PartialEq, S: PartialEq>
+    PrivateInterest<MCL, MCC, MPL, N, S>
+{
+    pub fn includes_entry<PD: PayloadDigest>(
+        &self,
+        entry: &Entry<MCL, MCC, MPL, N, S, PD>,
+    ) -> bool {
+        &self.namespace_id == entry.namespace_id()
+            && self.subspace_id.includes(entry.subspace_id())
+            && self.path.is_prefix_of(entry.path())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S: PartialEq + Clone>
+    PrivateInterest<MCL, MCC, MPL, N, S>
+{
     pub fn includes_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         self.subspace_id.includes_area_subspace(area.subspace())
             && self.path.is_prefix_of(area.path())
@@ -107,7 +113,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
         self.subspace_id.includes_area_subspace(area.subspace())
             && self.path.is_related(area.path())
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S: PartialEq>
+    PrivateInterest<MCL, MCC, MPL, N, S>
+{
     pub fn almost_includes_area(&self, area: &Area<MCL, MCC, MPL, S>) -> bool {
         let subspace_is_fine = match (self.subspace_id(), area.subspace()) {
             (AreaSubspace::Id(self_id), AreaSubspace::Id(other_id)) => self_id == other_id,
@@ -116,7 +126,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: Su
 
         subspace_is_fine && self.path.is_related(area.path())
     }
+}
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N: Clone, S: Clone>
+    PrivateInterest<MCL, MCC, MPL, N, S>
+{
     /// Clones self, but replaces the subspace id with `any`.
     pub fn relax(&self) -> Self {
         let mut cloned = self.clone();
