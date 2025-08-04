@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::RefCell, collections::HashSet, hash::Hash, ops::Deref};
+use std::{borrow::Borrow, cell::RefCell, collections::HashSet, hash::Hash, ops::Deref, rc::Rc};
 
 use compact_u64::CompactU64;
 use either::Either::{Left, Right};
@@ -36,10 +36,8 @@ mod capable_aois;
 mod salted_hashes;
 
 /// The state for a PIO session.
-///
-/// This struct is opaque, but we expose it to allow for control over where it is allocated.
 #[derive(Debug)]
-pub struct State<
+struct State<
     const SALT_LENGTH: usize,
     const INTEREST_HASH_LENGTH: usize,
     const MCL: usize,
@@ -50,26 +48,19 @@ pub struct State<
     ReadCap,
     EnumCap,
     P,
-    PR,
+    PFinal,
+    PErr,
     C,
-    CR,
-    LcmuxStateRef,
-> where
-    N: NamespaceId + Hash,
-    S: SubspaceId + Hash,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    p: SharedProducer<PR, P>,
-    c: SharedConsumer<CR, C>,
+    CErr,
+> {
+    p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+    c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
     interest_registry: RwLock<
         InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>,
     >,
     caois_for_which_we_already_sent_a_bind_read_capability_message:
         RefCell<HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>>>,
-    capability_channel_sender: Mutex<ChannelSender<4, LcmuxStateRef, P, PR, C, CR>>,
+    capability_channel_sender: Mutex<ChannelSender<4, P, PFinal, PErr, C, CErr>>,
     my_public_key: S,
     their_public_key: S,
 }
@@ -85,10 +76,10 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        LcmuxStateRef,
+        CErr,
     >
     State<
         SALT_LENGTH,
@@ -101,25 +92,16 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        LcmuxStateRef,
+        CErr,
     >
-where
-    N: NamespaceId + Hash,
-    S: SubspaceId + Hash,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
-    EnumCap: Eq + Hash,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
 {
     /// Create a new opaque state for a PIO session.
-    pub fn new(
-        p: SharedProducer<PR, P>,
-        c: SharedConsumer<CR, C>,
+    fn new(
+        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
         my_salt: [u8; SALT_LENGTH],
         h: fn(
             &PrivateInterest<MCL, MCC, MPL, N, S>,
@@ -127,7 +109,7 @@ where
         ) -> [u8; INTEREST_HASH_LENGTH],
         my_public_key: S,
         their_public_key: S,
-        capability_channel_sender: ChannelSender<4, LcmuxStateRef, P, PR, C, CR>,
+        capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
     ) -> Self {
         Self {
             p,
@@ -154,10 +136,10 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        LcmuxStateRef,
+        CErr,
     >
     State<
         SALT_LENGTH,
@@ -170,10 +152,10 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        LcmuxStateRef,
+        CErr,
     >
 where
     N: NamespaceId + Hash,
@@ -188,13 +170,8 @@ where
         + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
         + RelativeEncodableKnownSize<(N, S)>,
-    P: Producer,
-    C: Consumer<Item = u8> + BulkConsumer,
-    C::Final: Clone,
-    C::Error: Clone,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-    LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>>,
+    C: Consumer<Item = u8, Final: Clone, Error = CErr> + BulkConsumer,
+    CErr: Clone,
 {
     // Do everything you need to do when our internal APIs signal an Overlap (i.e., send PioAnnounceOverlap and PioBindReadCapability messages).
     async fn process_overlap<'lock>(
@@ -306,65 +283,17 @@ pub struct PioSession<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId + Hash + 'static,
-    S: SubspaceId + Hash + 'static,
+    N,
+    S,
     ReadCap,
-    EnumCap: 'static,
+    EnumCap,
     P,
-    PR,
+    PFinal,
+    PErr,
     C,
-    CR,
-    StateRef: Deref<
-            Target = State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + Borrow<
-            State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + 'static,
-    LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>> + 'static,
+    CErr,
     AnnounceOverlapProducer,
-> where
-    P: Producer + 'static,
-    C: Consumer + 'static,
-    PR: Deref<Target = shared_producer::State<P>> + Clone + 'static,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone + 'static,
-    ReadCap: ReadCapability<MCL, MCC, MPL>
-        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
-        + 'static,
-    AnnounceOverlapProducer: Producer<
-            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
-            Final = (),
-            Error = DecodeError<(), (), Blame>,
-        > + 'static,
-{
+> {
     pub my_aoi_input: MyAoiInput<
         SALT_LENGTH,
         INTEREST_HASH_LENGTH,
@@ -376,11 +305,10 @@ pub struct PioSession<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
     >,
     pub overlap_output: OverlappingAoiOutput<
         SALT_LENGTH,
@@ -393,11 +321,10 @@ pub struct PioSession<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
         AnnounceOverlapProducer,
     >,
     // pub capability_handles: AoiHandles,
@@ -409,16 +336,15 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Hash + 'static,
-        S: SubspaceId + Hash + 'static,
+        N,
+        S,
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
         AnnounceOverlapProducer,
     >
     PioSession<
@@ -432,55 +358,20 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
         AnnounceOverlapProducer,
     >
 where
-    P: Producer + 'static,
-    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone> + 'static,
-    PR: Deref<Target = shared_producer::State<P>> + Clone + 'static,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone + 'static,
-    StateRef: Deref<
-            Target = State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + Borrow<
-            State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + Clone
-        + 'static,
-    LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>>,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    P: Producer<Final = PFinal, Error = PErr> + 'static,
+    PFinal: 'static,
+    PErr: 'static,
+    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
+    CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
             Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
             Final = (),
@@ -514,12 +405,31 @@ where
     ///
     /// In the WGPS, peers can not only *submit* AoIs but also *revoke* them again (via ResourceHandleFree messages). This implementation punts on that functionality. You cannot undeclare any interest, and all requests by the other peer to remove an AoI will be ignored. This makes us selfish peers, and long-term this functionality should be implemented.
     pub fn new(
-        state_ref: StateRef,
-        overlap_channel_sender: ChannelSender<4, LcmuxStateRef, P, PR, C, CR>,
-        overlap_channel_receiver: ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
+        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
+        my_salt: [u8; SALT_LENGTH],
+        h: fn(
+            &PrivateInterest<MCL, MCC, MPL, N, S>,
+            &[u8; SALT_LENGTH],
+        ) -> [u8; INTEREST_HASH_LENGTH],
+        my_public_key: S,
+        their_public_key: S,
+        capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+        capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+        overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+        overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
-        capability_channel_receiver: ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
     ) -> Self {
+        let state_ref = Rc::new(State::new(
+            p,
+            c,
+            my_salt,
+            h,
+            my_public_key,
+            their_public_key,
+            capability_channel_sender,
+        ));
+
         Self {
             my_aoi_input: MyAoiInput {
                 session_state: state_ref.clone(),
@@ -543,16 +453,18 @@ pub(crate) struct MyAoiInput<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId + Hash,
-    S: SubspaceId + Hash,
+    N,
+    S,
     ReadCap,
     EnumCap,
     P,
-    PR,
+    PFinal,
+    PErr,
     C,
-    CR,
-    StateRef: Deref<
-        Target = State<
+    CErr,
+> {
+    session_state: Rc<
+        State<
             SALT_LENGTH,
             INTEREST_HASH_LENGTH,
             MCL,
@@ -563,21 +475,13 @@ pub(crate) struct MyAoiInput<
             ReadCap,
             EnumCap,
             P,
-            PR,
+            PFinal,
+            PErr,
             C,
-            CR,
-            LcmuxStateRef,
+            CErr,
         >,
     >,
-    LcmuxStateRef,
-> where
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    session_state: StateRef,
-    overlap_channel_sender: ChannelSender<4, LcmuxStateRef, P, PR, C, CR>,
+    overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
 }
 
 impl<
@@ -586,33 +490,15 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Hash,
-        S: SubspaceId + Hash,
+        N,
+        S,
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef: Deref<
-            Target = State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        >,
-        LcmuxStateRef,
+        CErr,
     > Consumer
     for MyAoiInput<
         SALT_LENGTH,
@@ -625,36 +511,32 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
     >
 where
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
     ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + Eq
         + Hash
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
-    EnumCap: Clone
-        + Eq
+    EnumCap: Eq
         + Hash
+        + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
         + RelativeEncodableKnownSize<(N, S)>,
-    P: Producer,
-    C: Consumer<Item = u8> + BulkConsumer,
-    C::Final: Clone,
-    C::Error: Clone,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-    LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>>,
+    C: Consumer<Item = u8, Final: Clone, Error = CErr> + BulkConsumer,
+    CErr: Clone,
 {
     type Item = CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>;
 
     type Final = ();
 
-    type Error = AoiInputError<C::Error>;
+    type Error = AoiInputError<CErr>;
 
     async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
         let state = self.session_state.deref();
@@ -720,67 +602,35 @@ pub struct OverlappingAoiOutput<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    N: NamespaceId + Hash + 'static,
-    S: SubspaceId + Hash + 'static,
+    N,
+    S,
     ReadCap,
     EnumCap,
     P,
-    PR,
+    PFinal,
+    PErr,
     C,
-    CR,
-    StateRef: Deref<
-            Target = State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + Borrow<
-            State<
-                SALT_LENGTH,
-                INTEREST_HASH_LENGTH,
-                MCL,
-                MCC,
-                MPL,
-                N,
-                S,
-                ReadCap,
-                EnumCap,
-                P,
-                PR,
-                C,
-                CR,
-                LcmuxStateRef,
-            >,
-        > + 'static,
-    LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>> + 'static,
+    CErr,
     AnnounceOverlapProducer,
-> where
-    P: Producer + 'static,
-    C: Consumer + 'static,
-    PR: Deref<Target = shared_producer::State<P>> + Clone + 'static,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone + 'static,
-    AnnounceOverlapProducer: Producer<
-            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
-            Final = (),
-            Error = DecodeError<(), (), Blame>,
-        > + 'static,
-    ReadCap: ReadCapability<MCL, MCC, MPL>
-        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
-        + 'static,
-    EnumCap: 'static,
-{
-    session_state: StateRef,
+> {
+    session_state: Rc<
+        State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            ReadCap,
+            EnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+        >,
+    >,
     pio_inputs: Merge<
         MapItem<
             AnnounceOverlapProducer,
@@ -791,7 +641,7 @@ pub struct OverlappingAoiOutput<
         Merge<
             MapItem<
                 Decoder<
-                    ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
+                    ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
                     PioBindHash<INTEREST_HASH_LENGTH>,
                 >,
                 fn(
@@ -801,9 +651,26 @@ pub struct OverlappingAoiOutput<
             >,
             MapItem<
                 RelativeDecoder<
-                    ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
+                    ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
                     PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
-                    StateRef,
+                    Rc<
+                        State<
+                            SALT_LENGTH,
+                            INTEREST_HASH_LENGTH,
+                            MCL,
+                            MCC,
+                            MPL,
+                            N,
+                            S,
+                            ReadCap,
+                            EnumCap,
+                            P,
+                            PFinal,
+                            PErr,
+                            C,
+                            CErr,
+                        >,
+                    >,
                     State<
                         SALT_LENGTH,
                         INTEREST_HASH_LENGTH,
@@ -815,10 +682,10 @@ pub struct OverlappingAoiOutput<
                         ReadCap,
                         EnumCap,
                         P,
-                        PR,
+                        PFinal,
+                        PErr,
                         C,
-                        CR,
-                        LcmuxStateRef,
+                        CErr,
                     >,
                     Blame,
                 >,
@@ -827,7 +694,13 @@ pub struct OverlappingAoiOutput<
                 )
                     -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
             >,
+            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+            (),
+            DecodeError<(), (), Blame>,
         >,
+        PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+        (),
+        DecodeError<(), (), Blame>,
     >,
 }
 
@@ -837,51 +710,15 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Hash + 'static,
-        S: SubspaceId + Hash + 'static,
+        N,
+        S,
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef: Deref<
-                Target = State<
-                    SALT_LENGTH,
-                    INTEREST_HASH_LENGTH,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    ReadCap,
-                    EnumCap,
-                    P,
-                    PR,
-                    C,
-                    CR,
-                    LcmuxStateRef,
-                >,
-            > + Borrow<
-                State<
-                    SALT_LENGTH,
-                    INTEREST_HASH_LENGTH,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    ReadCap,
-                    EnumCap,
-                    P,
-                    PR,
-                    C,
-                    CR,
-                    LcmuxStateRef,
-                >,
-            > + Clone
-            + 'static,
-        LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>> + 'static,
+        CErr,
         AnnounceOverlapProducer,
     >
     OverlappingAoiOutput<
@@ -895,18 +732,20 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
         AnnounceOverlapProducer,
     >
 where
-    P: Producer + 'static,
-    C: BulkConsumer<Error: Clone, Final: Clone, Item = u8> + 'static,
-    PR: Deref<Target = shared_producer::State<P>> + Clone + 'static,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone + 'static,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    P: Producer<Final = PFinal, Error = PErr> + 'static,
+    PFinal: 'static,
+    PErr: 'static,
+    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
+    CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
             Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
             Final = (),
@@ -927,10 +766,27 @@ where
         + EnumerationCapability<NamespaceId = N, Receiver = S>,
 {
     fn new(
-        session_state: StateRef,
-        overlap_channel_receiver: ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
+        session_state: Rc<
+            State<
+                SALT_LENGTH,
+                INTEREST_HASH_LENGTH,
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                ReadCap,
+                EnumCap,
+                P,
+                PFinal,
+                PErr,
+                C,
+                CErr,
+            >,
+        >,
+        overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
-        capability_channel_receiver: ChannelReceiver<4, LcmuxStateRef, P, PR, C, CR>,
+        capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
     ) -> Self {
         let bind_hash_decoder: Decoder<_, PioBindHash<INTEREST_HASH_LENGTH>> =
             Decoder::new(overlap_channel_receiver);
@@ -949,10 +805,10 @@ where
                 ReadCap,
                 EnumCap,
                 P,
-                PR,
+                PFinal,
+                PErr,
                 C,
-                CR,
-                LcmuxStateRef,
+                CErr,
             >,
             Blame,
         > = RelativeDecoder::new(capability_channel_receiver, session_state.clone());
@@ -979,50 +835,15 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        N: NamespaceId + Hash + 'static,
-        S: SubspaceId + Hash + 'static,
+        N,
+        S,
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef: Deref<
-                Target = State<
-                    SALT_LENGTH,
-                    INTEREST_HASH_LENGTH,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    ReadCap,
-                    EnumCap,
-                    P,
-                    PR,
-                    C,
-                    CR,
-                    LcmuxStateRef,
-                >,
-            > + Borrow<
-                State<
-                    SALT_LENGTH,
-                    INTEREST_HASH_LENGTH,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    ReadCap,
-                    EnumCap,
-                    P,
-                    PR,
-                    C,
-                    CR,
-                    LcmuxStateRef,
-                >,
-            > + 'static,
-        LcmuxStateRef: Deref<Target = lcmux::State<4, P, PR, C, CR>> + 'static,
+        CErr,
         AnnounceOverlapProducer,
     > Producer
     for OverlappingAoiOutput<
@@ -1036,18 +857,20 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        StateRef,
-        LcmuxStateRef,
+        CErr,
         AnnounceOverlapProducer,
     >
 where
-    P: Producer + 'static,
-    C: BulkConsumer<Error: Clone, Final: Clone, Item = u8> + 'static,
-    PR: Deref<Target = shared_producer::State<P>> + Clone + 'static,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone + 'static,
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    P: Producer<Final = PFinal, Error = PErr> + 'static,
+    PFinal: 'static,
+    PErr: 'static,
+    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
+    CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
             Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
             Final = (),
@@ -1258,7 +1081,7 @@ pub enum AoiOutputError<TransportError> {
 }
 
 impl<TransportError> From<DecodeError<(), (), Blame>> for AoiOutputError<TransportError> {
-    fn from(value: DecodeError<(), (), Blame>) -> Self {
+    fn from(_value: DecodeError<(), (), Blame>) -> Self {
         Self::InvalidData
     }
 }
@@ -1311,11 +1134,10 @@ impl<
         ReadCap,
         EnumCap,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
-        LcmuxStateRef,
-        RC,
+        CErr,
     >
     RelativeDecodable<
         State<
@@ -1329,22 +1151,17 @@ impl<
             ReadCap,
             EnumCap,
             P,
-            PR,
+            PFinal,
+            PErr,
             C,
-            CR,
-            LcmuxStateRef,
+            CErr,
         >,
         Blame,
-    > for PioBindReadCapability<MCL, MCC, MPL, RC>
+    > for PioBindReadCapability<MCL, MCC, MPL, ReadCap>
 where
-    N: NamespaceId + Hash,
-    S: SubspaceId + Hash,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-    RC: ReadCapability<MCL, MCC, MPL>
-        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
+    N: Clone,
+    S: Clone,
+    ReadCap: RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
 {
     async fn relative_decode<Pro>(
         producer: &mut Pro,
@@ -1359,10 +1176,10 @@ where
             ReadCap,
             EnumCap,
             P,
-            PR,
+            PFinal,
+            PErr,
             C,
-            CR,
-            LcmuxStateRef,
+            CErr,
         >,
     ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
     where
@@ -1415,7 +1232,7 @@ where
             private_interest: private_interest,
         };
 
-        let capability = RC::relative_decode(producer, &ppi).await?;
+        let capability = ReadCap::relative_decode(producer, &ppi).await?;
 
         Ok(Self {
             sender_handle,

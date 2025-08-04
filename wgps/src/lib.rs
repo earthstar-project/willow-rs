@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{future::Future, rc::Rc};
 
 use futures::try_join;
 use lcmux::{ChannelOptions, InitOptions, Session};
@@ -206,12 +206,12 @@ where
     };
 
     let shared_consumer_state = shared_consumer::State::new(c);
-    let consumer = SharedConsumer::new(&shared_consumer_state);
+    let consumer = SharedConsumer::new(Rc::new(shared_consumer_state));
 
     let shared_producer_state = shared_producer::State::new(p);
-    let producer = SharedProducer::new(&shared_producer_state);
+    let producer = SharedProducer::new(Rc::new(shared_producer_state));
 
-    let lcmux_state = lcmux::State::<4, _, _, _, _>::new(
+    let mut lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> = Session::new(
         producer,
         consumer,
         [
@@ -220,10 +220,8 @@ where
             &options.overlap_channel_options,
             &options.capability_channel_options,
         ],
+        [false, false, true, true],
     );
-
-    let mut lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> =
-        Session::new(&lcmux_state, [false, false, true, true]);
 
     lcmux_session
         .init([
