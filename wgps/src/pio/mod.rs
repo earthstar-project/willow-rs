@@ -45,8 +45,8 @@ struct State<
     const MPL: usize,
     N,
     S,
-    ReadCap,
-    EnumCap,
+    MyReadCap,
+    MyEnumCap,
     P,
     PFinal,
     PErr,
@@ -56,10 +56,20 @@ struct State<
     p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
     c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
     interest_registry: RwLock<
-        InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>,
+        InterestRegistry<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+        >,
     >,
     caois_for_which_we_already_sent_a_bind_read_capability_message:
-        RefCell<HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>>>,
+        RefCell<HashSet<CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>>>,
     capability_channel_sender: Mutex<ChannelSender<4, P, PFinal, PErr, C, CErr>>,
     my_public_key: S,
     their_public_key: S,
@@ -73,8 +83,8 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -89,8 +99,8 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -133,8 +143,8 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -149,8 +159,8 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -160,12 +170,12 @@ impl<
 where
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + Eq
         + Hash
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
-    EnumCap: Eq
+    MyEnumCap: Eq
         + Hash
         + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
@@ -187,8 +197,8 @@ where
                 MPL,
                 N,
                 S,
-                ReadCap,
-                EnumCap,
+                MyReadCap,
+                MyEnumCap,
             >,
         >,
     ) -> Result<(), ProcessOverlapError<C::Error>> {
@@ -257,7 +267,7 @@ where
                     &interest_registry.hash_registry.my_salt,
                 );
 
-                let msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap> = PioAnnounceOverlap {
+                let msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, MyEnumCap> = PioAnnounceOverlap {
                     sender_handle: overlap.my_interesting_handle,
                     receiver_handle: overlap.their_handle,
                     authentication,
@@ -285,8 +295,10 @@ pub struct PioSession<
     const MPL: usize,
     N,
     S,
-    ReadCap,
-    EnumCap,
+    MyReadCap,
+    MyEnumCap,
+    TheirReadCap,
+    TheirEnumCap,
     P,
     PFinal,
     PErr,
@@ -302,8 +314,8 @@ pub struct PioSession<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -318,8 +330,10 @@ pub struct PioSession<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -338,8 +352,10 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -355,8 +371,10 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -373,18 +391,20 @@ where
     C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
     CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
-            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
+            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
             Final = (),
             Error = DecodeError<(), (), Blame>,
         > + 'static,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+    MyReadCap: 'static,
+    MyEnumCap: 'static,
+    TheirReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
         + Hash
         + Eq
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>
         + 'static,
-    EnumCap: Clone
+    TheirEnumCap: Clone
         + Hash
         + Eq
         + 'static
@@ -455,8 +475,8 @@ pub(crate) struct MyAoiInput<
     const MPL: usize,
     N,
     S,
-    ReadCap,
-    EnumCap,
+    MyReadCap,
+    MyEnumCap,
     P,
     PFinal,
     PErr,
@@ -472,8 +492,8 @@ pub(crate) struct MyAoiInput<
             MPL,
             N,
             S,
-            ReadCap,
-            EnumCap,
+            MyReadCap,
+            MyEnumCap,
             P,
             PFinal,
             PErr,
@@ -492,8 +512,8 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -508,8 +528,8 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
         P,
         PFinal,
         PErr,
@@ -519,12 +539,12 @@ impl<
 where
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + Eq
         + Hash
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
-    EnumCap: Eq
+    MyEnumCap: Eq
         + Hash
         + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
@@ -532,7 +552,7 @@ where
     C: Consumer<Item = u8, Final: Clone, Error = CErr> + BulkConsumer,
     CErr: Clone,
 {
-    type Item = CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>;
+    type Item = CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>;
 
     type Final = ();
 
@@ -604,8 +624,10 @@ pub struct OverlappingAoiOutput<
     const MPL: usize,
     N,
     S,
-    ReadCap,
-    EnumCap,
+    MyReadCap,
+    MyEnumCap,
+    TheirReadCap,
+    TheirEnumCap,
     P,
     PFinal,
     PErr,
@@ -622,8 +644,8 @@ pub struct OverlappingAoiOutput<
             MPL,
             N,
             S,
-            ReadCap,
-            EnumCap,
+            MyReadCap,
+            MyEnumCap,
             P,
             PFinal,
             PErr,
@@ -635,8 +657,9 @@ pub struct OverlappingAoiOutput<
         MapItem<
             AnnounceOverlapProducer,
             fn(
-                PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
-            ) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+                PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
+            )
+                -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
         >,
         Merge<
             MapItem<
@@ -647,12 +670,12 @@ pub struct OverlappingAoiOutput<
                 fn(
                     PioBindHash<INTEREST_HASH_LENGTH>,
                 )
-                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
             >,
             MapItem<
                 RelativeDecoder<
                     ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
-                    PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
+                    PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
                     Rc<
                         State<
                             SALT_LENGTH,
@@ -662,8 +685,8 @@ pub struct OverlappingAoiOutput<
                             MPL,
                             N,
                             S,
-                            ReadCap,
-                            EnumCap,
+                            MyReadCap,
+                            MyEnumCap,
                             P,
                             PFinal,
                             PErr,
@@ -679,8 +702,8 @@ pub struct OverlappingAoiOutput<
                         MPL,
                         N,
                         S,
-                        ReadCap,
-                        EnumCap,
+                        MyReadCap,
+                        MyEnumCap,
                         P,
                         PFinal,
                         PErr,
@@ -690,15 +713,15 @@ pub struct OverlappingAoiOutput<
                     Blame,
                 >,
                 fn(
-                    PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
+                    PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
                 )
-                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
             >,
-            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
             (),
             DecodeError<(), (), Blame>,
         >,
-        PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap>,
+        PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
         (),
         DecodeError<(), (), Blame>,
     >,
@@ -712,8 +735,10 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -729,8 +754,10 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -747,23 +774,20 @@ where
     C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
     CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
-            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
+            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
             Final = (),
             Error = DecodeError<(), (), Blame>,
         > + 'static,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+    MyReadCap: 'static,
+    MyEnumCap: 'static,
+    TheirReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
         + Hash
         + Eq
         + Clone
-        + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>
         + 'static,
-    EnumCap: Clone
-        + Hash
-        + Eq
-        + 'static
-        + RelativeEncodableKnownSize<(N, S)>
-        + EnumerationCapability<NamespaceId = N, Receiver = S>,
+    TheirEnumCap:
+        Clone + Hash + Eq + 'static + EnumerationCapability<NamespaceId = N, Receiver = S>,
 {
     fn new(
         session_state: Rc<
@@ -775,8 +799,8 @@ where
                 MPL,
                 N,
                 S,
-                ReadCap,
-                EnumCap,
+                MyReadCap,
+                MyEnumCap,
                 P,
                 PFinal,
                 PErr,
@@ -792,7 +816,7 @@ where
             Decoder::new(overlap_channel_receiver);
         let bind_read_capability_decoder: RelativeDecoder<
             _,
-            PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
+            PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
             _,
             State<
                 SALT_LENGTH,
@@ -802,8 +826,8 @@ where
                 MPL,
                 N,
                 S,
-                ReadCap,
-                EnumCap,
+                MyReadCap,
+                MyEnumCap,
                 P,
                 PFinal,
                 PErr,
@@ -837,8 +861,10 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -854,8 +880,10 @@ impl<
         MPL,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
         P,
         PFinal,
         PErr,
@@ -872,25 +900,32 @@ where
     C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
     CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
-            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
+            Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
             Final = (),
             Error = DecodeError<(), (), Blame>,
         > + 'static,
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
-        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
         + Hash
         + Eq
         + Clone
         + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>
         + 'static,
-    EnumCap: Clone
+    MyEnumCap: Clone
         + Hash
         + Eq
-        + 'static
         + RelativeEncodableKnownSize<(N, S)>
-        + EnumerationCapability<NamespaceId = N, Receiver = S>,
+        + EnumerationCapability<NamespaceId = N, Receiver = S>
+        + 'static,
+    TheirReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>
+        + Hash
+        + Eq
+        + Clone
+        + 'static,
+    TheirEnumCap:
+        Clone + Hash + Eq + 'static + EnumerationCapability<NamespaceId = N, Receiver = S>,
 {
-    type Item = PioBindReadCapability<MCL, MCC, MPL, ReadCap>;
+    type Item = PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>;
 
     type Final = ();
 
@@ -989,12 +1024,11 @@ where
 
 /// The semantics that a valid read capability must provide to be usable with the WGPS.
 pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
-    type Receiver;
     type NamespaceId;
     type SubspaceId;
 
-    fn granted_area(&self) -> Area<MCL, MCC, MPL, Self::SubspaceId>;
-    fn granted_namespace(&self) -> Self::NamespaceId;
+    fn granted_area(&self) -> &Area<MCL, MCC, MPL, Self::SubspaceId>;
+    fn granted_namespace(&self) -> &Self::NamespaceId;
 }
 
 /// The semantics that a valid enumeration capability must provide to be usable with the WGPS.
@@ -1002,8 +1036,29 @@ pub trait EnumerationCapability {
     type Receiver;
     type NamespaceId;
 
-    fn granted_namespace(&self) -> Self::NamespaceId;
-    fn receiver(&self) -> Self::Receiver;
+    fn granted_namespace(&self) -> &Self::NamespaceId;
+    fn receiver(&self) -> &Self::Receiver;
+}
+
+/// The simplified data of a read capability, stripping all verification-related information.
+struct SimplifiedReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
+    area: Area<MCL, MCC, MPL, S>,
+    namespace: N,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S> ReadCapability<MCL, MCC, MPL>
+    for SimplifiedReadCapability<MCL, MCC, MPL, N, S>
+{
+    type NamespaceId = N;
+    type SubspaceId = S;
+
+    fn granted_namespace(&self) -> &Self::NamespaceId {
+        &self.namespace
+    }
+
+    fn granted_area(&self) -> &Area<MCL, MCC, MPL, Self::SubspaceId> {
+        &self.area
+    }
 }
 
 /// Everything that can go wrong when submitting an AreaOfInterest to the private interest overlap detection process.
@@ -1115,12 +1170,51 @@ pub enum PioInput<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
-    ReadCap,
-    EnumCap,
+    TheirReadCap,
+    TheirEnumCap,
 > {
     BindHash(PioBindHash<INTEREST_HASH_LENGTH>),
-    AnnounceOverlap(PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>),
-    BindReadCapability(PioBindReadCapability<MCL, MCC, MPL, ReadCap>),
+    AnnounceOverlap(PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>),
+    BindReadCapability(PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>),
+}
+
+fn pio_announce_overlap_to_pio_input<
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    ReadCap,
+    EnumCap,
+>(
+    msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
+    PioInput::AnnounceOverlap(msg)
+}
+
+fn pio_bind_hash_to_pio_input<
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    ReadCap,
+    EnumCap,
+>(
+    msg: PioBindHash<INTEREST_HASH_LENGTH>,
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
+    PioInput::BindHash(msg)
+}
+
+fn pio_bind_read_capability_to_pio_input<
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    ReadCap,
+    EnumCap,
+>(
+    msg: PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
+    PioInput::BindReadCapability(msg)
 }
 
 impl<
@@ -1131,8 +1225,9 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
         P,
         PFinal,
         PErr,
@@ -1148,8 +1243,8 @@ impl<
             MPL,
             N,
             S,
-            ReadCap,
-            EnumCap,
+            MyReadCap,
+            MyEnumCap,
             P,
             PFinal,
             PErr,
@@ -1157,11 +1252,11 @@ impl<
             CErr,
         >,
         Blame,
-    > for PioBindReadCapability<MCL, MCC, MPL, ReadCap>
+    > for PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>
 where
     N: Clone,
     S: Clone,
-    ReadCap: RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
+    TheirReadCap: RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
 {
     async fn relative_decode<Pro>(
         producer: &mut Pro,
@@ -1173,8 +1268,8 @@ where
             MPL,
             N,
             S,
-            ReadCap,
-            EnumCap,
+            MyReadCap,
+            MyEnumCap,
             P,
             PFinal,
             PErr,
@@ -1232,7 +1327,7 @@ where
             private_interest: private_interest,
         };
 
-        let capability = ReadCap::relative_decode(producer, &ppi).await?;
+        let capability = TheirReadCap::relative_decode(producer, &ppi).await?;
 
         Ok(Self {
             sender_handle,
@@ -1243,43 +1338,4 @@ where
             capability,
         })
     }
-}
-
-fn pio_announce_overlap_to_pio_input<
-    const INTEREST_HASH_LENGTH: usize,
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    ReadCap,
-    EnumCap,
->(
-    msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
-    PioInput::AnnounceOverlap(msg)
-}
-
-fn pio_bind_hash_to_pio_input<
-    const INTEREST_HASH_LENGTH: usize,
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    ReadCap,
-    EnumCap,
->(
-    msg: PioBindHash<INTEREST_HASH_LENGTH>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
-    PioInput::BindHash(msg)
-}
-
-fn pio_bind_read_capability_to_pio_input<
-    const INTEREST_HASH_LENGTH: usize,
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    ReadCap,
-    EnumCap,
->(
-    msg: PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
-    PioInput::BindReadCapability(msg)
 }

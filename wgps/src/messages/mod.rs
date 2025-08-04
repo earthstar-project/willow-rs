@@ -176,8 +176,8 @@ pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapa
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodable<(N, R)>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
-    N: PartialEq,
-    R: PartialEq,
+    N: PartialEq + Clone,
+    R: PartialEq + Clone,
     EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodable<(N, R)>,
 {
     async fn relative_encode<C>(&self, consumer: &mut C, r: &(N, R)) -> Result<(), C::Error>
@@ -217,11 +217,12 @@ where
 
         if let Some(enumeration_capability) = &self.enumeration_capability {
             let pair = (
-                enumeration_capability.granted_namespace(),
-                enumeration_capability.receiver(),
+                enumeration_capability.granted_namespace().clone(),
+                enumeration_capability.receiver().clone(),
             );
 
-            assert!(r == &pair);
+            debug_assert!(r.0 == pair.0);
+            debug_assert!(r.1 == pair.1);
 
             enumeration_capability
                 .relative_encode(consumer, &pair)
@@ -235,8 +236,8 @@ where
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodableKnownSize<(N, R)>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
-    N: PartialEq,
-    R: PartialEq,
+    N: PartialEq + Clone,
+    R: PartialEq + Clone,
     EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodableKnownSize<(N, R)>,
 {
     fn relative_len_of_encoding(&self, r: &(N, R)) -> usize {

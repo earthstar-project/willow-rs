@@ -29,14 +29,14 @@ pub(crate) struct InterestRegistry<
     const MPL: usize,
     N,
     S,
-    ReadCap,
-    EnumCap,
+    MyReadCap,
+    MyEnumCap,
 > {
     pub hash_registry: HashRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S>,
     /// Tracks information associated with each PrivateInterest to which at least one of our submitted CapableAois has hashed.
     my_interests: HashMap<
         PrivateInterest<MCL, MCC, MPL, N, S>,
-        PrivateInterestState<MCL, MCC, MPL, ReadCap, EnumCap>,
+        PrivateInterestState<MCL, MCC, MPL, MyReadCap, MyEnumCap>,
     >,
 }
 
@@ -48,9 +48,10 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
-    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+        MyReadCap,
+        MyEnumCap,
+    >
+    InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, MyReadCap, MyEnumCap>
 {
     pub fn new(
         my_salt: [u8; SALT_LENGTH],
@@ -74,9 +75,10 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
-    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+        MyReadCap,
+        MyEnumCap,
+    >
+    InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, MyReadCap, MyEnumCap>
 {
     /// `my_handle` must be bound by us, panics otherwise!
     pub(crate) fn private_interest_for_my_interesting_handle(
@@ -96,9 +98,9 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
-    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+        MyReadCap,
+        MyEnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, MyReadCap, MyEnumCap>
 where
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
@@ -149,12 +151,12 @@ where
     }
 
     /// Call this whenever we received a PioAnnounceOverlap message. Returns the indicated overlap, or an error if the message data was invalid.
-    pub fn received_pio_announce_overlap_msg(
+    pub fn received_pio_announce_overlap_msg<TheirEnumCap>(
         &mut self,
         their_handle: u64,
         my_handle: u64,
         authentication: &[u8; INTEREST_HASH_LENGTH],
-        enum_cap: &Option<EnumCap>,
+        enum_cap: &Option<TheirEnumCap>,
     ) -> Result<Overlap, ReceivedAnnouncementError> {
         // Retrieve information stored with my_handle, error if they provided a fake one.
         match self.hash_registry.try_get_our_handle_info(my_handle) {
@@ -213,9 +215,9 @@ where
     }
 
     /// Call this whenever we received a PioBindReadCapability message. Returns the indicated overlap, or an error if the message data was invalid.
-    pub fn received_pio_bind_read_capability_msg<RC: ReadCapability<MCL, MCC, MPL>>(
+    pub fn received_pio_bind_read_capability_msg<TheirReadCap: ReadCapability<MCL, MCC, MPL>>(
         &mut self,
-        msg: &PioBindReadCapability<MCL, MCC, MPL, RC>,
+        msg: &PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
     ) -> Result<Overlap, ReceivedBindCapabilityError> {
         let my_handle = msg.receiver_handle;
         let their_handle = msg.sender_handle;
@@ -264,7 +266,7 @@ where
     pub(crate) fn caois_for_my_interesting_handle(
         &self,
         my_handle: u64,
-    ) -> &HashSet<CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>> {
+    ) -> &HashSet<CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>> {
         let handle_info = self.hash_registry.get_interesting_handle_info(my_handle);
         let pi_state = self
             .my_interests
@@ -282,19 +284,19 @@ impl<
         const MPL: usize,
         N,
         S,
-        ReadCap,
-        EnumCap,
-    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap>
+        MyReadCap,
+        MyEnumCap,
+    > InterestRegistry<SALT_LENGTH, INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, MyReadCap, MyEnumCap>
 where
-    ReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
-    EnumCap: Eq + Hash,
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + Eq + Hash,
+    MyEnumCap: Eq + Hash,
     N: NamespaceId + Hash,
     S: SubspaceId + Hash,
 {
     /// Call this when you want to add a CapableAoi.
     pub(crate) fn submit_capable_aoi(
         &mut self,
-        caoi: CapableAoi<MCL, MCC, MPL, ReadCap, EnumCap>,
+        caoi: CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>,
     ) -> Either<PioBindHashInformation<INTEREST_HASH_LENGTH>, &HashSet<Overlap>> {
         // Convert to PrivateInterest, do salted hash stuff if the PrivateInterest is new (otherwise, deduplicate and do not report salted hash stuff).
         let p = caoi.to_private_interest();
