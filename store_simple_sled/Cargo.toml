@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.7.0" }
+ufotofu = { version = "0.7.1" }
 ufotofu_codec = { version = "0.1.3" }
 ufotofu_codec_endian = { version = "0.2.0" }
 ufotofu_queues = { version = "0.6.0", features = ["std"] }

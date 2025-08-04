@@ -10,7 +10,7 @@ default = []
 dev = ["dep:arbitrary", "willow-data-model/dev", "willow-pio/dev"]
 
 [dependencies]
-ufotofu = { version = "0.7.0", features = ["std"] }
+ufotofu = { version = "0.7.1", features = ["std"] }
 ufotofu_codec = { version = "0.1.3", features = ["alloc"] }
 compact_u64 = { version = "0.2.0", features = ["std", "dev"] }
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }

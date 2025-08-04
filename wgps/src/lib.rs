@@ -29,6 +29,8 @@ mod pio;
 
 pub use pio::{EnumerationCapability, ReadCapability};
 
+use crate::pio::PioSession;
+
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
     /// The handshake went wrong.
@@ -247,6 +249,23 @@ where
         channel_senders,
         channel_receivers,
     } = lcmux_session;
+
+    // let pio_session = PioSession::new();
+
+    // p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+    // c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
+    // my_salt: [u8; SALT_LENGTH],
+    // h: fn(
+    //     &PrivateInterest<MCL, MCC, MPL, N, S>,
+    //     &[u8; SALT_LENGTH],
+    // ) -> [u8; INTEREST_HASH_LENGTH],
+    // my_public_key: S,
+    // their_public_key: S,
+    // capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+    // capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+    // overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+    // overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+    // announce_overlap_producer: AnnounceOverlapProducer,
 
     // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block.
 

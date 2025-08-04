@@ -10,7 +10,7 @@ default = []
 dev = ["dep:arbitrary", "willow-data-model/dev"]
 
 [dependencies]
-ufotofu = { version = "0.7.0", features = [
+ufotofu = { version = "0.7.1", features = [
     "std",
     "dev",
 ] } # Cargo does not support enabling a feature (`"dev"`) only during testing =(

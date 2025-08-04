@@ -10,7 +10,7 @@ default = []
 dev = ["dep:arbitrary"]
 
 [dependencies]
-ufotofu = { version = "0.7.0", features = ["std"] }
+ufotofu = { version = "0.7.1", features = ["std"] }
 ufotofu_codec = "0.1.3"
 ufotofu_codec_endian = "0.2.0"
 wb_async_utils = { version = "0.2.0" }

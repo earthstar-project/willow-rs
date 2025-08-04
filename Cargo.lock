@@ -1068,6 +1068,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "reusable-box-future"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e0e61cd21fbddd85fbd9367b775660a01d388c08a61c6d2824af480b0309bb9"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1336,12 +1342,13 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ufotofu"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "arbitrary",
  "either",
  "futures",
  "pin-project",
+ "reusable-box-future",
  "ufotofu_queues",
 ]
 
