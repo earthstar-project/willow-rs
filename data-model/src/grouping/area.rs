@@ -151,6 +151,12 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL
     }
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Default for Area<MCL, MCC, MPL, S> {
+    fn default() -> Self {
+        Self::new_full()
+    }
+}
+
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Area<MCL, MCC, MPL, S>
 where
     S: PartialEq,
@@ -329,17 +335,12 @@ where
 }
 
 #[derive(Debug)]
-pub struct AreaMap<const MCL: usize, const MCC: usize, const MPL: usize, S, T>
-where
-    S: Eq + std::hash::Hash,
-{
+pub struct AreaMap<const MCL: usize, const MCC: usize, const MPL: usize, S, T> {
     subspaces: HashMap<AreaSubspace<S>, HashMap<Path<MCL, MCC, MPL>, Vec<(Range<u64>, T)>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S, T> Default
     for AreaMap<MCL, MCC, MPL, S, T>
-where
-    S: Clone + Eq + std::hash::Hash,
 {
     fn default() -> Self {
         Self {
@@ -381,7 +382,7 @@ where
     }
 
     /// Retrieve all values with [`Area`]s which intersect with the given [`Area`].
-    pub fn intersecting_values(&self, area: &Area<MCL, MCC, MPL, S>) -> Option<Vec<&T>> {
+    pub fn intersecting_values(&self, area: &Area<MCL, MCC, MPL, S>) -> Vec<&T> {
         match area.subspace() {
             AreaSubspace::Any => {
                 let mut values_vec = Vec::new();
@@ -397,7 +398,7 @@ where
                         }
                     }
                 }
-                Some(values_vec)
+                values_vec
             }
             AreaSubspace::Id(_area_subspace) => {
                 let mut values_vec = Vec::new();
@@ -431,11 +432,7 @@ where
                     }
                 };
 
-                if values_vec.is_empty() {
-                    None
-                } else {
-                    Some(values_vec)
-                }
+                values_vec
             }
         }
     }
@@ -444,7 +441,7 @@ where
     pub fn intersecting_pairs(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
-    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+    ) -> Vec<(Area<MCL, MCC, MPL, S>, &T)> {
         match area.subspace() {
             AreaSubspace::Any => {
                 let mut values_vec = Vec::new();
@@ -466,7 +463,8 @@ where
                         }
                     }
                 }
-                Some(values_vec)
+
+                values_vec
             }
             AreaSubspace::Id(_area_subspace) => {
                 let mut values_vec = Vec::new();
@@ -512,29 +510,18 @@ where
                     }
                 };
 
-                if values_vec.is_empty() {
-                    None
-                } else {
-                    Some(values_vec)
-                }
+                values_vec
             }
         }
     }
 }
 
-pub struct NamespacedAreaMap<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T>
-where
-    N: Clone + Eq + std::hash::Hash,
-    S: Clone + Eq + std::hash::Hash,
-{
+pub struct NamespacedAreaMap<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T> {
     namespaces: HashMap<N, AreaMap<MCL, MCC, MPL, S, T>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, T> Default
     for NamespacedAreaMap<MCL, MCC, MPL, N, S, T>
-where
-    N: Clone + Eq + std::hash::Hash,
-    S: Clone + Eq + std::hash::Hash,
 {
     fn default() -> Self {
         Self {
@@ -565,14 +552,10 @@ where
     }
 
     /// Retrieve all values with namespaced [`Area`]s which intersect with the given namespaced [`Area`].
-    pub fn intersecting_values(
-        &self,
-        namespace: &N,
-        area: &Area<MCL, MCC, MPL, S>,
-    ) -> Option<Vec<&T>> {
+    pub fn intersecting_values(&self, namespace: &N, area: &Area<MCL, MCC, MPL, S>) -> Vec<&T> {
         match self.namespaces.get(namespace) {
             Some(area_map) => area_map.intersecting_values(area),
-            None => None,
+            None => vec![],
         }
     }
 
@@ -581,10 +564,10 @@ where
         &self,
         namespace: &N,
         area: &Area<MCL, MCC, MPL, S>,
-    ) -> Option<Vec<(Area<MCL, MCC, MPL, S>, &T)>> {
+    ) -> Vec<(Area<MCL, MCC, MPL, S>, &T)> {
         match self.namespaces.get(namespace) {
             Some(area_map) => area_map.intersecting_pairs(area),
-            None => None,
+            None => vec![],
         }
     }
 }
@@ -631,7 +614,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodab
         }
 
         Ok(())
-  }
+    }
 }
 
 #[cfg(test)]

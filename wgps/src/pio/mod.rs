@@ -12,14 +12,15 @@ use ufotofu_codec::{
     Blame, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
     RelativeEncodableKnownSize,
 };
+use ufotofu_queues::{Fixed, Static};
 use wb_async_utils::{
     rw::WriteGuard,
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    Mutex, RwLock,
+    spsc, Mutex, RwLock,
 };
 use willow_data_model::{
-    grouping::{Area, AreaSubspace},
+    grouping::{Area, AreaOfInterest, AreaSubspace},
     NamespaceId, Path, SubspaceId,
 };
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
@@ -28,11 +29,13 @@ use crate::{
     messages::{PioAnnounceOverlap, PioBindHash, PioBindReadCapability},
     pio::{
         capable_aois::{InterestRegistry, ReceivedAnnouncementError, ReceivedBindCapabilityError},
+        overlap_finder::{NamespacedAoIWithMaxPayloadPower, OverlapFinder},
         salted_hashes::Overlap,
     },
 };
 
 mod capable_aois;
+mod overlap_finder;
 mod salted_hashes;
 
 /// The state for a PIO session.
@@ -73,6 +76,21 @@ struct State<
     capability_channel_sender: Mutex<ChannelSender<4, P, PFinal, PErr, C, CErr>>,
     my_public_key: S,
     their_public_key: S,
+    // After we have sent a PioBindReadCapability message, we also put its data in here, for later overlap reporting.
+    read_capabilities_i_sent_sender: Mutex<
+        spsc::Sender<
+            Rc<
+                spsc::State<
+                    Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+                    (),
+                    DecodeError<(), (), Blame>,
+                >,
+            >,
+            Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+            (),
+            DecodeError<(), (), Blame>,
+        >,
+    >,
 }
 
 impl<
@@ -107,6 +125,9 @@ impl<
         C,
         CErr,
     >
+where
+    N: Default + Clone,
+    S: Clone,
 {
     /// Create a new opaque state for a PIO session.
     fn new(
@@ -120,6 +141,18 @@ impl<
         my_public_key: S,
         their_public_key: S,
         capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+        read_capabilities_i_sent_sender: spsc::Sender<
+            Rc<
+                spsc::State<
+                    Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+                    (),
+                    DecodeError<(), (), Blame>,
+                >,
+            >,
+            Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+            (),
+            DecodeError<(), (), Blame>,
+        >,
     ) -> Self {
         Self {
             p,
@@ -131,6 +164,7 @@ impl<
             capability_channel_sender: Mutex::new(capability_channel_sender),
             my_public_key,
             their_public_key,
+            read_capabilities_i_sent_sender: Mutex::new(read_capabilities_i_sent_sender),
         }
     }
 }
@@ -235,6 +269,12 @@ where
                         .await
                         .send_to_channel_relative(&msg, &ppi)
                         .await?;
+
+                    self.read_capabilities_i_sent_sender
+                        .write()
+                        .await
+                        .consume(NamespacedAoIWithMaxPayloadPower::from_bind_read_capability_msg(&msg))
+                        .await.unwrap(/* infallible */);
 
                     self.caois_for_which_we_already_sent_a_bind_read_capability_message
                         .borrow_mut()
@@ -440,6 +480,9 @@ where
         overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
     ) -> Self {
+        let my_sent_caois_state = Rc::new(spsc::State::new(Static::new()));
+        let (my_sent_caois_sender, my_sent_caois_receiver) = spsc::new_spsc(my_sent_caois_state);
+
         let state_ref = Rc::new(State::new(
             p,
             c,
@@ -448,6 +491,7 @@ where
             my_public_key,
             their_public_key,
             capability_channel_sender,
+            my_sent_caois_sender,
         ));
 
         Self {
@@ -460,6 +504,7 @@ where
                 overlap_channel_receiver,
                 announce_overlap_producer,
                 capability_channel_receiver,
+                my_sent_caois_receiver,
             ),
             // capability_handles: todo!(),
         }
@@ -653,13 +698,53 @@ pub struct OverlappingAoiOutput<
             CErr,
         >,
     >,
+    overlap_finder: OverlapFinder<MCL, MCC, MPL, N, S>,
     pio_inputs: Merge<
-        MapItem<
-            AnnounceOverlapProducer,
-            fn(
-                PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
-            )
-                -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
+        Merge<
+            MapItem<
+                spsc::Receiver<
+                    Rc<
+                        spsc::State<
+                            Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+                            (),
+                            DecodeError<(), (), Blame>,
+                        >,
+                    >,
+                    Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+                    (),
+                    DecodeError<(), (), Blame>,
+                >,
+                fn(
+                    NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>,
+                ) -> PioInput<
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    TheirReadCap,
+                    TheirEnumCap,
+                >,
+            >,
+            MapItem<
+                AnnounceOverlapProducer,
+                fn(
+                    PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
+                ) -> PioInput<
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    TheirReadCap,
+                    TheirEnumCap,
+                >,
+            >,
+            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, TheirReadCap, TheirEnumCap>,
+            (),
+            DecodeError<(), (), Blame>,
         >,
         Merge<
             MapItem<
@@ -669,8 +754,16 @@ pub struct OverlappingAoiOutput<
                 >,
                 fn(
                     PioBindHash<INTEREST_HASH_LENGTH>,
-                )
-                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
+                ) -> PioInput<
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    TheirReadCap,
+                    TheirEnumCap,
+                >,
             >,
             MapItem<
                 RelativeDecoder<
@@ -714,14 +807,22 @@ pub struct OverlappingAoiOutput<
                 >,
                 fn(
                     PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
-                )
-                    -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
+                ) -> PioInput<
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    TheirReadCap,
+                    TheirEnumCap,
+                >,
             >,
-            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
+            PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, TheirReadCap, TheirEnumCap>,
             (),
             DecodeError<(), (), Blame>,
         >,
-        PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, TheirReadCap, TheirEnumCap>,
+        PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, TheirReadCap, TheirEnumCap>,
         (),
         DecodeError<(), (), Blame>,
     >,
@@ -811,6 +912,18 @@ where
         overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
         capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+        my_sent_read_capabilities_receiver: spsc::Receiver<
+            Rc<
+                spsc::State<
+                    Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+                    (),
+                    DecodeError<(), (), Blame>,
+                >,
+            >,
+            Static<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>, 32>,
+            (),
+            DecodeError<(), (), Blame>,
+        >,
     ) -> Self {
         let bind_hash_decoder: Decoder<_, PioBindHash<INTEREST_HASH_LENGTH>> =
             Decoder::new(overlap_channel_receiver);
@@ -839,8 +952,15 @@ where
 
         Self {
             session_state,
+            overlap_finder: OverlapFinder::new(),
             pio_inputs: Merge::new(
-                MapItem::new(announce_overlap_producer, pio_announce_overlap_to_pio_input),
+                Merge::new(
+                    MapItem::new(
+                        my_sent_read_capabilities_receiver,
+                        namespaced_aoi_with_max_payload_power_to_pio_input,
+                    ),
+                    MapItem::new(announce_overlap_producer, pio_announce_overlap_to_pio_input),
+                ),
                 Merge::new(
                     MapItem::new(bind_hash_decoder, pio_bind_hash_to_pio_input),
                     MapItem::new(
@@ -925,7 +1045,7 @@ where
     TheirEnumCap:
         Clone + Hash + Eq + 'static + EnumerationCapability<NamespaceId = N, Receiver = S>,
 {
-    type Item = PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>;
+    type Item = Vec<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>>;
 
     type Final = ();
 
@@ -968,7 +1088,7 @@ where
 
                     // Yay. Go into next iteration of the loop.
                 }
-                Left(PioInput::BindReadCapability(bind_read_capability_msg)) => {
+                Left(PioInput::WeReceivedAReadCapability(bind_read_capability_msg)) => {
                     let mut interest_registry = self.session_state.interest_registry.write().await;
 
                     let overlap = interest_registry
@@ -979,8 +1099,29 @@ where
                         .process_overlap(&overlap, &mut interest_registry)
                         .await?;
 
-                    // Yay. But instead of going into the next iteration, we can actually emit the received message.
-                    return Ok(Left(bind_read_capability_msg));
+                    // Yay. Record the caoi, and check for any detected overlaps.
+                    let proper_overlaps = self.overlap_finder.add_theirs(
+                        NamespacedAoIWithMaxPayloadPower::from_bind_read_capability_msg(
+                            &bind_read_capability_msg,
+                        ),
+                    );
+
+                    if proper_overlaps.len() == 0 {
+                        // Do nothing, go to next iteration
+                    } else {
+                        return Ok(Left(proper_overlaps));
+                    }
+                }
+
+                Left(PioInput::WeSentAReadCapability(naoiwmpp)) => {
+                    // Yay. Record the caoi, and check for any detected overlaps.
+                    let proper_overlaps = self.overlap_finder.add_mine(naoiwmpp);
+
+                    if proper_overlaps.len() == 0 {
+                        // Do nothing, go to next iteration
+                    } else {
+                        return Ok(Left(proper_overlaps));
+                    }
                 }
                 Right(()) => return Ok(Right(())),
             }
@@ -1170,12 +1311,15 @@ pub enum PioInput<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
+    N,
+    S,
     TheirReadCap,
     TheirEnumCap,
 > {
     BindHash(PioBindHash<INTEREST_HASH_LENGTH>),
     AnnounceOverlap(PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>),
-    BindReadCapability(PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>),
+    WeReceivedAReadCapability(PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>),
+    WeSentAReadCapability(NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>),
 }
 
 fn pio_announce_overlap_to_pio_input<
@@ -1183,11 +1327,13 @@ fn pio_announce_overlap_to_pio_input<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
+    N,
+    S,
     ReadCap,
     EnumCap,
 >(
     msg: PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap> {
     PioInput::AnnounceOverlap(msg)
 }
 
@@ -1196,11 +1342,13 @@ fn pio_bind_hash_to_pio_input<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
+    N,
+    S,
     ReadCap,
     EnumCap,
 >(
     msg: PioBindHash<INTEREST_HASH_LENGTH>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap> {
     PioInput::BindHash(msg)
 }
 
@@ -1209,12 +1357,29 @@ fn pio_bind_read_capability_to_pio_input<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
+    N,
+    S,
     ReadCap,
     EnumCap,
 >(
     msg: PioBindReadCapability<MCL, MCC, MPL, ReadCap>,
-) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, ReadCap, EnumCap> {
-    PioInput::BindReadCapability(msg)
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap> {
+    PioInput::WeReceivedAReadCapability(msg)
+}
+
+fn namespaced_aoi_with_max_payload_power_to_pio_input<
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    ReadCap,
+    EnumCap,
+>(
+    naoiwmpp: NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>,
+) -> PioInput<INTEREST_HASH_LENGTH, MCL, MCC, MPL, N, S, ReadCap, EnumCap> {
+    PioInput::WeSentAReadCapability(naoiwmpp)
 }
 
 impl<

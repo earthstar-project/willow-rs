@@ -684,7 +684,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
  "wb_async_utils",
  "willow-encoding",
 ]
@@ -1342,7 +1342,7 @@ dependencies = [
  "either",
  "futures",
  "pin-project",
- "ufotofu_queues 0.6.0",
+ "ufotofu_queues",
 ]
 
 [[package]]
@@ -1371,12 +1371,6 @@ dependencies = [
 [[package]]
 name = "ufotofu_queues"
 version = "0.6.0"
-
-[[package]]
-name = "ufotofu_queues"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9abd2f0123cc71fa3adf9329b85d9eb863874e489744803f3a41fff59b56968d"
 
 [[package]]
 name = "unicode-ident"
@@ -1420,7 +1414,7 @@ dependencies = [
  "either",
  "fairly_unsafe_cell",
  "ufotofu",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
 ]
 
 [[package]]
@@ -1437,7 +1431,7 @@ dependencies = [
  "smol",
  "ufotofu",
  "ufotofu_codec",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
  "willow-encoding",
@@ -1485,7 +1479,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
  "wb_async_utils",
  "wgps",
  "willow-data-model",
@@ -1518,7 +1512,7 @@ dependencies = [
  "ufotofu",
  "ufotofu_codec",
  "ufotofu_codec_endian",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
  "wb_async_utils",
  "willow-data-model",
  "willow_25",
@@ -1533,7 +1527,7 @@ dependencies = [
  "smol",
  "ufotofu",
  "ufotofu_codec",
- "ufotofu_queues 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ufotofu_queues",
  "wb_async_utils",
 ]
 
