@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::RefCell, collections::HashSet, hash::Hash, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, hash::Hash, ops::Deref, rc::Rc};
 
 use compact_u64::CompactU64;
 use either::Either::{Left, Right};
@@ -9,20 +9,16 @@ use ufotofu::{
 };
 use ufotofu_codec::{
     adaptors::{Decoder, RelativeDecoder},
-    Blame, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
-    RelativeEncodableKnownSize,
+    Blame, DecodeError, RelativeDecodable, RelativeEncodableKnownSize,
 };
-use ufotofu_queues::{Fixed, Static};
+use ufotofu_queues::Static;
 use wb_async_utils::{
     rw::WriteGuard,
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
     spsc, Mutex, RwLock,
 };
-use willow_data_model::{
-    grouping::{Area, AreaOfInterest, AreaSubspace},
-    NamespaceId, Path, SubspaceId,
-};
+use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 
 use crate::{
@@ -56,8 +52,6 @@ struct State<
     C,
     CErr,
 > {
-    p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
-    c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
     interest_registry: RwLock<
         InterestRegistry<
             SALT_LENGTH,
@@ -132,8 +126,6 @@ where
 {
     /// Create a new opaque state for a PIO session.
     fn new(
-        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
-        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
         my_salt: [u8; SALT_LENGTH],
         h: fn(
             &PrivateInterest<MCL, MCC, MPL, N, S>,
@@ -157,8 +149,6 @@ where
         >,
     ) -> Self {
         Self {
-            p,
-            c,
             interest_registry: RwLock::new(InterestRegistry::new(my_salt, h)),
             caois_for_which_we_already_sent_a_bind_read_capability_message: RefCell::new(
                 HashSet::new(),
@@ -317,11 +307,6 @@ where
                     enumeration_capability,
                 };
 
-                let pair = (
-                    caoi.capability.granted_namespace().clone(),
-                    self.my_public_key.clone(),
-                );
-
                 self.global_sender
                     .write()
                     .await
@@ -473,8 +458,6 @@ where
     ///
     /// In the WGPS, peers can not only *submit* AoIs but also *revoke* them again (via ResourceHandleFree messages). This implementation punts on that functionality. You cannot undeclare any interest, and all requests by the other peer to remove an AoI will be ignored. This makes us selfish peers, and long-term this functionality should be implemented.
     pub fn new(
-        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
-        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
         my_salt: [u8; SALT_LENGTH],
         h: fn(
             &PrivateInterest<MCL, MCC, MPL, N, S>,
@@ -493,8 +476,6 @@ where
         let (my_sent_caois_sender, my_sent_caois_receiver) = spsc::new_spsc(my_sent_caois_state);
 
         let state_ref = Rc::new(State::new(
-            p,
-            c,
             my_salt,
             h,
             my_public_key,
