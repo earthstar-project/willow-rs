@@ -38,7 +38,6 @@ pub trait SideloadAuthorisationToken<
 >:
     AuthorisationToken<MCL, MCC, MPL, N, S, PD>
     + Decodable
-    + Default
     + RelativeEncodable<(
         AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
         Entry<MCL, MCC, MPL, N, S, PD>,
@@ -124,6 +123,7 @@ pub async fn create_drop<
     store: &StoreType,
     encrypt: EncryptFn,
     into_inner: IntoInnerFn,
+    default_auth_token: AT,
 ) -> Result<C, CreateDropError<EncryptedC::Error, StoreType::Error>>
 where
     C: BulkConsumer<Item = u8>,
@@ -170,15 +170,15 @@ where
         .map_err(CreateDropError::ConsumerProblem)?;
 
     let entry_minus_one = Entry::new(
-        N::default(),
-        S::default(),
+        N::default_namespace_id(),
+        S::default_subspace_id(),
         Path::<MCL, MCC, MPL>::new_empty(),
         0,
         0,
-        PD::default(),
+        PD::default_payload_digest(),
     );
 
-    let auth_minus_one = AT::default();
+    let auth_minus_one = default_auth_token;
 
     let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 
@@ -350,6 +350,7 @@ pub async fn ingest_drop<
     store: &StoreType,
     decrypt: DecryptFn,
     into_inner: IntoInnerFn,
+    default_auth_token: AT,
 ) -> Result<P, IngestDropError<DecryptedP::Error, StoreType::Error>>
 where
     P: Producer<Item = u8>,
@@ -373,15 +374,15 @@ where
     }
 
     let entry_minus_one = Entry::new(
-        N::default(),
-        S::default(),
+        N::default_namespace_id(),
+        S::default_subspace_id(),
         Path::<MCL, MCC, MPL>::new_empty(),
         0,
         0,
-        PD::default(),
+        PD::default_payload_digest(),
     );
 
-    let auth_minus_one = AT::default();
+    let auth_minus_one = default_auth_token;
 
     let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 

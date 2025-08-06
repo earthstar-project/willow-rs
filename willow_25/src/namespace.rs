@@ -64,7 +64,7 @@ impl NamespaceId for NamespaceId25 {}
 impl McNamespacePublicKey for NamespaceId25 {}
 impl SideloadNamespaceId for NamespaceId25 {
     fn default_namespace_id() -> Self {
-        Self(VerifyingKey::default())
+        Self(VerifyingKey::from_bytes(&crate::DEFAULT_PUBLIC_KEY).unwrap())
     }
 }
 

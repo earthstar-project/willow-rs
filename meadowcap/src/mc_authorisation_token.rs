@@ -442,30 +442,6 @@ where
     }
 }
 
-impl<
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    > Default
-    for McAuthorisationToken<
-        MCL,
-        MCC,
-        MPL,
-        NamespacePublicKey,
-        NamespaceSignature,
-        UserPublicKey,
-        UserSignature,
-    >
-{
-    fn default() -> Self {
-        todo!("This should be a valid authorisation token for the default entry.")
-    }
-}
-
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
