@@ -114,21 +114,24 @@ pub async fn create_drop<
     C,
     EncryptedC,
     EncryptFn,
+    IntoInnerFn,
     StoreType,
     AreaIterator,
 >(
     consumer: C,
-    encrypt: EncryptFn,
     namespace_id: N,
     areas: AreaIterator,
     store: &StoreType,
-) -> Result<(), CreateDropError<EncryptedC::Error, StoreType::Error>>
+    encrypt: EncryptFn,
+    into_inner: IntoInnerFn,
+) -> Result<C, CreateDropError<EncryptedC::Error, StoreType::Error>>
 where
     C: BulkConsumer<Item = u8>,
     EncryptedC: BulkConsumer<Item = u8, Final = ()>,
     StoreType: SideloadStore<MCL, MCC, MPL, N, S, PD, AT>,
     AreaIterator: IntoIterator<Item = Area<MCL, MCC, MPL, S>>,
     EncryptFn: Fn(C) -> EncryptedC,
+    IntoInnerFn: Fn(EncryptedC) -> C,
 {
     // https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
 
@@ -326,7 +329,7 @@ where
         }
     }
 
-    Ok(())
+    Ok(into_inner(encrypted_consumer))
 }
 
 pub async fn ingest_drop<
@@ -340,16 +343,19 @@ pub async fn ingest_drop<
     P,
     DecryptedP,
     DecryptFn,
+    IntoInnerFn,
     StoreType,
 >(
     producer: P,
-    decrypt: DecryptFn,
     store: &StoreType,
-) -> Result<(), IngestDropError<DecryptedP::Error, StoreType::Error>>
+    decrypt: DecryptFn,
+    into_inner: IntoInnerFn,
+) -> Result<P, IngestDropError<DecryptedP::Error, StoreType::Error>>
 where
     P: Producer<Item = u8>,
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     DecryptFn: Fn(P) -> DecryptedP,
+    IntoInnerFn: Fn(DecryptedP) -> P,
     DecryptedP: BulkProducer<Item = u8>,
     Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
     AT:,
@@ -471,5 +477,5 @@ where
         prev_authed_entry = authed_entry;
     }
 
-    Ok(())
+    Ok(into_inner(decrypted_producer))
 }

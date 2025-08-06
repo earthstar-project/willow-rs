@@ -73,7 +73,7 @@ impl IsCommunal for NamespaceId25 {
     fn is_communal(&self) -> bool {
         let last_byte = *self.0.to_bytes().last().unwrap();
 
-        0b1111_1110 & last_byte == 0b1111_1110
+        last_byte & 1 == 0
     }
 }
 

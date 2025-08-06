@@ -45,3 +45,6 @@ pub mod meadowcap;
 pub use meadowcap::{
     AccessMode, AuthorisationToken, Capability, CommunalCapability, OwnedCapability,
 };
+
+pub mod sideload;
+pub use sideload::{create_drop, ingest_drop};
