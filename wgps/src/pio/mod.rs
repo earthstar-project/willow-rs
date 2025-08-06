@@ -2,7 +2,7 @@ use std::{borrow::Borrow, cell::RefCell, collections::HashSet, hash::Hash, ops::
 
 use compact_u64::CompactU64;
 use either::Either::{Left, Right};
-use lcmux::{ChannelReceiver, ChannelSender};
+use lcmux::{ChannelReceiver, ChannelSender, GlobalMessageSender};
 use ufotofu::{
     producer::{MapItem, Merge},
     BulkConsumer, Consumer, Producer,
@@ -73,6 +73,7 @@ struct State<
     >,
     caois_for_which_we_already_sent_a_bind_read_capability_message:
         RefCell<HashSet<CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>>>,
+    global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
     capability_channel_sender: Mutex<ChannelSender<4, P, PFinal, PErr, C, CErr>>,
     my_public_key: S,
     their_public_key: S,
@@ -140,6 +141,7 @@ where
         ) -> [u8; INTEREST_HASH_LENGTH],
         my_public_key: S,
         their_public_key: S,
+        global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
         capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
         read_capabilities_i_sent_sender: spsc::Sender<
             Rc<
@@ -161,6 +163,7 @@ where
             caois_for_which_we_already_sent_a_bind_read_capability_message: RefCell::new(
                 HashSet::new(),
             ),
+            global_sender,
             capability_channel_sender: Mutex::new(capability_channel_sender),
             my_public_key,
             their_public_key,
@@ -214,7 +217,7 @@ where
         + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
         + RelativeEncodableKnownSize<(N, S)>,
-    C: Consumer<Item = u8, Final: Clone, Error = CErr> + BulkConsumer,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
     CErr: Clone,
 {
     // Do everything you need to do when our internal APIs signal an Overlap (i.e., send PioAnnounceOverlap and PioBindReadCapability messages).
@@ -314,10 +317,15 @@ where
                     enumeration_capability,
                 };
 
-                self.capability_channel_sender
+                let pair = (
+                    caoi.capability.granted_namespace().clone(),
+                    self.my_public_key.clone(),
+                );
+
+                self.global_sender
                     .write()
                     .await
-                    .send_to_channel_relative(&msg, &pair)
+                    .send_global_message_relative(msg, &pair)
                     .await?;
             }
 
@@ -474,6 +482,7 @@ where
         ) -> [u8; INTEREST_HASH_LENGTH],
         my_public_key: S,
         their_public_key: S,
+        global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
         capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
         capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
         overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
@@ -490,6 +499,7 @@ where
             h,
             my_public_key,
             their_public_key,
+            global_sender,
             capability_channel_sender,
             my_sent_caois_sender,
         ));
@@ -594,7 +604,7 @@ where
         + Clone
         + EnumerationCapability<Receiver = S, NamespaceId = N>
         + RelativeEncodableKnownSize<(N, S)>,
-    C: Consumer<Item = u8, Final: Clone, Error = CErr> + BulkConsumer,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
     CErr: Clone,
 {
     type Item = CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>;
@@ -1017,7 +1027,7 @@ where
     P: Producer<Final = PFinal, Error = PErr> + 'static,
     PFinal: 'static,
     PErr: 'static,
-    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr> + 'static,
+    C: BulkConsumer<Item = u8, Final = (), Error = CErr> + 'static,
     CErr: Clone + 'static,
     AnnounceOverlapProducer: Producer<
             Item = PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>,
@@ -1237,6 +1247,11 @@ enum ProcessOverlapError<TransportError> {
     NoEnumerationCapability,
 }
 
+impl<TransportError> From<TransportError> for ProcessOverlapError<TransportError> {
+    fn from(value: TransportError) -> Self {
+        ProcessOverlapError::Transport(value)
+    }
+}
 impl<TransportError> From<lcmux::LogicalChannelClientError<TransportError>>
     for ProcessOverlapError<TransportError>
 {

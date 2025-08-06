@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ufotofu = "0.7.0"
+ufotofu = "0.7.1"
 ufotofu_codec = { version = "0.1.3", features = ["std", "dev"] }
 arbitrary = "1.4.1"
 willow_25 = { path = "../willow_25", features = ["dev"] }

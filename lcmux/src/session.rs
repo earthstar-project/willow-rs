@@ -556,6 +556,24 @@ where
 
         message.encode(&mut c).await
     }
+
+    pub async fn send_global_message_relative<
+        CMessage: RelativeEncodableKnownSize<RelativeTo>,
+        RelativeTo,
+    >(
+        &mut self,
+        message: CMessage,
+        relative_to: &RelativeTo,
+    ) -> Result<(), C::Error> {
+        let mut c = self.state.deref().c.access_consumer().await;
+
+        let header = SendGlobalHeader {
+            length: message.relative_len_of_encoding(relative_to) as u64,
+        };
+        header.encode(&mut c).await?;
+
+        message.relative_encode(&mut c, relative_to).await
+    }
 }
 
 /// Receive global messenges from the other peer via the [`Producer`] implementation of this struct. The producer must constantly be read, as it internally decodes and processes all control messages.
