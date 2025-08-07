@@ -449,7 +449,13 @@ where
                     // The PIO implementation then does the remainder of the work.
                     announce_overlap_in_memory_sender.consume(msg).await.unwrap(/* infallible */);
                 }
-                Right(fin) => {
+                Left(GlobalMessage::DataSetEagerness(_))
+                | Left(GlobalMessage::ResourceHandleFree(_)) => {
+                    // Ours is a selfish and primitive implementation, we ignore both of these right now (which the spec explicitly allows, since both messages merely serve for optimisation purposes).
+
+                    // Do nothing, simply continue to the next iteration of the loop.
+                }
+                Right(()) => {
                     // We won't receive more global messages from the other peer. That does not necessarily terminate reconciliation, but we *can* stop polling for *more* global messages.
                     return Ok(());
                 }
