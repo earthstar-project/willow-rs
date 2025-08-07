@@ -40,16 +40,16 @@ impl<
         const MCL: usize,
         const MCC: usize,
         const MPL: usize,
-        C,
-        CErr,
-        P,
-        PFinal,
-        PErr,
         N,
         S,
         MyReadCap,
         MyEnumCap,
         TheirEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
     >
     RelativeDecodable<
         Option<
@@ -74,6 +74,10 @@ impl<
         >,
         Blame,
     > for GlobalMessage<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>
+where
+    N: Clone,
+    S: Clone,
+    TheirEnumCap: RelativeDecodable<(N, S), Blame>,
 {
     async fn relative_decode<Pro>(
         producer: &mut Pro,
@@ -410,77 +414,6 @@ where
             receiver_handle,
             enumeration_capability,
         })
-    }
-}
-
-impl<
-        const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
-        const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
-        const MCL: usize,
-        const MCC: usize,
-        const MPL: usize,
-        C,
-        CErr,
-        P,
-        PFinal,
-        PErr,
-        N,
-        S,
-        MyReadCap,
-        MyEnumCap,
-        TheirEnumCap,
-    >
-    RelativeDecodable<
-        Option<
-            Rc<
-                pio::State<
-                    HANDSHAKE_HASHLEN_IN_BYTES,
-                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    MyReadCap,
-                    MyEnumCap,
-                    P,
-                    PFinal,
-                    PErr,
-                    C,
-                    CErr,
-                >,
-            >,
-        >,
-        Blame,
-    > for PioAnnounceOverlap<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>
-{
-    async fn relative_decode<Pro>(
-        producer: &mut Pro,
-        r: &Option<
-            Rc<
-                pio::State<
-                    HANDSHAKE_HASHLEN_IN_BYTES,
-                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
-                    MCL,
-                    MCC,
-                    MPL,
-                    N,
-                    S,
-                    MyReadCap,
-                    MyEnumCap,
-                    P,
-                    PFinal,
-                    PErr,
-                    C,
-                    CErr,
-                >,
-            >,
-        >,
-    ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
-    where
-        Pro: ufotofu::BulkProducer<Item = u8>,
-    {
-        todo!("yay...")
     }
 }
 

@@ -1521,21 +1521,25 @@ impl<
         CErr,
     >
     RelativeDecodable<
-        State<
-            SALT_LENGTH,
-            INTEREST_HASH_LENGTH,
-            MCL,
-            MCC,
-            MPL,
-            N,
-            S,
-            MyReadCap,
-            MyEnumCap,
-            P,
-            PFinal,
-            PErr,
-            C,
-            CErr,
+        Option<
+            Rc<
+                State<
+                    SALT_LENGTH,
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
         >,
         Blame,
     > for PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>
@@ -1546,27 +1550,33 @@ where
 {
     async fn relative_decode<Pro>(
         producer: &mut Pro,
-        r: &State<
-            SALT_LENGTH,
-            INTEREST_HASH_LENGTH,
-            MCL,
-            MCC,
-            MPL,
-            N,
-            S,
-            MyReadCap,
-            MyEnumCap,
-            P,
-            PFinal,
-            PErr,
-            C,
-            CErr,
+        r: &Option<
+            Rc<
+                State<
+                    SALT_LENGTH,
+                    INTEREST_HASH_LENGTH,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
         >,
     ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
     where
         Pro: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
+        let r = r.as_ref().unwrap(); // If we decode with a `None`, our logic is faulty.
+
         let header = producer.produce_item().await?;
 
         let has_enumeration_cap = is_bitflagged(header, 1);

@@ -54,6 +54,7 @@ pub trait WgpsEnumerationCapability:
     + Eq
     + Hash
     + RelativeEncodableKnownSize<(Self::NamespaceId, Self::Receiver)>
+    + RelativeDecodable<(Self::NamespaceId, Self::Receiver), Blame>
     + 'static
 {
 }

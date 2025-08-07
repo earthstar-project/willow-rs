@@ -1,8 +1,8 @@
 use std::{future::Future, rc::Rc};
 
-use either::Either::Left;
+use either::Either::{Left, Right};
 use futures::try_join;
-use lcmux::{ChannelOptions, InitOptions, Session};
+use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, Session};
 use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -90,6 +90,17 @@ impl<E> From<DecryptionError<E>> for WgpsError<E> {
 impl<E> From<HandshakeError<E, (), E>> for WgpsError<E> {
     fn from(value: HandshakeError<E, (), E>) -> Self {
         Self::Handshake(value)
+    }
+}
+
+impl<E> From<GlobalMessageError<(), DecryptionError<E>, Blame>> for WgpsError<E> {
+    fn from(value: GlobalMessageError<(), DecryptionError<E>, Blame>) -> Self {
+        match value {
+            GlobalMessageError::Producer(err) => Self::from(err),
+            GlobalMessageError::DecodeGlobalMessage(_)
+            | GlobalMessageError::UnsupportedChannel(_)
+            | GlobalMessageError::Other => Self::PeerMisbehaved,
+        }
     }
 }
 
@@ -355,7 +366,7 @@ where
     let Session {
         mut bookkeeping,
         global_sender,
-        global_receiver,
+        mut global_receiver,
         channel_senders,
         channel_receivers,
     } = lcmux_session;
@@ -377,7 +388,7 @@ where
             PioAnnounceOverlap::<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>::temporary,
         ),
     ));
-    let (announce_overlap_in_memory_sender, announce_overlap_in_memory_receiver) =
+    let (mut announce_overlap_in_memory_sender, announce_overlap_in_memory_receiver) =
         spsc::new_spsc(announce_overlap_in_memory_channel_state);
 
     let PioSession {
@@ -417,8 +428,6 @@ where
 
     *global_receiver.get_relative_to_mut() = Some(pio_state);
 
-    todo!("give global decoder access to the pio state");
-
     // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block.
 
     let do_the_lcmux_bookkeeping = async {
@@ -434,12 +443,15 @@ where
 
     let receive_global_messages = async {
         loop {
-            // TODO relative decoding of messages; relative to `pio_state`.
             match global_receiver.produce().await? {
-                Ok(Left(GlobalMessage::PioAnnounceOverlap(msg))) => {
+                Left(GlobalMessage::PioAnnounceOverlap(msg)) => {
                     // We have an in-memory-channel into which to enqueue all PioAnnounceOverlap messages we receive.
                     // The PIO implementation then does the remainder of the work.
                     announce_overlap_in_memory_sender.consume(msg).await.unwrap(/* infallible */);
+                }
+                Right(fin) => {
+                    // We won't receive more global messages from the other peer. That does not necessarily terminate reconciliation, but we *can* stop polling for *more* global messages.
+                    return Ok(());
                 }
                 _ => todo!(),
             }
