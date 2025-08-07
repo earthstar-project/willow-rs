@@ -8,7 +8,7 @@ use willow_encoding::is_bitflagged;
 
 use willow_data_model::{
     grouping::{Area, AreaSubspace, Range, RangeEnd},
-    Entry, NamespaceId, Path, PayloadDigest, SubspaceId,
+    Entry, Path, PayloadDigest,
 };
 
 use crate::PrivatePathContext;

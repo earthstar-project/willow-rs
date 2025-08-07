@@ -22,7 +22,6 @@ use crate::McPublicUserKey;
 use crate::SillyPublicKey;
 #[cfg(feature = "dev")]
 use crate::SillySig;
-use crate::UnverifiedMcCapability;
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError};
 

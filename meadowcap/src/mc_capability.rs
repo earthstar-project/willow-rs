@@ -10,7 +10,7 @@ use crate::{SillyPublicKey, SillySig};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
-use either::Either::{self, Left, Right};
+use either::Either::{Left, Right};
 use signature::{Error as SignatureError, Signer, Verifier};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,

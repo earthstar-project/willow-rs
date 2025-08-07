@@ -1,7 +1,6 @@
 use crate::PrivateInterest;
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
-use willow_data_model::{NamespaceId, SubspaceId};
 
 #[derive(Debug)]
 pub struct PersonalPrivateInterest<
