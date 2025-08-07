@@ -363,11 +363,15 @@ where
 {
     // do the inverse of https://willowprotocol.org/specs/sideloading/index.html#sideload_protocol
 
-    let mut decrypted_producer = decrypt(producer);
+    let mut decrypting_producer = decrypt(producer);
 
-    let entries_count = CompactU64::decode(&mut decrypted_producer).await?;
+    let entries_count = CompactU64::decode(&mut decrypting_producer).await?;
 
-    let namespace_id = N::decode(&mut decrypted_producer).await?;
+    println!("producer after decoding entries_count: {decrypting_producer:?}");
+
+    let namespace_id = N::decode(&mut decrypting_producer).await?;
+
+    println!("producer after decoding namespace_id: {decrypting_producer:?}");
 
     if &namespace_id != store.namespace_id() {
         return Err(IngestDropError::WrongNamespace);
@@ -386,22 +390,27 @@ where
 
     let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 
-    println!("{decrypted_producer:?}");
+    println!("{decrypting_producer:?}");
 
     for i in 0..entries_count.0 {
-        println!("{i}");
+        println!("decoding entry {i}");
+        println!("producer: {decrypting_producer:?}");
 
-        match decrypted_producer.produce().await {
+        match decrypting_producer.produce().await {
             Ok(res) => match res {
-                Either::Left(byte) => println!("{byte}"),
-                Either::Right(fin) => println!("finished"),
+                Either::Left(byte) => println!("yay, got a byte: {byte}"),
+                Either::Right(fin) => panic!("finished"),
             },
             Err(err) => {
                 panic!("Oh no, an error!")
             }
         }
 
-        let header = decrypted_producer
+        println!(
+            "If this got printed, stuff somewhat works again, remove the above debug production"
+        );
+
+        let header = decrypting_producer
             .produce_item()
             .await
             .map_err(|err| match err.reason {
@@ -417,16 +426,17 @@ where
         let payload_length_tag = Tag::from_raw(header, TagWidth::two(), 6);
 
         let subspace = if subspace_is_encoded {
-            S::decode(&mut decrypted_producer).await?
+            S::decode(&mut decrypting_producer).await?
         } else {
             prev_authed_entry.entry().subspace_id().clone()
         };
 
-        let path = Path::relative_decode(&mut decrypted_producer, prev_authed_entry.entry().path())
-            .await?;
+        let path =
+            Path::relative_decode(&mut decrypting_producer, prev_authed_entry.entry().path())
+                .await?;
 
         let timestamp_diff =
-            CompactU64::relative_decode(&mut decrypted_producer, &timestamp_diff_tag).await?;
+            CompactU64::relative_decode(&mut decrypting_producer, &timestamp_diff_tag).await?;
 
         let timestamp = if add_timestamp_diff {
             prev_authed_entry
@@ -443,11 +453,11 @@ where
         };
 
         let payload_length =
-            CompactU64::relative_decode(&mut decrypted_producer, &payload_length_tag)
+            CompactU64::relative_decode(&mut decrypting_producer, &payload_length_tag)
                 .await?
                 .0;
 
-        let payload_digest = PD::decode(&mut decrypted_producer).await?;
+        let payload_digest = PD::decode(&mut decrypting_producer).await?;
 
         let entry = Entry::new(
             namespace_id.clone(),
@@ -460,7 +470,7 @@ where
 
         let pair = (prev_authed_entry, entry);
 
-        let token = AT::relative_decode(&mut decrypted_producer, &pair).await?;
+        let token = AT::relative_decode(&mut decrypting_producer, &pair).await?;
 
         let authed_entry = AuthorisedEntry::new(pair.1, token)?;
 
@@ -475,7 +485,7 @@ where
 
         if payload_is_encoded {
             let mut payload_producer =
-                ufotofu::producer::Limit::new(decrypted_producer, payload_length as usize);
+                ufotofu::producer::Limit::new(decrypting_producer, payload_length as usize);
 
             store
                 .append_payload(
@@ -487,11 +497,11 @@ where
                 .await
                 .map_err(IngestDropError::PayloadIngestion)?;
 
-            decrypted_producer = payload_producer.into_inner();
+            decrypting_producer = payload_producer.into_inner();
         }
 
         prev_authed_entry = authed_entry;
     }
 
-    Ok(into_inner(decrypted_producer))
+    Ok(into_inner(decrypting_producer))
 }
