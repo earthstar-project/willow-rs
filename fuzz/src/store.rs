@@ -16,8 +16,8 @@ use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryIngestionSuccess,
     EntryOrigin, EventSystem, ForgetEntryError, ForgetPayloadError, LengthyAuthorisedEntry,
-    NamespaceId, Path, PayloadAppendError, PayloadAppendSuccess, PayloadDigest, PayloadError,
-    QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
+    NamespaceId, Path, Payload, PayloadAppendError, PayloadAppendSuccess, PayloadDigest,
+    PayloadError, QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -623,7 +623,7 @@ where
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
-        impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
+        Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
         let mut subspace_store = self.get_or_create_subspace_store(subspace);
@@ -639,9 +639,15 @@ where
                 if offset >= (entry.payload.len() as u64) {
                     return Err(PayloadError::OutOfBounds);
                 } else {
-                    return Ok(FromBoxedSlice::from_vec(
-                        entry.payload[(offset as usize)..].to_vec(),
-                    ));
+                    if entry.payload_length == entry.payload.len() as u64 {
+                        return Ok(Payload::Complete(FromBoxedSlice::from_vec(
+                            entry.payload[(offset as usize)..].to_vec(),
+                        )));
+                    } else {
+                        return Ok(Payload::Incomplete(FromBoxedSlice::from_vec(
+                            entry.payload[(offset as usize)..].to_vec(),
+                        )));
+                    }
                 }
             }
         }
@@ -1007,7 +1013,7 @@ pub async fn check_store_equality<
                         .payload(subspace, path, *offset, expected_digest.clone())
                         .await,
                 ) {
-                    (Ok(mut producer1), Ok(mut producer2)) => loop {
+                    (Ok(Payload::Complete(mut producer1)), Ok(Payload::Complete(mut producer2))) | (Ok(Payload::Incomplete(mut producer1)), Ok(Payload::Incomplete(mut producer2))) => loop {
                         match (producer1.produce().await, producer2.produce().await) {
                             (Ok(Either::Left(item1)), Ok(Either::Left(item2))) => {
                                 assert_eq!(item1, item2)

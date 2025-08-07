@@ -8,7 +8,7 @@
 //!
 //! ```
 //! # use willow_store_simple_sled::StoreSimpleSled;
-//! use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken25 };
+//! use willow_25::{ NamespaceId25, SubspaceId25, PayloadDigest25, AuthorisationToken };
 //!
 //! let db = sled::open("my_db").unwrap();
 //! let namespace = NamespaceId25::new_communal();
@@ -20,7 +20,7 @@
 //!     NamespaceId25,
 //!     SubspaceId25,
 //!     PayloadDigest25,
-//!     AuthorisationToken25
+//!     AuthorisationToken
 //! >::new(&namespace, db).unwrap();
 //! ```
 //!
@@ -32,7 +32,9 @@
 use either::Either;
 use std::{cell::RefCell, rc::Rc};
 use ufotofu::BufferedProducer;
-use willow_data_model::{ForgetEntryError, ForgetPayloadError, PayloadError, TrustedDecodable};
+use willow_data_model::{
+    ForgetEntryError, ForgetPayloadError, Payload, PayloadError, TrustedDecodable,
+};
 
 use sled::{
     transaction::{ConflictableTransactionError, TransactionError, TransactionalTree},
@@ -50,6 +52,7 @@ use willow_data_model::{
     PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
     SubspaceId,
 };
+use willow_sideload::SideloadStore;
 
 /// A simple, [sled](https://docs.rs/sled/latest/sled/)-powered Willow data [store](https://willowprotocol.org/specs/data-model/index.html#store) implementing the [willow_data_model::Store] trait.
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -930,7 +933,7 @@ where
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
-        impl BulkProducer<Item = u8, Final = (), Error = Self::Error>,
+        Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
         let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
@@ -942,7 +945,7 @@ where
 
         match (maybe_entry, maybe_payload) {
             (Some((_entry_key, entry_value)), Some((_payload_key, payload_value))) => {
-                let (_length, digest, _token, _local_length) =
+                let (length, digest, _token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
                 if let Some(expected) = expected_digest {
@@ -950,12 +953,23 @@ where
                         return Err(PayloadError::WrongEntry);
                     }
                 }
-                Ok(PayloadProducer::new(payload_value, offset))
+
+                if length == local_length {
+                    Ok(Payload::Complete(PayloadProducer::new(
+                        payload_value,
+                        offset,
+                    )))
+                } else {
+                    Ok(Payload::Incomplete(PayloadProducer::new(
+                        payload_value,
+                        offset,
+                    )))
+                }
             }
 
             (Some((_entry_key, entry_value)), None) => {
                 // check expected digest.
-                let (_length, digest, _token, _local_length) =
+                let (length, digest, _token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
                 if let Some(expected) = expected_digest {
@@ -964,7 +978,14 @@ where
                     }
                 }
 
-                Ok(PayloadProducer::new(IVec::default(), 0))
+                if length == local_length {
+                    Ok(Payload::Complete(PayloadProducer::new(IVec::default(), 0)))
+                } else {
+                    Ok(Payload::Incomplete(PayloadProducer::new(
+                        IVec::default(),
+                        0,
+                    )))
+                }
             }
             (None, None) => Err(PayloadError::NoSuchEntry),
             (None, Some(_)) => {
@@ -1193,7 +1214,7 @@ where
 
                 return None;
             }
-            Err(err) => panic!("Unexpected error: {:?}", err),
+            Err(err) => panic!("Unexpected error: {err:?}"),
         }
     }
 }
@@ -1462,6 +1483,50 @@ where
                 }
                 Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
                 None => return Ok(Either::Right(())),
+            }
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    SideloadStore<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
+    S::ErrorReason: core::fmt::Debug,
+    PD::ErrorReason: core::fmt::Debug,
+{
+    async fn count_area(&self, area: &Area<MCL, MCC, MPL, S>) -> Result<usize, Self::Error> {
+        let entry_tree = self.entry_tree()?;
+
+        let mut entry_iterator = match area.subspace() {
+            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                entry_tree.scan_prefix(&matching_subspace_path)
+            }
+        };
+
+        let mut counted = 0;
+
+        loop {
+            let result = entry_iterator.next();
+
+            match result {
+                Some(Ok((key, _value))) => {
+                    let (subspace, path, timestamp) =
+                        decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+
+                    if area.includes_triplet(&subspace, &path, timestamp) {
+                        counted += 1;
+                    }
+                }
+                Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
+                None => return Ok(counted),
             }
         }
     }

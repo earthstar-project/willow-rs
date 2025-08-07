@@ -1,3 +1,4 @@
+use signature::Signer;
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, Encodable, EncodableKnownSize, EncodableSync,
 };
@@ -81,5 +82,27 @@ impl<'a> Arbitrary<'a> for Signature25 {
         let bytes: [u8; 64] = Arbitrary::arbitrary(u)?;
 
         Ok(Self(ed25519_dalek::Signature::from_bytes(&bytes)))
+    }
+}
+
+pub struct SigningKey25(ed25519_dalek::SigningKey);
+
+impl SigningKey25 {
+    pub(crate) fn new(key: ed25519_dalek::SigningKey) -> Self {
+        Self(key)
+    }
+}
+
+impl Default for SigningKey25 {
+    fn default() -> Self {
+        Self(ed25519_dalek::SigningKey::from_bytes(
+            &crate::DEFAULT_SIGNING_KEY,
+        ))
+    }
+}
+
+impl Signer<Signature25> for SigningKey25 {
+    fn try_sign(&self, msg: &[u8]) -> Result<Signature25, signature::Error> {
+        self.0.try_sign(msg).map(Signature25)
     }
 }

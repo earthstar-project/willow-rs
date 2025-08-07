@@ -1,0 +1,15 @@
+[package]
+name = "willow-sideload"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ufotofu = { version = "0.6.5", features = ["std"] }
+ufotofu_codec = { version = "0.1.1" }
+compact_u64 = { version = "0.1.0" }
+willow-data-model = { path = "../data-model", version = "0.2.0" }
+either = "1.10.0"
+willow-encoding = { path = "../encoding", version = "0.1.0" }
+
+[lints]
+workspace = true

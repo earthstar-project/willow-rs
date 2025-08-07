@@ -19,6 +19,11 @@ signature = "2.2.0"
 willow-encoding = { path = "../encoding", version = "0.1.0" }
 willow-data-model = { path = "../data-model", version = "0.2.0" }
 willow-pio = { version = "0.1.0", path = "../pio" }
+compact_u64 = { version = "0.1.0", features = [ "std", "dev" ] }
+
+[dependencies.ufotofu_codec]
+version = "0.1.0"
+features = ["alloc"]
 
 [lints]
 workspace = true

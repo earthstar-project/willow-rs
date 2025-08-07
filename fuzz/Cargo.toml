@@ -626,3 +626,10 @@ path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_mcauthorisationtoken_rel_pair"
+path = "fuzz_targets/enc_mcauthorisationtoken_rel_pair.rs"
+test = false
+doc = false
+bench = false

@@ -8,9 +8,12 @@ use ufotofu_codec::{
     EncodableSync,
 };
 use willow_data_model::NamespaceId;
+use willow_sideload::SideloadNamespaceId;
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+
+use crate::SigningKey25;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct NamespaceId25(VerifyingKey);
@@ -28,7 +31,6 @@ impl NamespaceId25 {
 
         while !maybe_communal.is_communal() {
             signing_key = SigningKey::generate(&mut csprng);
-
             maybe_communal = Self(signing_key.verifying_key());
         }
 
@@ -36,7 +38,7 @@ impl NamespaceId25 {
     }
 
     /// Returns a new keypair where the component [`NamespaceId25`] is valid for use with *[owned namespaces](https://willowprotocol.org/specs/meadowcap/index.html#owned_namespace)*.
-    pub fn new_owned() -> (Self, SigningKey) {
+    pub fn new_owned() -> (Self, SigningKey25) {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
 
@@ -48,7 +50,7 @@ impl NamespaceId25 {
             maybe_owned = Self(signing_key.verifying_key());
         }
 
-        (maybe_owned, signing_key)
+        (maybe_owned, SigningKey25::new(signing_key))
     }
 }
 
@@ -60,13 +62,18 @@ impl Verifier<crate::Signature25> for NamespaceId25 {
 
 impl NamespaceId for NamespaceId25 {}
 impl McNamespacePublicKey for NamespaceId25 {}
+impl SideloadNamespaceId for NamespaceId25 {
+    fn default_namespace_id() -> Self {
+        Self(VerifyingKey::from_bytes(&crate::DEFAULT_PUBLIC_KEY).unwrap())
+    }
+}
 
 impl IsCommunal for NamespaceId25 {
     /// Returns true if the last bit of the first byte is zero.
     fn is_communal(&self) -> bool {
         let last_byte = *self.0.to_bytes().last().unwrap();
 
-        0b1111_1110 & last_byte == 0b1111_1110
+        last_byte & 1 == 0
     }
 }
 
