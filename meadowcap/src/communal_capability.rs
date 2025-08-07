@@ -8,8 +8,9 @@ use ufotofu_codec::{
 };
 #[cfg(feature = "dev")]
 use willow_data_model::grouping::arbitrary_included_area;
-use willow_data_model::{grouping::Area, Entry, PrivateAreaContext, PrivateInterest};
+use willow_data_model::{grouping::Area, Entry};
 use willow_encoding::is_bitflagged;
+use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McCapability,

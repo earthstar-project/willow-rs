@@ -9,9 +9,10 @@ use ufotofu_codec::{
 use willow_data_model::grouping::arbitrary_included_area;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    Entry, Path, PrivateAreaContext, PrivateInterest, SubspaceId,
+    Entry, Path, SubspaceId,
 };
 use willow_encoding::is_bitflagged;
+use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
     owned_capability, AccessMode, Delegation, FailedDelegationError, InvalidDelegationError,
