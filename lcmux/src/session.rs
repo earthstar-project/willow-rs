@@ -28,7 +28,8 @@ use futures::{
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 
 use ufotofu_codec::{
-    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeEncodableKnownSize,
+    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeDecodable,
+    RelativeEncodableKnownSize,
 };
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
@@ -117,6 +118,7 @@ pub struct Session<
     CErr,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
+    GlobalMessageDecodeRelativeTo,
 > {
     /// A struct with an async function whose Future must be polled to completion to run the LCMUX session. Yields `Ok(())` if every logical channel got closed by both peers, yields an `Err` if *any* channel encounters any error.
     pub bookkeeping: Bookkeeping<NUM_CHANNELS, P, PFinal, PErr, C, CErr>,
@@ -132,6 +134,7 @@ pub struct Session<
         CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
     >,
     /// A struct for sending global messages to the other peer.
     /// For each logical channel, a way to send data to that channel via `SendToChannel` frames.
@@ -149,7 +152,19 @@ impl<
         CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
-    > Session<NUM_CHANNELS, P, PFinal, PErr, C, CErr, GlobalMessage, GlobalMessageDecodeErrorReason>
+        GlobalMessageDecodeRelativeTo,
+    >
+    Session<
+        NUM_CHANNELS,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
 where
     P: Producer,
     C: BulkConsumer<Item = u8, Final: Clone, Error = CErr>,
@@ -161,6 +176,7 @@ where
         c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
         options: [&ChannelOptions; NUM_CHANNELS],
         which_channels_are_urgent: [bool; NUM_CHANNELS],
+        decode_global_messages_relative_to: GlobalMessageDecodeRelativeTo,
     ) -> Self {
         let state = Rc::new(State::new(p, c));
 
@@ -235,6 +251,7 @@ where
                 server_receivers,
                 urgent_channels: which_channels_are_urgent,
                 phantom: PhantomData,
+                decode_relative_to: decode_global_messages_relative_to,
             },
             channel_senders: client_senders.map(|send_to_channel| ChannelSender {
                 state: state.clone(),
@@ -587,12 +604,14 @@ pub struct GlobalMessageReceiver<
     CErr,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
+    GlobalMessageDecodeRelativeTo,
 > {
     state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
     client_receivers: [client_logic::MessageReceiver; NUM_CHANNELS],
     server_receivers: [server_logic::MessageReceiver<Fixed<u8>>; NUM_CHANNELS],
     urgent_channels: [bool; NUM_CHANNELS],
     phantom: PhantomData<(GlobalMessage, GlobalMessageDecodeErrorReason)>,
+    decode_relative_to: GlobalMessageDecodeRelativeTo,
 }
 
 impl<
@@ -604,6 +623,36 @@ impl<
         CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
+    GlobalMessageReceiver<
+        NUM_CHANNELS,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
+{
+    /// Get a mutable reference to the value from which global messages are being relatively decoded.
+    pub fn get_relative_to_mut(&mut self) -> &mut GlobalMessageDecodeRelativeTo {
+        &mut self.decode_relative_to
+    }
+}
+
+impl<
+        const NUM_CHANNELS: usize,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
     > Producer
     for GlobalMessageReceiver<
         NUM_CHANNELS,
@@ -614,12 +663,13 @@ impl<
         CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
     >
 where
     P: BulkProducer<Item = u8, Final = PFinal, Error = PErr>,
     PFinal: Clone,
     PErr: Clone,
-    GlobalMessage: Decodable<ErrorReason = GlobalMessageDecodeErrorReason>,
+    GlobalMessage: RelativeDecodable<GlobalMessageDecodeRelativeTo, GlobalMessageDecodeErrorReason>,
 {
     type Item = GlobalMessage;
 
@@ -762,7 +812,9 @@ where
                         Right(fin) => return Ok(Right(fin)),
                     }
 
-                    return Ok(Left(GlobalMessage::decode(&mut p).await?));
+                    return Ok(Left(
+                        GlobalMessage::relative_decode(&mut p, &self.decode_relative_to).await?,
+                    ));
                 }
             }
         }

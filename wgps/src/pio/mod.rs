@@ -19,10 +19,12 @@ use wb_async_utils::{
     spsc, Mutex, RwLock,
 };
 use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
+use willow_encoding::is_bitflagged;
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 
 use crate::{
     messages::{PioAnnounceOverlap, PioBindHash, PioBindReadCapability},
+    parameters::{EnumerationCapability, ReadCapability},
     pio::{
         capable_aois::{InterestRegistry, ReceivedAnnouncementError, ReceivedBindCapabilityError},
         overlap_finder::{NamespacedAoIWithMaxPayloadPower, OverlapFinder},
@@ -36,7 +38,7 @@ mod salted_hashes;
 
 /// The state for a PIO session.
 #[derive(Debug)]
-struct State<
+pub(crate) struct State<
     const SALT_LENGTH: usize,
     const INTEREST_HASH_LENGTH: usize,
     const MCL: usize,
@@ -320,7 +322,7 @@ where
 }
 
 /// Everything that makes up a single pio session.
-pub struct PioSession<
+pub(crate) struct PioSession<
     const SALT_LENGTH: usize,
     const INTEREST_HASH_LENGTH: usize,
     const MCL: usize,
@@ -374,7 +376,25 @@ pub struct PioSession<
         CErr,
         AnnounceOverlapProducer,
     >,
-    // pub capability_handles: AoiHandles,
+    /// Exposed merely for decoding PioAnnounceOverlap messages relative to it.
+    pub state: Rc<
+        State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+        >,
+    >,
 }
 
 impl<
@@ -491,13 +511,13 @@ where
                 overlap_channel_sender,
             },
             overlap_output: OverlappingAoiOutput::new(
-                state_ref,
+                state_ref.clone(),
                 overlap_channel_receiver,
                 announce_overlap_producer,
                 capability_channel_receiver,
                 my_sent_caois_receiver,
             ),
-            // capability_handles: todo!(),
+            state: state_ref,
         }
     }
 }
@@ -1154,24 +1174,6 @@ where
     }
 }
 
-/// The semantics that a valid read capability must provide to be usable with the WGPS.
-pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
-    type NamespaceId;
-    type SubspaceId;
-
-    fn granted_area(&self) -> &Area<MCL, MCC, MPL, Self::SubspaceId>;
-    fn granted_namespace(&self) -> &Self::NamespaceId;
-}
-
-/// The semantics that a valid enumeration capability must provide to be usable with the WGPS.
-pub trait EnumerationCapability {
-    type Receiver;
-    type NamespaceId;
-
-    fn granted_namespace(&self) -> &Self::NamespaceId;
-    fn receiver(&self) -> &Self::Receiver;
-}
-
 /// The simplified data of a read capability, stripping all verification-related information.
 struct SimplifiedReadCapability<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
     area: Area<MCL, MCC, MPL, S>,
@@ -1497,6 +1499,128 @@ where
             max_size,
             max_payload_power,
             capability,
+        })
+    }
+}
+
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        TheirEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+    >
+    RelativeDecodable<
+        State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+        >,
+        Blame,
+    > for PioAnnounceOverlap<INTEREST_HASH_LENGTH, TheirEnumCap>
+where
+    N: Clone,
+    S: Clone,
+    TheirEnumCap: RelativeDecodable<(N, S), Blame>,
+{
+    async fn relative_decode<Pro>(
+        producer: &mut Pro,
+        r: &State<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+        >,
+    ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
+    where
+        Pro: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        let has_enumeration_cap = is_bitflagged(header, 1);
+
+        let sender_handle_tag =
+            compact_u64::Tag::from_raw(header, compact_u64::TagWidth::three(), 2);
+        let receiver_handle_tag =
+            compact_u64::Tag::from_raw(header, compact_u64::TagWidth::three(), 5);
+
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let mut authentication = [0x0; INTEREST_HASH_LENGTH];
+
+        producer
+            .bulk_overwrite_full_slice(&mut authentication)
+            .await?;
+
+        let namespace_id = r
+            .interest_registry
+            .read()
+            .await
+            .hash_registry
+            .try_get_our_handle_info(receiver_handle)
+            .ok_or(DecodeError::Other(Blame::TheirFault))?
+            .0
+            .private_interest
+            .namespace_id()
+            .clone();
+
+        let pair = (namespace_id, r.their_public_key.clone());
+
+        let enumeration_capability = if has_enumeration_cap {
+            let cap = TheirEnumCap::relative_decode(producer, &pair)
+                .await
+                .map_err(DecodeError::map_other_from)?;
+
+            Some(cap)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            authentication,
+            sender_handle,
+            receiver_handle,
+            enumeration_capability,
         })
     }
 }

@@ -1,9 +1,15 @@
+use std::rc::Rc;
+
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, TagWidth};
+use either::Either::{Left, Right};
 use willow_data_model::{NamespaceId, SubspaceId};
 
-use crate::pio::{EnumerationCapability, ReadCapability};
+use crate::{
+    parameters::{EnumerationCapability, ReadCapability},
+    pio,
+};
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodable, RelativeEncodableKnownSize,
@@ -11,13 +17,15 @@ use ufotofu_codec::{
 use willow_encoding::is_bitflagged;
 use willow_pio::PersonalPrivateInterest;
 
-pub(crate) enum GlobalMessage {
+pub(crate) enum GlobalMessage<const INTEREST_HASH_LENGTH: usize, EnumCap> {
     ResourceHandleFree(ResourceHandleFree),
     DataSetEagerness(DataSetEagerness),
-    // TODO: Also PioAnnounceOverlap, which requires generics
+    PioAnnounceOverlap(PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>),
 }
 
-impl Encodable for GlobalMessage {
+impl<const INTEREST_HASH_LENGTH: usize, EnumCap> Encodable
+    for GlobalMessage<INTEREST_HASH_LENGTH, EnumCap>
+{
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where
         C: ufotofu::BulkConsumer<Item = u8>,
@@ -26,17 +34,89 @@ impl Encodable for GlobalMessage {
     }
 }
 
-impl Decodable for GlobalMessage {
-    type ErrorReason = Blame;
-
-    async fn decode<P>(
-        producer: &mut P,
-    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+impl<
+        const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
+        const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        C,
+        CErr,
+        P,
+        PFinal,
+        PErr,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        TheirEnumCap,
+    >
+    RelativeDecodable<
+        Option<
+            Rc<
+                pio::State<
+                    HANDSHAKE_HASHLEN_IN_BYTES,
+                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
+        >,
+        Blame,
+    > for GlobalMessage<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>
+{
+    async fn relative_decode<Pro>(
+        producer: &mut Pro,
+        r: &Option<
+            Rc<
+                pio::State<
+                    HANDSHAKE_HASHLEN_IN_BYTES,
+                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
+        >,
+    ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
     where
-        P: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
+        Pro: ufotofu::BulkProducer<Item = u8>,
     {
-        todo!()
+        match producer.expose_items().await? {
+            Left(bytes) => {
+                let first_byte = bytes[0];
+
+                if first_byte & 0b1100_0000 == 0b1000_0000 {
+                    todo!("DataSetEagerness")
+                } else if first_byte & 0b1100_0000 == 0b1100_0000 {
+                    todo!("ResourceHandleFree")
+                } else {
+                    PioAnnounceOverlap::relative_decode(producer, r)
+                        .await
+                        .map(GlobalMessage::PioAnnounceOverlap)
+                }
+            }
+            Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
+        }
     }
 }
 
@@ -173,6 +253,17 @@ pub struct PioAnnounceOverlap<const INTEREST_HASH_LENGTH: usize, EnumerationCapa
     pub enumeration_capability: Option<EnumerationCapability>,
 }
 
+impl<const INTEREST_HASH_LENGTH: usize, EC> PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC> {
+    pub(crate) fn temporary() -> Self {
+        Self {
+            sender_handle: u64::MAX,
+            receiver_handle: u64::MAX,
+            authentication: [0; INTEREST_HASH_LENGTH],
+            enumeration_capability: None,
+        }
+    }
+}
+
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodable<(N, R)>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
@@ -268,7 +359,7 @@ where
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeDecodable<(N, R), Blame>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
-    EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeDecodable<(N, R), Blame>,
+    EC: RelativeDecodable<(N, R), Blame>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -319,6 +410,77 @@ where
             receiver_handle,
             enumeration_capability,
         })
+    }
+}
+
+impl<
+        const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
+        const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        C,
+        CErr,
+        P,
+        PFinal,
+        PErr,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        TheirEnumCap,
+    >
+    RelativeDecodable<
+        Option<
+            Rc<
+                pio::State<
+                    HANDSHAKE_HASHLEN_IN_BYTES,
+                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
+        >,
+        Blame,
+    > for PioAnnounceOverlap<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>
+{
+    async fn relative_decode<Pro>(
+        producer: &mut Pro,
+        r: &Option<
+            Rc<
+                pio::State<
+                    HANDSHAKE_HASHLEN_IN_BYTES,
+                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    P,
+                    PFinal,
+                    PErr,
+                    C,
+                    CErr,
+                >,
+            >,
+        >,
+    ) -> Result<Self, DecodeError<Pro::Final, Pro::Error, Blame>>
+    where
+        Pro: ufotofu::BulkProducer<Item = u8>,
+    {
+        todo!("yay...")
     }
 }
 
@@ -445,8 +607,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, RC>
 where
     N: NamespaceId,
     S: SubspaceId,
-    RC: ReadCapability<MCL, MCC, MPL>
-        + RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
+    RC: RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, S>, Blame>,
 {
     async fn relative_decode<P>(
         producer: &mut P,

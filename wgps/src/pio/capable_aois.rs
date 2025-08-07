@@ -12,11 +12,11 @@ use willow_pio::PrivateInterest;
 
 use crate::{
     messages::PioBindReadCapability,
+    parameters::ReadCapability,
     pio::{
         salted_hashes::{HashRegistry, MyInterestingHandleInfo, Overlap, PioBindHashInformation},
         CapableAoi,
     },
-    ReadCapability,
 };
 
 /// Tell this struct about your own capable AOIs, and the PIO messages received from the other peer, and this struct tells you which messages to send and where there are overlaps of areas of interest. Does not perform any IO, only implements the logic of pio.
