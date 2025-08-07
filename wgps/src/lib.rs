@@ -459,7 +459,6 @@ where
                     // We won't receive more global messages from the other peer. That does not necessarily terminate reconciliation, but we *can* stop polling for *more* global messages.
                     return Ok(());
                 }
-                _ => todo!(),
             }
         }
     };
