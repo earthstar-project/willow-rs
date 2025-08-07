@@ -272,10 +272,10 @@ where
     )
     .await?;
 
-    let (my_salt, their_salt) = if options.is_initiator {
-        (salt_base, invert_bytes(salt_base))
+    let my_salt = if options.is_initiator {
+        salt_base
     } else {
-        (invert_bytes(salt_base), salt_base)
+        invert_bytes(salt_base)
     };
 
     //////////////////

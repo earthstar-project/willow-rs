@@ -127,7 +127,7 @@ where
 pub(crate) struct ResourceHandleFree {}
 
 impl Encodable for ResourceHandleFree {
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
@@ -139,7 +139,7 @@ impl Decodable for ResourceHandleFree {
     type ErrorReason = Blame;
 
     async fn decode<P>(
-        producer: &mut P,
+        _producer: &mut P,
     ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
     where
         P: ufotofu::BulkProducer<Item = u8>,
@@ -152,7 +152,7 @@ impl Decodable for ResourceHandleFree {
 pub(crate) struct DataSetEagerness {}
 
 impl Encodable for DataSetEagerness {
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
@@ -164,7 +164,7 @@ impl Decodable for DataSetEagerness {
     type ErrorReason = Blame;
 
     async fn decode<P>(
-        producer: &mut P,
+        _producer: &mut P,
     ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
     where
         P: ufotofu::BulkProducer<Item = u8>,

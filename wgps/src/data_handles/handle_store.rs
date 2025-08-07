@@ -94,7 +94,11 @@ impl<DataType> HandleStore<DataType> for HashMapHandleStore<DataType> {
 
         self.least_unassigned_handle += 1;
 
-        Ok(handle)
+        if self.least_unassigned_handle > self.handle_limit {
+            Err(HashMapHandleStoreError::HandleLimitReached)
+        } else {
+            Ok(handle)
+        }
     }
 
     fn mark_for_freeing(

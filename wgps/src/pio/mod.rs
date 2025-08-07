@@ -12,12 +12,7 @@ use ufotofu_codec::{
     Blame, DecodeError, RelativeDecodable, RelativeEncodableKnownSize,
 };
 use ufotofu_queues::Static;
-use wb_async_utils::{
-    rw::WriteGuard,
-    shared_consumer::{self, SharedConsumer},
-    shared_producer::{self, SharedProducer},
-    spsc, Mutex, RwLock,
-};
+use wb_async_utils::{rw::WriteGuard, spsc, Mutex, RwLock};
 use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
 use willow_encoding::is_bitflagged;
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
