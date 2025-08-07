@@ -12,6 +12,33 @@ use arbitrary::Arbitrary;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadDigest25(blake3::Hash);
 
+impl PayloadDigest25 {
+    /** Returns a new [`PayloadDigest25`] created from a slice of bytes. */
+    pub fn new_from_slice(slice: &[u8]) -> Self {
+        let mut hasher = Self::hasher();
+        Self::write(&mut hasher, slice);
+        Self(hasher.finalize())
+    }
+
+    /** Returns a new [`PayloadDigest25`] created from all the bytes produced by a [`ufotofu::BulkProducer`]. */
+    pub async fn new_from_producer<P: BulkProducer<Item = u8>>(
+        producer: &mut P,
+    ) -> Result<Self, P::Error> {
+        let mut hasher = Self::hasher();
+
+        loop {
+            match producer.expose_items().await? {
+                either::Left(items) => {
+                    let len = items.len();
+                    Self::write(&mut hasher, items);
+                    producer.consider_produced(len).await?;
+                }
+                either::Right(_fin) => return Ok(Self(hasher.finalize())),
+            }
+        }
+    }
+}
+
 impl Default for PayloadDigest25 {
     fn default() -> Self {
         Self::finish(&Self::hasher())

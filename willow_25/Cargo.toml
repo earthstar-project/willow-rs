@@ -21,6 +21,7 @@ signature = "2.2.0"
 blake3 = "1.8.0"
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
 willow-encoding = { path = "../encoding", version = "0.1.0" }
+either = "1.15.0"
 
 [lints]
 workspace = true
