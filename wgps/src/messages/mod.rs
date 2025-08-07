@@ -23,17 +23,6 @@ pub(crate) enum GlobalMessage<const INTEREST_HASH_LENGTH: usize, EnumCap> {
     PioAnnounceOverlap(PioAnnounceOverlap<INTEREST_HASH_LENGTH, EnumCap>),
 }
 
-impl<const INTEREST_HASH_LENGTH: usize, EnumCap> Encodable
-    for GlobalMessage<INTEREST_HASH_LENGTH, EnumCap>
-{
-    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
-    where
-        C: ufotofu::BulkConsumer<Item = u8>,
-    {
-        todo!()
-    }
-}
-
 impl<
         const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
         const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
