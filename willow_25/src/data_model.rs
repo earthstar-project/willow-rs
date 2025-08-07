@@ -37,10 +37,10 @@ pub type AreaOfInterest =
 // Private areas
 
 pub type PrivateAreaContext =
-    willow_data_model::PrivateAreaContext<1024, 1024, 1024, NamespaceId25, SubspaceId25>;
+    willow_pio::PrivateAreaContext<1024, 1024, 1024, NamespaceId25, SubspaceId25>;
 pub type PrivateInterest =
-    willow_data_model::PrivateInterest<1024, 1024, 1024, NamespaceId25, SubspaceId25>;
-pub type PrivatePathContext = willow_data_model::PrivatePathContext<1024, 1024, 1024>;
+    willow_pio::PrivateInterest<1024, 1024, 1024, NamespaceId25, SubspaceId25>;
+pub type PrivatePathContext = willow_pio::PrivatePathContext<1024, 1024, 1024>;
 
 // Store
 
@@ -89,8 +89,6 @@ pub type StoreEvent = willow_data_model::StoreEvent<
 // Straight re-exports for convenience' sake.
 pub use willow_data_model::grouping::AreaSubspace;
 pub use willow_data_model::grouping::Range;
-pub use willow_data_model::AreaNotAlmostIncludedError;
-pub use willow_data_model::ComponentsNotRelatedError;
 pub use willow_data_model::EntryIngestionError;
 pub use willow_data_model::EntryOrigin;
 pub use willow_data_model::ForgetEntryError;
@@ -104,3 +102,5 @@ pub use willow_data_model::QueryIgnoreParams;
 pub use willow_data_model::Store;
 pub use willow_data_model::Timestamp;
 pub use willow_data_model::UnauthorisedWriteError;
+pub use willow_pio::AreaNotAlmostIncludedError;
+pub use willow_pio::ComponentsNotRelatedError;

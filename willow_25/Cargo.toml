@@ -16,6 +16,7 @@ compact_u64 = { version = "0.2.0", features = ["std", "dev"] }
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 willow-data-model = { path = "../data-model", version = "0.2.0" }
 meadowcap = { path = "../meadowcap", version = "0.2.0" }
+willow-pio = { version = "0.1.0", path = "../pio" }
 rand = "0.8.5"
 signature = "2.2.0"
 blake3 = "1.8.0"

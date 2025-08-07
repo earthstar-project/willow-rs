@@ -1,3 +1,4 @@
+use ufotofu::BulkProducer;
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
 };
