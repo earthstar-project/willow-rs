@@ -68,7 +68,7 @@ pub async fn ingest_drop<P, StoreType>(
     store: &StoreType,
 ) -> Result<P, willow_sideload::IngestDropError<P::Error, StoreType::Error>>
 where
-    P: BulkProducer<Item = u8>,
+    P: BulkProducer<Item = u8> + std::fmt::Debug,
     StoreType: willow_sideload::SideloadStore<
         1024,
         1024,

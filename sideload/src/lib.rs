@@ -357,7 +357,7 @@ where
     StoreType: Store<MCL, MCC, MPL, N, S, PD, AT>,
     DecryptFn: Fn(P) -> DecryptedP,
     IntoInnerFn: Fn(DecryptedP) -> P,
-    DecryptedP: BulkProducer<Item = u8>,
+    DecryptedP: BulkProducer<Item = u8> + std::fmt::Debug,
     Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
     AT:,
 {
@@ -386,14 +386,29 @@ where
 
     let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 
-    for _ in 0..entries_count.0 {
+    println!("{decrypted_producer:?}");
+
+    for i in 0..entries_count.0 {
+        println!("{i}");
+
+        match decrypted_producer.produce().await {
+            Ok(res) => match res {
+                Either::Left(byte) => println!("{byte}"),
+                Either::Right(fin) => println!("finished"),
+            },
+            Err(err) => {
+                panic!("Oh no, an error!")
+            }
+        }
+
         let header = decrypted_producer
             .produce_item()
             .await
             .map_err(|err| match err.reason {
-                Either::Left(_) => IngestDropError::UnexpectedEndOfInput,
+                Either::Left(fin) => IngestDropError::UnexpectedEndOfInput,
                 Either::Right(err) => IngestDropError::ProducerProblem(err),
             })?;
+        println!("{i} got header");
 
         let payload_is_encoded = is_bitflagged(header, 0);
         let subspace_is_encoded = is_bitflagged(header, 1);
