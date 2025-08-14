@@ -189,8 +189,8 @@ where
             .query_area(
                 &area,
                 QueryIgnoreParams {
-                    ignore_incomplete_payloads: true,
-                    ignore_empty_payloads: true,
+                    ignore_incomplete_payloads: false,
+                    ignore_empty_payloads: false,
                 },
             )
             .await
@@ -386,29 +386,14 @@ where
 
     let mut prev_authed_entry = AuthorisedEntry::new(entry_minus_one, auth_minus_one).unwrap();
 
-    println!("{decrypted_producer:?}");
-
-    for i in 0..entries_count.0 {
-        println!("{i}");
-
-        match decrypted_producer.produce().await {
-            Ok(res) => match res {
-                Either::Left(byte) => println!("{byte}"),
-                Either::Right(fin) => println!("finished"),
-            },
-            Err(err) => {
-                panic!("Oh no, an error!")
-            }
-        }
-
+    for _ in 0..entries_count.0 {
         let header = decrypted_producer
             .produce_item()
             .await
             .map_err(|err| match err.reason {
-                Either::Left(fin) => IngestDropError::UnexpectedEndOfInput,
+                Either::Left(_) => IngestDropError::UnexpectedEndOfInput,
                 Either::Right(err) => IngestDropError::ProducerProblem(err),
             })?;
-        println!("{i} got header");
 
         let payload_is_encoded = is_bitflagged(header, 0);
         let subspace_is_encoded = is_bitflagged(header, 1);

@@ -191,8 +191,6 @@ where
         let prefix = entry.subspace_id().sync_encode_into_vec();
 
         for (key, value) in tree.scan_prefix(&prefix).flatten() {
-            // println!("key: {:?}", key);
-
             let (other_subspace, other_path, other_timestamp) =
                 decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
             let (payload_length, payload_digest, authorisation_token, _local_length) =
@@ -427,7 +425,7 @@ where
                     }
                 }
 
-                let payload_key = encode_subspace_path_key(&subspace, &path, false).await;
+                let payload_key = encode_subspace_path_key(&subspace, &path, true).await;
 
                 let existing_payload = payload_tree
                     .get(&payload_key)
@@ -976,6 +974,10 @@ where
                     if expected != digest {
                         return Err(PayloadError::WrongEntry);
                     }
+                }
+
+                if length > 0 && length == local_length {
+                    panic!("State mismatch: store says we have all bytes of a payload but we are unable to fetch it!");
                 }
 
                 if length == local_length {
