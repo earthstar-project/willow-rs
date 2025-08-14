@@ -1,6 +1,5 @@
-use compact_u64::{CompactU64, EncodingWidth, Tag, TagWidth};
+use compact_u64::{CompactU64, Tag, TagWidth};
 use signature::{Signer, Verifier};
-use ufotofu::BulkProducer;
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodable, RelativeEncodableKnownSize,
@@ -221,8 +220,8 @@ where
 
     /// Returns a slice of all [`Delegation`]s made to this capability, with a concrete return type.
     pub(crate) fn delegations_(
-        &self,
-    ) -> core::slice::Iter<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
+        &'_ self,
+    ) -> core::slice::Iter<'_, Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 

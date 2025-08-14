@@ -1,7 +1,5 @@
 use crate::PayloadDigest25;
 use crate::{NamespaceId25, Signature25, SubspaceId25};
-use ufotofu_codec::Encodable;
-use willow_data_model::NamespaceId;
 use willow_sideload::SideloadAuthorisationToken;
 
 pub type CommunalCapability =

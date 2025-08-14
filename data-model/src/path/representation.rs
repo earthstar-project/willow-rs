@@ -44,7 +44,7 @@ impl Representation {
     /// Gets the `i`-th component.
     ///
     /// Panics if `i` is outside the slice.
-    pub fn component<const MCL: usize>(buf: &[u8], i: usize) -> Component<MCL> {
+    pub fn component<const MCL: usize>(buf: &'_ [u8], i: usize) -> Component<'_, MCL> {
         let start = Self::start_offset_of_component(buf, i);
         let end = Self::end_offset_of_component(buf, i);
         Component::new(&buf[start..end]).unwrap()

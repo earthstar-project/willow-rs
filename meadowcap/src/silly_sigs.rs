@@ -93,7 +93,7 @@ impl McPublicUserKey<SillySig> for SillyPublicKey {}
 
 impl IsCommunal for SillyPublicKey {
     fn is_communal(&self) -> bool {
-        self.0 % 2 == 0
+        self.0.is_multiple_of(2)
     }
 }
 

@@ -1,6 +1,5 @@
 use compact_u64::{CompactU64, Tag, TagWidth};
 use signature::{Error as SignatureError, Signer, Verifier};
-use ufotofu::BulkProducer;
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodable, RelativeEncodableKnownSize,
@@ -14,8 +13,8 @@ use willow_data_model::{
 use willow_encoding::is_bitflagged;
 
 use crate::{
-    owned_capability, AccessMode, Delegation, FailedDelegationError, InvalidDelegationError,
-    McCapability, McNamespacePublicKey, McPublicUserKey,
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McCapability,
+    McNamespacePublicKey, McPublicUserKey,
 };
 
 #[cfg(feature = "dev")]
@@ -315,8 +314,8 @@ where
 
     /// Returns a slice of all [`Delegation`]s made to this capability, with a concrete return type.
     pub(crate) fn delegations_(
-        &self,
-    ) -> core::slice::Iter<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
+        &'_ self,
+    ) -> core::slice::Iter<'_, Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 

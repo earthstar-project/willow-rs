@@ -10,7 +10,7 @@ use willow_data_model::{
 };
 
 use crate::{
-    mc_capability::McCapability, AccessMode, CommunalCapability, Delegation, McNamespacePublicKey,
+    mc_capability::McCapability, AccessMode, CommunalCapability, McNamespacePublicKey,
     McPublicUserKey, OwnedCapability,
 };
 

@@ -1,9 +1,6 @@
 #![no_main]
 
-use meadowcap::{
-    AccessMode, CommunalCapability, McAuthorisationToken, PersonalPrivateInterest, SillyPublicKey,
-    SillySig,
-};
+use meadowcap::{AccessMode, McAuthorisationToken, SillyPublicKey, SillySig};
 use ufotofu_codec::{fuzz_relative_basic, Blame};
 use willow_data_model::{AuthorisationToken, AuthorisedEntry, Entry};
 use willow_fuzz::placeholder_params::FakePayloadDigest;
