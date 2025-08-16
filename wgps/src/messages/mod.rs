@@ -4,7 +4,9 @@ use std::rc::Rc;
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, TagWidth};
 use either::Either::{Left, Right};
-use willow_data_model::{grouping::Range3d, LengthyAuthorisedEntry, NamespaceId, SubspaceId};
+use willow_data_model::{
+    grouping::Range3d, AuthorisedEntry, LengthyAuthorisedEntry, NamespaceId, SubspaceId,
+};
 
 use crate::{
     parameters::{EnumerationCapability, ReadCapability},
@@ -111,58 +113,6 @@ where
             }
             Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResourceHandleFree {}
-
-impl Encodable for ResourceHandleFree {
-    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
-    where
-        C: ufotofu::BulkConsumer<Item = u8>,
-    {
-        todo!()
-    }
-}
-
-impl Decodable for ResourceHandleFree {
-    type ErrorReason = Blame;
-
-    async fn decode<P>(
-        _producer: &mut P,
-    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
-    where
-        P: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        todo!()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DataSetEagerness {}
-
-impl Encodable for DataSetEagerness {
-    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
-    where
-        C: ufotofu::BulkConsumer<Item = u8>,
-    {
-        todo!()
-    }
-}
-
-impl Decodable for DataSetEagerness {
-    type ErrorReason = Blame;
-
-    async fn decode<P>(
-        _producer: &mut P,
-    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
-    where
-        P: ufotofu::BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        todo!()
     }
 }
 
@@ -664,4 +614,93 @@ pub(crate) struct ReconciliationSendPayload {
 pub(crate) struct ReconciliationTerminatePayload {
     /// Set to true if and only if no further ReconciliationSendEntry message will be sent as part of reconciling the current 3dRange.
     is_final: bool,
+}
+
+/// Transmit an AuthorisedEntry and set the receiver’s data_current_entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DataSendEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+{
+    /// The AuthorisedEntry to transmit.
+    entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    /// The index of the first (transformed) Payload Chunk that will be transmitted for entry. Can be set arbitrarily if no Chunks will be transmitted, should be set to 0 in that case.
+    offset: u64,
+}
+
+/// Send some Chunks of the receiver’s data_current_entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DataSendPayload {
+    /// The number of transmitted Chunks.
+    amount: u64,
+    /// The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the receiver’s data_current_entryEntry, starting at the offset of the corresponding DataSendEntry message plus the number of Chunks for the current Entry that were already transmitted by prior DataSendPayload messages.
+    bytes: Box<[u8]>,
+}
+
+/// Express eagerness preferences for the Payload transmissions in the overlaps of the granted areas of two ReadCapabilities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DataSetEagerness {
+    /// A ReadCapabilityHandle bound by the sender of this message. This message pertains to the granted area of the corresponding read capability.
+    sender_handle: u64,
+    /// A ReadCapabilityHandle bound by the receiver of this message. This message pertains to the granted area of the corresponding read capability.
+    receiver_handle: u64,
+    /// Whether the receiver should eagerly include Payloads when it pushes Entries from the overlap of the granted areas of the ReadCapability corresponding to sender_handle and receiver_handle.
+    set_eager: bool,
+}
+
+impl Encodable for DataSetEagerness {
+    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl Decodable for DataSetEagerness {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        _producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
+}
+
+/// Indicate that the sender wants to free a resource handle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResourceHandleFree {
+    /// The type of resource handle to free. Must be a valid WGPS resource handle type (0, 1, 2, or 3).
+    handle_type: u8,
+    /// Whether the resource handle to free was bound by the sender (true) or the receiver (false) of this message.
+    mine: bool,
+    /// The numeric id of the resource handle to free.
+    handle_id: u64,
+    /// The sender’s reference count for the resource handle to free.
+    reference_count: u64,
+}
+
+impl Encodable for ResourceHandleFree {
+    async fn encode<C>(&self, _consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl Decodable for ResourceHandleFree {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        _producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
 }
