@@ -4,7 +4,7 @@ use std::rc::Rc;
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, TagWidth};
 use either::Either::{Left, Right};
-use willow_data_model::{NamespaceId, SubspaceId};
+use willow_data_model::{grouping::Range3d, NamespaceId, SubspaceId};
 
 use crate::{
     parameters::{EnumerationCapability, ReadCapability},
@@ -17,6 +17,7 @@ use ufotofu_codec::{
 use willow_encoding::is_bitflagged;
 use willow_pio::PersonalPrivateInterest;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GlobalMessage<const INTEREST_HASH_LENGTH: usize, EnumCap> {
     ResourceHandleFree(ResourceHandleFree),
     DataSetEagerness(DataSetEagerness),
@@ -113,6 +114,7 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResourceHandleFree {}
 
 impl Encodable for ResourceHandleFree {
@@ -138,6 +140,7 @@ impl Decodable for ResourceHandleFree {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DataSetEagerness {}
 
 impl Encodable for DataSetEagerness {
@@ -580,4 +583,52 @@ where
             capability,
         })
     }
+}
+
+/// The data shared between ReconciliationSendFingerprint and ReconciliationAnnounceEntries messages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
+    /// The count of the message this message is responding to. If this message was not created in response to any other message, this field is 0.
+    covers: u64,
+    /// Whether this message is the final message sent in response to some other message. If this message is not sent as a response at all, this field is true.
+    is_final: bool,
+    /// The 3dRange the message pertains to.
+    range: Range3d<MCL, MCC, MPL, S>,
+    /// A ReadCapabilityHandle bound by the sender of this message. The granted area of the corresponding read capability must fully the range.
+    sender_handle: u64,
+    /// A ReadCapabilityHandle bound by the receiver of this message. The granted area of the corresponding read capability must fully contain the range.
+    receiver_handle: u64,
+}
+
+/// Send a Fingerprint as part of 3d range-based set reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconciliationSendFingerprint<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S,
+    Fingerprint,
+> {
+    /// The RangeInfo for this message.
+    info: RangeInfo<MCL, MCC, MPL, S>,
+    /// The Fingerprint of all LengthyAuthorisedEntries the peer has in info.range.
+    fingerprint: Fingerprint,
+}
+
+/// Prepare transmission of the LengthyAuthorisedEntries a peer has in a 3dRange as part of 3d range-based set reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconciliationAnnounceEntries<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S,
+> {
+    /// The RangeInfo for this message.
+    info: RangeInfo<MCL, MCC, MPL, S>,
+    /// Must be true if and only if the the sender has zero Entries in info.range.
+    is_empty: bool,
+    /// A boolean flag to indicate whether the sender wishes to receive a ReconciliationAnnounceEntries message for the same 3dRange in return.
+    want_response: bool,
+    /// Whether the sender promises to send the Entries in info.range sorted ascendingly by subspace_id , using paths (sorted lexicographically) as the tiebreaker.
+    will_sort: bool,
 }
