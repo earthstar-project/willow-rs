@@ -502,6 +502,25 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
             Error = Self::Error,
         >,
     >;
+
+    fn query_and_subscribe_area(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<
+                Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = impl Producer<
+                    Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                    Final = (),
+                    Error = Self::Error,
+                >,
+                Error = Self::Error,
+            >,
+            Self::Error,
+        >,
+    >;
 }
 
 //---------------------------//

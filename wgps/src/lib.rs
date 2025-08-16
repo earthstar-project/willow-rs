@@ -514,7 +514,6 @@ where
     fn query_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
-        will_sort: bool,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
@@ -528,8 +527,27 @@ where
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
+    fn query_and_subscribe_range(
+        &self,
+        range: &Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<
+                Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = impl Producer<
+                    Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                    Final = (),
+                    Error = Self::Error,
+                >,
+                Error = Self::Error,
+            >,
+            Self::Error,
+        >,
+    >;
+
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
-    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = FP>;
+    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = (FP, u64)>;
 
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(
