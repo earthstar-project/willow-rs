@@ -8,12 +8,13 @@ use ufotofu_codec::{
 };
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    NamespaceId, PrivateAreaContext, PrivateInterest, SubspaceId,
+    NamespaceId, SubspaceId,
 };
+use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
     AccessMode, CommunalCapability, Delegation, McNamespacePublicKey, McPublicUserKey,
-    McSubspaceCapability, OwnedCapability, SubspaceDelegation,
+    McEnumerationCapability, OwnedCapability, EnumerationDelegation,
 };
 
 #[derive(Debug)]
@@ -432,7 +433,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>>
-    for McSubspaceCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
+    for McEnumerationCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
 where
     N: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
@@ -485,7 +486,7 @@ impl<
         UserPublicKey,
         UserSignature,
     > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
-    for McSubspaceCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
+    for McEnumerationCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
 where
     N: McNamespacePublicKey + Verifier<NamespaceSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
@@ -533,7 +534,7 @@ where
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                let delegation = SubspaceDelegation::new(r.user_key().clone(), sig);
+                let delegation = EnumerationDelegation::new(r.user_key().clone(), sig);
 
                 subspace_cap
                     .append_existing_delegation(delegation)
@@ -547,7 +548,7 @@ where
                     .await
                     .map_err(DecodeError::map_other_from)?;
 
-                let delegation = SubspaceDelegation::new(user_key, sig);
+                let delegation = EnumerationDelegation::new(user_key, sig);
 
                 subspace_cap
                     .append_existing_delegation(delegation)

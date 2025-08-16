@@ -1,8 +1,9 @@
 #![no_main]
 
-use meadowcap::{AccessMode, OwnedCapability, PersonalPrivateInterest, SillyPublicKey, SillySig};
+use meadowcap::{AccessMode, OwnedCapability, SillyPublicKey, SillySig};
 use ufotofu_codec::{fuzz_relative_basic, Blame};
 use willow_data_model::grouping::AreaSubspace;
+use willow_pio::PersonalPrivateInterest;
 
 fuzz_relative_basic!(
     OwnedCapability<16, 16, 16, SillyPublicKey, SillySig, SillyPublicKey, SillySig>;

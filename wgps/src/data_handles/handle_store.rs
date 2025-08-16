@@ -20,7 +20,7 @@ pub enum ConfirmFreeHandleError<E> {
 pub trait HandleStore<DataType> {
     type StoreError: Error;
 
-    /// Returns the data bound to the given handle, or an error if no data has not been bound, freed, or if the handle store experiences an internal error.
+    /// Returns the data bound to the given handle (possibly None), or an error.
     fn get(&self, handle: u64) -> Result<Option<&DataType>, Self::StoreError>;
 
     /// Binds some data to a handle and returns the corresponding handle, or fails in the case of an internal store error.
@@ -41,6 +41,7 @@ pub trait HandleStore<DataType> {
 }
 
 /// A [`HandleStore`] implemented over an ordinary [`HashMap`].
+#[derive(Debug, Clone)]
 pub struct HashMapHandleStore<DataType> {
     /// Mapping of handle to a tuple of (data, marked for freeing).
     data: HashMap<u64, (DataType, DataHandleState)>,
@@ -49,7 +50,7 @@ pub struct HashMapHandleStore<DataType> {
 }
 
 impl<DataType> HashMapHandleStore<DataType> {
-    fn new(handle_limit: u64) -> Self {
+    pub fn new(handle_limit: u64) -> Self {
         HashMapHandleStore {
             data: HashMap::new(),
             least_unassigned_handle: 0,
@@ -93,7 +94,11 @@ impl<DataType> HandleStore<DataType> for HashMapHandleStore<DataType> {
 
         self.least_unassigned_handle += 1;
 
-        Ok(handle)
+        if self.least_unassigned_handle > self.handle_limit {
+            Err(HashMapHandleStoreError::HandleLimitReached)
+        } else {
+            Ok(handle)
+        }
     }
 
     fn mark_for_freeing(
@@ -150,6 +155,7 @@ impl<DataType> HandleStore<DataType> for HashMapHandleStore<DataType> {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum DataHandleState {
     FullyBound,
     MeFreed,

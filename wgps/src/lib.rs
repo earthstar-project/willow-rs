@@ -1,16 +1,13 @@
-use std::future::Future;
+use std::{future::Future, rc::Rc};
 
+use either::Either::{Left, Right};
 use futures::try_join;
-use lcmux::{ChannelOptions, InitOptions, Session};
-use max_payload_size_handling::{
-    ConsumerButFirstSendByte, ConsumerButFirstSetReceivedMaxPayloadSize,
-};
-//use lcmux::new_lcmux;
-use ufotofu::{BulkConsumer, BulkProducer, Producer};
+use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, Session};
+use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    OnceCell,
+    spsc, Mutex,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -20,18 +17,29 @@ use willow_data_model::{
 
 mod parameters;
 
-mod messages;
+pub mod messages;
 use messages::*;
 
-mod max_payload_size_handling;
-
-use ufotofu_codec::{Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync};
+use ufotofu_codec::{
+    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync,
+    RelativeEncodableKnownSize,
+};
+use willow_pio::PrivateInterest;
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
-    run_handshake, DecryptionError, EncryptionError, HandshakeError,
+    run_handshake, DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeError,
 };
 
-mod data_handles;
+pub mod data_handles;
+mod pio;
+
+use crate::{
+    parameters::{
+        EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsNamespaceId,
+        WgpsReadCapability, WgpsSubspaceId,
+    },
+    pio::PioSession,
+};
 
 /// An error which can occur during a WGPS synchronisation session.
 pub enum WgpsError<E> {
@@ -85,6 +93,17 @@ impl<E> From<HandshakeError<E, (), E>> for WgpsError<E> {
     }
 }
 
+impl<E> From<GlobalMessageError<(), DecryptionError<E>, Blame>> for WgpsError<E> {
+    fn from(value: GlobalMessageError<(), DecryptionError<E>, Blame>) -> Self {
+        match value {
+            GlobalMessageError::Producer(err) => Self::from(err),
+            GlobalMessageError::DecodeGlobalMessage(_)
+            | GlobalMessageError::UnsupportedChannel(_)
+            | GlobalMessageError::Other => Self::PeerMisbehaved,
+        }
+    }
+}
+
 impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -124,8 +143,17 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     }
 }
 
-pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
-    pub max_payload_power: u8,
+pub struct SyncOptions<
+    'prologue,
+    const HANDSHAKE_HASHLEN_IN_BYTES: usize,
+    const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    DH: DiffieHellmanSecretKey,
+    N,
+    S,
+> {
     /* Handshake Options */
     pub is_initiator: bool,
     pub esk: DH,
@@ -144,48 +172,88 @@ pub struct SyncOptions<'prologue, DH: DiffieHellmanSecretKey> {
     pub overlap_channel_receiving_limit: u64,
     /// How many message bytes to receive at most on the capability channel.
     pub capability_channel_receiving_limit: u64,
+    /* End of LCMUX Channel Options */
+    /* Private Interest Overlap Options */
+    hash_private_interest: fn(
+        &PrivateInterest<MCL, MCC, MPL, N, S>,
+        &[u8; HANDSHAKE_HASHLEN_IN_BYTES],
+    ) -> [u8; PIO_INTEREST_HASH_LENGTH_IN_BYTES],
+    /* End of Private Interest Overlap Options */
 }
 
 pub async fn sync_with_peer<
     'prologue,
-    const HASHLEN_IN_BYTES: usize,
-    const BLOCKLEN_IN_BYTES: usize,
-    const PK_ENCODING_LENGTH_IN_BYTES: usize,
-    const TAG_WIDTH_IN_BYTES: usize,
-    const TAG_WIDTH_IN_BYTES_PLUS_2: usize,
-    const TAG_WIDTH_IN_BYTES_PLUS_4096: usize,
-    const NONCE_WIDTH_IN_BYTES: usize,
-    const IS_TAG_PREPENDED: bool,
+    const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
+    const HANDSHAKE_BLOCKLEN_IN_BYTES: usize,
+    const HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096: usize,
+    const HANDSHAKE_NONCE_WIDTH_IN_BYTES: usize,
+    const HANDSHAKE_IS_TAG_PREPENDED: bool,
+    const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
     H,
     DH,
     AEAD,
     E,
     C,
     P,
+    N,
+    S,
+    MyReadCap,
+    MyEnumCap,
+    TheirReadCap,
+    TheirEnumCap,
 >(
-    options: &SyncOptions<'prologue, DH>,
+    options: &SyncOptions<
+        'prologue,
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+        MCL,
+        MCC,
+        MPL,
+        DH,
+        N,
+        S,
+    >,
     consumer: C,
     producer: P,
 ) -> Result<(), WgpsError<E>>
 where
-    DH: DiffieHellmanSecretKey + Clone,
-    DH::PublicKey: Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
+    DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
     AEAD: Default,
-    H: Hashing<HASHLEN_IN_BYTES, BLOCKLEN_IN_BYTES, AEAD>,
-    AEAD: AEADEncryptionKey<TAG_WIDTH_IN_BYTES, NONCE_WIDTH_IN_BYTES, IS_TAG_PREPENDED>,
-    E: Clone,
-    C: BulkConsumer<Item = u8, Final = (), Error = E>,
-    P: BulkProducer<Item = u8, Final = (), Error = E>,
+    H: Hashing<HANDSHAKE_HASHLEN_IN_BYTES, HANDSHAKE_BLOCKLEN_IN_BYTES, AEAD>,
+    AEAD: AEADEncryptionKey<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+        > + 'static,
+    E: Clone + 'static,
+    C: BulkConsumer<Item = u8, Final = (), Error = E> + 'static,
+    P: BulkProducer<Item = u8, Final = (), Error = E> + 'static,
+    N: WgpsNamespaceId,
+    S: WgpsSubspaceId,
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + 'static,
+    MyEnumCap: EnumerationCapability<NamespaceId = N, Receiver = S> + 'static,
+    TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
+    TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
 {
+    //////////////////////
+    // Handshake Things //
+    //////////////////////
+
     let (salt_base, peer_capability_receiver, c, p) = run_handshake::<
-        HASHLEN_IN_BYTES,
-        BLOCKLEN_IN_BYTES,
-        PK_ENCODING_LENGTH_IN_BYTES,
-        TAG_WIDTH_IN_BYTES,
-        TAG_WIDTH_IN_BYTES_PLUS_2,
-        TAG_WIDTH_IN_BYTES_PLUS_4096,
-        NONCE_WIDTH_IN_BYTES,
-        IS_TAG_PREPENDED,
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        HANDSHAKE_BLOCKLEN_IN_BYTES,
+        HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES,
+        HANDSHAKE_TAG_WIDTH_IN_BYTES,
+        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+        HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+        HANDSHAKE_IS_TAG_PREPENDED,
         H,
         DH,
         AEAD,
@@ -204,25 +272,68 @@ where
     )
     .await?;
 
-    let (our_salt, their_salt) = if options.is_initiator {
-        (salt_base, invert_bytes(salt_base))
+    let my_salt = if options.is_initiator {
+        salt_base
     } else {
-        (invert_bytes(salt_base), salt_base)
+        invert_bytes(salt_base)
     };
 
-    // This is set to the max payload size received from the peer once it has arrived.
-    let received_max_payload_size = OnceCell::<u64>::new();
+    //////////////////
+    // LCMUX Things //
+    //////////////////
 
-    let consumer = ConsumerButFirstSendByte::new(options.max_payload_power, c);
-    let producer = ConsumerButFirstSetReceivedMaxPayloadSize::new(&received_max_payload_size, p);
+    let shared_consumer_state = shared_consumer::State::new(c);
+    let consumer = SharedConsumer::new(Rc::new(shared_consumer_state));
 
-    let shared_consumer_state = shared_consumer::State::new(consumer);
-    let consumer = SharedConsumer::new(&shared_consumer_state);
+    let shared_producer_state = shared_producer::State::new(p);
+    let producer = SharedProducer::new(Rc::new(shared_producer_state));
 
-    let shared_producer_state = shared_producer::State::new(producer);
-    let producer = SharedProducer::new(&shared_producer_state);
-
-    let lcmux_state = lcmux::State::<4, _, _, _, _>::new(
+    let mut lcmux_session: Session<
+        4,
+        _,
+        _,
+        _,
+        _,
+        _,
+        GlobalMessage<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>,
+        Blame,
+        Option<
+            Rc<
+                pio::State<
+                    HANDSHAKE_HASHLEN_IN_BYTES,
+                    PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                    MCL,
+                    MCC,
+                    MPL,
+                    N,
+                    S,
+                    MyReadCap,
+                    MyEnumCap,
+                    Decryptor<
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                        HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                        HANDSHAKE_IS_TAG_PREPENDED,
+                        AEAD,
+                        P,
+                    >,
+                    (),
+                    DecryptionError<E>,
+                    Encryptor<
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                        HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                        HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                        HANDSHAKE_IS_TAG_PREPENDED,
+                        AEAD,
+                        C,
+                    >,
+                    EncryptionError<E>,
+                >,
+            >,
+        >,
+    > = Session::new(
         producer,
         consumer,
         [
@@ -231,10 +342,9 @@ where
             &options.overlap_channel_options,
             &options.capability_channel_options,
         ],
+        [false, false, true, true],
+        None,
     );
-
-    let mut lcmux_session: Session<4, _, _, _, _, _, GlobalMessage, Blame> =
-        Session::new(&lcmux_state, [false, false, true, true]);
 
     lcmux_session
         .init([
@@ -256,14 +366,71 @@ where
     let Session {
         mut bookkeeping,
         global_sender,
-        global_receiver,
+        mut global_receiver,
         channel_senders,
         channel_receivers,
     } = lcmux_session;
 
-    // Every unit of work that the WGPS needs to perform is defined as a future in the following, via an async block.
+    let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender] =
+        channel_senders;
+    let [reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver] =
+        channel_receivers;
 
-    let do_the_bookkeeping = async {
+    let global_sender = Mutex::new(global_sender);
+
+    ////////////////
+    // PIO Things //
+    ////////////////
+
+    let announce_overlap_in_memory_channel_state = Rc::new(spsc::State::new(
+        ufotofu_queues::Fixed::new_with_manual_tmps(
+            8,
+            PioAnnounceOverlap::<PIO_INTEREST_HASH_LENGTH_IN_BYTES, TheirEnumCap>::temporary,
+        ),
+    ));
+    let (mut announce_overlap_in_memory_sender, announce_overlap_in_memory_receiver) =
+        spsc::new_spsc(announce_overlap_in_memory_channel_state);
+
+    let PioSession {
+        my_aoi_input,
+        overlap_output,
+        state: pio_state,
+    }: PioSession<
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        TheirReadCap,
+        TheirEnumCap,
+        _,
+        _, //P::Final,
+        _, //P::Error,
+        _,
+        _, //C::Error,
+        _,
+    > = PioSession::new(
+        my_salt,
+        options.hash_private_interest,
+        options.spk.clone(),
+        peer_capability_receiver,
+        global_sender,
+        capability_channel_sender,
+        capability_channel_receiver,
+        overlap_channel_sender,
+        overlap_channel_receiver,
+        announce_overlap_in_memory_receiver,
+    );
+
+    *global_receiver.get_relative_to_mut() = Some(pio_state);
+
+    // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block.
+
+    let do_the_lcmux_bookkeeping = async {
         bookkeeping
             .keep_the_books()
             .await
@@ -274,8 +441,30 @@ where
             })
     };
 
+    let receive_global_messages = async {
+        loop {
+            match global_receiver.produce().await? {
+                Left(GlobalMessage::PioAnnounceOverlap(msg)) => {
+                    // We have an in-memory-channel into which to enqueue all PioAnnounceOverlap messages we receive.
+                    // The PIO implementation then does the remainder of the work.
+                    announce_overlap_in_memory_sender.consume(msg).await.unwrap(/* infallible */);
+                }
+                Left(GlobalMessage::DataSetEagerness(_))
+                | Left(GlobalMessage::ResourceHandleFree(_)) => {
+                    // Ours is a selfish and primitive implementation, we ignore both of these right now (which the spec explicitly allows, since both messages merely serve for optimisation purposes).
+
+                    // Do nothing, simply continue to the next iteration of the loop.
+                }
+                Right(()) => {
+                    // We won't receive more global messages from the other peer. That does not necessarily terminate reconciliation, but we *can* stop polling for *more* global messages.
+                    return Ok(());
+                }
+            }
+        }
+    };
+
     // Actually run all the concurrent operations of the WGPS.
-    let _ = try_join!(do_the_bookkeeping)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
+    let _ = try_join!(do_the_lcmux_bookkeeping, receive_global_messages)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
 
     Ok(())
 }

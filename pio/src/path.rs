@@ -4,8 +4,7 @@ use compact_u64::CompactU64;
 use ufotofu_codec::{
     Blame, Decodable, DecodeError, Encodable, RelativeDecodable, RelativeEncodable,
 };
-
-use crate::{decode_path_extends_path, encode_path_extends_path, Path};
+use willow_data_model::{decode_path_extends_path, encode_path_extends_path, Path};
 
 #[derive(Debug)]
 /// The context necessary to privately encode Paths.

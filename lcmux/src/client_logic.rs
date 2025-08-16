@@ -12,13 +12,13 @@
 //!
 //! The implementation does not concern itself with incoming `AnnounceDropping` messages, nor with sending `Apologise` messages, because neither occurs (in communication with a correct peer) since it never sends optimistically.
 
-use std::{num::NonZeroU64, ops::Deref};
+use std::{num::NonZeroU64, ops::Deref, rc::Rc};
 
 use ufotofu::BulkConsumer;
 
 use either::Either::*;
 
-use ufotofu_codec::{Encodable, EncodableKnownSize};
+use ufotofu_codec::{Encodable, EncodableKnownSize, RelativeEncodableKnownSize};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shelf::{self, new_shelf},
@@ -31,7 +31,7 @@ use crate::{
 
 /// The opaque state by which the separate components of a [`ClientLogic`] struct can communicate.
 #[derive(Debug)]
-pub(crate) struct State {
+struct State {
     // Absolutions that should be granted to the server. Closed with `()` when we have no guarantees available and know that the server will never grant us any new ones either.
     absolution: shelf::State<NonZeroU64, ()>,
     // Guarantees that the server has granted us, with the option to subscribe to some particular amount becoming available. The `Final` value `()` is emitted when we know that the currently desired amount will never become available (because of a bound on the incoming guarantees).
@@ -41,7 +41,7 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub fn new(channel_id: u64) -> Self {
+    fn new(channel_id: u64) -> Self {
         Self {
             absolution: shelf::State::new(),
             guarantees: GuaranteeCell::new(),
@@ -51,23 +51,22 @@ impl State {
 }
 
 /// Everything you need to correctly manage an LCMUX client.
-pub(crate) struct ClientLogic<R> {
+pub(crate) struct ClientLogic {
     /// Inform the client logic about incoming control messages about this logical channel.
-    pub receiver: MessageReceiver<R>,
+    pub receiver: MessageReceiver,
     /// Receive information about when to grant absolution on this logical channel. Whenever a value is read from this shelf, the client logic assumes that the absolution will be granted.
-    pub grant_absolution: GrantAbsolution<R>,
+    pub grant_absolution: GrantAbsolution,
     /// Allows sending messages to this channel, also allows sending `LimitSending` frames.
-    pub sender: SendToChannel<R>,
+    pub sender: SendToChannel,
 }
 
-pub(crate) type GrantAbsolution<R> = shelf::Receiver<ProjectAbsolutionShelf<R>, NonZeroU64, ()>;
+pub(crate) type GrantAbsolution = shelf::Receiver<ProjectAbsolutionShelf, NonZeroU64, ()>;
 
-impl<R> ClientLogic<R>
-where
-    R: Deref<Target = State> + Clone,
-{
+impl ClientLogic {
     /// The effective entrypoint to this module. Given a reference to an opaque state handle, this returns the client session state for single logical channel.
-    pub fn new(state: R) -> Self {
+    pub fn new(channel_id: u64) -> Self {
+        let state = Rc::new(State::new(channel_id));
+
         let (shelf_sender, shelf_receiver) = new_shelf(ProjectAbsolutionShelf { r: state.clone() });
 
         ClientLogic {
@@ -82,15 +81,12 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct MessageReceiver<R> {
-    state: R,
-    absolution_shelf_sender: shelf::Sender<ProjectAbsolutionShelf<R>, NonZeroU64, ()>,
+pub(crate) struct MessageReceiver {
+    state: Rc<State>,
+    absolution_shelf_sender: shelf::Sender<ProjectAbsolutionShelf, NonZeroU64, ()>,
 }
 
-impl<R> MessageReceiver<R>
-where
-    R: Deref<Target = State>,
-{
+impl MessageReceiver {
     /// Updates the client state with more guarantees. To be called whenever receiving a [IssueGuarantee](https://willowprotocol.org/specs/resource-control/index.html#ResourceControlGuarantee) message.
     ///
     /// Returns an `Err(())` when the available guarantees would exceed the maximum of `2^64 - 1`, or when the guarantees would disrespect a prior bound on guarantees. If either happens, the logical channel should be considered completely unuseable (and usually, the whole connection should be dropped, since we are talking to a buggy or malicious peer).
@@ -129,14 +125,11 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct SendToChannel<R> {
-    pub(crate) state: R,
+pub(crate) struct SendToChannel {
+    state: Rc<State>,
 }
 
-impl<R> SendToChannel<R>
-where
-    R: Deref<Target = State>,
-{
+impl SendToChannel {
     /// Pause until the desired amount of guarantees is available, then reduce the internal state by that amount. In other words, once the guarantees are available, they *must* be used up by sending messages of that side.
     /// Yields an error if the guarantees are known to never become available (because the server communicated a bound on how many guarantees it will still send at most).
     async fn wait_for_guarantees(&mut self, amount: u64) -> Result<(), ()> {
@@ -148,14 +141,15 @@ where
     }
 
     /// Send a message to a logical channel. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
-    pub async fn send_to_channel<CR, C, M>(
+    pub async fn send_to_channel<CR, C, CError, M>(
         &mut self,
-        consumer: &SharedConsumer<CR, C>,
+        consumer: &SharedConsumer<CR, C, CError>,
         message: &M,
     ) -> Result<(), LogicalChannelClientError<C::Error>>
     where
-        C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
-        CR: Deref<Target = shared_consumer::State<C>> + Clone,
+        C: BulkConsumer<Item = u8, Final: Clone, Error = CError>,
+        CError: Clone,
+        CR: Deref<Target = shared_consumer::State<C, CError>> + Clone,
         M: EncodableKnownSize,
     {
         let size = message.len_of_encoding() as u64;
@@ -177,17 +171,50 @@ where
         Ok(())
     }
 
+    /// Send a message to a logical channel, using a relative encoding. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel_relative<CR, C, CError, M, RelativeTo>(
+        &mut self,
+        consumer: &SharedConsumer<CR, C, CError>,
+        message: &M,
+        relative_to: &RelativeTo,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        C: BulkConsumer<Item = u8, Final: Clone, Error = CError>,
+        CError: Clone,
+        CR: Deref<Target = shared_consumer::State<C, CError>> + Clone,
+        M: RelativeEncodableKnownSize<RelativeTo>,
+    {
+        let size = message.relative_len_of_encoding(relative_to) as u64;
+
+        // Wait for the necessary guarantees to become available.
+        if let Err(()) = self.wait_for_guarantees(size).await {
+            return Err(LogicalChannelClientError::LogicalChannelClosed);
+        }
+
+        let header = SendToChannelHeader {
+            channel: self.state.deref().channel_id,
+            length: size,
+        };
+
+        let mut c = consumer.access_consumer().await;
+        header.encode(&mut c).await?;
+        message.relative_encode(&mut c, relative_to).await?;
+
+        Ok(())
+    }
+
     /// Send a `LimitSending` frame to the server.
     ///
     /// This method does not check that you send valid limits or that you respect them on the future.
-    pub async fn limit_sending<CR, C>(
+    pub async fn limit_sending<CR, C, CError>(
         &mut self,
-        consumer: &SharedConsumer<CR, C>,
+        consumer: &SharedConsumer<CR, C, CError>,
         bound: u64,
     ) -> Result<(), C::Error>
     where
-        C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
-        CR: Deref<Target = shared_consumer::State<C>> + Clone,
+        C: BulkConsumer<Item = u8, Final: Clone, Error = CError>,
+        CError: Clone,
+        CR: Deref<Target = shared_consumer::State<C, CError>> + Clone,
     {
         let frame = LimitSending {
             channel: self.state.deref().channel_id,
@@ -217,14 +244,11 @@ impl<E> From<E> for LogicalChannelClientError<E> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProjectAbsolutionShelf<R> {
-    r: R,
+pub(crate) struct ProjectAbsolutionShelf {
+    r: Rc<State>,
 }
 
-impl<R> Deref for ProjectAbsolutionShelf<R>
-where
-    R: Deref<Target = State>,
-{
+impl Deref for ProjectAbsolutionShelf {
     type Target = shelf::State<NonZeroU64, ()>;
 
     fn deref(&self) -> &Self::Target {
@@ -244,8 +268,7 @@ mod tests {
 
     #[test]
     fn test_bound() {
-        let state = State::new(17);
-        let mut client_logic = ClientLogic::new(&state);
+        let mut client_logic = ClientLogic::new(17);
 
         assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(12));
         assert_eq!(Ok(()), client_logic.receiver.receive_limit_receiving(8));
@@ -255,8 +278,7 @@ mod tests {
 
     #[test]
     fn test_plead() {
-        let state = State::new(17);
-        let mut client_logic = ClientLogic::new(&state);
+        let mut client_logic = ClientLogic::new(17);
 
         block_on(async {
             assert_eq!(Ok(()), client_logic.receiver.receive_guarantees(12));
@@ -303,8 +325,7 @@ mod tests {
 
     #[test]
     fn test_sending() {
-        let state = State::new(17);
-        let mut client_logic = ClientLogic::new(&state);
+        let mut client_logic = ClientLogic::new(17);
 
         let inner_consumer = IntoVec::new();
         let shared_consumer_state = shared_consumer::State::new(inner_consumer);

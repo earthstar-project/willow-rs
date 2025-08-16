@@ -1,9 +1,8 @@
 #![no_main]
 
-use meadowcap::{
-    AccessMode, CommunalCapability, PersonalPrivateInterest, SillyPublicKey, SillySig,
-};
+use meadowcap::{AccessMode, CommunalCapability, SillyPublicKey, SillySig};
 use ufotofu_codec::{fuzz_relative_basic, Blame};
+use willow_pio::PersonalPrivateInterest;
 
 fuzz_relative_basic!(
     CommunalCapability<16, 16, 16, SillyPublicKey, SillyPublicKey, SillySig>;

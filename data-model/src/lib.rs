@@ -36,8 +36,6 @@ mod parameters;
 pub use parameters::*;
 mod path;
 pub use path::*;
-mod private_encodings;
-pub use private_encodings::*;
 mod relative_encodings;
 mod store;
 pub use store::*;

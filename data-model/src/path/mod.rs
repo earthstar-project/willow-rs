@@ -22,7 +22,10 @@ mod component;
 pub use component::*;
 
 mod codec; // Nothing to import, the file only provides trait implementations.
-pub use codec::{decode_path_extends_path, encode_path_extends_path};
+pub use codec::{
+    decode_path_extends_path, decode_path_extends_path_canonic, encode_path_extends_path,
+    path_extends_path_encoding_len,
+};
 
 use crate::grouping::{Range, RangeEnd};
 
@@ -249,7 +252,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn component(&self, i: usize) -> Option<Component<MCL>> {
+    pub fn component(&self, i: usize) -> Option<Component<'_, MCL>> {
         if i < self.component_count {
             Some(Representation::component(&self.data, i))
         } else {
@@ -281,7 +284,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// Runs in `O(1)`, performs no allocations.
     pub fn components(
         &self,
-    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
+    ) -> impl DoubleEndedIterator<Item = Component<'_, MCL>> + ExactSizeIterator<Item = Component<'_, MCL>>
     {
         self.suffix_components(0)
     }
@@ -296,7 +299,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     pub fn suffix_components(
         &self,
         i: usize,
-    ) -> impl DoubleEndedIterator<Item = Component<MCL>> + ExactSizeIterator<Item = Component<MCL>>
+    ) -> impl DoubleEndedIterator<Item = Component<'_, MCL>> + ExactSizeIterator<Item = Component<'_, MCL>>
     {
         (i..self.component_count()).map(|i| {
             self.component(i).unwrap() // Only `None` if `i >= self.component_count()`
@@ -379,7 +382,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Representation::total_length(&self.data, component_count)
     }
 
-    /// Creates an iterator over all prefixes of this path (including th empty path and the path itself).
+    /// Creates an iterator over all prefixes of this path (including the empty path and the path itself).
     ///
     /// Stepping the iterator takes `O(1)` time and performs no memory allocations.
     ///
