@@ -16,6 +16,8 @@ use willow_data_model::{
 };
 
 mod parameters;
+mod rbsr;
+mod storedinator;
 
 pub mod messages;
 use messages::*;
@@ -38,7 +40,9 @@ use crate::{
         EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsNamespaceId,
         WgpsReadCapability, WgpsSubspaceId,
     },
-    pio::PioSession,
+    pio::{AoiOutputError, PioSession},
+    rbsr::ReconciliationSession,
+    storedinator::Storedinator,
 };
 
 /// An error which can occur during a WGPS synchronisation session.
@@ -57,6 +61,8 @@ pub enum WgpsError<E> {
     InvalidEncryption,
     /// The incoming data stream ended but the end was not cryptographically authenticated. A malicious actor may have cut things off.
     UnauthenticatedEndOfStream,
+    /// We were supposed to transmit the enumeration capability for a read capability of ours, but none was available.
+    NoEnumerationCapability,
 }
 
 impl<E> From<E> for WgpsError<E> {
@@ -104,6 +110,17 @@ impl<E> From<GlobalMessageError<(), DecryptionError<E>, Blame>> for WgpsError<E>
     }
 }
 
+impl<E> From<AoiOutputError<EncryptionError<E>>> for WgpsError<E> {
+    fn from(value: AoiOutputError<EncryptionError<E>>) -> Self {
+        match value {
+            AoiOutputError::Transport(err) => Self::from(err),
+            AoiOutputError::NoEnumerationCapability => Self::NoEnumerationCapability,
+            AoiOutputError::InvalidData | AoiOutputError::ReceivedAnnouncementError(_) | AoiOutputError::ReceivedBindCapabilityError(_) => Self::PeerMisbehaved,
+            AoiOutputError::CapabilityChannelClosed => panic!("Hey, you triggered a bug! Here is what happened (please report this to the authors of the willow-rs crate): An `AoiOutputError::CapabilityChannelClosed` was attempted to be converted into a WgpsError, instead of handling it properly."),
+        }
+    }
+}
+
 impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -138,6 +155,9 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
             }
             WgpsError::UnauthenticatedEndOfStream => {
                 write!(f, "The incoming data stream ended, but its end was not cryptographically authenticated. A malicious actor may have cut things off.")
+            }
+            WgpsError::NoEnumerationCapability => {
+                write!(f, "We were supposed to transmit the enumeration capability for a read capability of ours, but none was available.")
             }
         }
     }
@@ -207,6 +227,8 @@ pub async fn sync_with_peer<
     MyEnumCap,
     TheirReadCap,
     TheirEnumCap,
+    Store,
+    StoreCreationFunction,
 >(
     options: &SyncOptions<
         'prologue,
@@ -221,6 +243,7 @@ pub async fn sync_with_peer<
     >,
     consumer: C,
     producer: P,
+    storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
 ) -> Result<(), WgpsError<E>>
 where
     DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
@@ -236,8 +259,8 @@ where
     P: BulkProducer<Item = u8, Final = (), Error = E> + 'static,
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
-    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S> + 'static,
-    MyEnumCap: EnumerationCapability<NamespaceId = N, Receiver = S> + 'static,
+    MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
+    MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
 {
@@ -393,7 +416,7 @@ where
 
     let PioSession {
         my_aoi_input,
-        overlap_output,
+        mut overlap_output,
         state: pio_state,
     }: PioSession<
         HANDSHAKE_HASHLEN_IN_BYTES,
@@ -426,10 +449,25 @@ where
         announce_overlap_in_memory_receiver,
     );
 
-    *global_receiver.get_relative_to_mut() = Some(pio_state);
+    *global_receiver.get_relative_to_mut() = Some(pio_state.clone());
 
-    // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block.
+    /////////////////
+    // RBSR Things //
+    /////////////////
 
+    let ReconciliationSession {
+        initiator: rbsr_initiator,
+    } = ReconciliationSession::new(
+        pio_state.clone(),
+        storedinator,
+        reconciliation_channel_sender,
+    );
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block. //
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // A future that powers the lcmux connection.
     let do_the_lcmux_bookkeeping = async {
         bookkeeping
             .keep_the_books()
@@ -441,6 +479,7 @@ where
             })
     };
 
+    // A future to receive global messages and act on them.
     let receive_global_messages = async {
         loop {
             match global_receiver.produce().await? {
@@ -463,8 +502,33 @@ where
         }
     };
 
+    // A future to listen for overlaps detected in pio and to initiate set reconciliation if appropriate.
+    let initiate_rbsr = async {
+        if options.is_initiator {
+            loop {
+                match overlap_output.produce().await {
+                    Ok(Right(())) => return Ok(()), // nothing special needs to happen when pio terminates
+                    Ok(Left(common_area)) => {
+                        todo!()
+                    }
+                    Err(AoiOutputError::CapabilityChannelClosed) => {
+                        // This error is non-fatal. You must not attempt inputting more Aois, but the remainder of the sync session can continue running without problems.
+                        todo!("stop attempting inputting more Aois");
+                    }
+                    Err(fatal_err) => return Err(WgpsError::from(fatal_err)),
+                }
+            }
+        } else {
+            return Ok(());
+        }
+    };
+
     // Actually run all the concurrent operations of the WGPS.
-    let _ = try_join!(do_the_lcmux_bookkeeping, receive_global_messages)?; // TODO add futures for the remaining, as of yet unimplemented tasks: rbsr, pai, etc. Will be fleshed out as we progress with the WGPS implementation.
+    let _ = try_join!(
+        do_the_lcmux_bookkeeping,
+        receive_global_messages,
+        initiate_rbsr,
+    )?; // TODO add futures for the remaining, as of yet unimplemented tasks: responding to incoming rbsr messages, doing post-reconciliation forwarding. Will be fleshed out as we progress with the WGPS implementation.
 
     Ok(())
 }
@@ -481,7 +545,7 @@ fn invert_bytes<const LEN: usize>(mut bytes: [u8; LEN]) -> [u8; LEN] {
 #[derive(Debug, Clone, Copy)]
 pub struct PartitionOpts {
     /// The largest number of entries that can be included by a range before it is better to send that range's fingerprint instead of sending its entries.
-    pub max_range_size: usize,
+    pub min_range_size: usize,
     /// The maximum number of partitions to split a range into. Must be at least 2.
     pub max_splits: usize,
 }
