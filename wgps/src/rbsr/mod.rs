@@ -3,6 +3,7 @@ use std::rc::Rc;
 use lcmux::ChannelSender;
 use wb_async_utils::Mutex;
 
+use crate::pio::overlap_finder::NamespacedAoIWithMaxPayloadPower;
 use crate::{pio, storedinator::Storedinator};
 
 /// The state per WGPS session for handling RBSR.
@@ -306,7 +307,14 @@ impl<
     >
 {
     /// Call this when we detected an overlap in PIO (and are the initiator of the WGPS session). This then sends the necessary message(s) for initiating RBSR on the overlap.
-    pub fn initiate_reconciliation() -> Result<(), i16> {
-        todo!()
+    pub async fn initiate_reconciliation(
+        &mut self,
+        overlap: NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>,
+    ) -> Result<(), RbsrError<CErr>> {
+        todo!("implement this")
     }
+}
+
+pub(crate) enum RbsrError<SendingError> {
+    Sending(SendingError),
 }

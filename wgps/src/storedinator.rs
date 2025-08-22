@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, marker::PhantomData, rc::Rc};
 
 /// Gives access to (and creates if necessary) stores (which only store data from a single namespace) by namespace. You can (and should) reuse one of these for several concurrent sync sessions.
-pub(crate) struct Storedinator<Store, StoreCreationFunction, N> {
+pub struct Storedinator<Store, StoreCreationFunction, N> {
     fun: StoreCreationFunction,
     stores: RefCell<HashMap<N, Rc<Store>>>,
 }

@@ -1,4 +1,4 @@
-use std::{future::Future, rc::Rc};
+use std::{cell::Cell, future::Future, hash::Hash, rc::Rc};
 
 use either::Either::{Left, Right};
 use futures::try_join;
@@ -7,7 +7,7 @@ use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    spsc, Mutex,
+    spsc, Mutex, OnceCell, TakeCell,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -26,7 +26,7 @@ use ufotofu_codec::{
     Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync,
     RelativeEncodableKnownSize,
 };
-use willow_pio::PrivateInterest;
+use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
     run_handshake, DecryptionError, Decryptor, EncryptionError, Encryptor, HandshakeError,
@@ -40,8 +40,8 @@ use crate::{
         EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsNamespaceId,
         WgpsReadCapability, WgpsSubspaceId,
     },
-    pio::{AoiOutputError, PioSession},
-    rbsr::ReconciliationSession,
+    pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
+    rbsr::{RbsrError, ReconciliationSession},
     storedinator::Storedinator,
 };
 
@@ -121,6 +121,14 @@ impl<E> From<AoiOutputError<EncryptionError<E>>> for WgpsError<E> {
     }
 }
 
+impl<E> From<RbsrError<EncryptionError<E>>> for WgpsError<E> {
+    fn from(value: RbsrError<EncryptionError<E>>) -> Self {
+        match value {
+            RbsrError::Sending(err) => Self::from(err),
+        }
+    }
+}
+
 impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -163,6 +171,7 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncOptions<
     'prologue,
     const HANDSHAKE_HASHLEN_IN_BYTES: usize,
@@ -201,7 +210,7 @@ pub struct SyncOptions<
     /* End of Private Interest Overlap Options */
 }
 
-pub async fn sync_with_peer<
+pub fn sync_with_peer<
     'prologue,
     const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
     const HANDSHAKE_BLOCKLEN_IN_BYTES: usize,
@@ -230,7 +239,7 @@ pub async fn sync_with_peer<
     Store,
     StoreCreationFunction,
 >(
-    options: &SyncOptions<
+    options: SyncOptions<
         'prologue,
         HANDSHAKE_HASHLEN_IN_BYTES,
         PIO_INTEREST_HASH_LENGTH_IN_BYTES,
@@ -244,6 +253,218 @@ pub async fn sync_with_peer<
     consumer: C,
     producer: P,
     storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
+) -> (
+    AoiInput<
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        Decryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            P,
+        >,
+        (),
+        DecryptionError<E>,
+        Encryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            C,
+        >,
+        EncryptionError<E>,
+    >,
+    impl Future<Output = Result<(), WgpsError<E>>>
+        + use<
+            'prologue,
+            HANDSHAKE_HASHLEN_IN_BYTES,
+            HANDSHAKE_BLOCKLEN_IN_BYTES,
+            HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+            MCL,
+            MCC,
+            MPL,
+            H,
+            DH,
+            AEAD,
+            E,
+            C,
+            P,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            TheirReadCap,
+            TheirEnumCap,
+            Store,
+            StoreCreationFunction,
+        >,
+)
+where
+    DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
+    AEAD: Default,
+    H: Hashing<HANDSHAKE_HASHLEN_IN_BYTES, HANDSHAKE_BLOCKLEN_IN_BYTES, AEAD>,
+    AEAD: AEADEncryptionKey<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+        > + 'static,
+    E: Clone + 'static,
+    C: BulkConsumer<Item = u8, Final = (), Error = E> + 'static,
+    P: BulkProducer<Item = u8, Final = (), Error = E> + 'static,
+    N: WgpsNamespaceId,
+    S: WgpsSubspaceId,
+    MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
+    MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
+    TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
+    TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
+{
+    let stop_inputting_aois = Rc::new(Cell::new(false));
+    let obtaining_the_aoi_consumer = Rc::new(TakeCell::new());
+
+    let aoi_input = AoiInput {
+        obtaining_the_actual_consumer: obtaining_the_aoi_consumer.clone(),
+        the_actual_consumer: None,
+        stop_accepting_aois: stop_inputting_aois.clone(),
+    };
+
+    return (aoi_input, async {
+        do_sync_with_peer::<
+            HANDSHAKE_HASHLEN_IN_BYTES,
+            HANDSHAKE_BLOCKLEN_IN_BYTES,
+            HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+            MCL,
+            MCC,
+            MPL,
+            H,
+            DH,
+            AEAD,
+            E,
+            C,
+            P,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            TheirReadCap,
+            TheirEnumCap,
+            Store,
+            StoreCreationFunction,
+        >(
+            options,
+            consumer,
+            producer,
+            storedinator,
+            stop_inputting_aois,
+            obtaining_the_aoi_consumer,
+        )
+        .await
+    });
+}
+
+async fn do_sync_with_peer<
+    'prologue,
+    const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
+    const HANDSHAKE_BLOCKLEN_IN_BYTES: usize,
+    const HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2: usize,
+    const HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096: usize,
+    const HANDSHAKE_NONCE_WIDTH_IN_BYTES: usize,
+    const HANDSHAKE_IS_TAG_PREPENDED: bool,
+    const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    H,
+    DH,
+    AEAD,
+    E,
+    C,
+    P,
+    N,
+    S,
+    MyReadCap,
+    MyEnumCap,
+    TheirReadCap,
+    TheirEnumCap,
+    Store,
+    StoreCreationFunction,
+>(
+    options: SyncOptions<
+        'prologue,
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+        MCL,
+        MCC,
+        MPL,
+        DH,
+        N,
+        S,
+    >,
+    consumer: C,
+    producer: P,
+    storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
+    stop_inputting_aois: Rc<Cell<bool>>,
+    obtaining_the_aoi_consumer: Rc<
+        TakeCell<
+            MyAoiInput<
+                HANDSHAKE_HASHLEN_IN_BYTES,
+                PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                MyReadCap,
+                MyEnumCap,
+                Decryptor<
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                    HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                    HANDSHAKE_IS_TAG_PREPENDED,
+                    AEAD,
+                    P,
+                >,
+                (),
+                DecryptionError<E>,
+                Encryptor<
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                    HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                    HANDSHAKE_IS_TAG_PREPENDED,
+                    AEAD,
+                    C,
+                >,
+                EncryptionError<E>,
+            >,
+        >,
+    >,
 ) -> Result<(), WgpsError<E>>
 where
     DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
@@ -451,12 +672,15 @@ where
 
     *global_receiver.get_relative_to_mut() = Some(pio_state.clone());
 
+    // Move `my_aoi_input` into the actual aoi input.
+    obtaining_the_aoi_consumer.set(my_aoi_input);
+
     /////////////////
     // RBSR Things //
     /////////////////
 
     let ReconciliationSession {
-        initiator: rbsr_initiator,
+        initiator: mut rbsr_initiator,
     } = ReconciliationSession::new(
         pio_state.clone(),
         storedinator,
@@ -508,12 +732,14 @@ where
             loop {
                 match overlap_output.produce().await {
                     Ok(Right(())) => return Ok(()), // nothing special needs to happen when pio terminates
-                    Ok(Left(common_area)) => {
-                        todo!()
+                    Ok(Left(common_areas)) => {
+                        for common_area in common_areas.into_iter() {
+                            rbsr_initiator.initiate_reconciliation(common_area).await?;
+                        }
                     }
                     Err(AoiOutputError::CapabilityChannelClosed) => {
-                        // This error is non-fatal. You must not attempt inputting more Aois, but the remainder of the sync session can continue running without problems.
-                        todo!("stop attempting inputting more Aois");
+                        // This error is non-fatal. We must not attempt inputting more Aois, but the remainder of the sync session can continue running without problems.
+                        stop_inputting_aois.set(true);
                     }
                     Err(fatal_err) => return Err(WgpsError::from(fatal_err)),
                 }
@@ -539,6 +765,179 @@ fn invert_bytes<const LEN: usize>(mut bytes: [u8; LEN]) -> [u8; LEN] {
     }
 
     bytes
+}
+
+/// A consumer of the [`CapableAoi`]s you want to sync.
+pub struct AoiInput<
+    const SALT_LENGTH: usize,
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    MyReadCap,
+    MyEnumCap,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
+> {
+    obtaining_the_actual_consumer: Rc<
+        TakeCell<
+            MyAoiInput<
+                SALT_LENGTH,
+                INTEREST_HASH_LENGTH,
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                MyReadCap,
+                MyEnumCap,
+                P,
+                PFinal,
+                PErr,
+                C,
+                CErr,
+            >,
+        >,
+    >,
+    the_actual_consumer: Option<
+        MyAoiInput<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+        >,
+    >,
+    stop_accepting_aois: Rc<Cell<bool>>,
+}
+
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+    > Consumer
+    for AoiInput<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+    >
+where
+    N: NamespaceId + Hash,
+    S: SubspaceId + Hash,
+    MyReadCap: ReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>
+        + Eq
+        + Hash
+        + Clone
+        + RelativeEncodableKnownSize<PersonalPrivateInterest<MCL, MCC, MPL, N, S>>,
+    MyEnumCap: Eq
+        + Hash
+        + Clone
+        + EnumerationCapability<Receiver = S, NamespaceId = N>
+        + RelativeEncodableKnownSize<(N, S)>,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
+    CErr: Clone,
+{
+    type Item = CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>;
+
+    type Final = ();
+
+    type Error = WgpsInputError;
+
+    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
+        loop {
+            match self.the_actual_consumer.as_mut() {
+                None => {
+                    self.the_actual_consumer =
+                        Some(self.obtaining_the_actual_consumer.take().await);
+                    // Go to next loop iteration, where the actual consumer now is available.
+                }
+                Some(actual_consumer) => {
+                    if self.stop_accepting_aois.get() {
+                        return Err(WgpsInputError::Done);
+                    } else {
+                        return Ok(actual_consumer.consume(item).await?);
+                    }
+                }
+            }
+        }
+    }
+
+    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
+        loop {
+            match self.the_actual_consumer.as_mut() {
+                None => {
+                    self.the_actual_consumer =
+                        Some(self.obtaining_the_actual_consumer.take().await);
+                    // Go to next loop iteration, where the actual consumer now is available.
+                }
+                Some(actual_consumer) => {
+                    return Ok(actual_consumer.close(fin).await?);
+                }
+            }
+        }
+    }
+}
+
+/// Everything that can go wrong when submitting an AreaOfInterest to the private interest overlap detection process.
+pub enum WgpsInputError {
+    /// We had to supply an enumeration capability, but the submitted CapableAoi didn't supply one.
+    NoEnumerationCapability,
+    /// Syncing with the peer had to be aborted for reasons outside our control.
+    Fatal,
+    /// The peer will not accept more input. Syncing will still continue for all areas consumed so far.
+    Done,
+}
+
+impl<TransportError> From<AoiInputError<TransportError>> for WgpsInputError {
+    fn from(value: AoiInputError<TransportError>) -> WgpsInputError {
+        match value {
+            AoiInputError::Transport(_) => {
+                return WgpsInputError::Fatal;
+            }
+            AoiInputError::NoEnumerationCapability => {
+                return WgpsInputError::NoEnumerationCapability;
+            }
+            AoiInputError::OverlapChannelClosed | AoiInputError::CapabilityChannelClosed => {
+                return WgpsInputError::Done;
+            }
+        }
+    }
 }
 
 /// Options to specify how ranges should be partitioned.
