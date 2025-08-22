@@ -345,7 +345,8 @@ where
         stop_accepting_aois: stop_inputting_aois.clone(),
     };
 
-    return (aoi_input, async {
+    return (
+        aoi_input,
         do_sync_with_peer::<
             HANDSHAKE_HASHLEN_IN_BYTES,
             HANDSHAKE_BLOCKLEN_IN_BYTES,
@@ -380,9 +381,8 @@ where
             storedinator,
             stop_inputting_aois,
             obtaining_the_aoi_consumer,
-        )
-        .await
-    });
+        ),
+    );
 }
 
 async fn do_sync_with_peer<
