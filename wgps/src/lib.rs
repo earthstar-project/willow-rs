@@ -681,10 +681,12 @@ where
 
     let ReconciliationSession {
         initiator: mut rbsr_initiator,
+        receiver: mut rbsr_message_receiver,
     } = ReconciliationSession::new(
         pio_state.clone(),
         storedinator,
         reconciliation_channel_sender,
+        reconciliation_channel_receiver,
     );
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -749,12 +751,21 @@ where
         }
     };
 
+    // A future to process all incoming rbsr pessages.
+    let process_incoming_rbsr_messages = async {
+        rbsr_message_receiver
+            .process_incoming_reconciliation_messages()
+            .await?;
+        Ok(())
+    };
+
     // Actually run all the concurrent operations of the WGPS.
     let _ = try_join!(
         do_the_lcmux_bookkeeping,
         receive_global_messages,
         initiate_rbsr,
-    )?; // TODO add futures for the remaining, as of yet unimplemented tasks: responding to incoming rbsr messages, doing post-reconciliation forwarding. Will be fleshed out as we progress with the WGPS implementation.
+        process_incoming_rbsr_messages,
+    )?; // TODO add futures for the remaining, as of yet unimplemented tasks: doing post-reconciliation forwarding, receiving `data` messages. Will be fleshed out as we progress with the WGPS implementation.
 
     Ok(())
 }

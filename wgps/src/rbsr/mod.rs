@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use lcmux::ChannelSender;
+use lcmux::{ChannelReceiver, ChannelSender};
 use wb_async_utils::Mutex;
 
 use crate::pio::overlap_finder::NamespacedAoIWithMaxPayloadPower;
@@ -154,6 +154,25 @@ pub(crate) struct ReconciliationSession<
         Store,
         StoreCreationFunction,
     >,
+    /// Use this value to process all incoming messages on the reconciliation channel (via the `process_incoming_reconciliation_messages` method).
+    pub receiver: ReconciliationReceiver<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        Store,
+        StoreCreationFunction,
+    >,
 }
 
 impl<
@@ -215,6 +234,7 @@ impl<
         >,
         storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
         reconciliation_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+        reconciliation_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
     ) -> Self {
         let state = Rc::new(ReconciliationState::new(
             pio_state,
@@ -223,7 +243,13 @@ impl<
         ));
 
         Self {
-            initiator: ReconciliationInitiator { state: state },
+            initiator: ReconciliationInitiator {
+                state: state.clone(),
+            },
+            receiver: ReconciliationReceiver {
+                state: state,
+                receiver: reconciliation_channel_receiver,
+            },
         }
     }
 }
@@ -310,6 +336,93 @@ impl<
     pub async fn initiate_reconciliation(
         &mut self,
         overlap: NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>,
+    ) -> Result<(), RbsrError<CErr>> {
+        todo!("implement this")
+    }
+}
+
+/// Use this struct to process all incoming messages on the reconciliation channel (via the `process_incoming_reconciliation_messages` method).
+pub(crate) struct ReconciliationReceiver<
+    const SALT_LENGTH: usize,
+    const INTEREST_HASH_LENGTH: usize,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    MyReadCap,
+    MyEnumCap,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
+    Store,
+    StoreCreationFunction,
+> {
+    state: Rc<
+        ReconciliationState<
+            SALT_LENGTH,
+            INTEREST_HASH_LENGTH,
+            MCL,
+            MCC,
+            MPL,
+            N,
+            S,
+            MyReadCap,
+            MyEnumCap,
+            P,
+            PFinal,
+            PErr,
+            C,
+            CErr,
+            Store,
+            StoreCreationFunction,
+        >,
+    >,
+    receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+}
+
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        Store,
+        StoreCreationFunction,
+    >
+    ReconciliationReceiver<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        Store,
+        StoreCreationFunction,
+    >
+{
+    /// Call this when we detected an overlap in PIO (and are the initiator of the WGPS session). This then sends the necessary message(s) for initiating RBSR on the overlap.
+    pub async fn process_incoming_reconciliation_messages(
+        &mut self,
     ) -> Result<(), RbsrError<CErr>> {
         todo!("implement this")
     }
