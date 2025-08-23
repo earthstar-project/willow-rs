@@ -420,10 +420,42 @@ impl<
         StoreCreationFunction,
     >
 {
-    /// Call this when we detected an overlap in PIO (and are the initiator of the WGPS session). This then sends the necessary message(s) for initiating RBSR on the overlap.
     pub async fn process_incoming_reconciliation_messages(
         &mut self,
     ) -> Result<(), RbsrError<CErr>> {
+        loop {
+            match todo!("decode ReconciliationSendFingerprint or ReconciliationAnnounceEntries") {
+                ReconciliationSendFingerprint => {
+                    todo!("act on fingerprint message");
+                    continue; // go to next iteration of decoding loop
+                }
+                ReconciliationAnnounceEntries => {
+                    let received_all_messages_for_this_range: bool = todo!("msg.is_empty");
+
+                    // Decode entries and their payloads until we got everything in the range
+                    while !received_all_messages_for_this_range {
+                        // Decode entries and their payload until a `ReconciliationTerminatePayload` msg with `is_final`
+                        todo!("decode ReconciliationSendEntry");
+                        todo!("add entry to our store");
+
+                        loop {
+                            match todo!("decode ReconciliationSendPayload or ReconciliationTerminatePayload") {
+                                ReconciliationSendPayload=> {
+                                    todo!("append payload to our store (ensure that the entry matches and we append at the correct offset)");
+                                    // do nothing else, go to next iteration of the ReconciliationSendPayload-or-ReconciliationTerminatePayload loop
+                                }
+                                ReconciliationTerminatePayload => {
+                                    received_all_messages_for_this_range = todo!("msg.is_final");
+                                }
+                            }
+                        }
+
+                        todo!("reply with all entries (and their payloads if they are sufficiently small) in the range we have, except those we just received (may approximate the latter)");
+                        // All done with this ReconciliationAnnounceEntries message, move on to the next iteration of the outer decoding loop.
+                    }
+                }
+            }
+        }
         todo!("implement this")
     }
 }
