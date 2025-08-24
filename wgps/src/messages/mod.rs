@@ -4,7 +4,7 @@ use std::rc::Rc;
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, TagWidth};
 use either::Either::{Left, Right};
-use willow_data_model::{grouping::Range3d, NamespaceId, SubspaceId};
+use willow_data_model::{grouping::Range3d, LengthyAuthorisedEntry, NamespaceId, SubspaceId};
 
 use crate::{
     parameters::{EnumerationCapability, ReadCapability},
@@ -631,4 +631,30 @@ pub(crate) struct ReconciliationAnnounceEntries<
     pub want_response: bool,
     /// Whether the sender promises to send the Entries in info.range sorted ascendingly by subspace_id , using paths (sorted lexicographically) as the tiebreaker.
     pub will_sort: bool,
+}
+
+/// Send a LengthyAuthorisedEntry as part of 3d range-based set reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconciliationSendEntry<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+> {
+    /// The LengthyAuthorisedEntry itself.
+    pub entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    /// The index of the first (transformed) Payload Chunk that will be transmitted for entry. Set this to the total number of Chunks to indicate that no Chunks will be transmitted. In this case, the receiver must act as if it had received a ReconciliationTerminatePayload message immediately after this message.
+    pub offset: u64,
+}
+
+/// Send some Chunks as part of 3d range-based set reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconciliationSendPayload {
+    /// The number of transmitted Chunks.
+    pub amount: u64,
+    /// The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the receiver’s reconciliation_current_entryEntry, starting at the offset of the corresponding ReconciliationSendEntry message plus the number of Chunks for the current Entry that were already transmitted by prior ReconciliationSendPayload messages.
+    pub bytes: Box<[u8]>,
 }
