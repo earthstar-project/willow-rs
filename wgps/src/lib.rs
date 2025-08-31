@@ -208,6 +208,10 @@ pub struct SyncOptions<
         &[u8; HANDSHAKE_HASHLEN_IN_BYTES],
     ) -> [u8; PIO_INTEREST_HASH_LENGTH_IN_BYTES],
     /* End of Private Interest Overlap Options */
+    /* RBSR options */
+    /// The max number of entries to buffer in memory while receiving `ReconciliationSendEntry` messages and detecting duplicates to filter which entries to send in reply.
+    entry_buffer_capacity: usize,
+    /* End of RBSR Options */
 }
 
 pub fn sync_with_peer<
@@ -687,6 +691,7 @@ where
         storedinator,
         reconciliation_channel_sender,
         reconciliation_channel_receiver,
+        options.entry_buffer_capacity,
     );
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////

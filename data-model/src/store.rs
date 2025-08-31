@@ -72,6 +72,8 @@ pub enum PayloadAppendError<PayloadSourceError, OE> {
     NoSuchEntry,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
     WrongEntry,
+    /// The `expected_available_bytes` did not match the number of available payload bytes (before appending).
+    IncorrectAvailableLength,
     /// The payload source produced more bytes than were expected for this payload.
     TooManyBytes,
     /// The completed payload's digest is not what was expected.
@@ -101,6 +103,12 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
                 write!(
                     f,
                     "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
+            PayloadAppendError::IncorrectAvailableLength => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected number of payload bytes available already."
                 )
             }
             PayloadAppendError::TooManyBytes => write!(
@@ -389,7 +397,8 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     /// - The payload digest of the entry at the given subspace_id and path is not equal to the supplied `expected_digest` (*if* one was supplied).
     /// - The payload source produced more bytes than were expected for this payload.
     /// - The payload source yielded an error.
-    /// - The final payload's digest did not match the expected digest
+    /// - The final payload's digest did not match the expected digest.
+    /// - The number of available payload bytes prior to appending did not match the `expected_available_bytes`.
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
     /// This method **does not** and **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. as part of a sync protocol).
@@ -398,6 +407,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> impl Future<
         Output = Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>,

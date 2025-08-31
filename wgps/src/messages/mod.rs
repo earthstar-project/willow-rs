@@ -658,3 +658,10 @@ pub(crate) struct ReconciliationSendPayload {
     /// The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the receiver’s reconciliation_current_entryEntry, starting at the offset of the corresponding ReconciliationSendEntry message plus the number of Chunks for the current Entry that were already transmitted by prior ReconciliationSendPayload messages.
     pub bytes: Box<[u8]>,
 }
+
+/// Signal the end of the currentPayload transmission as part of 3d range-based set reconciliation, and indicate whether another LengthyAuthorisedEntry transmission will follow for the current 3dRange.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReconciliationTerminatePayload {
+    /// Set to true if and only if no further ReconciliationSendEntry message will be sent as part of reconciling the current 3dRange.
+    pub is_final: bool,
+}
