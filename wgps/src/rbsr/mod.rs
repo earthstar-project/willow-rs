@@ -5,8 +5,9 @@ use either::Either::{self, Left, Right};
 use lcmux::{ChannelReceiver, ChannelSender};
 use ufotofu::producer::FromSlice;
 use wb_async_utils::Mutex;
+use willow_data_model::grouping::Range3d;
 use willow_data_model::{
-    Component, EntryIngestionError, EntryOrigin, LengthyAuthorisedEntry, Path, PathBuilder,
+    Component, Entry, EntryIngestionError, EntryOrigin, LengthyAuthorisedEntry, Path, PathBuilder,
     PayloadAppendError,
 };
 
@@ -140,6 +141,63 @@ impl<
             session_id,
             todoRemoveThis: PhantomData,
         }
+    }
+}
+
+impl<
+        const SALT_LENGTH: usize,
+        const INTEREST_HASH_LENGTH: usize,
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        Store,
+        StoreCreationFunction,
+        StoreCreationError,
+        Fingerprint,
+        PD,
+        AT,
+    >
+    ReconciliationState<
+        SALT_LENGTH,
+        INTEREST_HASH_LENGTH,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        MyReadCap,
+        MyEnumCap,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        Store,
+        StoreCreationFunction,
+        Fingerprint,
+        PD,
+        AT,
+    >
+where
+    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
+    Store: willow_data_model::Store<MCL, MCC, MPL, N, S, PD, AT>,
+{
+    async fn send_my_entries_in_range(
+        &self,
+        range: &Range3d<MCL, MCC, MPL, S>,
+        // Must be sorted (subspace_id first, lexicographic path as tiebreaker)
+        except_for: &[Entry<MCL, MCC, MPL, N, S, PD>],
+    ) -> Result<(), RbsrError<CErr, StoreCreationError, Store::Error>> {
+        todo!();
     }
 }
 
@@ -456,7 +514,7 @@ pub(crate) struct ReconciliationReceiver<
     >,
     receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
     phantom: PhantomData<(Fingerprint, PD, AT)>,
-    received_entry_buffer: Vec<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+    received_entry_buffer: Vec<Entry<MCL, MCC, MPL, N, S, PD>>,
     received_entry_buffer_capacity: usize,
 }
 
@@ -505,7 +563,7 @@ impl<
     >
 where
     N: Eq + core::hash::Hash + Clone,
-    S: Clone,
+    S: Clone + Ord,
     PD: Clone,
     AT: Clone,
     Store: willow_data_model::Store<MCL, MCC, MPL, N, S, PD, AT>,
@@ -558,7 +616,7 @@ where
 
                         if self.received_entry_buffer.len() < self.received_entry_buffer_capacity {
                             self.received_entry_buffer
-                                .push(send_entry_msg.entry.clone());
+                                .push(send_entry_msg.entry.entry().entry().clone());
                         }
 
                         // This flag ensures that receiving the payload for the same entry concurrently form multiple peers doesn't result in storing an incorrect payload.
@@ -590,7 +648,7 @@ where
                                         }
                                     }
 
-                                    // do nothing else, go to next iteration of the (inner)ReconciliationSendPayload-or-ReconciliationTerminatePayload loop
+                                    // nothing more to do, go to next iteration of the (inner)ReconciliationSendPayload-or-ReconciliationTerminatePayload loop
                                 }
                                 Right(terminate_payload_msg) => {
                                     received_all_messages_for_this_range =
@@ -600,7 +658,15 @@ where
                             }
                         }
 
-                        todo!("reply with all entries (and their payloads if they are sufficiently small) in the range we have, except those we just received (may approximate the latter)");
+                        // Sort buffered received entries so we can query more efficiently whether a given entry is currently buffered.
+                        self.received_entry_buffer.sort_by(sort_entries);
+
+                        self.state
+                            .send_my_entries_in_range(
+                                &announce_entries_msg.info.range,
+                                &self.received_entry_buffer[..],
+                            )
+                            .await?;
 
                         // All done with this ReconciliationAnnounceEntries message, move on to the next iteration of the outer decoding loop.
                     }
@@ -652,4 +718,16 @@ impl<SendingError, StoreCreationError, StoreErr> From<StoreErr>
     fn from(value: StoreErr) -> Self {
         RbsrError::Store(value)
     }
+}
+
+fn sort_entries<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>(
+    a: &Entry<MCL, MCC, MPL, N, S, PD>,
+    b: &Entry<MCL, MCC, MPL, N, S, PD>,
+) -> core::cmp::Ordering
+where
+    S: Ord,
+{
+    a.subspace_id()
+        .cmp(b.subspace_id())
+        .then_with(|| a.path().cmp(b.path()))
 }
