@@ -4,7 +4,7 @@ use ufotofu_codec::{
     Blame, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodableKnownSize,
 };
-use willow_data_model::{grouping::Area, NamespaceId, SubspaceId};
+use willow_data_model::{grouping::Area, LengthyAuthorisedEntry, NamespaceId, SubspaceId};
 use willow_pio::PersonalPrivateInterest;
 
 pub trait WgpsNamespaceId: NamespaceId + Hash {}
@@ -57,4 +57,14 @@ pub trait WgpsEnumerationCapability:
     + RelativeDecodable<(Self::NamespaceId, Self::Receiver), Blame>
     + 'static
 {
+}
+
+pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FFP> {
+    fn neutral() -> Self;
+
+    fn singleton(lengthy: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) -> Self;
+
+    fn combine(&self, other: Self) -> Self;
+
+    fn finalise(&self) -> FFP;
 }

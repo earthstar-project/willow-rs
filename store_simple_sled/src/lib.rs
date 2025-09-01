@@ -32,8 +32,10 @@
 use either::Either;
 use std::{cell::RefCell, rc::Rc};
 use ufotofu::BufferedProducer;
+
 use willow_data_model::{
-    ForgetEntryError, ForgetPayloadError, Payload, PayloadError, TrustedDecodable,
+    grouping::Range3d, ForgetEntryError, ForgetPayloadError, Payload, PayloadError, Subscriber,
+    TrustedDecodable,
 };
 
 use sled::{
@@ -53,11 +55,18 @@ use willow_data_model::{
     SubspaceId,
 };
 
+use wgps::{Fingerprint, RbsrStore};
+
+pub trait SledSubspaceId: SubspaceId {
+    /// Returns the greatest possible subspace, for which the result of `successor` is always `None`.
+    fn max_id() -> Self;
+}
+
 /// A simple, [sled](https://docs.rs/sled/latest/sled/)-powered Willow data [store](https://willowprotocol.org/specs/data-model/index.html#store) implementing the [willow_data_model::Store] trait.
 pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
-    S: SubspaceId,
+    S: SledSubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
@@ -92,7 +101,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable + DecodableSync,
-    S: SubspaceId,
+    S: SledSubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
@@ -272,7 +281,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     Store<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
-    S: SubspaceId + EncodableSync + EncodableKnownSize + Decodable,
+    S: SledSubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
     S::ErrorReason: core::fmt::Debug,
@@ -1041,15 +1050,12 @@ where
         Ok(None)
     }
 
-    async fn query_area(
+    fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> Result<
-        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
-        Self::Error,
-    > {
-        EntryProducer::new(self, area, ignore).await
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()> {
+        EntryProducer::new(self, area.to_owned().into(), ignore)
     }
 
     async fn subscribe_area(
@@ -1058,7 +1064,138 @@ where
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
-        EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
+        EventSystem::add_subscription(
+            self.event_system.clone(),
+            Range3d::from(area.clone()),
+            ignore,
+        )
+    }
+
+    fn query_and_subscribe_area(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Self::Error,
+            >,
+            Error = Self::Error,
+        >,
+        Self::Error,
+    > {
+        let range = Range3d::from(area.clone());
+
+        // Create and the query producer, and note the offset in the event log.
+        let subscriber =
+            EventSystem::add_subscription(self.event_system.clone(), range.clone(), ignore);
+        let entry_producer = EntryProducer::new(self, area.clone().into(), ignore);
+
+        // When the producer has been fully exhausted, start replaying from noted offset.
+        Ok(EntryAndSubProducer {
+            entry_producer,
+            subscriber: Some(subscriber),
+        })
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP, FFP>
+    RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + EncodableSync + EncodableKnownSize + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
+    S::ErrorReason: core::fmt::Debug,
+    PD::ErrorReason: core::fmt::Debug,
+    FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT, FFP>,
+{
+    fn query_range(
+        &self,
+        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+        EntryProducer::new(self, range.clone(), ignore)
+    }
+
+    fn subscribe_range(
+        &self,
+        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
+        EventSystem::add_subscription(self.event_system.clone(), range.clone(), ignore)
+    }
+
+    fn query_and_subscribe_range(
+        &self,
+        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Self::Error,
+            >,
+            Error = Self::Error,
+        >,
+        Self::Error,
+    > {
+        // Create and the query producer, and note the offset in the event log.
+        let subscriber =
+            EventSystem::add_subscription(self.event_system.clone(), range.clone(), ignore);
+        let entry_producer = EntryProducer::new(self, range.clone(), ignore);
+
+        // When the producer has been fully exhausted, start replaying from noted offset.
+        Ok(EntryAndSubProducer {
+            entry_producer,
+            subscriber: Some(subscriber),
+        })
+    }
+
+    async fn summarise(
+        &self,
+        range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+    ) -> (FP, u64) {
+        // Difficulty: Not too bad!
+        let mut size = 0;
+        let mut fingerprint = FP::neutral();
+
+        let entry_producer = self.query_range(&range, QueryIgnoreParams::default());
+
+        while let Ok(item) = entry_producer.produce_item().await {
+            // Combine FP
+        }
+
+        // Produce entries from a range
+        // Combine each of them using fingerprints.
+
+        todo!()
+    }
+
+    fn area_of_interest_to_range(
+        &self,
+        aoi: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
+    ) -> impl std::prelude::rust_2024::Future<
+        Output = willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+    > {
+        //
+
+        todo!()
+    }
+
+    fn partition_range(
+        &self,
+        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        options: &wgps::PartitionOpts,
+    ) -> impl std::prelude::rust_2024::Future<
+        Output = Option<impl Iterator<Item = wgps::RangeSplit<MCL, MCC, MPL, S, FP>>>,
+    > {
+        todo!()
     }
 }
 
@@ -1380,55 +1517,43 @@ impl BulkProducer for PayloadProducer {
 pub struct EntryProducer<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
-    S: SubspaceId,
+    S: SledSubspaceId,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    iter: sled::Iter,
+    iter: Option<sled::Iter>,
     store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
     ignore: QueryIgnoreParams,
-    area: Area<MCL, MCC, MPL, S>,
+    range: Range3d<MCL, MCC, MPL, S>,
 }
 
 impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
-    S: SubspaceId + EncodableKnownSize + EncodableSync,
+    S: SledSubspaceId + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    async fn new(
+    fn new(
         store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
-        area: &Area<MCL, MCC, MPL, S>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> Result<Self, StoreSimpleSledError> {
-        let entry_tree = store.entry_tree()?;
-
-        let entry_iterator = match area.subspace() {
-            AreaSubspace::Any => entry_tree.iter(),
-            AreaSubspace::Id(subspace) => {
-                let matching_subspace_path =
-                    encode_subspace_path_key(subspace, area.path(), false).await;
-
-                entry_tree.scan_prefix(&matching_subspace_path)
-            }
-        };
-
-        Ok(Self {
-            iter: entry_iterator,
-            area: area.clone(),
+    ) -> Self {
+        Self {
+            iter: None,
+            range,
             ignore,
             store,
-        })
+        }
     }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
     for EntryProducer<'_, MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + EncodableKnownSize + Decodable,
-    S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+    N: NamespaceId + EncodableKnownSize + Decodable + DecodableSync,
+    S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest + Decodable,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
     S::ErrorReason: std::fmt::Debug,
@@ -1442,7 +1567,39 @@ where
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         loop {
-            let result = self.iter.next();
+            let result = match self.iter.as_mut() {
+                Some(iter) => iter.next(),
+                None => {
+                    let entry_tree = self.store.entry_tree()?;
+
+                    let range_start_key = encode_entry_key(
+                        &self.range.subspaces().start,
+                        &self.range.paths().start,
+                        self.range.times().start,
+                    )
+                    .await;
+
+                    let open_subspace_end = S::max_id();
+                    let open_path_end = Path::<MCL, MCC, MPL>::new_max();
+
+                    let subspace_end = self
+                        .range
+                        .subspaces()
+                        .get_end()
+                        .unwrap_or(&open_subspace_end);
+                    let path_end = self.range.paths().get_end().unwrap_or(&open_path_end);
+                    let time_end = self.range.times().get_end().unwrap_or(&u64::MAX);
+                    let range_end_key = encode_entry_key(subspace_end, path_end, *time_end).await;
+
+                    let mut new_iter = entry_tree.range(range_start_key..=range_end_key);
+
+                    let next = new_iter.next();
+
+                    self.iter = Some(new_iter);
+
+                    next
+                }
+            };
 
             match result {
                 Some(Ok((key, value))) => {
@@ -1460,7 +1617,7 @@ where
                         digest,
                     );
 
-                    if !self.area.includes_entry(&entry) {
+                    if !self.range.includes_entry(&entry) {
                         continue;
                     }
 
@@ -1483,6 +1640,54 @@ where
                 Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
                 None => return Ok(Either::Right(())),
             }
+        }
+    }
+}
+
+pub struct EntryAndSubProducer<
+    'a,
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+> where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+{
+    entry_producer: EntryProducer<'a, MCL, MCC, MPL, N, S, PD, AT>,
+    subscriber: Option<Subscriber<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>>,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntryAndSubProducer<'a, MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable,
+    S::ErrorReason: std::fmt::Debug,
+    PD::ErrorReason: std::fmt::Debug,
+{
+    type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
+
+    type Final = Subscriber<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>;
+
+    type Error = StoreSimpleSledError;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        match self.entry_producer.produce().await {
+            Ok(Either::Left(item)) => return Ok(Either::Left(item)),
+            Ok(Either::Right(_)) => {
+                // Return the subscriber!
+                // We unwrap here because this is the final item.
+                return Ok(Either::Right(self.subscriber.take().unwrap()));
+            }
+            Err(err) => return Err(err),
         }
     }
 }

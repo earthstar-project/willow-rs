@@ -626,3 +626,4 @@ path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
 test = false
 doc = false
 bench = false
+

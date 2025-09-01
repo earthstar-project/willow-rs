@@ -16,6 +16,7 @@ use willow_data_model::{
 };
 
 mod parameters;
+pub use parameters::Fingerprint;
 
 pub mod messages;
 use messages::*;
@@ -514,7 +515,7 @@ where
     fn query_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Range3d`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
@@ -524,26 +525,24 @@ where
     fn subscribe_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     fn query_and_subscribe_range(
         &self,
         range: &Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<
-                Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-                Final = impl Producer<
-                    Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-                    Final = (),
-                    Error = Self::Error,
-                >,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
                 Error = Self::Error,
             >,
-            Self::Error,
+            Error = Self::Error,
         >,
+        Self::Error,
     >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).

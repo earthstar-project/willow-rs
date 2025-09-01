@@ -1529,6 +1529,7 @@ dependencies = [
  "ufotofu_codec_endian",
  "ufotofu_queues",
  "wb_async_utils",
+ "wgps",
  "willow-data-model",
  "willow_25",
 ]
