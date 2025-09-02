@@ -30,12 +30,13 @@
 //! - Loads entire payloads into memory all at once.
 
 use either::Either;
-use std::{cell::RefCell, rc::Rc};
+
+use std::{cell::RefCell, cmp::max, rc::Rc};
 use ufotofu::BufferedProducer;
 
 use willow_data_model::{
-    grouping::Range3d, ForgetEntryError, ForgetPayloadError, Payload, PayloadError, Subscriber,
-    TrustedDecodable,
+    grouping::Range, grouping::Range3d, grouping::RangeEnd, ForgetEntryError, ForgetPayloadError,
+    Payload, PayloadError, Subscriber, TrustedDecodable,
 };
 
 use sled::{
@@ -75,9 +76,12 @@ where
     event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>>>,
 }
 
-const ENTRY_TREE_KEY: [u8; 1] = [0b0000_0000];
-const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0001];
-const MISC_TREE_KEY: [u8; 1] = [0b0000_0010];
+/// The key for entries sorted by subspace, path, timestamp
+const SPT_TREE_KEY: [u8; 1] = [0b0000_0000];
+/// The key for entires sorted by timestamp, subspace, path
+const TSP_TREE_KEY: [u8; 1] = [0b0000_0001];
+const PAYLOAD_TREE_KEY: [u8; 1] = [0b0000_0010];
+const MISC_TREE_KEY: [u8; 1] = [0b0000_0011];
 
 const NAMESPACE_ID_KEY: [u8; 1] = [0b0000_0000];
 
@@ -167,8 +171,12 @@ where
         })
     }
 
-    fn entry_tree(&self) -> SledResult<Tree> {
-        self.db.open_tree(ENTRY_TREE_KEY)
+    fn spt_entry_tree(&self) -> SledResult<Tree> {
+        self.db.open_tree(SPT_TREE_KEY)
+    }
+
+    fn tsp_entry_tree(&self) -> SledResult<Tree> {
+        self.db.open_tree(TSP_TREE_KEY)
     }
 
     fn payload_tree(&self) -> SledResult<Tree> {
@@ -194,7 +202,7 @@ where
         // Iterate from subspace, just linearly
         // Create all prefixes of given path
 
-        let tree = self.entry_tree()?;
+        let tree = self.spt_entry_tree()?;
 
         let prefix = entry.subspace_id().sync_encode_into_vec();
 
@@ -202,7 +210,7 @@ where
             // println!("key: {:?}", key);
 
             let (other_subspace, other_path, other_timestamp) =
-                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+                decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
             let (payload_length, payload_digest, authorisation_token, _local_length) =
                 decode_entry_values(&value).await;
 
@@ -324,19 +332,19 @@ where
             }
         }
 
-        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let spt_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
 
         let same_subspace_path_prefix_trailing_end =
             encode_subspace_path_key(entry.subspace_id(), entry.path(), false).await;
 
         let mut keys_to_prune: Vec<IVec> = Vec::new();
 
-        for (key, value) in entry_tree
+        for (key, value) in spt_tree
             .scan_prefix(&same_subspace_path_prefix_trailing_end)
             .flatten()
         {
             let (other_subspace, other_path, other_timestamp) =
-                decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+                decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
 
             let (
                 other_payload_length,
@@ -368,29 +376,42 @@ where
             keys_to_prune.push(key);
         }
 
+        let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
-        let key = encode_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
+        let spt_key =
+            encode_spt_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
+        let tsp_key =
+            encode_tsp_entry_key(entry.subspace_id(), entry.path(), entry.timestamp()).await;
 
         let value =
             encode_entry_values(entry.payload_length(), entry.payload_digest(), &token, 0).await;
 
-        let mut entry_batch = sled::Batch::default();
+        let mut spt_entry_batch = sled::Batch::default();
+        let mut tsp_entry_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
         for key in keys_to_prune {
-            entry_batch.remove(&key);
+            let tsp_key = spt_to_tps_key::<MCL, MCC, MPL, S>(&key).await;
+
+            spt_entry_batch.remove(&key);
+            tsp_entry_batch.remove(&tsp_key);
             payload_batch.remove(&key);
         }
-        entry_batch.insert(key.clone(), value);
 
-        (&entry_tree, &payload_tree)
+        spt_entry_batch.insert(spt_key.clone(), value.clone());
+        tsp_entry_batch.insert(tsp_key, value);
+
+        (&spt_tree, &tsp_tree, &payload_tree)
             .transaction(
-                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
-                    (),
-                    ConflictableTransactionError<()>,
-                > {
-                    tx_entry.apply_batch(&entry_batch)?;
+                |(tx_entry, tx_tsp, tx_payloads): &(
+                    TransactionalTree,
+                    TransactionalTree,
+                    TransactionalTree,
+                )|
+                 -> Result<(), ConflictableTransactionError<()>> {
+                    tx_entry.apply_batch(&spt_entry_batch)?;
+                    tx_tsp.apply_batch(&tsp_entry_batch)?;
                     tx_payloads.apply_batch(&payload_batch)?;
 
                     Ok(())
@@ -415,17 +436,17 @@ where
     where
         Producer: BulkProducer<Item = u8, Error = PayloadSourceError>,
     {
-        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let spt_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
-        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
+        let maybe_entry = self.prefix_gt(&spt_tree, &exact_key)?;
 
         match maybe_entry {
-            Some((entry_key, value)) => {
+            Some((spt_key, value)) => {
                 let (subspace, path, timestamp) =
-                    decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
+                    decode_spt_entry_key::<MCL, MCC, MPL, S>(&spt_key).await;
                 let (length, digest, auth_token, _local_length) =
                     decode_entry_values::<PD, AT>(&value).await;
 
@@ -479,15 +500,22 @@ where
                             )
                             .await;
 
-                            let mut entry_batch = sled::Batch::default();
+                            let tsp_tree =
+                                self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
+                            let tsp_key = encode_tsp_entry_key(&subspace, &path, timestamp).await;
+
+                            let mut spt_batch = sled::Batch::default();
+                            let mut tsp_batch = sled::Batch::default();
                             let mut payload_batch = sled::Batch::default();
 
-                            entry_batch.insert(entry_key, new_value);
+                            spt_batch.insert(spt_key, new_value.clone());
+                            tsp_batch.insert(tsp_key, new_value);
                             payload_batch.insert(payload_key, payload);
 
-                            (&entry_tree, &payload_tree)
+                            (&spt_tree, &tsp_tree, &payload_tree)
                                 .transaction(
-                                    |(tx_entry, tx_payloads): &(
+                                    |(tx_spt, tx_tsp, tx_payloads): &(
+                                        TransactionalTree,
                                         TransactionalTree,
                                         TransactionalTree,
                                     )|
@@ -495,7 +523,8 @@ where
                                         (),
                                         sled::transaction::ConflictableTransactionError<()>,
                                     > {
-                                        tx_entry.apply_batch(&entry_batch)?;
+                                        tx_spt.apply_batch(&spt_batch)?;
+                                        tx_tsp.apply_batch(&tsp_batch)?;
                                         tx_payloads.apply_batch(&payload_batch)?;
 
                                         Ok(())
@@ -553,10 +582,20 @@ where
                 )
                 .await;
 
-                let mut entry_batch = sled::Batch::default();
+                let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
+                let tsp_key = encode_tsp_entry_key(
+                    authed_entry.entry().subspace_id(),
+                    &authed_entry.entry().path(),
+                    timestamp,
+                )
+                .await;
+
+                let mut spt_batch = sled::Batch::default();
+                let mut tsp_batch = sled::Batch::default();
                 let mut payload_batch = sled::Batch::default();
 
-                entry_batch.insert(entry_key, new_value);
+                spt_batch.insert(spt_key, new_value.clone());
+                tsp_batch.insert(tsp_key, new_value);
                 payload_batch.insert(payload_key, payload);
 
                 if received_payload_len as u64 == length {
@@ -580,9 +619,10 @@ where
                         return Err(PayloadAppendError::DigestMismatch);
                     }
 
-                    (&entry_tree, &payload_tree)
+                    (&spt_tree, &tsp_tree, &payload_tree)
                     .transaction(
-                        |(tx_entry, tx_payloads): &(
+                        |(tx_spt, tx_tsp, tx_payloads): &(
+                            TransactionalTree,
                             TransactionalTree,
                             TransactionalTree,
                         )|
@@ -592,7 +632,8 @@ where
                                 (),
                             >,
                         > {
-                            tx_entry.apply_batch(&entry_batch)?;
+                            tx_spt.apply_batch(&spt_batch)?;
+                            tx_tsp.apply_batch(&tsp_batch)?;
                             tx_payloads.apply_batch(&payload_batch)?;
                             Ok(())
                         },
@@ -611,9 +652,10 @@ where
 
                     Ok(PayloadAppendSuccess::Completed)
                 } else {
-                    (&entry_tree, &payload_tree)
+                    (&spt_tree, &tsp_tree, &payload_tree)
                     .transaction(
-                        |(tx_entry, tx_payloads): &(
+                        |(tx_spt, tx_tsp, tx_payloads): &(
+                            TransactionalTree,
                             TransactionalTree,
                             TransactionalTree,
                         )|
@@ -621,7 +663,8 @@ where
                             (),
                             sled::transaction::ConflictableTransactionError<()>,
                         > {
-                            tx_entry.apply_batch(&entry_batch)?;
+                            tx_spt.apply_batch(&spt_batch)?;
+                            tx_tsp.apply_batch(&tsp_batch)?;
                             tx_payloads.apply_batch(&payload_batch)?;
                             Ok(())
                         },
@@ -653,13 +696,14 @@ where
     ) -> Result<(), ForgetEntryError<Self::Error>> {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let spt_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
 
-        let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
+        let maybe_entry = self.prefix_gt(&spt_tree, &exact_key)?;
 
-        if let Some((key, value)) = maybe_entry {
-            let (subspace_id, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+        if let Some((spt_key, value)) = maybe_entry {
+            let (subspace_id, path, timestamp) =
+                decode_spt_entry_key::<MCL, MCC, MPL, S>(&spt_key).await;
             let (length, digest, auth_token, local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
@@ -669,14 +713,25 @@ where
                 }
             }
 
-            (&entry_tree, &payload_tree)
+            let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
+            let tsp_key = encode_tsp_entry_key(&subspace_id, &path, timestamp).await;
+            let mut tsp_batch = sled::Batch::default();
+            tsp_batch.remove(tsp_key);
+
+            (&spt_tree, &tsp_tree, &payload_tree)
                 .transaction(
-                    |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
+                    |(tx_spt, tx_tsp, tx_payloads): &(
+                        TransactionalTree,
+                        TransactionalTree, 
+                        TransactionalTree
+                    )| 
+                    -> Result<
                         (),
                         sled::transaction::ConflictableTransactionError<()>,
                     > {
-                        tx_entry.remove(&key)?;
-                        tx_payloads.remove(&key)?;
+                        tx_spt.remove(&spt_key)?;
+                        tx_tsp.apply_batch(&tsp_batch)?;
+                        tx_payloads.remove(&spt_key)?;
 
                         Ok(())
                     },
@@ -707,26 +762,28 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
-        let entry_tree = self.entry_tree()?;
+        let spt_tree = self.spt_entry_tree()?;
+        let tsp_tree = self.tsp_entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
-        let mut entry_batch = sled::Batch::default();
+        let mut spt_batch = sled::Batch::default();
+        let mut tsp_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
         let mut forgotten_count = 0;
 
         let entry_iterator = match area.subspace() {
-            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Any => spt_tree.iter(),
             AreaSubspace::Id(subspace) => {
                 let matching_subspace_path =
                     encode_subspace_path_key(subspace, area.path(), false).await;
 
-                entry_tree.scan_prefix(&matching_subspace_path)
+                spt_tree.scan_prefix(&matching_subspace_path)
             }
         };
 
-        for (key, value) in entry_iterator.flatten() {
-            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+        for (spt_key, value) in entry_iterator.flatten() {
+            let (subspace, path, timestamp) = decode_spt_entry_key(&spt_key).await;
             let (_length, _digest, _token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
@@ -750,25 +807,30 @@ where
 
             if !is_protected && prefix_matches && timestamp_included {
                 // FORGET IT
-                entry_batch.remove(&key);
-                payload_batch.remove(&key);
+                let tsp_key = encode_tsp_entry_key(&subspace, &path, timestamp).await;
+
+                spt_batch.remove(&spt_key);
+                tsp_batch.remove(tsp_key);
+                payload_batch.remove(&spt_key);
 
                 forgotten_count += 1;
             }
         }
 
-        (&entry_tree, &payload_tree)
-            .transaction(
-                |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
-                    (),
-                    sled::transaction::ConflictableTransactionError<()>,
-                > {
-                    tx_entry.apply_batch(&entry_batch)?;
-                    tx_payloads.apply_batch(&payload_batch)?;
+        (&spt_tree, &tsp_tree, &payload_tree).transaction(
+            |(tx_spt, tx_tsp, tx_payloads): &(
+                TransactionalTree,
+                TransactionalTree,
+                TransactionalTree,
+            )|
+             -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                tx_spt.apply_batch(&spt_batch)?;
+                tx_tsp.apply_batch(&tsp_batch)?;
+                tx_payloads.apply_batch(&payload_batch)?;
 
-                    Ok(())
-                },
-            )?;
+                Ok(())
+            },
+        )?;
 
         self.event_system
             .borrow_mut()
@@ -789,15 +851,15 @@ where
 
         let maybe_payload = self.prefix_gt(&payload_tree, &payload_key)?;
 
-        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let spt_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
 
         let entry_key_partial = encode_subspace_path_key(subspace_id, path, true).await;
-        let maybe_entry = self.prefix_gt(&entry_tree, &entry_key_partial)?;
+        let maybe_entry = self.prefix_gt(&spt_tree, &entry_key_partial)?;
 
         match (maybe_entry, maybe_payload) {
-            (Some((entry_key, entry_value)), Some((payload_key, _payload_value))) => {
+            (Some((spt_key, entry_value)), Some((payload_key, _payload_value))) => {
                 let (subspace, path, timestamp) =
-                    decode_entry_key::<MCL, MCC, MPL, S>(&entry_key).await;
+                    decode_spt_entry_key::<MCL, MCC, MPL, S>(&spt_key).await;
                 let (length, digest, auth_token, local_length) =
                     decode_entry_values::<PD, AT>(&entry_value).await;
 
@@ -808,14 +870,23 @@ where
                 }
 
                 let new_key_value = encode_entry_values(length, &digest, &auth_token, 0).await;
+                
+                let mut spt_batch = sled::Batch::default();
+                spt_batch.insert(&spt_key, new_key_value.clone());
+                
+                let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
+                let mut tsp_batch = sled::Batch::default();
+                let tsp_key = encode_tsp_entry_key(&subspace, &path, timestamp).await;
+                tsp_batch.insert(tsp_key, new_key_value);
 
-                (&entry_tree, &payload_tree).transaction(
-                    |(entry_tx, payload_tx): &(TransactionalTree, TransactionalTree)| -> Result<
+                (&spt_tree, &tsp_tree, &payload_tree).transaction(
+                    |(spt_tx, tsp_tx, payload_tx): &(TransactionalTree, TransactionalTree, TransactionalTree)| -> Result<
                         (),
                         sled::transaction::ConflictableTransactionError<()>,
                     > {
                         payload_tx.remove(&payload_key)?;
-                        entry_tx.insert(&entry_key, new_key_value.clone())?;
+                        spt_tx.apply_batch(&spt_batch)?;
+                        tsp_tx.apply_batch(&tsp_batch)?;
 
                         Ok(())
                     },
@@ -860,26 +931,28 @@ where
         area: &Area<MCL, MCC, MPL, S>,
         protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> Result<usize, Self::Error> {
-        let entry_tree = self.entry_tree()?;
+        let spt_tree = self.spt_entry_tree()?;
+        let tsp_tree = self.tsp_entry_tree()?;
         let payload_tree = self.payload_tree()?;
 
-        let mut entry_batch = sled::Batch::default();
+        let mut spt_batch = sled::Batch::default();
+        let mut tsp_batch = sled::Batch::default();
         let mut payload_batch = sled::Batch::default();
 
         let mut forgotten_count = 0;
 
         let entry_iterator = match area.subspace() {
-            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Any => spt_tree.iter(),
             AreaSubspace::Id(subspace) => {
                 let matching_subspace_path =
                     encode_subspace_path_key(subspace, area.path(), false).await;
 
-                entry_tree.scan_prefix(&matching_subspace_path)
+                spt_tree.scan_prefix(&matching_subspace_path)
             }
         };
 
-        for (key, value) in entry_iterator.flatten() {
-            let (subspace, path, timestamp) = decode_entry_key(&key).await;
+        for (spt_key, value) in entry_iterator.flatten() {
+            let (subspace, path, timestamp) = decode_spt_entry_key(&spt_key).await;
             let (length, digest, token, _local_length) =
                 decode_entry_values::<PD, AT>(&value).await;
 
@@ -904,19 +977,25 @@ where
             if !is_protected && prefix_matches && timestamp_included {
                 let entry_values = encode_entry_values(length, &digest, &token, 0).await;
 
-                entry_batch.insert(&key, entry_values);
-                payload_batch.remove(&key);
+                let tsp_key = encode_spt_entry_key(&subspace, &path, timestamp).await;
+
+                spt_batch.insert(&spt_key, entry_values.clone());
+                tsp_batch.insert(tsp_key, entry_values);
+                payload_batch.remove(&spt_key);
 
                 forgotten_count += 1;
             }
         }
 
-        (&entry_tree, &payload_tree).transaction(
-            |(tx_entry, tx_payloads): &(TransactionalTree, TransactionalTree)| -> Result<
-                (),
-                sled::transaction::ConflictableTransactionError<()>,
-            > {
-                tx_entry.apply_batch(&entry_batch)?;
+        (&spt_tree, &tsp_tree, &payload_tree).transaction(
+            |(tx_spt, tx_tsp, tx_payloads): &(
+                TransactionalTree,
+                TransactionalTree,
+                TransactionalTree,
+            )|
+             -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                tx_spt.apply_batch(&spt_batch)?;
+                tx_tsp.apply_batch(&tsp_batch)?;
                 tx_payloads.apply_batch(&payload_batch)?;
 
                 Ok(())
@@ -944,7 +1023,7 @@ where
         Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
-        let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
+        let entry_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
         let exact_key = encode_subspace_path_key(subspace, path, true).await;
 
@@ -1013,12 +1092,12 @@ where
     > {
         let exact_key = encode_subspace_path_key(subspace_id, path, true).await;
 
-        let entry_tree = self.entry_tree()?;
+        let entry_tree = self.spt_entry_tree()?;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
 
         if let Some((key, value)) = maybe_entry {
-            let (subspace, path, timestamp) = decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+            let (subspace, path, timestamp) = decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
             let (length, digest, token, local_length) = decode_entry_values::<PD, AT>(&value).await;
 
             let entry = Entry::new(
@@ -1102,7 +1181,7 @@ where
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP, FFP>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP>
     RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
@@ -1111,7 +1190,7 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
-    FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT, FFP>,
+    FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
     fn query_range(
         &self,
@@ -1161,41 +1240,135 @@ where
         &self,
         range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
     ) -> (FP, u64) {
-        // Difficulty: Not too bad!
         let mut size = 0;
-        let mut fingerprint = FP::neutral();
+        let mut fingerprint = FP::NEUTRAL;
 
         let entry_producer = self.query_range(&range, QueryIgnoreParams::default());
 
         while let Ok(item) = entry_producer.produce_item().await {
-            // Combine FP
+            let singleton = FP::singleton(item);
+            fingerprint = fingerprint.combine(singleton);
+            size += 1;
         }
 
-        // Produce entries from a range
-        // Combine each of them using fingerprints.
-
-        todo!()
+        (fingerprint, size)
     }
 
-    fn area_of_interest_to_range(
+    async fn area_of_interest_to_range(
         &self,
         aoi: &willow_data_model::grouping::AreaOfInterest<MCL, MCC, MPL, S>,
-    ) -> impl std::prelude::rust_2024::Future<
-        Output = willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
-    > {
-        //
+    ) -> Range3d<MCL, MCC, MPL, S> {
+        let tsp_tree = self.tsp_entry_tree().unwrap();
 
-        todo!()
+        let range = Range3d::from(aoi.area.clone());
+
+        let open_subspace_end = S::max_id();
+        let open_path_end = Path::<MCL, MCC, MPL>::new_max();
+
+        let subspace_end = range.subspaces().get_end().unwrap_or(&open_subspace_end);
+        let path_end = range.paths().get_end().unwrap_or(&open_path_end);
+        let time_end = range.times().get_end().unwrap_or(&u64::MAX);
+        let range_end_key = encode_tsp_entry_key(subspace_end, path_end, *time_end).await;
+
+        let range_start_key = encode_tsp_entry_key(
+            &range.subspaces().start,
+            &range.paths().start,
+            range.times().start,
+        )
+        .await;
+
+        let entry_iterator = tsp_tree.range(range_start_key..=range_end_key);
+
+        let mut current_count = 0;
+        let mut current_size = 0;
+
+        let mut least_actual_subspace: Option<S> = None;
+        let mut least_actual_path: Option<Path<MCL, MCC, MPL>> = None;
+        let mut least_actual_time = None;
+
+        let mut greatest_actual_subspace: Option<S> = None;
+        let mut greatest_actual_path: Option<Path<MCL, MCC, MPL>> = None;
+        let mut greatest_actual_time: Option<u64> = None;
+
+        for (tsp_key, entry_value) in entry_iterator.rev().flatten() {
+            let (timestamp, subspace, path) =
+                decode_tsp_entry_key::<MCL, MCC, MPL, S>(&tsp_key).await;
+
+            if !range.includes_triplet(&subspace, &path, timestamp) {
+                continue;
+            }
+
+            least_actual_time = Some(timestamp);
+            least_actual_subspace = option_min(least_actual_subspace, subspace.clone());
+            least_actual_path = option_min(least_actual_path, path.clone());
+            // Guaranteed to be smaller than the last thanks to sled's key ordering.
+
+            greatest_actual_time = if greatest_actual_time.is_none() {
+                Some(timestamp)
+            } else {
+                greatest_actual_time
+            };
+            greatest_actual_subspace = option_max(greatest_actual_subspace, subspace);
+            greatest_actual_path = option_max(greatest_actual_path, path);
+
+            let (length, _digest, _auth_token, _local_length) =
+                decode_entry_values::<PD, AT>(&entry_value).await;
+
+            if aoi.max_count != 0 && current_count + 1 > aoi.max_count {
+                break;
+            }
+
+            if aoi.max_size != 0 && current_size + length > aoi.max_count {
+                break;
+            }
+
+            current_count += 1;
+            current_size += length;
+        }
+
+        let time_lower_range = least_actual_time.unwrap_or(range.times().start);
+        let subspace_lower_range = least_actual_subspace.unwrap_or(range.subspaces().start.clone());
+        let path_lower_range = least_actual_path.unwrap_or(range.paths().start.clone());
+
+        let time_upper_range =
+            greatest_actual_time.map_or(RangeEnd::Open, |time| RangeEnd::Closed(time + 1));
+        let subspace_upper_range = greatest_actual_subspace.map_or(RangeEnd::Open, |subspace| {
+            subspace
+                .successor()
+                .map_or(RangeEnd::Open, |successor| RangeEnd::Closed(successor))
+        });
+        let path_upper_range = greatest_actual_path.map_or(RangeEnd::Open, |path| {
+            path.successor()
+                .map_or(RangeEnd::Open, |successor| RangeEnd::Closed(successor))
+        });
+
+        let time_range = Range::new(time_lower_range, time_upper_range);
+        let subspace_range = Range::new(subspace_lower_range, subspace_upper_range);
+        let path_range = Range::new(path_lower_range, path_upper_range);
+
+        Range3d::new(subspace_range, path_range, time_range)
     }
 
-    fn partition_range(
+    async fn partition_range(
         &self,
         range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
         options: &wgps::PartitionOpts,
-    ) -> impl std::prelude::rust_2024::Future<
-        Output = Option<impl Iterator<Item = wgps::RangeSplit<MCL, MCC, MPL, S, FP>>>,
-    > {
+    ) -> Option<impl Iterator<Item = wgps::RangeSplit<MCL, MCC, MPL, S, FP>>> {
         todo!()
+    }
+}
+
+fn option_max<T: Ord>(max: Option<T>, other: T) -> Option<T> {
+    match max {
+        Some(ours) => Some(std::cmp::max(ours, other)),
+        None => Some(other),
+    }
+}
+
+fn option_min<T: Ord>(max: Option<T>, other: T) -> Option<T> {
+    match max {
+        Some(ours) => Some(std::cmp::min(ours, other)),
+        None => Some(other),
     }
 }
 
@@ -1240,7 +1413,7 @@ async fn encode_subspace_path_key<
     consumer.into_vec()
 }
 
-async fn encode_entry_key<
+async fn encode_spt_entry_key<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -1279,7 +1452,7 @@ async fn encode_entry_key<
     consumer.into_vec()
 }
 
-async fn decode_entry_key<
+async fn decode_spt_entry_key<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -1311,6 +1484,111 @@ where
     let timestamp = U64BE::decode(&mut producer).await.unwrap().0;
 
     (subspace, path, timestamp)
+}
+
+async fn encode_tsp_entry_key<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S: SubspaceId + EncodableKnownSize + EncodableSync,
+>(
+    subspace: &S,
+    path: &Path<MCL, MCC, MPL>,
+    timestamp: u64,
+) -> Vec<u8> {
+    let mut consumer: IntoVec<u8> = IntoVec::new();
+
+    // Unwrap because IntoVec should not fail.
+    U64BE(timestamp).encode(&mut consumer).await.unwrap();
+
+    // Unwrap because IntoVec should not fail.
+    subspace.encode(&mut consumer).await.unwrap();
+
+    for component in path.components() {
+        for byte in component.as_ref() {
+            if *byte == 0 {
+                // Unwrap because IntoVec should not fail.
+                consumer.bulk_consume_full_slice(&[0, 2]).await.unwrap();
+            } else {
+                // Unwrap because IntoVec should not fail.
+                consumer.consume(*byte).await.unwrap();
+            }
+        }
+
+        // Unwrap because IntoVec should not fail.
+        consumer.bulk_consume_full_slice(&[0, 1]).await.unwrap();
+    }
+
+    // Unwrap because IntoVec should not fail.
+    consumer.bulk_consume_full_slice(&[0, 0]).await.unwrap();
+
+    consumer.into_vec()
+}
+
+async fn decode_tsp_entry_key<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S: SubspaceId + Decodable,
+>(
+    encoded: &IVec,
+) -> (u64, S, Path<MCL, MCC, MPL>)
+where
+    S::ErrorReason: core::fmt::Debug,
+{
+    let mut producer = FromSlice::new(encoded);
+
+    let timestamp = U64BE::decode(&mut producer).await.unwrap().0;
+
+    let subspace = S::decode(&mut producer).await.unwrap();
+
+    let mut components_vecs: Vec<Vec<u8>> = Vec::new();
+
+    while let Some(bytes) = component_bytes(&mut producer).await {
+        components_vecs.push(bytes);
+    }
+
+    let mut components = components_vecs
+        .iter()
+        .map(|bytes| Component::new(bytes).expect("Component was unexpectedly longer than MCL."));
+
+    let total_len = components.clone().fold(0, |acc, comp| acc + comp.len());
+
+    let path: Path<MCL, MCC, MPL> = Path::new_from_iter(total_len, &mut components).unwrap();
+
+    (timestamp, subspace, path)
+}
+
+async fn spt_to_tps_key<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+>(
+    key: &IVec,
+) -> IVec
+where
+    S::ErrorReason: core::fmt::Debug,
+{
+    let (subspace, path, timestamp) = decode_spt_entry_key::<MCL, MCC, MPL, S>(key).await;
+
+    IVec::from(encode_tsp_entry_key(&subspace, &path, timestamp).await)
+}
+
+async fn tps_to_spt_key<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+>(
+    key: &IVec,
+) -> IVec
+where
+    S::ErrorReason: core::fmt::Debug,
+{
+    let (timestamp, subspace, path) = decode_tsp_entry_key::<MCL, MCC, MPL, S>(key).await;
+
+    IVec::from(encode_spt_entry_key(&subspace, &path, timestamp).await)
 }
 
 async fn component_bytes<P: Producer<Item = u8>>(producer: &mut P) -> Option<Vec<u8>>
@@ -1570,9 +1848,9 @@ where
             let result = match self.iter.as_mut() {
                 Some(iter) => iter.next(),
                 None => {
-                    let entry_tree = self.store.entry_tree()?;
+                    let entry_tree = self.store.spt_entry_tree()?;
 
-                    let range_start_key = encode_entry_key(
+                    let range_start_key = encode_spt_entry_key(
                         &self.range.subspaces().start,
                         &self.range.paths().start,
                         self.range.times().start,
@@ -1589,7 +1867,8 @@ where
                         .unwrap_or(&open_subspace_end);
                     let path_end = self.range.paths().get_end().unwrap_or(&open_path_end);
                     let time_end = self.range.times().get_end().unwrap_or(&u64::MAX);
-                    let range_end_key = encode_entry_key(subspace_end, path_end, *time_end).await;
+                    let range_end_key =
+                        encode_spt_entry_key(subspace_end, path_end, *time_end).await;
 
                     let mut new_iter = entry_tree.range(range_start_key..=range_end_key);
 
@@ -1604,7 +1883,7 @@ where
             match result {
                 Some(Ok((key, value))) => {
                     let (subspace, path, timestamp) =
-                        decode_entry_key::<MCL, MCC, MPL, S>(&key).await;
+                        decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
                     let (length, digest, token, local_length) =
                         decode_entry_values::<PD, AT>(&value).await;
 

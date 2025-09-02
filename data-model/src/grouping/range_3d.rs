@@ -94,6 +94,18 @@ where
             && self.times().includes_range(other.times())
     }
 
+    /// Returns whether an [`Range3d`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range3d_include) includes an entry with a given subspace_id, path, and timestamp.
+    pub fn includes_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        self.subspaces.includes(subspace_id)
+            && self.paths.includes(path)
+            && self.times.includes(&timestamp)
+    }
+
     /// Returns whether an [`Entry`] can cause prefix-pruning in this [`Range3d`].
     pub fn could_be_pruned_by<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
         self.could_be_pruned_by_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
