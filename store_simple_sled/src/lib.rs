@@ -722,9 +722,9 @@ where
                 .transaction(
                     |(tx_spt, tx_tsp, tx_payloads): &(
                         TransactionalTree,
-                        TransactionalTree, 
+                        TransactionalTree,
                         TransactionalTree
-                    )| 
+                    )|
                     -> Result<
                         (),
                         sled::transaction::ConflictableTransactionError<()>,
@@ -870,10 +870,10 @@ where
                 }
 
                 let new_key_value = encode_entry_values(length, &digest, &auth_token, 0).await;
-                
+
                 let mut spt_batch = sled::Batch::default();
                 spt_batch.insert(&spt_key, new_key_value.clone());
-                
+
                 let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
                 let mut tsp_batch = sled::Batch::default();
                 let tsp_key = encode_tsp_entry_key(&subspace, &path, timestamp).await;
@@ -1282,13 +1282,7 @@ where
         let mut current_count = 0;
         let mut current_size = 0;
 
-        let mut least_actual_subspace: Option<S> = None;
-        let mut least_actual_path: Option<Path<MCL, MCC, MPL>> = None;
         let mut least_actual_time = None;
-
-        let mut greatest_actual_subspace: Option<S> = None;
-        let mut greatest_actual_path: Option<Path<MCL, MCC, MPL>> = None;
-        let mut greatest_actual_time: Option<u64> = None;
 
         for (tsp_key, entry_value) in entry_iterator.rev().flatten() {
             let (timestamp, subspace, path) =
@@ -1299,17 +1293,6 @@ where
             }
 
             least_actual_time = Some(timestamp);
-            least_actual_subspace = option_min(least_actual_subspace, subspace.clone());
-            least_actual_path = option_min(least_actual_path, path.clone());
-            // Guaranteed to be smaller than the last thanks to sled's key ordering.
-
-            greatest_actual_time = if greatest_actual_time.is_none() {
-                Some(timestamp)
-            } else {
-                greatest_actual_time
-            };
-            greatest_actual_subspace = option_max(greatest_actual_subspace, subspace);
-            greatest_actual_path = option_max(greatest_actual_path, path);
 
             let (length, _digest, _auth_token, _local_length) =
                 decode_entry_values::<PD, AT>(&entry_value).await;
@@ -1327,24 +1310,10 @@ where
         }
 
         let time_lower_range = least_actual_time.unwrap_or(range.times().start);
-        let subspace_lower_range = least_actual_subspace.unwrap_or(range.subspaces().start.clone());
-        let path_lower_range = least_actual_path.unwrap_or(range.paths().start.clone());
 
-        let time_upper_range =
-            greatest_actual_time.map_or(RangeEnd::Open, |time| RangeEnd::Closed(time + 1));
-        let subspace_upper_range = greatest_actual_subspace.map_or(RangeEnd::Open, |subspace| {
-            subspace
-                .successor()
-                .map_or(RangeEnd::Open, |successor| RangeEnd::Closed(successor))
-        });
-        let path_upper_range = greatest_actual_path.map_or(RangeEnd::Open, |path| {
-            path.successor()
-                .map_or(RangeEnd::Open, |successor| RangeEnd::Closed(successor))
-        });
-
-        let time_range = Range::new(time_lower_range, time_upper_range);
-        let subspace_range = Range::new(subspace_lower_range, subspace_upper_range);
-        let path_range = Range::new(path_lower_range, path_upper_range);
+        let time_range = Range::new(time_lower_range, range.times().end);
+        let subspace_range = range.subspaces().clone();
+        let path_range = range.paths().clone();
 
         Range3d::new(subspace_range, path_range, time_range)
     }
