@@ -583,7 +583,7 @@ where
                     self.received_entry_buffer.clear();
 
                     if received_all_messages_for_this_range {
-                        todo!("process announce_entries_msg.info.covers and is_final");
+                        todo!("process announce_entries_msg.info.root_id");
                         todo!("this is only inside an if-statement to get rid of dead-code warnings; do this unconditionally");
                     }
 
