@@ -482,9 +482,9 @@ fn invert_bytes<const LEN: usize>(mut bytes: [u8; LEN]) -> [u8; LEN] {
 #[derive(Debug, Clone, Copy)]
 pub struct PartitionOpts {
     /// The largest number of entries that can be included by a range before it is better to send that range's fingerprint instead of sending its entries.
-    pub max_range_size: usize,
-    /// The maximum number of partitions to split a range into. Must be at least 2.
-    pub max_splits: usize,
+    pub min_range_size: usize,
+    /// The targeted number of partitions to split a range into. Must be at least 2.
+    pub target_split_count: usize,
 }
 
 /// A split range and the action which should be taken with that split range during range-based set reconciliation.
@@ -495,6 +495,7 @@ pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
 #[derive(Debug)]
 pub enum SplitAction<FP> {
     SendFingerprint(FP),
+    /// The u64 is the number of entries to send.
     SendEntries(u64),
 }
 
@@ -546,7 +547,7 @@ where
     >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
-    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = (FP, u64)>;
+    fn summarise(&self, range: &Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = (FP, usize)>;
 
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(

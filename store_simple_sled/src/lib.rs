@@ -56,7 +56,7 @@ use willow_data_model::{
     SubspaceId,
 };
 
-use wgps::{Fingerprint, RbsrStore};
+use wgps::{Fingerprint, RangeSplit, RbsrStore, SplitAction};
 
 pub trait SledSubspaceId: SubspaceId {
     /// Returns the greatest possible subspace, for which the result of `successor` is always `None`.
@@ -1238,12 +1238,13 @@ where
 
     async fn summarise(
         &self,
-        range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
-    ) -> (FP, u64) {
+        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+    ) -> (FP, usize) {
         let mut size = 0;
         let mut fingerprint = FP::NEUTRAL;
 
-        let entry_producer = self.query_range(&range, QueryIgnoreParams::default());
+        let mut entry_producer =
+            EntryProducer::new(self, range.clone(), QueryIgnoreParams::default());
 
         while let Ok(item) = entry_producer.produce_item().await {
             let singleton = FP::singleton(item);
@@ -1323,7 +1324,130 @@ where
         range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
         options: &wgps::PartitionOpts,
     ) -> Option<impl Iterator<Item = wgps::RangeSplit<MCL, MCC, MPL, S, FP>>> {
-        todo!()
+        let tsp_tree = self.tsp_entry_tree().unwrap();
+
+        let (_fp, count): (FP, usize) = self.summarise(range).await;
+
+        let target_size = count / options.target_split_count;
+
+        let open_subspace_end = S::max_id();
+        let open_path_end = Path::<MCL, MCC, MPL>::new_max();
+
+        let subspace_end = range.subspaces().get_end().unwrap_or(&open_subspace_end);
+        let path_end = range.paths().get_end().unwrap_or(&open_path_end);
+        let time_end = range.times().get_end().unwrap_or(&u64::MAX);
+        let range_end_key = encode_tsp_entry_key(subspace_end, path_end, *time_end).await;
+
+        let range_start_key = encode_tsp_entry_key(
+            &range.subspaces().start,
+            &range.paths().start,
+            range.times().start,
+        )
+        .await;
+
+        let entry_iterator = tsp_tree.range(range_start_key..=range_end_key);
+
+        let mut splits = Vec::<RangeSplit<MCL, MCC, MPL, S, FP>>::new();
+
+        let mut current_lower_bound = range.times().start;
+        let mut current_size = 0;
+
+        for (i, (tsp_key, _entry_value)) in entry_iterator.flatten().enumerate() {
+            current_size += 1;
+
+            if i == count - 1 || current_size > target_size {
+                // The timestamp of this entry is the upper bound of the previous range, and the lower bound of the next one.
+                let time_upper_bound = if i == count - 1 {
+                    // This is the last item in the range, so the upper bound should be
+                    range.times().end
+                } else {
+                    let (timestamp, _subspace, _path) =
+                        decode_tsp_entry_key::<MCL, MCC, MPL, S>(&tsp_key).await;
+
+                    RangeEnd::Closed(timestamp)
+                };
+
+                match time_upper_bound {
+                    RangeEnd::Closed(upper_timestamp) => {
+                        match Range::new_closed(current_lower_bound, upper_timestamp) {
+                            Some(prev_time_range) => {
+                                let prev_range = Range3d::new(
+                                    range.subspaces().clone(),
+                                    range.paths().clone(),
+                                    prev_time_range,
+                                );
+
+                                let (split_fp, split_size) = self.summarise(&prev_range).await;
+
+                                let split_action = if split_size < options.min_range_size {
+                                    SplitAction::<FP>::SendEntries(split_size as u64)
+                                } else {
+                                    SplitAction::SendFingerprint(split_fp)
+                                };
+
+                                splits.push((prev_range, split_action));
+
+                                current_lower_bound = upper_timestamp;
+                                current_size = 0;
+                            }
+                            None => {
+                                // Uh-oh! This had the same timestamp as the last one.
+                                // What we should do is try and split along another dimension, say, subspaces.
+                                // But for now let's continue and pretend this never happened.
+                                continue;
+                            }
+                        }
+                    }
+                    RangeEnd::Open => {
+                        // Only way this can happen is if we use the upper bound of the original range.
+                        let prev_range = Range3d::new(
+                            range.subspaces().clone(),
+                            range.paths().clone(),
+                            Range::new_open(current_lower_bound),
+                        );
+
+                        let (split_fp, split_size) = self.summarise(&prev_range).await;
+
+                        let split_action = if split_size < options.min_range_size {
+                            SplitAction::<FP>::SendEntries(split_size as u64)
+                        } else {
+                            SplitAction::SendFingerprint(split_fp)
+                        };
+
+                        splits.push((prev_range, split_action));
+
+                        // We don't need to reset the variables here because we know this is the last iteration.
+                        break;
+                    }
+                }
+            }
+        }
+
+        if current_size > 0 {
+            // We had one dangling range.
+            // Only way this can happen is if we use the upper bound of the original range.
+            let prev_range = Range3d::new(
+                range.subspaces().clone(),
+                range.paths().clone(),
+                Range::new_open(current_lower_bound),
+            );
+
+            let (split_fp, split_size) = self.summarise(&prev_range).await;
+
+            let split_action = if split_size < options.min_range_size {
+                SplitAction::<FP>::SendEntries(split_size as u64)
+            } else {
+                SplitAction::SendFingerprint(split_fp)
+            };
+
+            splits.push((prev_range, split_action));
+        }
+
+        if splits.len() <= 1 {
+            None
+        } else {
+            Some(splits.into_iter())
+        }
     }
 }
 
