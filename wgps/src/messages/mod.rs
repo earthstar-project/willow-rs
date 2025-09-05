@@ -605,8 +605,6 @@ pub(crate) struct ReconciliationSendEntry<
 pub(crate) struct ReconciliationSendPayload {
     /// The number of transmitted Chunks.
     pub amount: u64,
-    /// The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the receiver’s reconciliation_current_entryEntry, starting at the offset of the corresponding ReconciliationSendEntry message plus the number of Chunks for the current Entry that were already transmitted by prior ReconciliationSendPayload messages.
-    pub bytes: Box<[u8]>,
 }
 
 /// Signal the end of the currentPayload transmission as part of 3d range-based set reconciliation, and indicate whether another LengthyAuthorisedEntry transmission will follow for the current 3dRange.
@@ -621,29 +619,27 @@ pub(crate) struct ReconciliationTerminatePayload {
 pub(crate) struct DataSendEntry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 {
     /// The AuthorisedEntry to transmit.
-    entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    pub entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     /// The index of the first (transformed) Payload Chunk that will be transmitted for entry. Can be set arbitrarily if no Chunks will be transmitted, should be set to 0 in that case.
-    offset: u64,
+    pub offset: u64,
 }
 
 /// Send some Chunks of the receiver’s data_current_entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DataSendPayload {
-    // The number of transmitted Chunks.
-    amount: u64,
-    // The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the receiver’s data_current_entryEntry, starting at the offset of the corresponding DataSendEntry message plus the number of Chunks for the current Entry that were already transmitted by prior DataSendPayload messages.
-    bytes: Box<[u8]>,
+    /// The number of transmitted Chunks.
+    pub amount: u64,
 }
 
 /// Express eagerness preferences for the Payload transmissions in the overlaps of the granted areas of two ReadCapabilities.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DataSetEagerness {
     // A ReadCapabilityHandle bound by the sender of this message. This message pertains to the granted area of the corresponding read capability.
-    sender_handle: u64,
+    pub sender_handle: u64,
     // A ReadCapabilityHandle bound by the receiver of this message. This message pertains to the granted area of the corresponding read capability.
-    receiver_handle: u64,
+    pub receiver_handle: u64,
     // Whether the receiver should eagerly include Payloads when it pushes Entries from the overlap of the granted areas of the ReadCapability corresponding to sender_handle and receiver_handle.
-    set_eager: bool,
+    pub set_eager: bool,
 }
 
 impl Encodable for DataSetEagerness {
@@ -697,11 +693,10 @@ pub(crate) struct PayloadRequestBindRequest<
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PayloadRequestSendResponse {
     // The PayloadRequestHandle of the request this is responding to.
-    handle: u64,
+    pub handle: u64,
     // The number of transmitted Chunks.
-    amount: u64,
+    pub amount: u64,
     // The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the requestedEntry, starting at the requested offset plus the number of Chunks for the same request that were already transmitted by prior PayloadRequestSendResponse messages.
-    bytes: Box<[u8]>,
 }
 
 /// The different resource handles employed by the WGPS.
@@ -719,13 +714,13 @@ pub(crate) enum HandleType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResourceHandleFree {
     // The type of resource handle to free.
-    handle_type: HandleType,
+    pub handle_type: HandleType,
     // Whether the resource handle to free was bound by the sender (true) or the receiver (false) of this message.
-    mine: bool,
+    pub mine: bool,
     // The numeric id of the resource handle to free.
-    handle_id: u64,
+    pub handle_id: u64,
     // The sender’s reference count for the resource handle to free.
-    reference_count: u64,
+    pub reference_count: u64,
 }
 
 impl Encodable for ResourceHandleFree {
