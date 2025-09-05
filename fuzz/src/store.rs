@@ -12,12 +12,13 @@ use ufotofu::{
     producer::{FromBoxedSlice, FromSlice},
     BulkProducer, Producer,
 };
+
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryIngestionSuccess,
     EntryOrigin, EventSystem, ForgetEntryError, ForgetPayloadError, LengthyAuthorisedEntry,
     NamespaceId, Path, Payload, PayloadAppendError, PayloadAppendSuccess, PayloadDigest,
-    PayloadError, QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
+    PayloadError, QueryIgnoreParams, Store, StoreEvent, Subscriber, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -140,6 +141,100 @@ where
         RefMut::map(subspaces, |subspaces| {
             subspaces.get_mut(subspace_id).unwrap()
         })
+    }
+
+    /// A producer of an area's authorised entries, but with a concrete return type.
+    fn area_entry_producer(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> FromBoxedSlice<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+        let mut candidates = vec![];
+
+        match area.subspace() {
+            AreaSubspace::Id(subspace_id) => {
+                let subspace_store = self.get_or_create_subspace_store(subspace_id);
+
+                for path in subspace_store.entries.keys() {
+                    if !path.is_prefixed_by(area.path()) {
+                        continue;
+                    }
+
+                    if let Some(entry) = subspace_store.entries.get(path) {
+                        if !area.times().includes(&entry.timestamp) {
+                            continue;
+                        }
+
+                        let available = entry.payload.len() as u64;
+
+                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                            || (ignore.ignore_incomplete_payloads
+                                && available != entry.payload_length)
+                        {
+                            continue;
+                        } else {
+                            candidates.push(LengthyAuthorisedEntry::new(
+                                AuthorisedEntry::new(
+                                    Entry::new(
+                                        self.namespace.clone(),
+                                        subspace_id.clone(),
+                                        path.clone(),
+                                        entry.timestamp,
+                                        entry.payload_length,
+                                        entry.payload_digest.clone(),
+                                    ),
+                                    entry.authorisation_token.clone(),
+                                )
+                                .unwrap(),
+                                available,
+                            ));
+                        }
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if !path.is_prefixed_by(area.path()) {
+                            continue;
+                        }
+
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            if !area.times().includes(&entry.timestamp) {
+                                continue;
+                            }
+
+                            let available = entry.payload.len() as u64;
+
+                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                                || (ignore.ignore_incomplete_payloads
+                                    && available != entry.payload_length)
+                            {
+                                continue;
+                            } else {
+                                candidates.push(LengthyAuthorisedEntry::new(
+                                    AuthorisedEntry::new(
+                                        Entry::new(
+                                            self.namespace.clone(),
+                                            subspace_id.clone(),
+                                            path.clone(),
+                                            entry.timestamp,
+                                            entry.payload_length,
+                                            entry.payload_digest.clone(),
+                                        ),
+                                        entry.authorisation_token.clone(),
+                                    )
+                                    .unwrap(),
+                                    available,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        FromBoxedSlice::from_vec(candidates)
     }
 }
 
@@ -690,100 +785,12 @@ where
         }
     }
 
-    async fn query_area(
+    fn query_area(
         &self,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> Result<
-        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
-        Self::Error,
-    > {
-        let mut candidates = vec![];
-
-        match area.subspace() {
-            AreaSubspace::Id(subspace_id) => {
-                let subspace_store = self.get_or_create_subspace_store(subspace_id);
-
-                for path in subspace_store.entries.keys() {
-                    if !path.is_prefixed_by(area.path()) {
-                        continue;
-                    }
-
-                    if let Some(entry) = subspace_store.entries.get(path) {
-                        if !area.times().includes(&entry.timestamp) {
-                            continue;
-                        }
-
-                        let available = entry.payload.len() as u64;
-
-                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
-                            || (ignore.ignore_incomplete_payloads
-                                && available != entry.payload_length)
-                        {
-                            continue;
-                        } else {
-                            candidates.push(LengthyAuthorisedEntry::new(
-                                AuthorisedEntry::new(
-                                    Entry::new(
-                                        self.namespace.clone(),
-                                        subspace_id.clone(),
-                                        path.clone(),
-                                        entry.timestamp,
-                                        entry.payload_length,
-                                        entry.payload_digest.clone(),
-                                    ),
-                                    entry.authorisation_token.clone(),
-                                )
-                                .unwrap(),
-                                available,
-                            ));
-                        }
-                    }
-                }
-            }
-            AreaSubspace::Any => {
-                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
-                    for path in subspace_store.entries.keys() {
-                        if !path.is_prefixed_by(area.path()) {
-                            continue;
-                        }
-
-                        if let Some(entry) = subspace_store.entries.get(path) {
-                            if !area.times().includes(&entry.timestamp) {
-                                continue;
-                            }
-
-                            let available = entry.payload.len() as u64;
-
-                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
-                                || (ignore.ignore_incomplete_payloads
-                                    && available != entry.payload_length)
-                            {
-                                continue;
-                            } else {
-                                candidates.push(LengthyAuthorisedEntry::new(
-                                    AuthorisedEntry::new(
-                                        Entry::new(
-                                            self.namespace.clone(),
-                                            subspace_id.clone(),
-                                            path.clone(),
-                                            entry.timestamp,
-                                            entry.payload_length,
-                                            entry.payload_digest.clone(),
-                                        ),
-                                        entry.authorisation_token.clone(),
-                                    )
-                                    .unwrap(),
-                                    available,
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(FromBoxedSlice::from_vec(candidates))
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()> {
+        self.area_entry_producer(area, ignore)
     }
 
     async fn subscribe_area(
@@ -792,7 +799,67 @@ where
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
-        EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
+        EventSystem::add_subscription(self.event_system.clone(), area.clone().into(), ignore)
+    }
+
+    fn query_and_subscribe_area(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Self::Error,
+            >,
+            Error = Self::Error,
+        >,
+        Self::Error,
+    > {
+        let subscriber =
+            EventSystem::add_subscription(self.event_system.clone(), area.clone().into(), ignore);
+
+        let entry_producer = self.area_entry_producer(area, ignore);
+
+        Ok(EntriesAndSubProducer {
+            entry_producer,
+            subscriber: Some(subscriber),
+        })
+    }
+}
+
+pub struct EntriesAndSubProducer<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+{
+    entry_producer: FromBoxedSlice<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+    subscriber: Option<Subscriber<MCL, MCC, MPL, N, S, PD, AT, Infallible>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntriesAndSubProducer<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Clone,
+    S: Clone,
+    PD: Clone,
+    AT: Clone,
+{
+    type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
+
+    type Final = Subscriber<MCL, MCC, MPL, N, S, PD, AT, Infallible>;
+
+    type Error = Infallible;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        match self.entry_producer.produce().await {
+            Ok(Either::Left(item)) => return Ok(Either::Left(item)),
+            Ok(Either::Right(_)) => {
+                // Return the subscriber!
+                // We unwrap here because this is the final item.
+                return Ok(Either::Right(self.subscriber.take().unwrap()));
+            }
+            Err(err) => return Err(err),
+        }
     }
 }
 
@@ -1055,40 +1122,35 @@ pub async fn check_store_equality<
                 }
             }
             StoreOp::QueryArea { area, ignore } => {
-                match (
-                    store1.query_area(area, ignore.to_owned()).await,
-                    store2.query_area(area, ignore.to_owned()).await,
-                ) {
-                    (Ok(mut producer1), Ok(mut producer2)) => {
-                        let mut set1 =
-                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
-                        let mut set2 =
-                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+                let mut producer1 = store1.query_area(area, ignore.to_owned());
+                let mut producer2 = store2.query_area(area, ignore.to_owned());
 
-                        loop {
-                            match producer1.produce().await {
-                                Ok(Either::Left(entry)) => {
-                                    set1.insert(entry);
-                                }
-                                Ok(Either::Right(_)) => break,
-                                Err(_) => panic!("QueryArea: Store producer error"),
-                            }
+                let mut set1 =
+                    HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+                let mut set2 =
+                    HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+
+                loop {
+                    match producer1.produce().await {
+                        Ok(Either::Left(entry)) => {
+                            set1.insert(entry);
                         }
-
-                        loop {
-                            match producer2.produce().await {
-                                Ok(Either::Left(entry)) => {
-                                    set2.insert(entry);
-                                }
-                                Ok(Either::Right(_)) => break,
-                                Err(_) => panic!("QueryArea: Store producer error"),
-                            }
-                        }
-
-                        assert_eq!(set1, set2)
+                        Ok(Either::Right(_)) => break,
+                        Err(_) => panic!("QueryArea: Store producer error"),
                     }
-                    (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
+
+                loop {
+                    match producer2.produce().await {
+                        Ok(Either::Left(entry)) => {
+                            set2.insert(entry);
+                        }
+                        Ok(Either::Right(_)) => break,
+                        Err(_) => panic!("QueryArea: Store producer error"),
+                    }
+                }
+
+                assert_eq!(set1, set2)
             }
         }
     }

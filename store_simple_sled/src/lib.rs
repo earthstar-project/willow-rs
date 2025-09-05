@@ -1370,14 +1370,14 @@ where
                 match time_upper_bound {
                     RangeEnd::Closed(upper_timestamp) => {
                         match Range::new_closed(current_lower_bound, upper_timestamp) {
-                            Some(prev_time_range) => {
-                                let prev_range = Range3d::new(
+                            Some(new_time_range) => {
+                                let new_range = Range3d::new(
                                     range.subspaces().clone(),
                                     range.paths().clone(),
-                                    prev_time_range,
+                                    new_time_range,
                                 );
 
-                                let (split_fp, split_size) = self.summarise(&prev_range).await;
+                                let (split_fp, split_size) = self.summarise(&new_range).await;
 
                                 let split_action = if split_size < options.min_range_size {
                                     SplitAction::<FP>::SendEntries(split_size as u64)
@@ -1385,7 +1385,7 @@ where
                                     SplitAction::SendFingerprint(split_fp)
                                 };
 
-                                splits.push((prev_range, split_action));
+                                splits.push((new_range, split_action));
 
                                 current_lower_bound = upper_timestamp;
                                 current_size = 0;
@@ -1400,13 +1400,13 @@ where
                     }
                     RangeEnd::Open => {
                         // Only way this can happen is if we use the upper bound of the original range.
-                        let prev_range = Range3d::new(
+                        let new_range = Range3d::new(
                             range.subspaces().clone(),
                             range.paths().clone(),
                             Range::new_open(current_lower_bound),
                         );
 
-                        let (split_fp, split_size) = self.summarise(&prev_range).await;
+                        let (split_fp, split_size) = self.summarise(&new_range).await;
 
                         let split_action = if split_size < options.min_range_size {
                             SplitAction::<FP>::SendEntries(split_size as u64)
@@ -1414,33 +1414,13 @@ where
                             SplitAction::SendFingerprint(split_fp)
                         };
 
-                        splits.push((prev_range, split_action));
+                        splits.push((new_range, split_action));
 
                         // We don't need to reset the variables here because we know this is the last iteration.
                         break;
                     }
                 }
             }
-        }
-
-        if current_size > 0 {
-            // We had one dangling range.
-            // Only way this can happen is if we use the upper bound of the original range.
-            let prev_range = Range3d::new(
-                range.subspaces().clone(),
-                range.paths().clone(),
-                Range::new_open(current_lower_bound),
-            );
-
-            let (split_fp, split_size) = self.summarise(&prev_range).await;
-
-            let split_action = if split_size < options.min_range_size {
-                SplitAction::<FP>::SendEntries(split_size as u64)
-            } else {
-                SplitAction::SendFingerprint(split_fp)
-            };
-
-            splits.push((prev_range, split_action));
         }
 
         if splits.len() <= 1 {

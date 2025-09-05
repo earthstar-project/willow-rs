@@ -231,11 +231,8 @@ pub fn check_store_events(
         // If events were implemented correctly, then querying the original store for the area and ignores of the subscription yields the same set of entries as querying the collected store for *all* its entries.
 
         let full_area = Area::new_full();
-        let mut producer1 = store.query_area(&area, ignores).await.unwrap();
-        let mut producer2 = collected
-            .query_area(&full_area, QueryIgnoreParams::default())
-            .await
-            .unwrap();
+        let mut producer1 = store.query_area(&area, ignores);
+        let mut producer2 = collected.query_area(&full_area, QueryIgnoreParams::default());
 
         let mut set1 = HashSet::<
             LengthyAuthorisedEntry<

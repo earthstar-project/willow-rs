@@ -14,6 +14,7 @@ use ufotofu_codec::{
 use willow_data_model::{
     AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
 };
+use willow_store_simple_sled::SledSubspaceId;
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
     bytes: &[u8; BYTES_LENGTH],
@@ -165,6 +166,12 @@ impl Verifier<SillySig> for FakeSubspaceId {
 }
 
 impl McPublicUserKey<SillySig> for FakeSubspaceId {}
+
+impl SledSubspaceId for FakeSubspaceId {
+    fn max_id() -> Self {
+        Self(SillyPublicKey::new(255))
+    }
+}
 
 // Payload digest
 
