@@ -28,7 +28,7 @@ use crate::{
 };
 
 mod capable_aois;
-mod overlap_finder;
+pub(crate) mod overlap_finder;
 mod salted_hashes;
 
 /// The state for a PIO session.
@@ -1135,19 +1135,18 @@ where
     }
 }
 
-// pub(crate) struct AoiHandles;
-
-/// The information you submit to pio detection (basically the information you need for a `PioBindReadCapability` message).
+/// The information you need to sync an AreaOfInterest.
 #[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, EnumCap>
-{
+pub struct CapableAoi<const MCL: usize, const MCC: usize, const MPL: usize, ReadCap, EnumCap> {
     /// The read capability for the area one is interested in.
     capability: ReadCap,
     /// The max_count of the AreaOfInterest that the sender wants to sync.
     max_count: u64,
     /// The max_size of the AreaOfInterest that the sender wants to sync.
     max_size: u64,
+    /// The base-two logarithm (floored) of the length up to which payloads inside this areas will be synced automatically.
     max_payload_power: u8,
+    /// An enumeration capability for the area one is interest in.
     /// Must only be `None` if it is impossible to have an awkward pair with the PrivateInterest derived from the `capability`. Otherwise, things may panic.
     enum_cap: Option<EnumCap>,
 }
