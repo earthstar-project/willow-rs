@@ -973,6 +973,7 @@ pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
 #[derive(Debug)]
 pub enum SplitAction<FP> {
     SendFingerprint(FP),
+    // TODO this should be a usize, and marked as approximate!
     SendEntries(u64),
 }
 
