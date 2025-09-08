@@ -980,7 +980,7 @@ pub enum SplitAction<FP> {
 /// A [`Store`] capable of performing [3d range-based set reconciliation](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3_range_based_set_reconciliation).
 pub trait RbsrStore<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP>
 where
-    Self: Store<MCL, MCC, MPL, N, S, PD, AT>,
+    Self: Store<MCL, MCC, MPL, N, S, PD, AT> + 'static,
     N: NamespaceId,
     S: SubspaceId,
     PD: PayloadDigest,
@@ -992,8 +992,8 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_range(
-        &self,
-        range: &Range3d<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
@@ -1002,14 +1002,14 @@ where
     /// If `ignore_incomplete_payloads` is `true`, the producer will not produce entries with incomplete corresponding payloads.
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_range(
-        &self,
-        range: &Range3d<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: Option<QueryIgnoreParams>,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     fn query_and_subscribe_range(
-        &self,
-        range: &Range3d<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = Result<

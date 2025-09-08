@@ -5,12 +5,13 @@ use std::rc::Rc;
 use either::Either::{self, Left, Right};
 use lcmux::{ChannelReceiver, ChannelSender, LogicalChannelClientError};
 use ufotofu::producer::FromSlice;
-use ufotofu::BulkConsumer;
+use ufotofu::{BulkConsumer, Producer};
 use wb_async_utils::Mutex;
 use willow_data_model::grouping::Range3d;
 use willow_data_model::{
     AuthorisationToken, Component, Entry, EntryIngestionError, EntryOrigin, LengthyAuthorisedEntry,
-    NamespaceId, Path, PathBuilder, PayloadAppendError, PayloadDigest, SubspaceId,
+    NamespaceId, Path, PathBuilder, PayloadAppendError, PayloadDigest, QueryIgnoreParams,
+    StoreEvent, SubspaceId,
 };
 
 use crate::messages::{
@@ -208,7 +209,8 @@ where
     CErr: Clone,
     FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
-    pub async fn process_split_action(
+    /// Sends messages depending on a split action. After sending an item set, returns a store subscription to the 3d range of that item set.
+    pub async fn process_split_action<'range>(
         &self,
         namespace_id: &N,
         range: &Range3d<MCL, MCC, MPL, S>,
@@ -217,7 +219,17 @@ where
         root_id: u64,
         sender_handle: u64,
         receiver_handle: u64,
-    ) -> Result<(), RbsrError<CErr, StoreCreationError, Store::Error>> {
+    ) -> Result<
+        Option<(
+            impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Store::Error,
+            >,
+            SubscriptionMetadata<MCL, MCC, MPL, N, S>,
+        )>,
+        RbsrError<CErr, StoreCreationError, Store::Error>,
+    > {
         match split_action_to_process {
             SplitAction::SendFingerprint(fp_to_send) => {
                 let msg = ReconciliationSendFingerprint {
@@ -250,35 +262,38 @@ where
 
                 *prev_range = range.clone();
 
-                return Ok(());
+                return Ok(None);
             }
             SplitAction::SendEntries(approximate_count) => {
+                let subscription_metadata = SubscriptionMetadata {
+                    root_id,
+                    namespace_id: namespace_id.clone(),
+                    range: range.clone(),
+                };
+
                 let store = self.storedinator.get_store(namespace_id).await.map_err(
                     |store_creation_error| RbsrError::StoreCreation(store_creation_error),
                 )?;
 
+                let mut entries = store
+                    .query_and_subscribe_range(range.clone(), QueryIgnoreParams::default())
+                    .await?;
+
+                let current_entry = match entries.produce().await? {
+                    Left(entry) => entry,
+                    Right(subscription) => return Ok(Some((subscription, subscription_metadata))),
+                };
+
                 todo!();
             }
         }
-
-        todo!("process root range counter (probably at the very start of this method, actually)");
     }
+}
 
-    // pub async fn compute_and_send_my_fingerprint_for_range(
-    //     &self,
-    //     namespace_id: &N,
-    //     range: &Range3d<MCL, MCC, MPL, S>,
-    // ) -> Result<(), RbsrError<CErr, StoreCreationError, Store::Error>> {
-    // }
-
-    // pub async fn send_my_entries_in_range(
-    //     &self,
-    //     range: &Range3d<MCL, MCC, MPL, S>,
-    //     // Must be sorted (subspace_id first, lexicographic path as tiebreaker)
-    //     except_for: &[Entry<MCL, MCC, MPL, N, S, PD>],
-    // ) -> Result<(), RbsrError<CErr, StoreCreationError, Store::Error>> {
-    //     todo!();
-    // }
+pub(crate) struct SubscriptionMetadata<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
+    root_id: u64,
+    namespace_id: N,
+    range: Range3d<MCL, MCC, MPL, S>,
 }
 
 pub(crate) enum RbsrError<SendingError, StoreCreationError, StoreErr> {
