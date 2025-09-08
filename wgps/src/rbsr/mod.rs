@@ -9,9 +9,9 @@ use ufotofu::{BulkConsumer, Producer};
 use wb_async_utils::Mutex;
 use willow_data_model::grouping::Range3d;
 use willow_data_model::{
-    AuthorisationToken, Component, Entry, EntryIngestionError, EntryOrigin, LengthyAuthorisedEntry,
-    NamespaceId, Path, PathBuilder, PayloadAppendError, PayloadDigest, QueryIgnoreParams,
-    StoreEvent, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, Component, Entry, EntryIngestionError, EntryOrigin,
+    LengthyAuthorisedEntry, NamespaceId, Path, PathBuilder, PayloadAppendError, PayloadDigest,
+    QueryIgnoreParams, StoreEvent, SubspaceId,
 };
 
 use crate::messages::{
@@ -69,11 +69,13 @@ struct ReconciliationSender<
     /// Access to our stores.
     storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
     reconciliation_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
+    data_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
     session_id: u64,
     previously_sent_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
+    previously_sent_entry: Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
 
     // temp
-    todoRemoveThis: PhantomData<(Fingerprint, PD, AT)>,
+    todoRemoveThis: PhantomData<Fingerprint>,
 }
 
 impl<
@@ -142,14 +144,17 @@ where
         >,
         storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
         reconciliation_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
+        data_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
         session_id: u64,
     ) -> Self {
         Self {
             pio_state,
             storedinator,
             reconciliation_channel_sender,
+            data_channel_sender,
             session_id,
             previously_sent_range: Mutex::new(Range3d::default()),
+            previously_sent_entry: Mutex::new(todo!("default AuthorisedEntry here")),
             todoRemoveThis: PhantomData,
         }
     }
@@ -279,12 +284,141 @@ where
                     .query_and_subscribe_range(range.clone(), QueryIgnoreParams::default())
                     .await?;
 
-                let current_entry = match entries.produce().await? {
+                let mut current_entry = match entries.produce().await? {
                     Left(entry) => entry,
-                    Right(subscription) => return Ok(Some((subscription, subscription_metadata))),
+                    Right(subscription) => {
+                        // Send a ReconciliationAnnounceEntries message with `is_empty = true`, update `self.previously_sent_range`, and return the store subscription for the range.
+                        let msg = ReconciliationAnnounceEntries {
+                            info: RangeInfo {
+                                root_id: root_id,
+                                range: range.clone(),
+                                sender_handle,
+                                receiver_handle,
+                            },
+                            is_empty: true,
+                            want_response: true,
+                            will_sort: false,
+                        };
+
+                        let mut prev_range = self.previously_sent_range.write().await;
+
+                        self.data_channel_sender
+                            .write()
+                            .await
+                            .send_to_channel_relative(&msg, prev_range.deref())
+                            .await
+                            .map_err(|logical_channel_client_error| {
+                                match logical_channel_client_error {
+                                    LogicalChannelClientError::Underlying(inner_err) => {
+                                        RbsrError::Sending(inner_err)
+                                    }
+                                    LogicalChannelClientError::LogicalChannelClosed => {
+                                        RbsrError::DataChannelClosedByPeer
+                                    }
+                                }
+                            })?;
+
+                        *prev_range = range.clone();
+
+                        return Ok(Some((subscription, subscription_metadata)));
+                    }
                 };
 
-                todo!();
+                // Send a ReconciliationAnnounceEntries message with `is_empty = false`, update `self.previously_sent_range`, and then go into a loop to send all entries in the range
+                let announce_entries_msg = ReconciliationAnnounceEntries {
+                    info: RangeInfo {
+                        root_id: root_id,
+                        range: range.clone(),
+                        sender_handle,
+                        receiver_handle,
+                    },
+                    is_empty: false,
+                    want_response: true,
+                    will_sort: false,
+                };
+
+                let mut prev_range = self.previously_sent_range.write().await;
+
+                self.data_channel_sender
+                    .write()
+                    .await
+                    .send_to_channel_relative(&announce_entries_msg, prev_range.deref())
+                    .await
+                    .map_err(
+                        |logical_channel_client_error| match logical_channel_client_error {
+                            LogicalChannelClientError::Underlying(inner_err) => {
+                                RbsrError::Sending(inner_err)
+                            }
+                            LogicalChannelClientError::LogicalChannelClosed => {
+                                RbsrError::DataChannelClosedByPeer
+                            }
+                        },
+                    )?;
+
+                *prev_range = range.clone();
+
+                let mut next_entry_or_subscription = entries.produce().await?;
+
+                loop {
+                    let send_entry_msg = ReconciliationSendEntry {
+                        entry: current_entry.clone(),
+                        offset: 0,
+                    };
+
+                    let mut prev_entry = self.previously_sent_entry.write().await;
+
+                    self.data_channel_sender
+                        .write()
+                        .await
+                        .send_to_channel_relative(
+                            &send_entry_msg,
+                            &(prev_range.deref(), prev_entry.deref()),
+                        )
+                        .await
+                        .map_err(
+                            |logical_channel_client_error| match logical_channel_client_error {
+                                LogicalChannelClientError::Underlying(inner_err) => {
+                                    RbsrError::Sending(inner_err)
+                                }
+                                LogicalChannelClientError::LogicalChannelClosed => {
+                                    RbsrError::DataChannelClosedByPeer
+                                }
+                            },
+                        )?;
+
+                    *prev_entry = current_entry.into_authorised_entry();
+
+                    let terminate_payload_msg = ReconciliationTerminatePayload {
+                        is_final: next_entry_or_subscription.is_right(),
+                    };
+
+                    self.data_channel_sender
+                        .write()
+                        .await
+                        .send_to_channel(&terminate_payload_msg)
+                        .await
+                        .map_err(
+                            |logical_channel_client_error| match logical_channel_client_error {
+                                LogicalChannelClientError::Underlying(inner_err) => {
+                                    RbsrError::Sending(inner_err)
+                                }
+                                LogicalChannelClientError::LogicalChannelClosed => {
+                                    RbsrError::DataChannelClosedByPeer
+                                }
+                            },
+                        )?;
+
+                    match next_entry_or_subscription {
+                        Left(next_entry) => {
+                            current_entry = next_entry;
+                            next_entry_or_subscription = entries.produce().await?;
+                            // And go to next iteration of the loop.
+                        }
+                        Right(subscription) => {
+                            return Ok(Some((subscription, subscription_metadata)));
+                        }
+                    }
+                }
             }
         }
     }
@@ -301,6 +435,7 @@ pub(crate) enum RbsrError<SendingError, StoreCreationError, StoreErr> {
     StoreCreation(StoreCreationError),
     Store(StoreErr),
     ReconciliationChannelClosedByPeer,
+    DataChannelClosedByPeer,
 }
 
 impl<SendingError, StoreCreationError, StoreErr> From<StoreErr>
