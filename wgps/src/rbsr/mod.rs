@@ -71,7 +71,8 @@ struct ReconciliationSender<
     reconciliation_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
     data_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
     session_id: u64,
-    previously_sent_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
+    previously_sent_fingerprint_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
+    previously_sent_itemset_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
     previously_sent_entry: Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
 
     // temp
@@ -153,7 +154,8 @@ where
             reconciliation_channel_sender,
             data_channel_sender,
             session_id,
-            previously_sent_range: Mutex::new(Range3d::default()),
+            previously_sent_fingerprint_range: Mutex::new(Range3d::default()),
+            previously_sent_itemset_range: Mutex::new(Range3d::default()),
             previously_sent_entry: Mutex::new(todo!("default AuthorisedEntry here")),
             todoRemoveThis: PhantomData,
         }
@@ -247,7 +249,7 @@ where
                     },
                 };
 
-                let mut prev_range = self.previously_sent_range.write().await;
+                let mut prev_range = self.previously_sent_fingerprint_range.write().await;
 
                 self.reconciliation_channel_sender
                     .write()
@@ -300,7 +302,7 @@ where
                             will_sort: false,
                         };
 
-                        let mut prev_range = self.previously_sent_range.write().await;
+                        let mut prev_range = self.previously_sent_itemset_range.write().await;
 
                         self.data_channel_sender
                             .write()
@@ -337,7 +339,7 @@ where
                     will_sort: false,
                 };
 
-                let mut prev_range = self.previously_sent_range.write().await;
+                let mut prev_range = self.previously_sent_itemset_range.write().await;
 
                 self.data_channel_sender
                     .write()
