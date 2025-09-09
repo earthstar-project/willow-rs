@@ -519,9 +519,9 @@ where
 }
 
 pub(crate) struct SubscriptionMetadata<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
-    root_id: u64,
-    namespace_id: N,
-    range: Range3d<MCL, MCC, MPL, S>,
+    pub root_id: u64,
+    pub namespace_id: N,
+    pub range: Range3d<MCL, MCC, MPL, S>,
 }
 
 pub(crate) enum RbsrError<SendingError, StoreCreationError, StoreError> {

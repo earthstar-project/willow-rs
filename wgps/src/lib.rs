@@ -23,7 +23,7 @@ pub mod messages;
 use messages::*;
 
 use ufotofu_codec::{
-    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync,
+    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodableKnownSize,
 };
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
@@ -67,6 +67,8 @@ pub enum WgpsError<E, StoreCreationError, StoreError> {
     StoreCreation(StoreCreationError),
     /// A data store encountered a fatal error.
     Store(StoreError),
+    /// We received valid data, but could not process it due to limitations of our own (e.g. running out of memory).
+    OurFault,
 }
 
 impl<E, StoreCreationError, StoreError> From<E> for WgpsError<E, StoreCreationError, StoreError> {
@@ -195,6 +197,12 @@ impl<
             }
             WgpsError::StoreCreation(err) => write!(f, "{}", err),
             WgpsError::Store(err) => write!(f, "{}", err),
+            WgpsError::OurFault => {
+                write!(
+                    f,
+                    "We received valid data, but could not process it due to limitations of our own (for example, running out of memory, or being unable to store a 64 bit integer in a usize)."
+                )
+            }
         }
     }
 }
@@ -653,7 +661,7 @@ where
 
     let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender, payload_request_channel_sender] =
         channel_senders;
-    let [reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
+    let [mut reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
         channel_receivers;
 
     let data_channel_sender = Rc::new(Mutex::new(data_channel_sender));
@@ -835,7 +843,7 @@ where
                                 .await
                                 .map_err(|store_error| RbsrError::Store(store_error))?;
 
-                            reconciliation_sender
+                            match reconciliation_sender
                                 .process_split_action(
                                     &common_area.namespace,
                                     &range,
@@ -848,7 +856,15 @@ where
                                     common_area.my_handle,
                                     common_area.their_handle,
                                 )
-                                .await?;
+                                .await?
+                            {
+                                None => {
+                                    // nothing else to do
+                                }
+                                Some(subscription) => {
+                                    todo!("use the subscription when implementing post-rbsr forwarding");
+                                }
+                            }
                         }
                     }
                     Err(AoiOutputError::CapabilityChannelClosed) => {
@@ -863,8 +879,73 @@ where
         }
     };
 
-    // A future to process all incoming rbsr pessages.
-    let process_incoming_rbsr_messages = async {
+    // A future to process all incoming messages on the reconciliation channel.
+    let process_incoming_fingerprint_storedinator = storedinator.clone();
+    let process_incoming_fingerprint_messages = async {
+        let mut previously_received_fingerprint_3drange: Range3d<MCL, MCC, MPL, S> =
+            Range3d::default();
+
+        loop {
+            let fp_msg = ReconciliationSendFingerprint::<MCL, MCC, MPL, S, FP>::relative_decode(
+                &mut reconciliation_channel_receiver,
+                &previously_received_fingerprint_3drange,
+            )
+            .await
+            .map_err(|value| match value {
+                DecodeError::Producer(())
+                | DecodeError::UnexpectedEndOfInput(())
+                | DecodeError::Other(Blame::TheirFault) => WgpsError::PeerMisbehaved,
+                DecodeError::Other(Blame::OurFault) => WgpsError::OurFault,
+            })?;
+
+            let namespace_id =
+                todo!("check the pio handles and extract namespace if they are valid");
+
+            let root_id = if fp_msg.info.root_id != 0 {
+                fp_msg.info.root_id
+            } else {
+                todo!("track root ids to assign them correctly here");
+            };
+
+            let store = process_incoming_fingerprint_storedinator
+                .get_store(&namespace_id)
+                .await
+                .map_err(|store_creation_error| RbsrError::StoreCreation(store_creation_error))?;
+
+            let (my_fp, my_count) = store
+                .summarise(&fp_msg.info.range)
+                .await
+                .map_err(|store_error| RbsrError::Store(store_error))?;
+
+            if my_fp == fp_msg.fingerprint {
+                // Nothing more to do with this message.
+            } else {
+                let mut partitions = store
+                    .partition_range(fp_msg.info.range, options.partition_ops)
+                    .await
+                    .map_err(|store_error| RbsrError::Store(store_error))?;
+
+                loop {
+                    match partitions
+                        .produce()
+                        .await
+                        .map_err(|store_error| RbsrError::Store(store_error))?
+                    {
+                        Left((range, action)) => {
+                            match reconciliation_sender.process_split_action(&namespace_id, &range, action, root_id, fp_msg.info.receiver_handle, fp_msg.info.sender_handle /* we swap ereceiver and sender handle compared to what we received */).await? {
+                                None => {
+                                    // nothing else to do
+                                }
+                                Some(subscription) => {
+                                    todo!("use the subscription when implementing post-rbsr forwarding");
+                                }
+                            }
+                        }
+                        Right(()) => break,
+                    }
+                }
+            }
+        }
         todo!();
         // rbsr_message_receiver
         //     .process_incoming_reconciliation_messages()
@@ -877,7 +958,7 @@ where
         do_the_lcmux_bookkeeping,
         receive_global_messages,
         initiate_rbsr,
-        process_incoming_rbsr_messages,
+        process_incoming_fingerprint_messages,
     )?; // TODO add futures for the remaining, as of yet unimplemented tasks: doing post-reconciliation forwarding, receiving `data` messages. Will be fleshed out as we progress with the WGPS implementation.
 
     Ok(())
@@ -1148,8 +1229,13 @@ where
 
     /// Partition a [`Range3d`] into many parts, or return `None` if the given range cannot be split (for instance because the range only includes a single entry).
     fn partition_range(
-        &self,
-        range: &Range3d<MCL, MCC, MPL, S>,
-        options: &PartitionOpts,
-    ) -> impl Future<Output = Option<impl Iterator<Item = RangeSplit<MCL, MCC, MPL, S, FP>>>>;
+        self: Rc<Self>,
+        range: Range3d<MCL, MCC, MPL, S>,
+        options: PartitionOpts,
+    ) -> impl Future<
+        Output = Result<
+            impl Producer<Item = RangeSplit<MCL, MCC, MPL, S, FP>, Final = (), Error = Self::Error>,
+            Self::Error,
+        >,
+    >;
 }
