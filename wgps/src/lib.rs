@@ -224,10 +224,13 @@ pub struct SyncOptions<
     pub data_channel_options: ChannelOptions,
     pub overlap_channel_options: ChannelOptions,
     pub capability_channel_options: ChannelOptions,
+    pub payload_request_channel_options: ChannelOptions,
     /// How many message bytes to receive at most on the overlap channel.
     pub overlap_channel_receiving_limit: u64,
     /// How many message bytes to receive at most on the capability channel.
     pub capability_channel_receiving_limit: u64,
+    /// How many message bytes to receive at most on the payload_request channel.
+    pub payload_request_channel_receiving_limit: u64,
     /* End of LCMUX Channel Options */
     /* Private Interest Overlap Options */
     hash_private_interest: fn(
@@ -553,7 +556,7 @@ where
     let producer = SharedProducer::new(Rc::new(shared_producer_state));
 
     let mut lcmux_session: Session<
-        4,
+        5,
         _,
         _,
         _,
@@ -605,8 +608,9 @@ where
             &options.data_channel_options,
             &options.overlap_channel_options,
             &options.capability_channel_options,
+            &options.payload_request_channel_options,
         ],
-        [false, false, true, true],
+        [false, false, true, true, true],
         None,
     );
 
@@ -624,6 +628,9 @@ where
             InitOptions {
                 receiving_limit: Some(options.capability_channel_receiving_limit),
             },
+            InitOptions {
+                receiving_limit: Some(options.payload_request_channel_receiving_limit),
+            },
         ])
         .await?;
 
@@ -635,9 +642,9 @@ where
         channel_receivers,
     } = lcmux_session;
 
-    let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender] =
+    let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender, payload_request_channel_sender] =
         channel_senders;
-    let [reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver] =
+    let [reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
         channel_receivers;
 
     let global_sender = Mutex::new(global_sender);

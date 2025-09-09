@@ -64,8 +64,8 @@ pub(crate) struct State<
     >,
     caois_for_which_we_already_sent_a_bind_read_capability_message:
         RefCell<HashSet<CapableAoi<MCL, MCC, MPL, MyReadCap, MyEnumCap>>>,
-    global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
-    capability_channel_sender: Mutex<ChannelSender<4, P, PFinal, PErr, C, CErr>>,
+    global_sender: Mutex<GlobalMessageSender<5, P, PFinal, PErr, C, CErr>>,
+    capability_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
     my_public_key: S,
     their_public_key: S,
     // After we have sent a PioBindReadCapability message, we also put its data in here, for later overlap reporting.
@@ -130,8 +130,8 @@ where
         ) -> [u8; INTEREST_HASH_LENGTH],
         my_public_key: S,
         their_public_key: S,
-        global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
-        capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+        global_sender: Mutex<GlobalMessageSender<5, P, PFinal, PErr, C, CErr>>,
+        capability_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
         read_capabilities_i_sent_sender: spsc::Sender<
             Rc<
                 spsc::State<
@@ -480,11 +480,11 @@ where
         ) -> [u8; INTEREST_HASH_LENGTH],
         my_public_key: S,
         their_public_key: S,
-        global_sender: Mutex<GlobalMessageSender<4, P, PFinal, PErr, C, CErr>>,
-        capability_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
-        capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
-        overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
-        overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+        global_sender: Mutex<GlobalMessageSender<5, P, PFinal, PErr, C, CErr>>,
+        capability_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
+        capability_channel_receiver: ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
+        overlap_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
+        overlap_channel_receiver: ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
     ) -> Self {
         let my_sent_caois_state = Rc::new(spsc::State::new(Static::new()));
@@ -552,7 +552,7 @@ pub(crate) struct MyAoiInput<
             CErr,
         >,
     >,
-    overlap_channel_sender: ChannelSender<4, P, PFinal, PErr, C, CErr>,
+    overlap_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
 }
 
 impl<
@@ -755,7 +755,7 @@ pub struct OverlappingAoiOutput<
         Merge<
             MapItem<
                 Decoder<
-                    ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+                    ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
                     PioBindHash<INTEREST_HASH_LENGTH>,
                 >,
                 fn(
@@ -773,7 +773,7 @@ pub struct OverlappingAoiOutput<
             >,
             MapItem<
                 RelativeDecoder<
-                    ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+                    ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
                     PioBindReadCapability<MCL, MCC, MPL, TheirReadCap>,
                     Rc<
                         State<
@@ -915,9 +915,9 @@ where
                 CErr,
             >,
         >,
-        overlap_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+        overlap_channel_receiver: ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
         announce_overlap_producer: AnnounceOverlapProducer,
-        capability_channel_receiver: ChannelReceiver<4, P, PFinal, PErr, C, CErr>,
+        capability_channel_receiver: ChannelReceiver<5, P, PFinal, PErr, C, CErr>,
         my_sent_read_capabilities_receiver: spsc::Receiver<
             Rc<
                 spsc::State<
