@@ -37,16 +37,16 @@ mod pio;
 
 use crate::{
     parameters::{
-        EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsNamespaceId,
-        WgpsReadCapability, WgpsSubspaceId,
+        EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsFingerprint,
+        WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
     pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
-    rbsr::{RbsrError, ReconciliationSession},
+    rbsr::RbsrError,
     storedinator::Storedinator,
 };
 
 /// An error which can occur during a WGPS synchronisation session.
-pub enum WgpsError<E> {
+pub enum WgpsError<E, StoreCreationError, StoreError> {
     /// The handshake went wrong.
     Handshake(HandshakeError<E, (), E>),
     /// The underlying transport emitted an error.
@@ -63,15 +63,21 @@ pub enum WgpsError<E> {
     UnauthenticatedEndOfStream,
     /// We were supposed to transmit the enumeration capability for a read capability of ours, but none was available.
     NoEnumerationCapability,
+    /// Creating a new store (for a new namespace) went wrong.
+    StoreCreation(StoreCreationError),
+    /// A data store encountered a fatal error.
+    Store(StoreError),
 }
 
-impl<E> From<E> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<E> for WgpsError<E, StoreCreationError, StoreError> {
     fn from(value: E) -> Self {
         Self::Transport(value)
     }
 }
 
-impl<E> From<EncryptionError<E>> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<EncryptionError<E>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
     fn from(value: EncryptionError<E>) -> Self {
         match value {
             EncryptionError::Inner(err) => WgpsError::Transport(err),
@@ -80,7 +86,9 @@ impl<E> From<EncryptionError<E>> for WgpsError<E> {
     }
 }
 
-impl<E> From<DecryptionError<E>> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<DecryptionError<E>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
     fn from(value: DecryptionError<E>) -> Self {
         match value {
             DecryptionError::Inner(err) => WgpsError::Transport(err),
@@ -93,13 +101,17 @@ impl<E> From<DecryptionError<E>> for WgpsError<E> {
     }
 }
 
-impl<E> From<HandshakeError<E, (), E>> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<HandshakeError<E, (), E>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
     fn from(value: HandshakeError<E, (), E>) -> Self {
         Self::Handshake(value)
     }
 }
 
-impl<E> From<GlobalMessageError<(), DecryptionError<E>, Blame>> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<GlobalMessageError<(), DecryptionError<E>, Blame>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
     fn from(value: GlobalMessageError<(), DecryptionError<E>, Blame>) -> Self {
         match value {
             GlobalMessageError::Producer(err) => Self::from(err),
@@ -110,7 +122,9 @@ impl<E> From<GlobalMessageError<(), DecryptionError<E>, Blame>> for WgpsError<E>
     }
 }
 
-impl<E> From<AoiOutputError<EncryptionError<E>>> for WgpsError<E> {
+impl<E, StoreCreationError, StoreError> From<AoiOutputError<EncryptionError<E>>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
     fn from(value: AoiOutputError<EncryptionError<E>>) -> Self {
         match value {
             AoiOutputError::Transport(err) => Self::from(err),
@@ -121,15 +135,27 @@ impl<E> From<AoiOutputError<EncryptionError<E>>> for WgpsError<E> {
     }
 }
 
-impl<E> From<RbsrError<EncryptionError<E>>> for WgpsError<E> {
-    fn from(value: RbsrError<EncryptionError<E>>) -> Self {
+impl<E, StoreCreationError, StoreError>
+    From<RbsrError<EncryptionError<E>, StoreCreationError, StoreError>>
+    for WgpsError<E, StoreCreationError, StoreError>
+{
+    fn from(value: RbsrError<EncryptionError<E>, StoreCreationError, StoreError>) -> Self {
         match value {
             RbsrError::Sending(err) => Self::from(err),
+            RbsrError::StoreCreation(err) => WgpsError::StoreCreation(err),
+            RbsrError::Store(err) => WgpsError::Store(err),
+            RbsrError::ReconciliationChannelClosedByPeer =>panic!("Hey, you triggered a bug! Here is what happened (please report this to the authors of the willow-rs crate): An `RbsrError::ReconciliationChannelClosedByPeer` was attempted to be converted into a WgpsError, instead of handling it properly."),
+            RbsrError::DataChannelClosedByPeer  => panic!("Hey, you triggered a bug! Here is what happened (please report this to the authors of the willow-rs crate): An `RbsrError::DataChannelClosedByPeer` was attempted to be converted into a WgpsError, instead of handling it properly."),
         }
     }
 }
 
-impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
+impl<
+        E: core::fmt::Display,
+        StoreCreationError: core::fmt::Display,
+        StoreError: core::fmt::Display,
+    > core::fmt::Display for WgpsError<E, StoreCreationError, StoreError>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WgpsError::Transport(transport_error) => write!(f, "{}", transport_error),
@@ -167,13 +193,14 @@ impl<E: core::fmt::Display> core::fmt::Display for WgpsError<E> {
             WgpsError::NoEnumerationCapability => {
                 write!(f, "We were supposed to transmit the enumeration capability for a read capability of ours, but none was available.")
             }
+            WgpsError::StoreCreation(err) => write!(f, "{}", err),
+            WgpsError::Store(err) => write!(f, "{}", err),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncOptions<
-    'prologue,
     const HANDSHAKE_HASHLEN_IN_BYTES: usize,
     const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
     const MCL: usize,
@@ -190,7 +217,7 @@ pub struct SyncOptions<
     pub ssk: DH,
     pub spk: DH::PublicKey,
     pub protocol_name: &'static [u8],
-    pub prologue: &'prologue [u8],
+    pub prologue: &'static [u8],
     /* End of Handshake Options */
     /* LCMUX channel options */
     pub reconciliation_channel_options: ChannelOptions,
@@ -215,7 +242,6 @@ pub struct SyncOptions<
 }
 
 pub fn sync_with_peer<
-    'prologue,
     const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
     const HANDSHAKE_BLOCKLEN_IN_BYTES: usize,
     const HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES: usize,
@@ -236,15 +262,18 @@ pub fn sync_with_peer<
     P,
     N,
     S,
+    PD,
+    AT,
     MyReadCap,
     MyEnumCap,
     TheirReadCap,
     TheirEnumCap,
     Store,
     StoreCreationFunction,
+    StoreCreationError,
+    FP,
 >(
     options: SyncOptions<
-        'prologue,
         HANDSHAKE_HASHLEN_IN_BYTES,
         PIO_INTEREST_HASH_LENGTH_IN_BYTES,
         MCL,
@@ -290,36 +319,7 @@ pub fn sync_with_peer<
         >,
         EncryptionError<E>,
     >,
-    impl Future<Output = Result<(), WgpsError<E>>>
-        + use<
-            'prologue,
-            HANDSHAKE_HASHLEN_IN_BYTES,
-            HANDSHAKE_BLOCKLEN_IN_BYTES,
-            HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES,
-            HANDSHAKE_TAG_WIDTH_IN_BYTES,
-            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
-            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
-            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
-            HANDSHAKE_IS_TAG_PREPENDED,
-            PIO_INTEREST_HASH_LENGTH_IN_BYTES,
-            MCL,
-            MCC,
-            MPL,
-            H,
-            DH,
-            AEAD,
-            E,
-            C,
-            P,
-            N,
-            S,
-            MyReadCap,
-            MyEnumCap,
-            TheirReadCap,
-            TheirEnumCap,
-            Store,
-            StoreCreationFunction,
-        >,
+    impl Future<Output = Result<(), WgpsError<E, StoreCreationError, Store::Error>>>,
 )
 where
     DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
@@ -335,10 +335,15 @@ where
     P: BulkProducer<Item = u8, Final = (), Error = E> + 'static,
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
+    PD: WgpsPayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
+    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
+    Store: RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP>,
+    FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
     let stop_inputting_aois = Rc::new(Cell::new(false));
     let obtaining_the_aoi_consumer = Rc::new(TakeCell::new());
@@ -372,12 +377,16 @@ where
             P,
             N,
             S,
+            PD,
+            AT,
             MyReadCap,
             MyEnumCap,
             TheirReadCap,
             TheirEnumCap,
             Store,
             StoreCreationFunction,
+            StoreCreationError,
+            FP,
         >(
             options,
             consumer,
@@ -390,7 +399,6 @@ where
 }
 
 async fn do_sync_with_peer<
-    'prologue,
     const HANDSHAKE_HASHLEN_IN_BYTES: usize, // This is also the PIO SALT_LENGTH
     const HANDSHAKE_BLOCKLEN_IN_BYTES: usize,
     const HANDSHAKE_PK_ENCODING_LENGTH_IN_BYTES: usize,
@@ -411,15 +419,18 @@ async fn do_sync_with_peer<
     P,
     N,
     S,
+    PD,
+    AT,
     MyReadCap,
     MyEnumCap,
     TheirReadCap,
     TheirEnumCap,
     Store,
     StoreCreationFunction,
+    StoreCreationError,
+    FP,
 >(
     options: SyncOptions<
-        'prologue,
         HANDSHAKE_HASHLEN_IN_BYTES,
         PIO_INTEREST_HASH_LENGTH_IN_BYTES,
         MCL,
@@ -469,7 +480,7 @@ async fn do_sync_with_peer<
             >,
         >,
     >,
-) -> Result<(), WgpsError<E>>
+) -> Result<(), WgpsError<E, StoreCreationError, Store::Error>>
 where
     DH: DiffieHellmanSecretKey<PublicKey = S> + Clone,
     AEAD: Default,
@@ -484,10 +495,15 @@ where
     P: BulkProducer<Item = u8, Final = (), Error = E> + 'static,
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
+    PD: WgpsPayloadDigest,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
+    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
+    Store: RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP>,
+    FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
     //////////////////////
     // Handshake Things //
@@ -683,16 +699,16 @@ where
     // RBSR Things //
     /////////////////
 
-    let ReconciliationSession {
-        initiator: mut rbsr_initiator,
-        receiver: mut rbsr_message_receiver,
-    } = ReconciliationSession::new(
-        pio_state.clone(),
-        storedinator,
-        reconciliation_channel_sender,
-        reconciliation_channel_receiver,
-        options.entry_buffer_capacity,
-    );
+    // let ReconciliationSession {
+    //     initiator: mut rbsr_initiator,
+    //     receiver: mut rbsr_message_receiver,
+    // } = ReconciliationSession::new(
+    //     pio_state.clone(),
+    //     storedinator,
+    //     reconciliation_channel_sender,
+    //     reconciliation_channel_receiver,
+    //     options.entry_buffer_capacity,
+    // );
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block. //
@@ -703,7 +719,7 @@ where
         bookkeeping
             .keep_the_books()
             .await
-            .map_err::<WgpsError<E>, _>(|err| match err {
+            .map_err::<WgpsError<E, StoreCreationError, Store::Error>, _>(|err| match err {
                 Some(EncryptionError::Inner(channel_err)) => WgpsError::from(channel_err),
                 Some(EncryptionError::NoncesExhausted) => WgpsError::NonceExhausted,
                 None => WgpsError::PeerMisbehaved,
@@ -741,7 +757,8 @@ where
                     Ok(Right(())) => return Ok(()), // nothing special needs to happen when pio terminates
                     Ok(Left(common_areas)) => {
                         for common_area in common_areas.into_iter() {
-                            rbsr_initiator.initiate_reconciliation(common_area).await?;
+                            todo!();
+                            // rbsr_initiator.initiate_reconciliation(common_area).await?;
                         }
                     }
                     Err(AoiOutputError::CapabilityChannelClosed) => {
@@ -758,9 +775,10 @@ where
 
     // A future to process all incoming rbsr pessages.
     let process_incoming_rbsr_messages = async {
-        rbsr_message_receiver
-            .process_incoming_reconciliation_messages()
-            .await?;
+        todo!();
+        // rbsr_message_receiver
+        //     .process_incoming_reconciliation_messages()
+        //     .await?;
         Ok(())
     };
 

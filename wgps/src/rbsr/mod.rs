@@ -28,6 +28,8 @@ struct ReconciliationSender<
     const MPL: usize,
     N,
     S,
+    PD,
+    AT,
     MyReadCap,
     MyEnumCap,
     P,
@@ -38,8 +40,6 @@ struct ReconciliationSender<
     Store,
     StoreCreationFunction,
     Fingerprint,
-    PD,
-    AT,
 > {
     /// Need this to decode messages and to check validity of incoming messages (whether their capability-handle pairs are valid and refer to overlapping areas).
     pio_state: Rc<
@@ -80,6 +80,8 @@ impl<
         const MPL: usize,
         N,
         S,
+        PD,
+        AT,
         MyReadCap,
         MyEnumCap,
         P,
@@ -90,8 +92,6 @@ impl<
         Store,
         StoreCreationFunction,
         Fingerprint,
-        PD,
-        AT,
     >
     ReconciliationSender<
         SALT_LENGTH,
@@ -101,6 +101,8 @@ impl<
         MPL,
         N,
         S,
+        PD,
+        AT,
         MyReadCap,
         MyEnumCap,
         P,
@@ -111,8 +113,6 @@ impl<
         Store,
         StoreCreationFunction,
         Fingerprint,
-        PD,
-        AT,
     >
 where
     S: Default,
@@ -164,6 +164,8 @@ impl<
         const MPL: usize,
         N,
         S,
+        PD,
+        AT,
         MyReadCap,
         MyEnumCap,
         P,
@@ -175,8 +177,6 @@ impl<
         StoreCreationFunction,
         StoreCreationError,
         FP,
-        PD,
-        AT,
     >
     ReconciliationSender<
         SALT_LENGTH,
@@ -186,6 +186,8 @@ impl<
         MPL,
         N,
         S,
+        PD,
+        AT,
         MyReadCap,
         MyEnumCap,
         P,
@@ -196,8 +198,6 @@ impl<
         Store,
         StoreCreationFunction,
         FP,
-        PD,
-        AT,
     >
 where
     StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
@@ -510,10 +510,10 @@ pub(crate) struct SubscriptionMetadata<const MCL: usize, const MCC: usize, const
     range: Range3d<MCL, MCC, MPL, S>,
 }
 
-pub(crate) enum RbsrError<SendingError, StoreCreationError, StoreErr> {
+pub(crate) enum RbsrError<SendingError, StoreCreationError, StoreError> {
     Sending(SendingError),
     StoreCreation(StoreCreationError),
-    Store(StoreErr),
+    Store(StoreError),
     ReconciliationChannelClosedByPeer,
     DataChannelClosedByPeer,
 }
