@@ -29,6 +29,14 @@ pub struct PrivateInterest<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N: NamespaceId, S: SubspaceId>
     PrivateInterest<MCL, MCC, MPL, N, S>
 {
+    pub fn new(namespace_id: N, subspace_id: AreaSubspace<S>, path: Path<MCL, MCC, MPL>) -> Self {
+        Self {
+            namespace_id,
+            subspace_id,
+            path,
+        }
+    }
+
     pub fn namespace_id(&self) -> &N {
         &self.namespace_id
     }

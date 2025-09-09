@@ -1,14 +1,17 @@
-use signature::Signer;
+use compact_u64::{CompactU64, Tag, TagWidth};
+use signature::{Signer, Verifier};
 use ufotofu_codec::{
-    Encodable, EncodableKnownSize, EncodableSync, RelativeEncodable, RelativeEncodableKnownSize,
+    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
+    RelativeEncodable, RelativeEncodableKnownSize,
 };
 #[cfg(feature = "dev")]
 use willow_data_model::grouping::arbitrary_included_area;
-use willow_data_model::grouping::Area;
+use willow_data_model::{grouping::Area, Entry, PrivateAreaContext, PrivateInterest};
+use willow_encoding::is_bitflagged;
 
 use crate::{
-    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McNamespacePublicKey,
-    McPublicUserKey,
+    AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McCapability,
+    McNamespacePublicKey, McPublicUserKey,
 };
 
 #[cfg(feature = "dev")]
@@ -61,7 +64,7 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
 {
     /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`.
     pub fn new(
@@ -217,8 +220,8 @@ where
 
     /// Returns a slice of all [`Delegation`]s made to this capability, with a concrete return type.
     pub(crate) fn delegations_(
-        &self,
-    ) -> core::slice::Iter<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
+        &'_ self,
+    ) -> core::slice::Iter<'_, Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> {
         self.delegations.iter()
     }
 
@@ -256,6 +259,290 @@ where
             user_key,
             delegations,
         }
+    }
+
+    /// Returns the length of the longest common prefix of this capability's delegation chain and the given delegation chain.
+    pub fn longest_common_delegation_prefix_len(
+        &self,
+        delegations: &[Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>],
+    ) -> usize {
+        let mut count = 0;
+
+        while count < std::cmp::min(self.delegations.len(), delegations.len()) {
+            if self.delegations[count] == delegations[count] {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+
+        count
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+        PD,
+    >
+    RelativeEncodable<(
+        McCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+        Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+    )> for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &(
+            McCapability<
+                MCL,
+                MCC,
+                MPL,
+                NamespacePublicKey,
+                NamespaceSignature,
+                UserPublicKey,
+                UserSignature,
+            >,
+            Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        ),
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let (prior_cap, entry) = r;
+
+        if let AccessMode::Read = prior_cap.access_mode() {
+            panic!("Tried to encode a read capability relative to a write capability")
+        }
+
+        if let AccessMode::Read = self.access_mode {
+            panic!("Tried to encode a read capability relative to an entry")
+        }
+
+        if &self.namespace_key != entry.namespace_id() || !self.granted_area().includes_entry(entry)
+        {
+            panic!("Tried to encode a communal capability relative to an entry it cannot authorise")
+        }
+
+        let shared = match &prior_cap {
+            McCapability::Communal(communal_capability) => {
+                self.longest_common_delegation_prefix_len(&communal_capability.delegations)
+            }
+            McCapability::Owned(_owned_capability) => 0,
+        };
+
+        let nice_hack = match &prior_cap {
+            McCapability::Communal(_communal_capability) => shared + 1,
+            McCapability::Owned(_owned_capability) => 0,
+        };
+
+        let nice_hack_tag = Tag::min_tag(nice_hack as u64, TagWidth::three());
+        let del_len_tag = Tag::min_tag(self.delegations_len() as u64, TagWidth::four());
+
+        let mut header = 0;
+
+        header |= nice_hack_tag.data_at_offset(1);
+        header |= del_len_tag.data_at_offset(4);
+
+        consumer.consume(header).await?;
+
+        CompactU64(nice_hack as u64)
+            .relative_encode(consumer, &nice_hack_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.delegations_len() as u64)
+            .relative_encode(consumer, &del_len_tag.encoding_width())
+            .await?;
+
+        let mut prev_area = Area::new_subspace(entry.subspace_id().clone());
+
+        for (i, del) in self.delegations().enumerate() {
+            if i < shared {
+                continue;
+            }
+
+            let private_interest = PrivateInterest::new(
+                entry.namespace_id().clone(),
+                willow_data_model::grouping::AreaSubspace::Id(entry.subspace_id().clone()),
+                entry.path().clone(),
+            );
+
+            let ctx = if i == 0 {
+                PrivateAreaContext::new(
+                    private_interest,
+                    Area::new_subspace(entry.subspace_id().clone()),
+                )
+                .unwrap()
+            } else {
+                PrivateAreaContext::new(private_interest, prev_area).unwrap()
+            };
+
+            prev_area = del.area().clone();
+
+            del.area().relative_encode(consumer, &ctx).await?;
+            del.user().encode(consumer).await?;
+            del.signature().encode(consumer).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+        PD,
+    >
+    RelativeDecodable<
+        (
+            McCapability<
+                MCL,
+                MCC,
+                MPL,
+                NamespacePublicKey,
+                NamespaceSignature,
+                UserPublicKey,
+                UserSignature,
+            >,
+            Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        ),
+        Blame,
+    > for CommunalCapability<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, UserSignature>
+where
+    NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: EncodableKnownSize + EncodableSync + Decodable + Clone + PartialEq,
+    Blame: From<UserPublicKey::ErrorReason> + From<UserSignature::ErrorReason>,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &(
+            McCapability<
+                MCL,
+                MCC,
+                MPL,
+                NamespacePublicKey,
+                NamespaceSignature,
+                UserPublicKey,
+                UserSignature,
+            >,
+            Entry<MCL, MCC, MPL, NamespacePublicKey, UserPublicKey, PD>,
+        ),
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        if is_bitflagged(header, 0) {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
+        let nice_hack_tag = Tag::from_raw(header, TagWidth::three(), 1);
+        let del_len_tag = Tag::from_raw(header, TagWidth::four(), 4);
+
+        let nice_hack = CompactU64::relative_decode(producer, &nice_hack_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+        let del_len = CompactU64::relative_decode(producer, &del_len_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let (prior_cap, entry) = r;
+
+        let mut decoded_cap = CommunalCapability::<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            UserPublicKey,
+            UserSignature,
+        >::new(
+            entry.namespace_id().clone(),
+            entry.subspace_id().clone(),
+            AccessMode::Write,
+        )
+        .map_err(|_err| DecodeError::Other(Blame::OurFault))?;
+
+        if del_len.0 > 0 {
+            let how_many_shared = if nice_hack.0 == 0 { 0 } else { nice_hack.0 - 1 };
+
+            for (i, del) in prior_cap.delegations().enumerate() {
+                if (i as u64) < how_many_shared {
+                    decoded_cap
+                        .append_existing_delegation(del.clone())
+                        .map_err(|_err| DecodeError::Other(Blame::OurFault))?;
+                }
+            }
+
+            let how_many_to_decode = if nice_hack.0 == 0 {
+                del_len.0
+            } else {
+                del_len
+                    .0
+                    .checked_sub(nice_hack.0 - 1)
+                    .ok_or(DecodeError::Other(Blame::TheirFault))?
+            };
+
+            let mut prev_area = Area::new_subspace(entry.subspace_id().clone());
+
+            for _i in 0..how_many_to_decode {
+                let private_interest = PrivateInterest::new(
+                    entry.namespace_id().clone(),
+                    willow_data_model::grouping::AreaSubspace::Id(entry.subspace_id().clone()),
+                    entry.path().clone(),
+                );
+
+                let ctx_to_use = PrivateAreaContext::new(private_interest, prev_area).unwrap();
+
+                let area = Area::relative_decode(producer, &ctx_to_use)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                prev_area = area.clone();
+
+                let user_key = UserPublicKey::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                let sig = UserSignature::decode(producer)
+                    .await
+                    .map_err(DecodeError::map_other_from)?;
+
+                let delegation = Delegation::new(area, user_key, sig);
+
+                decoded_cap
+                    .append_existing_delegation(delegation)
+                    .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
+            }
+        };
+
+        Ok(decoded_cap)
     }
 }
 

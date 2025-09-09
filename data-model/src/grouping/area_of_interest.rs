@@ -44,3 +44,15 @@ where
             })
     }
 }
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Clone> From<Area<MCL, MCC, MPL, S>>
+    for AreaOfInterest<MCL, MCC, MPL, S>
+{
+    fn from(value: Area<MCL, MCC, MPL, S>) -> Self {
+        Self {
+            area: value,
+            max_count: 0,
+            max_size: 0,
+        }
+    }
+}

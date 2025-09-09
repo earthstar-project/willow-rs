@@ -662,8 +662,8 @@ mod tests {
             let ordering = path_a.cmp(&path_b);
 
             if ordering != expected {
-                println!("a: {:?}", a);
-                println!("b: {:?}", b);
+                println!("a: {a:?}");
+                println!("b: {b:?}");
 
                 assert_eq!(ordering, expected);
             }
@@ -689,9 +689,9 @@ pub fn test_successor<const MCL: usize, const MCC: usize, const MPL: usize>(
         None => {
             if baseline != max_path {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", successor);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {successor:?}");
+                println!("candidate: {candidate:?}");
                 println!("\n\n\n");
                 panic!("returned None when the path was NOT the greatest path! BoooOOOoo")
             }
@@ -699,9 +699,9 @@ pub fn test_successor<const MCL: usize, const MCC: usize, const MPL: usize>(
         Some(successor) => {
             if successor <= baseline {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", successor);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {successor:?}");
+                println!("candidate: {candidate:?}");
                 println!("\n\n\n");
 
                 panic!("successor was not greater than the path it was derived from! BooooOoooOOo")
@@ -709,9 +709,9 @@ pub fn test_successor<const MCL: usize, const MCC: usize, const MPL: usize>(
 
             if candidate < successor && candidate > baseline {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", successor);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {successor:?}");
+                println!("candidate: {candidate:?}");
                 println!("\n\n\n");
 
                 panic!("the successor generated was NOT the immediate successor! BooooOOOOo!")
@@ -731,26 +731,26 @@ pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const M
         None => {
             if !unsucceedable.iter().any(|unsuc| unsuc == &baseline) {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", greater_but_not_prefixed);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {greater_but_not_prefixed:?}");
+                println!("candidate: {candidate:?}");
                 panic!("returned None when the path was NOT the greatest path! BoooOOOoo\n\n\n\n");
             }
         }
         Some(greater_but_not_prefixed) => {
             if greater_but_not_prefixed <= baseline {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", greater_but_not_prefixed);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {greater_but_not_prefixed:?}");
+                println!("candidate: {candidate:?}");
                 panic!("the successor is meant to be greater than the baseline, but wasn't!! BOOOOOOOOO\n\n\n\n");
             }
 
             if greater_but_not_prefixed.is_prefixed_by(&baseline) {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", greater_but_not_prefixed);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {greater_but_not_prefixed:?}");
+                println!("candidate: {candidate:?}");
                 panic!("successor was prefixed by the path it was derived from! BoooOOooOOooOo\n\n\n\n");
             }
 
@@ -759,9 +759,9 @@ pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const M
                 && candidate > baseline
             {
                 println!("\n\n\n");
-                println!("baseline: {:?}", baseline);
-                println!("successor: {:?}", greater_but_not_prefixed);
-                println!("candidate: {:?}", candidate);
+                println!("baseline: {baseline:?}");
+                println!("successor: {greater_but_not_prefixed:?}");
+                println!("candidate: {candidate:?}");
 
                 panic!(
                     "the successor generated was NOT the immediate prefix successor! BooooOOOOo!\n\n\n\n"
@@ -1018,8 +1018,6 @@ fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
         ctrl.components()
             .map(|comp| comp.as_ref())
             .eq(p.components().map(|comp| comp.into_inner())),
-        "Unequal paths.\nctrl: {:?}\np: {:?}",
-        ctrl,
-        p
+        "Unequal paths.\nctrl: {ctrl:?}\np: {p:?}",
     );
 }
