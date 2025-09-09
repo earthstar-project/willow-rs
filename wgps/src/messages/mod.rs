@@ -769,6 +769,36 @@ pub(crate) struct ReconciliationSendPayload {
     pub amount: u64,
 }
 
+impl Encodable for ReconciliationSendPayload {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!();
+    }
+}
+
+impl EncodableKnownSize for ReconciliationSendPayload {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
+
+impl EncodableSync for ReconciliationSendPayload {}
+
+impl Decodable for ReconciliationSendPayload {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
 /// Signal the end of the currentPayload transmission as part of 3d range-based set reconciliation, and indicate whether another LengthyAuthorisedEntry transmission will follow for the current 3dRange.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReconciliationTerminatePayload {

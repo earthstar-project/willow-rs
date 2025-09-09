@@ -271,7 +271,7 @@ where
 
                 return Ok(None);
             }
-            SplitAction::SendEntries(approximate_count) => {
+            SplitAction::SendEntries(_approximate_count) => {
                 let subscription_metadata = SubscriptionMetadata {
                     root_id,
                     namespace_id: namespace_id.clone(),
