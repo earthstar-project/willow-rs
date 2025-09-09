@@ -1,10 +1,12 @@
 use std::hash::Hash;
 
 use ufotofu_codec::{
-    Blame, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
+    Blame, Decodable, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
     RelativeEncodableKnownSize,
 };
-use willow_data_model::{grouping::Area, LengthyAuthorisedEntry, NamespaceId, SubspaceId};
+use willow_data_model::{
+    grouping::Area, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, SubspaceId,
+};
 use willow_pio::PersonalPrivateInterest;
 
 pub trait WgpsNamespaceId: NamespaceId + Hash {}
@@ -13,6 +15,8 @@ pub trait WgpsSubspaceId:
     SubspaceId + Hash + Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone + Ord
 {
 }
+
+pub trait WgpsPayloadDigest: PayloadDigest + EncodableKnownSize + DecodableCanonic {}
 
 /// The semantics a valid read capability must provide to be usable with the WGPS.
 pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
@@ -69,4 +73,9 @@ pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S
     fn combine(&self, other: Self) -> Self;
 
     fn finalise(&self) -> Self::FFP;
+}
+
+pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable
+{
 }

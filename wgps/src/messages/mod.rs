@@ -538,10 +538,8 @@ where
 /// The data shared between ReconciliationSendFingerprint and ReconciliationAnnounceEntries messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
-    /// The count of the message this message is responding to. If this message was not created in response to any other message, this field is 0.
-    pub covers: u64,
-    /// Whether this message is the final message sent in response to some other message. If this message is not sent as a response at all, this field is true.
-    pub is_final: bool,
+    // Indicates the root message id of the prior root message this message refers to (when set to a non-zero U64), or indicates that this message is a fresh root message itself (when set to 0).
+    pub root_id: u64,
     /// The 3dRange the message pertains to.
     pub range: Range3d<MCL, MCC, MPL, S>,
     /// A ReadCapabilityHandle bound by the sender of this message. The granted area of the corresponding read capability must fully the range.
@@ -565,6 +563,56 @@ pub(crate) struct ReconciliationSendFingerprint<
     pub fingerprint: Fingerprint,
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+    RelativeEncodable<Range3d<MCL, MCC, MPL, S>>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+where
+    S: Encodable,
+    Fingerprint: Encodable,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &Range3d<MCL, MCC, MPL, S>,
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+    RelativeEncodableKnownSize<Range3d<MCL, MCC, MPL, S>>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+where
+    S: EncodableKnownSize,
+    Fingerprint: EncodableKnownSize,
+{
+    fn relative_len_of_encoding(&self, r: &Range3d<MCL, MCC, MPL, S>) -> usize {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+    RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+where
+    S: Decodable,
+    Fingerprint: Decodable,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &Range3d<MCL, MCC, MPL, S>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
+}
+
 /// Prepare transmission of the LengthyAuthorisedEntries a peer has in a 3dRange as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReconciliationAnnounceEntries<
@@ -581,6 +629,52 @@ pub(crate) struct ReconciliationAnnounceEntries<
     pub want_response: bool,
     /// Whether the sender promises to send the Entries in info.range sorted ascendingly by subspace_id , using paths (sorted lexicographically) as the tiebreaker.
     pub will_sort: bool,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
+    RelativeEncodable<Range3d<MCL, MCC, MPL, S>> for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
+where
+    S: Encodable,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &Range3d<MCL, MCC, MPL, S>,
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
+    RelativeEncodableKnownSize<Range3d<MCL, MCC, MPL, S>>
+    for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
+where
+    S: EncodableKnownSize,
+{
+    fn relative_len_of_encoding(&self, r: &Range3d<MCL, MCC, MPL, S>) -> usize {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
+    RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
+    for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
+where
+    S: Decodable,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &Range3d<MCL, MCC, MPL, S>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
 }
 
 /// Send a LengthyAuthorisedEntry as part of 3d range-based set reconciliation.
@@ -600,6 +694,74 @@ pub(crate) struct ReconciliationSendEntry<
     pub offset: u64,
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodable<(
+        &Range3d<MCL, MCC, MPL, S>,
+        &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    S: Encodable,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &(
+            &Range3d<MCL, MCC, MPL, S>,
+            &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        ),
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodableKnownSize<(
+        &Range3d<MCL, MCC, MPL, S>,
+        &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    S: EncodableKnownSize,
+{
+    fn relative_len_of_encoding(
+        &self,
+        r: &(
+            &Range3d<MCL, MCC, MPL, S>,
+            &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        ),
+    ) -> usize {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeDecodable<
+        (
+            &Range3d<MCL, MCC, MPL, S>,
+            &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        ),
+        Blame,
+    > for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    S: Decodable,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &(
+            &Range3d<MCL, MCC, MPL, S>,
+            &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        ),
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
+}
+
 /// Send some Chunks as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReconciliationSendPayload {
@@ -612,6 +774,36 @@ pub(crate) struct ReconciliationSendPayload {
 pub(crate) struct ReconciliationTerminatePayload {
     /// Set to true if and only if no further ReconciliationSendEntry message will be sent as part of reconciling the current 3dRange.
     pub is_final: bool,
+}
+
+impl Encodable for ReconciliationTerminatePayload {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!();
+    }
+}
+
+impl EncodableKnownSize for ReconciliationTerminatePayload {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
+
+impl EncodableSync for ReconciliationTerminatePayload {}
+
+impl Decodable for ReconciliationTerminatePayload {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        todo!()
+    }
 }
 
 /// Transmit an AuthorisedEntry and set the receiver’s data_current_entry.

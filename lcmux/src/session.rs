@@ -296,7 +296,6 @@ pub struct ChannelSender<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
 impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr>
     ChannelSender<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 where
-    // P: Producer,
     C: BulkConsumer<Item = u8, Final: Clone, Error = CErr>,
     CErr: Clone,
 {

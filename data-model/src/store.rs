@@ -463,14 +463,14 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> impl Future<Output = Result<usize, Self::Error>>;
 
-    /// Forces persistence of all previous mutations
+    /// Forces persistence of all previous mutations.
     fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path, starting at the supplied offset. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `PayloadError::WrongEntry` error. If the supplied `offset` is equal to or greater than the number of available payload bytes, this reports a `PayloadError::OutOfBounds`.
     fn payload(
-        &self,
-        subspace_id: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> impl Future<
@@ -492,15 +492,15 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`] **produced in an arbitrary order decided by the store implementation**.
     fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>;
 
     /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`crate::grouping::Area`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = impl Producer<
@@ -511,8 +511,8 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     >;
 
     fn query_and_subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<
