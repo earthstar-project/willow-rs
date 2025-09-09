@@ -8,7 +8,7 @@ use ufotofu::{BulkConsumer, Producer};
 use wb_async_utils::Mutex;
 use willow_data_model::grouping::Range3d;
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, Entry, QueryIgnoreParams, StoreEvent,
+    AuthorisationToken, AuthorisedEntry, LengthyEntry, QueryIgnoreParams, StoreEvent,
 };
 
 use crate::messages::{
@@ -20,7 +20,7 @@ use crate::{pio, storedinator::Storedinator};
 use crate::{RbsrStore, SplitAction};
 
 /// The state per WGPS session for handling RBSR.
-struct ReconciliationSender<
+pub(crate) struct ReconciliationSender<
     const SALT_LENGTH: usize,
     const INTEREST_HASH_LENGTH: usize,
     const MCL: usize,
@@ -63,7 +63,7 @@ struct ReconciliationSender<
     /// Access to our stores.
     storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
     reconciliation_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
-    data_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
+    data_channel_sender: Rc<Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>>,
     session_id: u64,
     previously_sent_fingerprint_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
     previously_sent_itemset_range: Mutex<Range3d<MCL, MCC, MPL, S>>,
@@ -117,7 +117,7 @@ impl<
 where
     S: Default,
 {
-    fn new(
+    pub(crate) fn new(
         pio_state: Rc<
             pio::State<
                 SALT_LENGTH,
@@ -137,15 +137,15 @@ where
             >,
         >,
         storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
-        reconciliation_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
-        data_channel_sender: Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>,
+        reconciliation_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
+        data_channel_sender: Rc<Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>>,
         session_id: u64,
         default_authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     ) -> Self {
         Self {
             pio_state,
             storedinator,
-            reconciliation_channel_sender,
+            reconciliation_channel_sender: Mutex::new(reconciliation_channel_sender),
             data_channel_sender,
             session_id,
             previously_sent_fingerprint_range: Mutex::new(Range3d::default()),
@@ -211,7 +211,7 @@ where
     FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
     /// Sends messages depending on a split action. After sending an item set, returns a store subscription to the 3d range of that item set.
-    pub async fn process_split_action(
+    pub(crate) async fn process_split_action(
         &self,
         namespace_id: &N,
         range: &Range3d<MCL, MCC, MPL, S>,
@@ -289,7 +289,7 @@ where
         root_id: u64,
         sender_handle: u64,
         receiver_handle: u64,
-        sorted_entries_to_skip: Option<&[Entry<MCL, MCC, MPL, N, S, PD>]>,
+        sorted_entries_to_skip: Option<&[LengthyEntry<MCL, MCC, MPL, N, S, PD>]>,
     ) -> Result<
         (
             impl Producer<
@@ -324,7 +324,13 @@ where
                     Some(entries) => {
                         if entries
                             .binary_search_by(|entry_in_slice| {
-                                order_entries(entry_in_slice, entry.entry().entry())
+                                order_entries(
+                                    entry_in_slice,
+                                    &LengthyEntry::new(
+                                        entry.entry().entry().clone(),
+                                        entry.available(),
+                                    ),
+                                )
                             })
                             .is_ok()
                         {
@@ -471,7 +477,13 @@ where
                             Some(entries) => {
                                 if entries
                                     .binary_search_by(|entry_in_slice| {
-                                        order_entries(entry_in_slice, current_entry.entry().entry())
+                                        order_entries(
+                                            entry_in_slice,
+                                            &LengthyEntry::new(
+                                                current_entry.entry().entry().clone(),
+                                                current_entry.available(),
+                                            ),
+                                        )
                                     })
                                     .is_ok()
                                 {
@@ -493,15 +505,17 @@ where
 }
 
 fn order_entries<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>(
-    a: &Entry<MCL, MCC, MPL, N, S, PD>,
-    b: &Entry<MCL, MCC, MPL, N, S, PD>,
+    a: &LengthyEntry<MCL, MCC, MPL, N, S, PD>,
+    b: &LengthyEntry<MCL, MCC, MPL, N, S, PD>,
 ) -> core::cmp::Ordering
 where
     S: Ord,
 {
-    a.subspace_id()
-        .cmp(b.subspace_id())
-        .then_with(|| a.path().cmp(b.path()))
+    a.entry()
+        .subspace_id()
+        .cmp(b.entry().subspace_id())
+        .then_with(|| a.entry().path().cmp(b.entry().path()))
+        .then_with(|| a.available().cmp(&b.available()))
 }
 
 pub(crate) struct SubscriptionMetadata<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {

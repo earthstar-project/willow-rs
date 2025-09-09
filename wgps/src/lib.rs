@@ -11,8 +11,8 @@ use wb_async_utils::{
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
-    AuthorisationToken, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, QueryIgnoreParams,
-    Store, StoreEvent, SubspaceId,
+    AuthorisationToken, AuthorisedEntry, LengthyAuthorisedEntry, NamespaceId, PayloadDigest,
+    QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
 mod parameters;
@@ -41,7 +41,7 @@ use crate::{
         WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
     pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
-    rbsr::RbsrError,
+    rbsr::{RbsrError, ReconciliationSender},
     storedinator::Storedinator,
 };
 
@@ -199,7 +199,7 @@ impl<
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncOptions<
     const HANDSHAKE_HASHLEN_IN_BYTES: usize,
     const PIO_INTEREST_HASH_LENGTH_IN_BYTES: usize,
@@ -209,6 +209,8 @@ pub struct SyncOptions<
     DH: DiffieHellmanSecretKey,
     N,
     S,
+    PD,
+    AT,
 > {
     /* Handshake Options */
     pub is_initiator: bool,
@@ -241,6 +243,9 @@ pub struct SyncOptions<
     /* RBSR options */
     /// The max number of entries to buffer in memory while receiving `ReconciliationSendEntry` messages and detecting duplicates to filter which entries to send in reply.
     entry_buffer_capacity: usize,
+    session_id: u64,
+    default_authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    partition_ops: PartitionOpts,
     /* End of RBSR Options */
 }
 
@@ -285,6 +290,8 @@ pub fn sync_with_peer<
         DH,
         N,
         S,
+        PD,
+        AT,
     >,
     consumer: C,
     producer: P,
@@ -442,6 +449,8 @@ async fn do_sync_with_peer<
         DH,
         N,
         S,
+        PD,
+        AT,
     >,
     consumer: C,
     producer: P,
@@ -647,6 +656,8 @@ where
     let [reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
         channel_receivers;
 
+    let data_channel_sender = Rc::new(Mutex::new(data_channel_sender));
+
     let global_sender = Mutex::new(global_sender);
 
     ////////////////
@@ -706,6 +717,51 @@ where
     // RBSR Things //
     /////////////////
 
+    let reconciliation_sender = Rc::new(ReconciliationSender::<
+        HANDSHAKE_HASHLEN_IN_BYTES,
+        PIO_INTEREST_HASH_LENGTH_IN_BYTES,
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        PD,
+        AT,
+        MyReadCap,
+        MyEnumCap,
+        Decryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            P,
+        >,
+        (),
+        DecryptionError<E>,
+        Encryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            C,
+        >,
+        EncryptionError<E>,
+        Store,
+        StoreCreationFunction,
+        FP,
+    >::new(
+        pio_state.clone(),
+        storedinator.clone(),
+        reconciliation_channel_sender,
+        data_channel_sender,
+        options.session_id,
+        options.default_authorised_entry.clone(),
+    ));
+
     // let ReconciliationSession {
     //     initiator: mut rbsr_initiator,
     //     receiver: mut rbsr_message_receiver,
@@ -757,6 +813,7 @@ where
     };
 
     // A future to listen for overlaps detected in pio and to initiate set reconciliation if appropriate.
+    let initiate_rbsr_storedinator = storedinator.clone();
     let initiate_rbsr = async {
         if options.is_initiator {
             loop {
@@ -764,8 +821,34 @@ where
                     Ok(Right(())) => return Ok(()), // nothing special needs to happen when pio terminates
                     Ok(Left(common_areas)) => {
                         for common_area in common_areas.into_iter() {
-                            todo!();
-                            // rbsr_initiator.initiate_reconciliation(common_area).await?;
+                            let store = initiate_rbsr_storedinator
+                                .get_store(&common_area.namespace)
+                                .await
+                                .map_err(|store_creation_error| {
+                                    RbsrError::StoreCreation(store_creation_error)
+                                })?;
+
+                            let range = store.area_of_interest_to_range(&common_area.aoi).await;
+
+                            let (fp, count) = store
+                                .summarise(&range)
+                                .await
+                                .map_err(|store_error| RbsrError::Store(store_error))?;
+
+                            reconciliation_sender
+                                .process_split_action(
+                                    &common_area.namespace,
+                                    &range,
+                                    if count < options.partition_ops.min_range_size {
+                                        SplitAction::SendEntries(count)
+                                    } else {
+                                        SplitAction::SendFingerprint(fp)
+                                    },
+                                    0,
+                                    common_area.my_handle,
+                                    common_area.their_handle,
+                                )
+                                .await?;
                         }
                     }
                     Err(AoiOutputError::CapabilityChannelClosed) => {
@@ -982,7 +1065,7 @@ impl<TransportError> From<AoiInputError<TransportError>> for WgpsInputError {
 }
 
 /// Options to specify how ranges should be partitioned.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PartitionOpts {
     /// The largest number of entries that can be included by a range before it is better to send that range's fingerprint instead of sending its entries.
     pub min_range_size: usize,
@@ -998,8 +1081,8 @@ pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
 #[derive(Debug)]
 pub enum SplitAction<FP> {
     SendFingerprint(FP),
-    // TODO this should be a usize, and marked as approximate!
-    SendEntries(u64),
+    /// Stores an approximate number of entries in the range.
+    SendEntries(usize),
 }
 
 /// A [`Store`] capable of performing [3d range-based set reconciliation](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3_range_based_set_reconciliation).
@@ -1052,7 +1135,10 @@ where
     >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).
-    fn summarise(&self, range: Range3d<MCL, MCC, MPL, S>) -> impl Future<Output = (FP, u64)>;
+    fn summarise(
+        &self,
+        range: &Range3d<MCL, MCC, MPL, S>,
+    ) -> impl Future<Output = Result<(FP, usize), Self::Error>>;
 
     /// Convert an [`AreaOfInterest`] to a concrete [`Range3d`] including all the entries the given [`AreaOfInterest`] would.
     fn area_of_interest_to_range(
