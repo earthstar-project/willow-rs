@@ -76,6 +76,6 @@ pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S
 }
 
 pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
-    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable + Eq
 {
 }
