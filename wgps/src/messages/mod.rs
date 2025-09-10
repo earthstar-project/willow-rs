@@ -1174,7 +1174,15 @@ impl Encodable for ReconciliationTerminatePayload {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!();
+        let mut header = 0b0110_0000;
+
+        if self.is_final {
+            header |= 0b0001_0000;
+        }
+
+        consumer.consume(header).await?;
+
+        Ok(())
     }
 }
 
@@ -1195,7 +1203,11 @@ impl Decodable for ReconciliationTerminatePayload {
     where
         P: ufotofu::BulkProducer<Item = u8>,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let is_final = is_bitflagged(header, 3);
+
+        Ok(Self { is_final })
     }
 }
 
