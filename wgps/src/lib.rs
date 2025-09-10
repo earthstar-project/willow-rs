@@ -1,4 +1,4 @@
-use std::{cell::Cell, future::Future, hash::Hash, rc::Rc};
+use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, rc::Rc};
 
 use either::Either::{Left, Right};
 use futures::try_join;
@@ -820,6 +820,12 @@ where
         }
     };
 
+    // Stores information per intersection between the AoIs the two peers want to sync.
+    let intersection_info = Rc::new(Mutex::new(HashMap::<
+        IntersectionKey,
+        IntersectionInfo<MCL, MCC, MPL, N, S>,
+    >::new()));
+
     // A future to listen for overlaps detected in pio and to initiate set reconciliation if appropriate.
     let initiate_rbsr_storedinator = storedinator.clone();
     let initiate_rbsr = async {
@@ -829,6 +835,18 @@ where
                     Ok(Right(())) => return Ok(()), // nothing special needs to happen when pio terminates
                     Ok(Left(common_areas)) => {
                         for common_area in common_areas.into_iter() {
+                            intersection_info.write().await.insert(
+                                IntersectionKey {
+                                    my_handle: common_area.my_handle,
+                                    their_handle: common_area.their_handle,
+                                },
+                                IntersectionInfo {
+                                    namespace_id: common_area.namespace.clone(),
+                                    aoi: common_area.aoi.clone(),
+                                    max_payload_power: common_area.max_payload_power,
+                                },
+                            );
+
                             let store = initiate_rbsr_storedinator
                                 .get_store(&common_area.namespace)
                                 .await
@@ -885,6 +903,8 @@ where
         let mut previously_received_fingerprint_3drange: Range3d<MCL, MCC, MPL, S> =
             Range3d::default();
 
+        let mut their_next_root_id = if options.is_initiator { 2 } else { 1 };
+
         loop {
             let fp_msg = ReconciliationSendFingerprint::<MCL, MCC, MPL, S, FP>::relative_decode(
                 &mut reconciliation_channel_receiver,
@@ -898,13 +918,19 @@ where
                 DecodeError::Other(Blame::OurFault) => WgpsError::OurFault,
             })?;
 
-            let namespace_id =
-                todo!("check the pio handles and extract namespace if they are valid");
+            let namespace_id = match intersection_info.read().await.get(&IntersectionKey {
+                my_handle: fp_msg.info.receiver_handle,
+                their_handle: fp_msg.info.sender_handle,
+            }) {
+                None => return Err(WgpsError::PeerMisbehaved),
+                Some(intersection_data) => intersection_data.namespace_id.clone(),
+            };
 
             let root_id = if fp_msg.info.root_id != 0 {
                 fp_msg.info.root_id
             } else {
-                todo!("track root ids to assign them correctly here");
+                their_next_root_id += 1;
+                their_next_root_id - 1
             };
 
             let store = process_incoming_fingerprint_storedinator
@@ -1143,6 +1169,19 @@ impl<TransportError> From<AoiInputError<TransportError>> for WgpsInputError {
             }
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct IntersectionKey {
+    my_handle: u64,
+    their_handle: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct IntersectionInfo<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
+    namespace_id: N,
+    aoi: AreaOfInterest<MCL, MCC, MPL, S>,
+    max_payload_power: u8,
 }
 
 /// Options to specify how ranges should be partitioned.
