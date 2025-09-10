@@ -831,14 +831,9 @@ impl<
     >
 where
     NamespacePublicKey: McNamespacePublicKey,
-    NamespaceSignature: Decodable,
+    NamespaceSignature: Decodable<ErrorReason = Blame>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: Decodable,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<UserSignature::ErrorReason>,
+    UserSignature: Decodable<ErrorReason = Blame>,
 {
     type ErrorReason = Blame;
 
@@ -858,15 +853,9 @@ where
         };
         let delegations_length_tag = Tag::from_raw(header, TagWidth::six(), 2);
 
-        let namespace_key = NamespacePublicKey::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let user_key = UserPublicKey::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let initial_authorisation = NamespaceSignature::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_key = NamespacePublicKey::decode(producer).await?;
+        let user_key = UserPublicKey::decode(producer).await?;
+        let initial_authorisation = NamespaceSignature::decode(producer).await?;
         let delegations_length = CompactU64::relative_decode(producer, &delegations_length_tag)
             .await
             .map_err(DecodeError::map_other_from)?
@@ -884,14 +873,9 @@ where
                     delegations.last().unwrap().area()
                 },
             )
-            .await
-            .map_err(DecodeError::map_other_from)?;
-            let delegation_user = UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let delegation_signature = UserSignature::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            .await?;
+            let delegation_user = UserPublicKey::decode(producer).await?;
+            let delegation_signature = UserSignature::decode(producer).await?;
 
             delegations.push(Delegation::new(
                 delegation_area,

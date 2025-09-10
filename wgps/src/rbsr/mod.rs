@@ -15,7 +15,9 @@ use crate::messages::{
     RangeInfo, ReconciliationAnnounceEntries, ReconciliationSendEntry,
     ReconciliationSendFingerprint, ReconciliationTerminatePayload,
 };
-use crate::parameters::{WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsSubspaceId};
+use crate::parameters::{
+    WgpsAuthorisationToken, WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsSubspaceId,
+};
 use crate::{pio, storedinator::Storedinator};
 use crate::{RbsrStore, SplitAction};
 
@@ -205,7 +207,7 @@ where
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
     PD: WgpsPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    AT: WgpsAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     C: BulkConsumer<Item = u8, Final = (), Error = CErr>,
     CErr: Clone,
     FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
@@ -427,7 +429,7 @@ where
                 .await
                 .send_to_channel_relative(
                     &send_entry_msg,
-                    &(prev_range.deref(), prev_entry.deref()),
+                    &((namespace_id, prev_range.deref()), prev_entry.deref()),
                 )
                 .await
                 .map_err(

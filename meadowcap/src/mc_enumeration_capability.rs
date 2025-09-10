@@ -512,13 +512,9 @@ impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature> Decod
     >
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable<ErrorReason = Blame> + Clone,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    UserSignature: EncodableSync + EncodableKnownSize + Decodable<ErrorReason = Blame> + Clone,
 {
     type ErrorReason = Blame;
 
@@ -551,12 +547,8 @@ where
         let mut delegations_decoded = 0;
 
         for _ in 0..delegations_to_decode {
-            let user = UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let signature = UserSignature::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            let user = UserPublicKey::decode(producer).await?;
+            let signature = UserSignature::decode(producer).await?;
             let delegation = EnumerationDelegation::new(user, signature);
 
             base_cap
@@ -675,12 +667,9 @@ impl<NamespacePublicKey, NamespaceSignature, UserPublicKey, UserSignature>
     for DecodedMcEnumCap<NamespaceSignature, UserSignature>
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature> + PartialEq,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable + Clone,
-    UserPublicKey: McPublicUserKey<UserSignature> + Decodable,
-    UserSignature: EncodableKnownSize + EncodableSync + Decodable + Clone,
-    Blame: From<NamespaceSignature::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Decodable<ErrorReason = Blame> + Clone,
+    UserPublicKey: McPublicUserKey<UserSignature> + Decodable<ErrorReason = Blame>,
+    UserSignature: EncodableKnownSize + EncodableSync + Decodable<ErrorReason = Blame> + Clone,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -700,14 +689,10 @@ where
             .await
             .map_err(DecodeError::map_other_from)?;
 
-        let namespace_sig = NamespaceSignature::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_sig = NamespaceSignature::decode(producer).await?;
 
         let user_key = if delegations_len.0 > 0 {
-            UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            UserPublicKey::decode(producer).await?
         } else {
             r_receiver.clone()
         };
@@ -720,16 +705,12 @@ where
 
         for i in 0..delegations_len.0 {
             let user = if i < delegations_len.0 - 1 {
-                UserPublicKey::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
+                UserPublicKey::decode(producer).await?
             } else {
                 r_receiver.clone()
             };
 
-            let signature = UserSignature::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            let signature = UserSignature::decode(producer).await?;
             let delegation = EnumerationDelegation::new(user, signature);
 
             base_cap

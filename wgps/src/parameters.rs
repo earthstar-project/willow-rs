@@ -2,14 +2,15 @@ use std::hash::Hash;
 
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
-    RelativeEncodableKnownSize,
+    RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    grouping::Area, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, SubspaceId,
+    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, LengthyAuthorisedEntry,
+    NamespaceId, PayloadDigest, SubspaceId,
 };
 use willow_pio::PersonalPrivateInterest;
 
-pub trait WgpsNamespaceId: NamespaceId + Hash {}
+pub trait WgpsNamespaceId: NamespaceId + Hash + EncodableKnownSize {}
 
 pub trait WgpsSubspaceId:
     SubspaceId + Hash + Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone + Ord
@@ -17,6 +18,16 @@ pub trait WgpsSubspaceId:
 }
 
 pub trait WgpsPayloadDigest: PayloadDigest + EncodableKnownSize + DecodableCanonic {}
+
+pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
+    AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + EncodableKnownSize
+    + for<'a> RelativeEncodable<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>
+{
+}
 
 /// The semantics a valid read capability must provide to be usable with the WGPS.
 pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {

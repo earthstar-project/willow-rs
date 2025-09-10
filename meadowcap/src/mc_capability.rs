@@ -438,16 +438,14 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>
-        + From<NamespacePublicKey::ErrorCanonic>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorCanonic>
-        + From<UserSignature::ErrorCanonic>,
+    NamespaceSignature: EncodableSync
+        + EncodableKnownSize
+        + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+        + Clone,
+    UserSignature: EncodableSync
+        + EncodableKnownSize
+        + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+        + Clone,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -482,16 +480,14 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + DecodableCanonic + Clone,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>
-        + From<NamespacePublicKey::ErrorCanonic>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorCanonic>
-        + From<UserSignature::ErrorCanonic>,
+    NamespaceSignature: EncodableSync
+        + EncodableKnownSize
+        + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+        + Clone,
+    UserSignature: EncodableSync
+        + EncodableKnownSize
+        + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+        + Clone,
 {
     async fn relative_decode_canonic<P>(
         producer: &mut P,
@@ -510,21 +506,15 @@ where
             AccessMode::Read
         };
 
-        let namespace_key = NamespacePublicKey::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let user_key = UserPublicKey::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_key = NamespacePublicKey::decode_canonic(producer).await?;
+        let user_key = UserPublicKey::decode_canonic(producer).await?;
 
         if !r.subspace().includes(&user_key) {
             return Err(DecodeError::Other(Blame::TheirFault));
         }
 
         let mut base_cap = if is_owned {
-            let initial_authorisation = NamespaceSignature::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            let initial_authorisation = NamespaceSignature::decode_canonic(producer).await?;
 
             let cap = OwnedCapability::from_existing(
                 namespace_key,
@@ -556,12 +546,8 @@ where
                 Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode_canonic(producer, &prev_area)
                     .await?;
             prev_area = area.clone();
-            let user = UserPublicKey::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let signature = UserSignature::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            let user = UserPublicKey::decode_canonic(producer).await?;
+            let signature = UserSignature::decode_canonic(producer).await?;
 
             base_cap
                 .append_existing_delegation(Delegation {
@@ -654,14 +640,8 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
 {
     /// Unsafely decode a [`McCapability`] from a [`ufotofu::BulkProducer`] of bytes, that is, decode without verifying the validity of the inner capability.
     ///
@@ -683,19 +663,11 @@ where
             AccessMode::Read
         };
 
-        let namespace_key = NamespacePublicKey::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let user_key = UserPublicKey::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_key = NamespacePublicKey::decode(producer).await?;
+        let user_key = UserPublicKey::decode(producer).await?;
 
         let initial_authorisation = if is_owned {
-            Some(
-                NamespaceSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?,
-            )
+            Some(NamespaceSignature::decode(producer).await?)
         } else {
             None
         };
@@ -714,12 +686,8 @@ where
             let area =
                 Area::<MCL, MCC, MPL, UserPublicKey>::relative_decode(producer, &prev_area).await?;
             prev_area = area.clone();
-            let user = UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
-            let signature = UserSignature::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?;
+            let user = UserPublicKey::decode(producer).await?;
+            let signature = UserSignature::decode(producer).await?;
 
             delegations.push(Delegation::new(area, user, signature))
         }
@@ -924,14 +892,9 @@ impl<
     >
 where
     NamespacePublicKey: McNamespacePublicKey,
-    NamespaceSignature: Decodable,
+    NamespaceSignature: Decodable<ErrorReason = Blame>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: Decodable,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<UserSignature::ErrorReason>,
+    UserSignature: Decodable<ErrorReason = Blame>,
 {
     type ErrorReason = Blame;
 

@@ -90,15 +90,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Area`].
     ///
@@ -121,15 +115,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableCanonic<(N, Area<MCL, MCC, MPL, S>), Blame, Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     async fn relative_decode_canonic<P>(
         producer: &mut P,
@@ -199,15 +187,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<(N, Area<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
 }
 
@@ -226,15 +208,9 @@ async fn relative_decode_maybe_canonic<
 ) -> Result<Entry<MCL, MCC, MPL, N, S, PD>, DecodeError<P::Final, P::Error, Blame>>
 where
     P: BulkProducer<Item = u8>,
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     let (namespace, out) = r;
 
@@ -253,13 +229,9 @@ where
         match &out.subspace() {
             AreaSubspace::Any => {
                 if CANONIC {
-                    S::decode_canonic(producer)
-                        .await
-                        .map_err(DecodeError::map_other_from)?
+                    S::decode_canonic(producer).await?
                 } else {
-                    S::decode(producer)
-                        .await
-                        .map_err(DecodeError::map_other_from)?
+                    S::decode(producer).await?
                 }
             }
             AreaSubspace::Id(_) => return Err(DecodeError::Other(Blame::TheirFault)),
@@ -332,13 +304,9 @@ where
     };
 
     let payload_digest = if CANONIC {
-        PD::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?
+        PD::decode_canonic(producer).await?
     } else {
-        PD::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?
+        PD::decode(producer).await?
     };
 
     Ok(Entry::new(

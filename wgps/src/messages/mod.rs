@@ -214,8 +214,6 @@ impl<const INTEREST_HASH_LENGTH: usize, EC> PioAnnounceOverlap<INTEREST_HASH_LEN
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodable<(N, R)>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
-    N: PartialEq + Clone,
-    R: PartialEq + Clone,
     EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodable<(N, R)>,
 {
     async fn relative_encode<C>(&self, consumer: &mut C, r: &(N, R)) -> Result<(), C::Error>
@@ -254,17 +252,7 @@ where
             .map_err(|err| err.into_reason())?;
 
         if let Some(enumeration_capability) = &self.enumeration_capability {
-            let pair = (
-                enumeration_capability.granted_namespace().clone(),
-                enumeration_capability.receiver().clone(),
-            );
-
-            debug_assert!(r.0 == pair.0);
-            debug_assert!(r.1 == pair.1);
-
-            enumeration_capability
-                .relative_encode(consumer, &pair)
-                .await?;
+            enumeration_capability.relative_encode(consumer, r).await?;
         }
 
         Ok(())
@@ -274,8 +262,8 @@ where
 impl<const INTEREST_HASH_LENGTH: usize, N, R, EC> RelativeEncodableKnownSize<(N, R)>
     for PioAnnounceOverlap<INTEREST_HASH_LENGTH, EC>
 where
-    N: PartialEq + Clone,
-    R: PartialEq + Clone,
+    N: PartialEq,
+    R: PartialEq,
     EC: EnumerationCapability<Receiver = R, NamespaceId = N> + RelativeEncodableKnownSize<(N, R)>,
 {
     fn relative_len_of_encoding(&self, r: &(N, R)) -> usize {
@@ -640,9 +628,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
     for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
 where
-    S: SubspaceId + DecodableCanonic,
-    FP: Decodable,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic> + From<FP::ErrorReason>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    FP: Decodable<ErrorReason = Blame>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -671,13 +658,9 @@ where
             .map_err(DecodeError::map_other_from)?
             .0;
 
-        let range = Range3d::relative_decode(producer, r)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let range = Range3d::relative_decode(producer, r).await?;
 
-        let fingerprint = FP::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let fingerprint = FP::decode(producer).await?;
 
         Ok(Self {
             fingerprint,
@@ -796,8 +779,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
     for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -832,9 +814,7 @@ where
             .map_err(DecodeError::map_other_from)?
             .0;
 
-        let range = Range3d::relative_decode(producer, r)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let range = Range3d::relative_decode(producer, r).await?;
 
         Ok(Self {
             is_empty,
@@ -873,13 +853,13 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
         &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + Encodable + EncodableKnownSize + Clone,
-    S: SubspaceId + Encodable + EncodableKnownSize + Clone,
-    PD: PayloadDigest + Encodable + EncodableKnownSize + Clone,
+    N: NamespaceId + Encodable + EncodableKnownSize,
+    S: SubspaceId + Encodable + EncodableKnownSize,
+    PD: PayloadDigest + Encodable + EncodableKnownSize,
     AT: for<'a> RelativeEncodable<(
-            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-            &'a Entry<MCL, MCC, MPL, N, S, PD>,
-        )> + Clone,
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>,
 {
     async fn relative_encode<C>(
         &self,
@@ -963,9 +943,9 @@ where
     S: SubspaceId + EncodableKnownSize,
     PD: PayloadDigest + EncodableKnownSize,
     AT: for<'a> RelativeEncodableKnownSize<(
-            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-            &'a Entry<MCL, MCC, MPL, N, S, PD>,
-        )> + Clone,
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>,
 {
     fn relative_len_of_encoding(
         &self,
@@ -1022,9 +1002,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
         Blame,
     > for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
+    N: NamespaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>
         + for<'a> RelativeDecodable<
             (
@@ -1033,12 +1013,6 @@ where
             ),
             Blame,
         >,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -1070,20 +1044,14 @@ where
         let (r_range, r_authed) = r;
 
         let entry = if relative_to_entry {
-            Entry::relative_decode(producer, r_authed.entry())
-                .await
-                .map_err(DecodeError::map_other_from)?
+            Entry::relative_decode(producer, r_authed.entry()).await?
         } else {
-            Entry::relative_decode(producer, r_range)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            Entry::relative_decode(producer, r_range).await?
         };
 
         let auth_rel = (r.1, &entry);
 
-        let token = AT::relative_decode(producer, &auth_rel)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let token = AT::relative_decode(producer, &auth_rel).await?;
 
         let authed_entry = AuthorisedEntry::new(entry, token)
             .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;

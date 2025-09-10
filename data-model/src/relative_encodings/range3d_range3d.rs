@@ -210,8 +210,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame> for Range3d<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
     ///
@@ -253,9 +252,7 @@ where
                 RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
             },
             0b1100_0000 => {
-                let decoded_subspace = S::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let decoded_subspace = S::decode(producer).await?;
 
                 if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace
                 {
@@ -277,11 +274,7 @@ where
             },
             // This can only be 0b0011_0000
             _ => {
-                let decoded_subspace = RangeEnd::Closed(
-                    S::decode(producer)
-                        .await
-                        .map_err(DecodeError::map_other_from)?,
-                );
+                let decoded_subspace = RangeEnd::Closed(S::decode(producer).await?);
 
                 if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace
                 {
@@ -515,7 +508,6 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableSync<Range3d<MCL, MCC, MPL, S>, Blame> for Range3d<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
 }
