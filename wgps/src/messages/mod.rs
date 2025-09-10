@@ -1111,13 +1111,30 @@ impl Encodable for ReconciliationSendPayload {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!();
+        let header = 0b_0100_0000;
+
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.amount)
+            .relative_encode(consumer, &amount_tag.encoding_width())
+            .await?;
+
+        // The spec mentions the messages `bytes` field here,
+        // But we deal with that outside this trait definition.
+
+        Ok(())
     }
 }
 
 impl EncodableKnownSize for ReconciliationSendPayload {
     fn len_of_encoding(&self) -> usize {
-        1
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+        let amount_len =
+            CompactU64(self.amount).relative_len_of_encoding(&amount_tag.encoding_width());
+
+        1 + amount_len
     }
 }
 
@@ -1132,7 +1149,16 @@ impl Decodable for ReconciliationSendPayload {
     where
         P: ufotofu::BulkProducer<Item = u8>,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let amount_tag = Tag::from_raw(header, TagWidth::five(), 3);
+
+        let amount = CompactU64::relative_decode(producer, &amount_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        Ok(Self { amount })
     }
 }
 
