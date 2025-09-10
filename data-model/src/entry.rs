@@ -159,10 +159,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: Decodable,
-    S: Decodable,
-    PD: Decodable,
-    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+    N: Decodable<ErrorReason = Blame>,
+    S: Decodable<ErrorReason = Blame>,
+    PD: Decodable<ErrorReason = Blame>,
 {
     type ErrorReason = Blame;
 
@@ -173,12 +172,8 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let namespace_id = N::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let subspace_id = S::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_id = N::decode(producer).await?;
+        let subspace_id = S::decode(producer).await?;
         let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
         let timestamp = CompactU64::decode(producer)
             .await
@@ -188,9 +183,7 @@ where
             .await
             .map_err(DecodeError::map_other_from)?
             .0;
-        let payload_digest = PD::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let payload_digest = PD::decode(producer).await?;
 
         Ok(Entry {
             namespace_id,
@@ -206,15 +199,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableCanonic
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: DecodableCanonic,
-    S: DecodableCanonic,
-    PD: DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    S: DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     type ErrorCanonic = Blame;
 
@@ -225,12 +212,8 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        let namespace_id = N::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
-        let subspace_id = S::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let namespace_id = N::decode_canonic(producer).await?;
+        let subspace_id = S::decode_canonic(producer).await?;
         let path = Path::<MCL, MCC, MPL>::decode_canonic(producer).await?;
         let timestamp = CompactU64::decode_canonic(producer)
             .await
@@ -240,9 +223,7 @@ where
             .await
             .map_err(DecodeError::map_other_from)?
             .0;
-        let payload_digest = PD::decode_canonic(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let payload_digest = PD::decode_canonic(producer).await?;
 
         Ok(Entry {
             namespace_id,
@@ -284,10 +265,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> DecodableSync
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: DecodableSync,
-    S: DecodableSync,
-    PD: DecodableSync,
-    Blame: From<N::ErrorReason> + From<S::ErrorReason> + From<PD::ErrorReason>,
+    N: DecodableSync<ErrorReason = Blame>,
+    S: DecodableSync<ErrorReason = Blame>,
+    PD: DecodableSync<ErrorReason = Blame>,
 {
 }
 

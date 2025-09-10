@@ -36,8 +36,8 @@ mod pio;
 
 use crate::{
     parameters::{
-        EnumerationCapability, ReadCapability, WgpsEnumerationCapability, WgpsFingerprint,
-        WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
+        EnumerationCapability, ReadCapability, WgpsAuthorisationToken, WgpsEnumerationCapability,
+        WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
     pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
     rbsr::{RbsrError, ReconciliationSender},
@@ -353,7 +353,7 @@ where
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
     PD: WgpsPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    AT: WgpsAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
@@ -515,7 +515,7 @@ where
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
     PD: WgpsPayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    AT: WgpsAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
     MyReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,

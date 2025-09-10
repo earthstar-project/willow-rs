@@ -2,21 +2,48 @@ use std::hash::Hash;
 
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
-    RelativeEncodableKnownSize,
+    RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    grouping::Area, LengthyAuthorisedEntry, NamespaceId, PayloadDigest, SubspaceId,
+    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, LengthyAuthorisedEntry,
+    NamespaceId, PayloadDigest, SubspaceId,
 };
 use willow_pio::PersonalPrivateInterest;
 
-pub trait WgpsNamespaceId: NamespaceId + Hash {}
-
-pub trait WgpsSubspaceId:
-    SubspaceId + Hash + Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone + Ord
+pub trait WgpsNamespaceId:
+    NamespaceId
+    + Hash
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
 {
 }
 
-pub trait WgpsPayloadDigest: PayloadDigest + EncodableKnownSize + DecodableCanonic {}
+pub trait WgpsSubspaceId:
+    SubspaceId
+    + Hash
+    + Default
+    + EncodableSync
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+    + Clone
+    + Ord
+{
+}
+
+pub trait WgpsPayloadDigest:
+    PayloadDigest + EncodableKnownSize + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+{
+}
+
+pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
+    AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + EncodableKnownSize
+    + for<'a> RelativeEncodableKnownSize<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>
+{
+}
 
 /// The semantics a valid read capability must provide to be usable with the WGPS.
 pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
@@ -76,6 +103,6 @@ pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S
 }
 
 pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
-    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable + Eq
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable<ErrorReason = Blame> + Eq
 {
 }

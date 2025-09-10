@@ -193,13 +193,8 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
 {
     async unsafe fn trusted_decode<P>(
         producer: &mut P,

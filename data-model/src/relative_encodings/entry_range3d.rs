@@ -123,15 +123,9 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodable<(&N, &Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic + Clone,
-    S: SubspaceId + DecodableCanonic + Clone,
-    PD: PayloadDigest + DecodableCanonic + Clone,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     /// Decodes an [`Entry`] relative to a reference [`NamespaceId`] and [`Range3d`].
     ///
@@ -163,9 +157,7 @@ where
         let payload_length_tag = Tag::from_raw(header, TagWidth::three(), 5);
 
         let subspace_id = if is_subspace_encoded {
-            S::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            S::decode(producer).await?
         } else {
             out.subspaces().start.clone()
         };
@@ -213,9 +205,7 @@ where
             .map_err(DecodeError::map_other_from)?
             .0;
 
-        let payload_digest = PD::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let payload_digest = PD::decode(producer).await?;
 
         Ok(Entry::new(
             (**namespace).clone(),
@@ -306,14 +296,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     RelativeDecodableSync<(&N, &Range3d<MCL, MCC, MPL, S>), Blame>
     for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
-    Blame: From<N::ErrorReason>
-        + From<S::ErrorReason>
-        + From<PD::ErrorReason>
-        + From<N::ErrorCanonic>
-        + From<S::ErrorCanonic>
-        + From<PD::ErrorCanonic>,
+    N: Clone,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
 }

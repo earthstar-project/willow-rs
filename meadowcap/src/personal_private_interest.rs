@@ -13,8 +13,8 @@ use willow_data_model::{
 use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
-    AccessMode, CommunalCapability, Delegation, McNamespacePublicKey, McPublicUserKey,
-    McEnumerationCapability, OwnedCapability, EnumerationDelegation,
+    AccessMode, CommunalCapability, Delegation, EnumerationDelegation, McEnumerationCapability,
+    McNamespacePublicKey, McPublicUserKey, OwnedCapability,
 };
 
 #[derive(Debug)]
@@ -150,11 +150,9 @@ impl<
         const MPL: usize,
         N: McNamespacePublicKey,
         UserPublicKey: McPublicUserKey<UserSignature>,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
     > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
     for CommunalCapability<MCL, MCC, MPL, N, UserPublicKey, UserSignature>
-where
-    Blame: From<UserPublicKey::ErrorReason> + From<UserSignature::ErrorReason>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -190,30 +188,20 @@ where
 
         for i in 0..delegations_len.0 {
             if i == (delegations_len.0 - 1) {
-                let area = Area::relative_decode(producer, &last_ctx)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let area = Area::relative_decode(producer, &last_ctx).await?;
 
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 let delegation = Delegation::new(area, r.user_key().clone(), sig);
 
                 cap.append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
             } else {
-                let area = Area::relative_decode(producer, &last_ctx)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let area = Area::relative_decode(producer, &last_ctx).await?;
 
-                let user_key = UserPublicKey::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let user_key = UserPublicKey::decode(producer).await?;
 
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 last_ctx =
                     PrivateAreaContext::new(r.private_interest.clone(), area.clone()).unwrap();
@@ -330,16 +318,11 @@ impl<
         const MCC: usize,
         const MPL: usize,
         N: McNamespacePublicKey + Verifier<NamespaceSignature>,
-        NamespaceSignature: Decodable + EncodableSync + EncodableKnownSize + Clone,
+        NamespaceSignature: Decodable<ErrorReason = Blame> + EncodableSync + EncodableKnownSize + Clone,
         UserPublicKey: McPublicUserKey<UserSignature>,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
     > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
     for OwnedCapability<MCL, MCC, MPL, N, NamespaceSignature, UserPublicKey, UserSignature>
-where
-    Blame: From<N::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserSignature::ErrorReason>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -354,16 +337,12 @@ where
             .map_err(DecodeError::map_other_from)?;
 
         let user_key = if delegations_len.0 > 0 {
-            UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            UserPublicKey::decode(producer).await?
         } else {
             r.user_key().clone()
         };
 
-        let initial_authorisation = NamespaceSignature::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let initial_authorisation = NamespaceSignature::decode(producer).await?;
 
         let mut last_ctx = match r.private_interest.subspace_id() {
             willow_data_model::grouping::AreaSubspace::Any => panic!("Communal capabilities are not compatible with personal private interests with any subspace!"),
@@ -385,30 +364,20 @@ where
 
         for i in 0..delegations_len.0 {
             if i == (delegations_len.0 - 1) {
-                let area = Area::relative_decode(producer, &last_ctx)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let area = Area::relative_decode(producer, &last_ctx).await?;
 
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 let delegation = Delegation::new(area, r.user_key().clone(), sig);
 
                 cap.append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::Other(Blame::TheirFault))?;
             } else {
-                let area = Area::relative_decode(producer, &last_ctx)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let area = Area::relative_decode(producer, &last_ctx).await?;
 
-                let user_key = UserPublicKey::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let user_key = UserPublicKey::decode(producer).await?;
 
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 last_ctx =
                     PrivateAreaContext::new(r.private_interest.clone(), area.clone()).unwrap();
@@ -489,13 +458,9 @@ impl<
     for McEnumerationCapability<N, NamespaceSignature, UserPublicKey, UserSignature>
 where
     N: McNamespacePublicKey + Verifier<NamespaceSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-    Blame: From<N::ErrorReason>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -509,14 +474,10 @@ where
             .await
             .map_err(DecodeError::map_other_from)?;
 
-        let initial_authorisation = NamespaceSignature::decode(producer)
-            .await
-            .map_err(DecodeError::map_other_from)?;
+        let initial_authorisation = NamespaceSignature::decode(producer).await?;
 
         let user_key = if delegations_len.0 > 0 {
-            UserPublicKey::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            UserPublicKey::decode(producer).await?
         } else {
             r.user_key().clone()
         };
@@ -530,9 +491,7 @@ where
 
         for i in 0..delegations_len.0 {
             if i == delegations_len.0 - 1 {
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 let delegation = EnumerationDelegation::new(r.user_key().clone(), sig);
 
@@ -540,13 +499,9 @@ where
                     .append_existing_delegation(delegation)
                     .map_err(|_| DecodeError::Other(Blame::TheirFault))?
             } else {
-                let user_key = UserPublicKey::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let user_key = UserPublicKey::decode(producer).await?;
 
-                let sig = UserSignature::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?;
+                let sig = UserSignature::decode(producer).await?;
 
                 let delegation = EnumerationDelegation::new(user_key, sig);
 
