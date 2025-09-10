@@ -7,7 +7,7 @@ use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
-    spsc, Mutex, OnceCell, TakeCell,
+    spsc, Mutex, TakeCell,
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
@@ -22,10 +22,7 @@ mod storedinator;
 pub mod messages;
 use messages::*;
 
-use ufotofu_codec::{
-    Blame, DecodableCanonic, DecodeError, EncodableKnownSize, EncodableSync, RelativeDecodable,
-    RelativeEncodableKnownSize,
-};
+use ufotofu_codec::{Blame, DecodeError, RelativeDecodable, RelativeEncodableKnownSize};
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
@@ -906,59 +903,64 @@ where
         let mut their_next_root_id = if options.is_initiator { 2 } else { 1 };
 
         loop {
-            let fp_msg = ReconciliationSendFingerprint::<MCL, MCC, MPL, S, FP>::relative_decode(
+            match ReconciliationSendFingerprint::<MCL, MCC, MPL, S, FP>::relative_decode(
                 &mut reconciliation_channel_receiver,
                 &previously_received_fingerprint_3drange,
             )
             .await
-            .map_err(|value| match value {
-                DecodeError::Producer(())
-                | DecodeError::UnexpectedEndOfInput(())
-                | DecodeError::Other(Blame::TheirFault) => WgpsError::PeerMisbehaved,
-                DecodeError::Other(Blame::OurFault) => WgpsError::OurFault,
-            })?;
+            {
+                Err(DecodeError::UnexpectedEndOfInput(())) => {
+                    // They closed their reconciliation channel, stop processing it.
+                    return Ok(());
+                }
+                Err(DecodeError::Producer(())) | Err(DecodeError::Other(Blame::TheirFault)) => {
+                    return Err(WgpsError::PeerMisbehaved)
+                }
+                Err(DecodeError::Other(Blame::OurFault)) => return Err(WgpsError::OurFault),
+                Ok(fp_msg) => {
+                    let namespace_id = match intersection_info.read().await.get(&IntersectionKey {
+                        my_handle: fp_msg.info.receiver_handle,
+                        their_handle: fp_msg.info.sender_handle,
+                    }) {
+                        None => return Err(WgpsError::PeerMisbehaved),
+                        Some(intersection_data) => intersection_data.namespace_id.clone(),
+                    };
 
-            let namespace_id = match intersection_info.read().await.get(&IntersectionKey {
-                my_handle: fp_msg.info.receiver_handle,
-                their_handle: fp_msg.info.sender_handle,
-            }) {
-                None => return Err(WgpsError::PeerMisbehaved),
-                Some(intersection_data) => intersection_data.namespace_id.clone(),
-            };
+                    let root_id = if fp_msg.info.root_id != 0 {
+                        fp_msg.info.root_id
+                    } else {
+                        their_next_root_id += 1;
+                        their_next_root_id - 1
+                    };
 
-            let root_id = if fp_msg.info.root_id != 0 {
-                fp_msg.info.root_id
-            } else {
-                their_next_root_id += 1;
-                their_next_root_id - 1
-            };
-
-            let store = process_incoming_fingerprint_storedinator
-                .get_store(&namespace_id)
-                .await
-                .map_err(|store_creation_error| RbsrError::StoreCreation(store_creation_error))?;
-
-            let (my_fp, my_count) = store
-                .summarise(&fp_msg.info.range)
-                .await
-                .map_err(|store_error| RbsrError::Store(store_error))?;
-
-            if my_fp == fp_msg.fingerprint {
-                // Nothing more to do with this message.
-            } else {
-                let mut partitions = store
-                    .partition_range(fp_msg.info.range, options.partition_ops)
-                    .await
-                    .map_err(|store_error| RbsrError::Store(store_error))?;
-
-                loop {
-                    match partitions
-                        .produce()
+                    let store = process_incoming_fingerprint_storedinator
+                        .get_store(&namespace_id)
                         .await
-                        .map_err(|store_error| RbsrError::Store(store_error))?
-                    {
-                        Left((range, action)) => {
-                            match reconciliation_sender.process_split_action(&namespace_id, &range, action, root_id, fp_msg.info.receiver_handle, fp_msg.info.sender_handle /* we swap ereceiver and sender handle compared to what we received */).await? {
+                        .map_err(|store_creation_error| {
+                            RbsrError::StoreCreation(store_creation_error)
+                        })?;
+
+                    let (my_fp, _my_count) = store
+                        .summarise(&fp_msg.info.range)
+                        .await
+                        .map_err(|store_error| RbsrError::Store(store_error))?;
+
+                    if my_fp == fp_msg.fingerprint {
+                        // Nothing more to do with this message.
+                    } else {
+                        let mut partitions = store
+                            .partition_range(fp_msg.info.range.clone(), options.partition_ops)
+                            .await
+                            .map_err(|store_error| RbsrError::Store(store_error))?;
+
+                        loop {
+                            match partitions
+                                .produce()
+                                .await
+                                .map_err(|store_error| RbsrError::Store(store_error))?
+                            {
+                                Left((range, action)) => {
+                                    match reconciliation_sender.process_split_action(&namespace_id, &range, action, root_id, fp_msg.info.receiver_handle, fp_msg.info.sender_handle /* we swap ereceiver and sender handle compared to what we received */).await? {
                                 None => {
                                     // nothing else to do
                                 }
@@ -966,17 +968,16 @@ where
                                     todo!("use the subscription when implementing post-rbsr forwarding");
                                 }
                             }
+                                }
+                                Right(()) => break,
+                            }
                         }
-                        Right(()) => break,
                     }
+
+                    previously_received_fingerprint_3drange = fp_msg.info.range.clone();
                 }
             }
         }
-        todo!();
-        // rbsr_message_receiver
-        //     .process_incoming_reconciliation_messages()
-        //     .await?;
-        Ok(())
     };
 
     // Actually run all the concurrent operations of the WGPS.
