@@ -5,8 +5,8 @@ use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
 use either::Either::{Left, Right};
 use willow_data_model::{
-    grouping::Range3d, AuthorisedEntry, Entry, LengthyAuthorisedEntry, NamespaceId, Path,
-    PayloadDigest, SubspaceId,
+    grouping::Range3d, AuthorisationToken, AuthorisedEntry, Entry, LengthyAuthorisedEntry,
+    NamespaceId, Path, PayloadDigest, SubspaceId,
 };
 
 use crate::{
@@ -905,7 +905,7 @@ where
 
         let relative_to_entry = rel_entry_len < rel_range_len;
 
-        let mut header = 0b0000_0000;
+        let mut header = 0b0010_0000;
 
         if relative_to_entry {
             header |= 0b0001_0000;
@@ -962,7 +962,7 @@ where
     N: NamespaceId + EncodableKnownSize,
     S: SubspaceId + EncodableKnownSize,
     PD: PayloadDigest + EncodableKnownSize,
-    AT: for<'a> RelativeEncodable<(
+    AT: for<'a> RelativeEncodableKnownSize<(
             &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
             &'a Entry<MCL, MCC, MPL, N, S, PD>,
         )> + Clone,
@@ -995,25 +995,55 @@ where
 
         let relative_to_entry = rel_entry_len < rel_range_len;
 
-        1 + offset_len + available_len // + rel_to_entry_len + auth_token_len
+        let rel_to_entry_len = if relative_to_entry {
+            rel_entry_len
+        } else {
+            rel_range_len
+        };
+
+        let auth_rel = (r.1, self.entry.entry().entry());
+
+        let auth_token_len = self
+            .entry
+            .entry()
+            .token()
+            .relative_len_of_encoding(&auth_rel);
+
+        1 + offset_len + available_len + rel_to_entry_len + auth_token_len
     }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     RelativeDecodable<
         (
-            &Range3d<MCL, MCC, MPL, S>,
+            (&N, &Range3d<MCL, MCC, MPL, S>),
             &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         ),
         Blame,
     > for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    S: Decodable,
+    N: NamespaceId + DecodableCanonic,
+    S: SubspaceId + DecodableCanonic,
+    PD: PayloadDigest + DecodableCanonic,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+        + for<'a> RelativeDecodable<
+            (
+                &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+                &'a Entry<MCL, MCC, MPL, N, S, PD>,
+            ),
+            Blame,
+        >,
+    Blame: From<N::ErrorReason>
+        + From<S::ErrorReason>
+        + From<PD::ErrorReason>
+        + From<N::ErrorCanonic>
+        + From<S::ErrorCanonic>
+        + From<PD::ErrorCanonic>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
         r: &(
-            &Range3d<MCL, MCC, MPL, S>,
+            (&N, &Range3d<MCL, MCC, MPL, S>),
             &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         ),
     ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
@@ -1021,7 +1051,51 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        if !is_bitflagged(header, 2) {
+            return Err(DecodeError::Other(Blame::TheirFault));
+        }
+
+        let relative_to_entry = is_bitflagged(header, 3);
+
+        let offset_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let available_tag = Tag::from_raw(header, TagWidth::two(), 6);
+
+        let offset = CompactU64::relative_decode(producer, &offset_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let available = CompactU64::relative_decode(producer, &available_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let (r_range, r_authed) = r;
+
+        let entry = if relative_to_entry {
+            Entry::relative_decode(producer, r_authed.entry())
+                .await
+                .map_err(DecodeError::map_other_from)?
+        } else {
+            Entry::relative_decode(producer, r_range)
+                .await
+                .map_err(DecodeError::map_other_from)?
+        };
+
+        let auth_rel = (r.1, &entry);
+
+        let token = AT::relative_decode(producer, &auth_rel)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let authed_entry = AuthorisedEntry::new(entry, token)
+            .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
+
+        Ok(Self {
+            offset,
+            entry: LengthyAuthorisedEntry::new(authed_entry, available),
+        })
     }
 }
 
