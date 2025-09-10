@@ -15,7 +15,7 @@ use crate::{
 };
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeEncodable<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeEncodable<(&N, &Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + Encodable,
     S: SubspaceId + Encodable,
@@ -27,14 +27,14 @@ where
     async fn relative_encode<C>(
         &self,
         consumer: &mut C,
-        r: &(N, Range3d<MCL, MCC, MPL, S>),
+        r: &(&N, &Range3d<MCL, MCC, MPL, S>),
     ) -> Result<(), C::Error>
     where
         C: BulkConsumer<Item = u8>,
     {
         let (namespace, out) = r;
 
-        if self.namespace_id() != namespace {
+        if self.namespace_id() != *namespace {
             panic!("Tried to encode an entry relative to a namespace it does not belong to")
         }
 
@@ -121,11 +121,11 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodable<(N, Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeDecodable<(&N, &Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
 where
-    N: NamespaceId + DecodableCanonic,
-    S: SubspaceId + DecodableCanonic,
-    PD: PayloadDigest + DecodableCanonic,
+    N: NamespaceId + DecodableCanonic + Clone,
+    S: SubspaceId + DecodableCanonic + Clone,
+    PD: PayloadDigest + DecodableCanonic + Clone,
     Blame: From<N::ErrorReason>
         + From<S::ErrorReason>
         + From<PD::ErrorReason>
@@ -140,7 +140,7 @@ where
     /// [Definition](https://willowprotocol.org/specs/encodings/index.html#enc_entry_in_namespace_3drange).
     async fn relative_decode<P>(
         producer: &mut P,
-        r: &(N, Range3d<MCL, MCC, MPL, S>),
+        r: &(&N, &Range3d<MCL, MCC, MPL, S>),
     ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
     where
         P: BulkProducer<Item = u8>,
@@ -218,7 +218,7 @@ where
             .map_err(DecodeError::map_other_from)?;
 
         Ok(Entry::new(
-            namespace.clone(),
+            (**namespace).clone(),
             subspace_id,
             path,
             timestamp,
@@ -229,16 +229,16 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeEncodableKnownSize<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeEncodableKnownSize<(&N, &Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + EncodableKnownSize,
     S: SubspaceId + EncodableKnownSize,
     PD: PayloadDigest + EncodableKnownSize,
 {
-    fn relative_len_of_encoding(&self, r: &(N, Range3d<MCL, MCC, MPL, S>)) -> usize {
+    fn relative_len_of_encoding(&self, r: &(&N, &Range3d<MCL, MCC, MPL, S>)) -> usize {
         let (namespace, out) = r;
 
-        if self.namespace_id() != namespace {
+        if self.namespace_id() != *namespace {
             panic!("Tried to encode an entry relative to a namespace it does not belong to")
         }
 
@@ -294,7 +294,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeEncodableSync<(N, Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeEncodableSync<(&N, &Range3d<MCL, MCC, MPL, S>)> for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + EncodableSync,
     S: SubspaceId + EncodableSync,
@@ -303,7 +303,8 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
-    RelativeDecodableSync<(N, Range3d<MCL, MCC, MPL, S>), Blame> for Entry<MCL, MCC, MPL, N, S, PD>
+    RelativeDecodableSync<(&N, &Range3d<MCL, MCC, MPL, S>), Blame>
+    for Entry<MCL, MCC, MPL, N, S, PD>
 where
     N: NamespaceId + DecodableCanonic,
     S: SubspaceId + DecodableCanonic,

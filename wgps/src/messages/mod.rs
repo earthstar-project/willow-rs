@@ -869,23 +869,23 @@ pub(crate) struct ReconciliationSendEntry<
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     RelativeEncodable<(
-        &(N, Range3d<MCL, MCC, MPL, S>),
+        (&N, &Range3d<MCL, MCC, MPL, S>),
         &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: NamespaceId + Encodable + EncodableKnownSize,
-    S: SubspaceId + Encodable + EncodableKnownSize,
-    PD: PayloadDigest + Encodable + EncodableKnownSize,
-    AT: RelativeEncodable<(
-        AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-        Entry<MCL, MCC, MPL, N, S, PD>,
-    )>,
+    N: NamespaceId + Encodable + EncodableKnownSize + Clone,
+    S: SubspaceId + Encodable + EncodableKnownSize + Clone,
+    PD: PayloadDigest + Encodable + EncodableKnownSize + Clone,
+    AT: for<'a> RelativeEncodable<(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        )> + Clone,
 {
     async fn relative_encode<C>(
         &self,
         consumer: &mut C,
         r: &(
-            &(N, Range3d<MCL, MCC, MPL, S>),
+            (&N, &Range3d<MCL, MCC, MPL, S>),
             &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         ),
     ) -> Result<(), C::Error>
@@ -901,11 +901,7 @@ where
             .entry()
             .relative_len_of_encoding(r_authed.entry());
 
-        let rel_range_len = self
-            .entry
-            .entry()
-            .entry()
-            .relative_len_of_encoding(*r_range);
+        let rel_range_len = self.entry.entry().entry().relative_len_of_encoding(r_range);
 
         let relative_to_entry = rel_entry_len < rel_range_len;
 
@@ -941,30 +937,65 @@ where
             self.entry
                 .entry()
                 .entry()
-                .relative_encode(consumer, *r_range)
+                .relative_encode(consumer, r_range)
                 .await?;
         };
 
-        todo!()
+        let auth_rel = (r.1, self.entry.entry().entry());
+
+        self.entry
+            .entry()
+            .token()
+            .relative_encode(consumer, &auth_rel)
+            .await?;
+
+        Ok(())
     }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     RelativeEncodableKnownSize<(
-        &Range3d<MCL, MCC, MPL, S>,
+        (&N, &Range3d<MCL, MCC, MPL, S>),
         &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    S: EncodableKnownSize,
+    N: NamespaceId + EncodableKnownSize,
+    S: SubspaceId + EncodableKnownSize,
+    PD: PayloadDigest + EncodableKnownSize,
+    AT: for<'a> RelativeEncodable<(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        )> + Clone,
 {
     fn relative_len_of_encoding(
         &self,
         r: &(
-            &Range3d<MCL, MCC, MPL, S>,
+            (&N, &Range3d<MCL, MCC, MPL, S>),
             &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         ),
     ) -> usize {
-        todo!()
+        let offset_tag = Tag::min_tag(self.offset, TagWidth::two());
+        let available_tag = Tag::min_tag(self.entry.available(), TagWidth::two());
+
+        let offset_len =
+            CompactU64(self.offset).relative_len_of_encoding(&offset_tag.encoding_width());
+        let available_len = CompactU64(self.entry.available())
+            .relative_len_of_encoding(&available_tag.encoding_width());
+
+        let (r_range, r_authed) = r;
+
+        // Determine whether we are going to encode relative_to_entry or not.
+        let rel_entry_len = self
+            .entry
+            .entry()
+            .entry()
+            .relative_len_of_encoding(r_authed.entry());
+
+        let rel_range_len = self.entry.entry().entry().relative_len_of_encoding(r_range);
+
+        let relative_to_entry = rel_entry_len < rel_range_len;
+
+        1 + offset_len + available_len // + rel_to_entry_len + auth_token_len
     }
 }
 
