@@ -1053,10 +1053,6 @@ where
     {
         let header = producer.produce_item().await?;
 
-        if !is_bitflagged(header, 2) {
-            return Err(DecodeError::Other(Blame::TheirFault));
-        }
-
         let relative_to_entry = is_bitflagged(header, 3);
 
         let offset_tag = Tag::from_raw(header, TagWidth::two(), 4);
