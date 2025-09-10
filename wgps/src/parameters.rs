@@ -10,19 +10,35 @@ use willow_data_model::{
 };
 use willow_pio::PersonalPrivateInterest;
 
-pub trait WgpsNamespaceId: NamespaceId + Hash + EncodableKnownSize {}
-
-pub trait WgpsSubspaceId:
-    SubspaceId + Hash + Default + EncodableSync + EncodableKnownSize + DecodableCanonic + Clone + Ord
+pub trait WgpsNamespaceId:
+    NamespaceId
+    + Hash
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
 {
 }
 
-pub trait WgpsPayloadDigest: PayloadDigest + EncodableKnownSize + DecodableCanonic {}
+pub trait WgpsSubspaceId:
+    SubspaceId
+    + Hash
+    + Default
+    + EncodableSync
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+    + Clone
+    + Ord
+{
+}
+
+pub trait WgpsPayloadDigest:
+    PayloadDigest + EncodableKnownSize + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+{
+}
 
 pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
     AuthorisationToken<MCL, MCC, MPL, N, S, PD>
     + EncodableKnownSize
-    + for<'a> RelativeEncodable<(
+    + for<'a> RelativeEncodableKnownSize<(
         &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
         &'a Entry<MCL, MCC, MPL, N, S, PD>,
     )>
@@ -87,6 +103,6 @@ pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S
 }
 
 pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
-    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable + Eq
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable<ErrorReason = Blame> + Eq
 {
 }
