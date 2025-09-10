@@ -401,6 +401,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -423,6 +424,12 @@ where
                 if let Some(expected) = expected_digest {
                     if expected != digest {
                         return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
+
+                if let Some(expected) = expected_available_bytes {
+                    if expected != _local_length {
+                        return Err(PayloadAppendError::IncorrectAvailableLength);
                     }
                 }
 
@@ -926,9 +933,9 @@ where
     }
 
     async fn payload(
-        &self,
-        subspace: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
@@ -937,7 +944,7 @@ where
     > {
         let entry_tree = self.entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
-        let exact_key = encode_subspace_path_key(subspace, path, true).await;
+        let exact_key = encode_subspace_path_key(&subspace, &path, true).await;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
@@ -1042,19 +1049,19 @@ where
     }
 
     async fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
         Self::Error,
     > {
-        EntryProducer::new(self, area, ignore).await
+        EntryProducer::new(self, &area, ignore).await
     }
 
     async fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
@@ -1377,7 +1384,7 @@ impl BulkProducer for PayloadProducer {
 }
 
 /// Produces [`willow_data_model::LengthyAuthorisedEntry`] for a given [`willow_data_model::grouping::Area`] and [`willow_data_model::QueryIgnoreParams`].
-pub struct EntryProducer<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+pub struct EntryProducer<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId,
@@ -1385,13 +1392,13 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     iter: sled::Iter,
-    store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
+    store: Rc<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
     ignore: QueryIgnoreParams,
     area: Area<MCL, MCC, MPL, S>,
 }
 
-impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    EntryProducer<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SubspaceId + EncodableKnownSize + EncodableSync,
@@ -1399,7 +1406,7 @@ where
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
     async fn new(
-        store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
+        store: Rc<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
         area: &Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<Self, StoreSimpleSledError> {
@@ -1425,7 +1432,7 @@ where
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
-    for EntryProducer<'_, MCL, MCC, MPL, N, S, PD, AT>
+    for EntryProducer<MCL, MCC, MPL, N, S, PD, AT>
 where
     N: NamespaceId + EncodableKnownSize + Decodable,
     S: SubspaceId + Decodable + EncodableKnownSize + EncodableSync,
