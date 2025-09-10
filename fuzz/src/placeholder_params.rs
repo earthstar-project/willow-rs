@@ -303,3 +303,42 @@ impl TrustedDecodable for FakeAuthorisationToken {
         Self::decode(producer).await
     }
 }
+
+pub struct FakeFingerprint([u8; 1]);
+
+impl<'a> Arbitrary<'a> for FakeFingerprint {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(FakePayloadDigest([u8::arbitrary(u).unwrap()]))
+    }
+}
+
+impl Encodable for FakeFingerprint {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        encode_bytes(&self.0, consumer).await
+    }
+}
+
+impl Decodable for FakeFingerprint {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let bytes: [u8; 1] = decode_bytes(producer).await?;
+
+        Ok(FakePayloadDigest([bytes[0] & 0b0000_0011]))
+    }
+}
+
+impl EncodableKnownSize for FakeFingerprint {
+    fn len_of_encoding(&self) -> usize {
+        1
+    }
+}
