@@ -2,10 +2,11 @@ use std::rc::Rc;
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
-use compact_u64::{CompactU64, TagWidth};
+use compact_u64::{CompactU64, Tag, TagWidth};
 use either::Either::{Left, Right};
 use willow_data_model::{
-    grouping::Range3d, AuthorisedEntry, LengthyAuthorisedEntry, NamespaceId, Path, SubspaceId,
+    grouping::Range3d, AuthorisedEntry, Entry, LengthyAuthorisedEntry, NamespaceId, Path,
+    PayloadDigest, SubspaceId,
 };
 
 use crate::{
@@ -13,8 +14,8 @@ use crate::{
     pio,
 };
 use ufotofu_codec::{
-    Blame, Decodable, DecodeError, Encodable, EncodableKnownSize, EncodableSync, RelativeDecodable,
-    RelativeEncodable, RelativeEncodableKnownSize,
+    Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
+    RelativeDecodable, RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_encoding::is_bitflagged;
 use willow_pio::PersonalPrivateInterest;
@@ -563,12 +564,12 @@ pub(crate) struct ReconciliationSendFingerprint<
     pub fingerprint: Fingerprint,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     RelativeEncodable<Range3d<MCL, MCC, MPL, S>>
-    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
 where
-    S: Encodable,
-    Fingerprint: Encodable,
+    S: SubspaceId + Encodable,
+    FP: Encodable,
 {
     async fn relative_encode<C>(
         &self,
@@ -578,28 +579,70 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header = 0b0000_0000;
+
+        let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::four());
+        let sender_handle_tag = Tag::min_tag(self.info.sender_handle, TagWidth::two());
+        let receiver_handle_tag = Tag::min_tag(self.info.receiver_handle, TagWidth::two());
+
+        header |= root_id_tag.data_at_offset(0);
+        header |= sender_handle_tag.data_at_offset(4);
+        header |= receiver_handle_tag.data_at_offset(6);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.info.root_id)
+            .relative_encode(consumer, &root_id_tag.encoding_width())
+            .await?;
+        CompactU64(self.info.sender_handle)
+            .relative_encode(consumer, &sender_handle_tag.encoding_width())
+            .await?;
+        CompactU64(self.info.receiver_handle)
+            .relative_encode(consumer, &receiver_handle_tag.encoding_width())
+            .await?;
+
+        self.info.range.relative_encode(consumer, r).await?;
+
+        self.fingerprint.encode(consumer).await?;
+
+        Ok(())
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     RelativeEncodableKnownSize<Range3d<MCL, MCC, MPL, S>>
-    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
 where
-    S: EncodableKnownSize,
-    Fingerprint: EncodableKnownSize,
+    S: SubspaceId + EncodableKnownSize,
+    FP: EncodableKnownSize,
 {
     fn relative_len_of_encoding(&self, r: &Range3d<MCL, MCC, MPL, S>) -> usize {
-        todo!()
+        let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::four());
+        let sender_handle_tag = Tag::min_tag(self.info.sender_handle, TagWidth::two());
+        let receiver_handle_tag = Tag::min_tag(self.info.receiver_handle, TagWidth::two());
+
+        let root_id_len =
+            CompactU64(self.info.root_id).relative_len_of_encoding(&root_id_tag.encoding_width());
+        let sender_handle_len = CompactU64(self.info.sender_handle)
+            .relative_len_of_encoding(&sender_handle_tag.encoding_width());
+        let receiver_handle_len = CompactU64(self.info.receiver_handle)
+            .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
+
+        let range_rel_len = self.info.range.relative_len_of_encoding(r);
+
+        let fp_len = self.fingerprint.len_of_encoding();
+
+        1 + root_id_len + sender_handle_len + receiver_handle_len + range_rel_len + fp_len
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S, Fingerprint>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
-    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, Fingerprint>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
 where
-    S: Decodable,
-    Fingerprint: Decodable,
+    S: SubspaceId + DecodableCanonic,
+    FP: Decodable,
+    Blame: From<S::ErrorReason> + From<S::ErrorCanonic> + From<FP::ErrorReason>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -609,7 +652,42 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let root_id_tag = Tag::from_raw(header, TagWidth::four(), 0);
+        let sender_handle_tag = Tag::from_raw(header, TagWidth::two(), 4);
+        let receiver_handle_tag = Tag::from_raw(header, TagWidth::two(), 6);
+
+        let root_id = CompactU64::relative_decode(producer, &root_id_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let range = Range3d::relative_decode(producer, r)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        let fingerprint = FP::decode(producer)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(Self {
+            fingerprint,
+            info: RangeInfo {
+                root_id,
+                sender_handle,
+                receiver_handle,
+                range,
+            },
+        })
     }
 }
 
@@ -634,7 +712,7 @@ pub(crate) struct ReconciliationAnnounceEntries<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeEncodable<Range3d<MCL, MCC, MPL, S>> for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
 where
-    S: Encodable,
+    S: SubspaceId + Encodable,
 {
     async fn relative_encode<C>(
         &self,
@@ -644,7 +722,49 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header_1 = 0b0000_0000;
+
+        if self.is_empty {
+            header_1 |= 0b0001_0000;
+        }
+
+        if self.want_response {
+            header_1 |= 0b0000_1000;
+        }
+
+        if self.will_sort {
+            header_1 |= 0b0000_0100;
+        }
+
+        let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::two());
+
+        header_1 |= root_id_tag.data_at_offset(5);
+
+        consumer.consume(header_1).await?;
+
+        let mut header_2 = 0b0000_0000;
+
+        let sender_handle_tag = Tag::min_tag(self.info.sender_handle, TagWidth::four());
+        let receiver_handle_tag = Tag::min_tag(self.info.receiver_handle, TagWidth::four());
+
+        header_2 |= sender_handle_tag.data_at_offset(0);
+        header_2 |= receiver_handle_tag.data_at_offset(4);
+
+        consumer.consume(header_2).await?;
+
+        CompactU64(self.info.root_id)
+            .relative_encode(consumer, &root_id_tag.encoding_width())
+            .await?;
+        CompactU64(self.info.sender_handle)
+            .relative_encode(consumer, &sender_handle_tag.encoding_width())
+            .await?;
+        CompactU64(self.info.receiver_handle)
+            .relative_encode(consumer, &receiver_handle_tag.encoding_width())
+            .await?;
+
+        self.info.range.relative_encode(consumer, r).await?;
+
+        Ok(())
     }
 }
 
@@ -652,10 +772,23 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeEncodableKnownSize<Range3d<MCL, MCC, MPL, S>>
     for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
 where
-    S: EncodableKnownSize,
+    S: SubspaceId + EncodableKnownSize,
 {
     fn relative_len_of_encoding(&self, r: &Range3d<MCL, MCC, MPL, S>) -> usize {
-        todo!()
+        let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::two());
+        let sender_handle_tag = Tag::min_tag(self.info.sender_handle, TagWidth::four());
+        let receiver_handle_tag = Tag::min_tag(self.info.receiver_handle, TagWidth::four());
+
+        let root_id_len =
+            CompactU64(self.info.root_id).relative_len_of_encoding(&root_id_tag.encoding_width());
+        let sender_handle_len = CompactU64(self.info.sender_handle)
+            .relative_len_of_encoding(&sender_handle_tag.encoding_width());
+        let receiver_handle_len = CompactU64(self.info.receiver_handle)
+            .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
+
+        let range_rel_len = self.info.range.relative_len_of_encoding(r);
+
+        2 + root_id_len + sender_handle_len + receiver_handle_len + range_rel_len
     }
 }
 
@@ -663,7 +796,8 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame>
     for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
 where
-    S: Decodable,
+    S: SubspaceId + DecodableCanonic,
+    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
 {
     async fn relative_decode<P>(
         producer: &mut P,
@@ -673,7 +807,46 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        todo!()
+        let header_1 = producer.produce_item().await?;
+
+        let is_empty = is_bitflagged(header_1, 3);
+        let want_response = is_bitflagged(header_1, 4);
+        let will_sort = is_bitflagged(header_1, 5);
+        let root_id_tag = Tag::from_raw(header_1, TagWidth::two(), 5);
+
+        let header_2 = producer.produce_item().await?;
+
+        let sender_handle_tag = Tag::from_raw(header_2, TagWidth::four(), 0);
+        let receiver_handle_tag = Tag::from_raw(header_2, TagWidth::four(), 4);
+
+        let root_id = CompactU64::relative_decode(producer, &root_id_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let range = Range3d::relative_decode(producer, r)
+            .await
+            .map_err(DecodeError::map_other_from)?;
+
+        Ok(Self {
+            is_empty,
+            want_response,
+            will_sort,
+            info: RangeInfo {
+                root_id,
+                sender_handle,
+                receiver_handle,
+                range,
+            },
+        })
     }
 }
 
@@ -696,23 +869,82 @@ pub(crate) struct ReconciliationSendEntry<
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     RelativeEncodable<(
-        &Range3d<MCL, MCC, MPL, S>,
+        &(N, Range3d<MCL, MCC, MPL, S>),
         &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     )> for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
-    S: Encodable,
+    N: NamespaceId + Encodable + EncodableKnownSize,
+    S: SubspaceId + Encodable + EncodableKnownSize,
+    PD: PayloadDigest + Encodable + EncodableKnownSize,
+    AT: RelativeEncodable<(
+        AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        Entry<MCL, MCC, MPL, N, S, PD>,
+    )>,
 {
     async fn relative_encode<C>(
         &self,
         consumer: &mut C,
         r: &(
-            &Range3d<MCL, MCC, MPL, S>,
+            &(N, Range3d<MCL, MCC, MPL, S>),
             &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
         ),
     ) -> Result<(), C::Error>
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
+        let (r_range, r_authed) = r;
+
+        // Determine whether we are going to encode relative_to_entry or not.
+        let rel_entry_len = self
+            .entry
+            .entry()
+            .entry()
+            .relative_len_of_encoding(r_authed.entry());
+
+        let rel_range_len = self
+            .entry
+            .entry()
+            .entry()
+            .relative_len_of_encoding(*r_range);
+
+        let relative_to_entry = rel_entry_len < rel_range_len;
+
+        let mut header = 0b0000_0000;
+
+        if relative_to_entry {
+            header |= 0b0001_0000;
+        }
+
+        let offset_tag = Tag::min_tag(self.offset, TagWidth::two());
+        let available_tag = Tag::min_tag(self.entry.available(), TagWidth::two());
+
+        header |= offset_tag.data_at_offset(4);
+        header |= offset_tag.data_at_offset(6);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.offset)
+            .relative_encode(consumer, &offset_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.entry.available())
+            .relative_encode(consumer, &available_tag.encoding_width())
+            .await?;
+
+        if relative_to_entry {
+            self.entry
+                .entry()
+                .entry()
+                .relative_encode(consumer, r_authed.entry())
+                .await?;
+        } else {
+            self.entry
+                .entry()
+                .entry()
+                .relative_encode(consumer, *r_range)
+                .await?;
+        };
+
         todo!()
     }
 }
