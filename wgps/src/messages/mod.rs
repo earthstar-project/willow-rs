@@ -4,6 +4,7 @@ use std::rc::Rc;
 use arbitrary::Arbitrary;
 use compact_u64::{CompactU64, Tag, TagWidth};
 use either::Either::{Left, Right};
+use wb_async_utils::Mutex;
 use willow_data_model::{
     grouping::Range3d, AuthorisationToken, AuthorisedEntry, Entry, LengthyAuthorisedEntry,
     NamespaceId, Path, PayloadDigest, SubspaceId,
@@ -113,6 +114,50 @@ where
                 }
             }
             Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DataMessage<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
+    ReconciliationAnnounceEntries(ReconciliationAnnounceEntries<MCL, MCC, MPL, S>),
+    ReconciliationSendEntry(ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    ReconciliationSendPayload(ReconciliationSendPayload),
+    ReconciliationTerminatePayload(ReconciliationTerminatePayload),
+    DataSendEntry(DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>),
+    DataSendPayload(DataSendPayload),
+    PayloadRequestSendResponse(PayloadRequestSendResponse),
+}
+
+pub(crate) struct DecodeDataMessagesRelativeToThis<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+> {
+    previously_received_itemset_3drange: Rc<Mutex<Range3d<MCL, MCC, MPL, S>>>,
+    reconciliation_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
+    data_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    DecodeDataMessagesRelativeToThis<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Clone,
+    S: Default + Clone,
+    PD: Clone,
+    AT: Clone,
+{
+    pub(crate) fn new(
+        default_authorised_entry: AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    ) -> Self {
+        Self {
+            previously_received_itemset_3drange: Rc::new(Mutex::new(Range3d::default())),
+            reconciliation_current_entry: Rc::new(Mutex::new(default_authorised_entry.clone())),
+            data_current_entry: Rc::new(Mutex::new(default_authorised_entry)),
         }
     }
 }
