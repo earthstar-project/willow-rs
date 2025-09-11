@@ -315,9 +315,8 @@ where
             .await
             .map_err(|store_creation_error| RbsrError::StoreCreation(store_creation_error))?;
 
-        let mut entries = store
-            .query_and_subscribe_range(range.clone(), QueryIgnoreParams::default())
-            .await?;
+        let mut entries =
+            store.query_and_subscribe_range(range.clone(), QueryIgnoreParams::default())?;
 
         let mut current_entry = loop {
             match entries.produce().await? {

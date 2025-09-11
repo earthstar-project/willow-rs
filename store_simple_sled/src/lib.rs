@@ -431,6 +431,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -447,12 +448,18 @@ where
             Some((spt_key, value)) => {
                 let (subspace, path, timestamp) =
                     decode_spt_entry_key::<MCL, MCC, MPL, S>(&spt_key).await;
-                let (length, digest, auth_token, _local_length) =
+                let (length, digest, auth_token, local_length) =
                     decode_entry_values::<PD, AT>(&value).await;
 
                 if let Some(expected) = expected_digest {
                     if expected != digest {
                         return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
+
+                if let Some(expected) = expected_available_bytes {
+                    if expected != local_length {
+                        return Err(PayloadAppendError::IncorrectAvailableLength);
                     }
                 }
 
@@ -1014,9 +1021,9 @@ where
     }
 
     async fn payload(
-        &self,
-        subspace: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
@@ -1025,7 +1032,7 @@ where
     > {
         let entry_tree = self.spt_entry_tree().map_err(StoreSimpleSledError::from)?;
         let payload_tree = self.payload_tree().map_err(StoreSimpleSledError::from)?;
-        let exact_key = encode_subspace_path_key(subspace, path, true).await;
+        let exact_key = encode_subspace_path_key(&subspace, &path, true).await;
 
         let maybe_entry = self.prefix_gt(&entry_tree, &exact_key)?;
         let maybe_payload = self.prefix_gt(&payload_tree, &exact_key)?;
@@ -1130,16 +1137,16 @@ where
     }
 
     fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()> {
         EntryProducer::new(self, area.to_owned().into(), ignore)
     }
 
     async fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
@@ -1151,8 +1158,8 @@ where
     }
 
     fn query_and_subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<
@@ -1193,7 +1200,7 @@ where
     FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
     fn query_range(
-        &self,
+        self: Rc<Self>,
         range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
@@ -1201,7 +1208,7 @@ where
     }
 
     fn subscribe_range(
-        &self,
+        self: Rc<Self>,
         range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>> {
@@ -1209,8 +1216,8 @@ where
     }
 
     fn query_and_subscribe_range(
-        &self,
-        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<
@@ -1239,7 +1246,7 @@ where
     async fn summarise(
         &self,
         range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
-    ) -> (FP, usize) {
+    ) -> Result<(FP, usize), Self::Error> {
         let mut size = 0;
         let mut fingerprint = FP::NEUTRAL;
 
@@ -1252,7 +1259,7 @@ where
             size += 1;
         }
 
-        (fingerprint, size)
+        Ok((fingerprint, size))
     }
 
     async fn area_of_interest_to_range(
@@ -1320,13 +1327,16 @@ where
     }
 
     async fn partition_range(
-        &self,
-        range: &willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
-        options: &wgps::PartitionOpts,
-    ) -> Option<impl Iterator<Item = wgps::RangeSplit<MCL, MCC, MPL, S, FP>>> {
+        self: Rc<Self>,
+        range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        options: wgps::PartitionOpts,
+    ) -> Result<
+        impl Producer<Item = RangeSplit<MCL, MCC, MPL, S, FP>, Final = (), Error = Self::Error>,
+        Self::Error,
+    > {
         let tsp_tree = self.tsp_entry_tree().unwrap();
 
-        let (_fp, count): (FP, usize) = self.summarise(range).await;
+        let (_fp, count): (FP, usize) = self.summarise(&range).await?;
 
         let target_size = count / options.target_split_count;
 
@@ -1377,10 +1387,10 @@ where
                                     new_time_range,
                                 );
 
-                                let (split_fp, split_size) = self.summarise(&new_range).await;
+                                let (split_fp, split_size) = self.summarise(&new_range).await?;
 
                                 let split_action = if split_size < options.min_range_size {
-                                    SplitAction::<FP>::SendEntries(split_size as u64)
+                                    SplitAction::<FP>::SendEntries(split_size)
                                 } else {
                                     SplitAction::SendFingerprint(split_fp)
                                 };
@@ -1406,10 +1416,10 @@ where
                             Range::new_open(current_lower_bound),
                         );
 
-                        let (split_fp, split_size) = self.summarise(&new_range).await;
+                        let (split_fp, split_size) = self.summarise(&new_range).await?;
 
                         let split_action = if split_size < options.min_range_size {
-                            SplitAction::<FP>::SendEntries(split_size as u64)
+                            SplitAction::<FP>::SendEntries(split_size)
                         } else {
                             SplitAction::SendFingerprint(split_fp)
                         };
@@ -1423,11 +1433,7 @@ where
             }
         }
 
-        if splits.len() <= 1 {
-            None
-        } else {
-            Some(splits.into_iter())
-        }
+        todo!()
     }
 }
 
