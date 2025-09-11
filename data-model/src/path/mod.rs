@@ -132,6 +132,34 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Ok(builder.build())
     }
 
+    pub fn new_max() -> Self {
+        let max_comp_bytes = [255; MCL];
+
+        let mut num_comps = if MCL == 0 {
+            MCC
+        } else {
+            core::cmp::min(MCC, MPL.div_ceil(MCL))
+        };
+        let mut path_builder = PathBuilder::new(MPL, MCC).unwrap();
+
+        let mut len_so_far = 0;
+
+        for _ in 0..num_comps {
+            let comp_len = core::cmp::min(MCL, MPL - len_so_far);
+            let component = unsafe { Component::new_unchecked(&max_comp_bytes[..comp_len]) };
+            path_builder.append_component(component);
+
+            len_so_far += comp_len;
+        }
+
+        while num_comps < MCC {
+            path_builder.append_component(Component::new_empty());
+            num_comps += 1;
+        }
+
+        path_builder.build()
+    }
+
     /// Creates a path of known total length from an [`ExactSizeIterator`] of components.
     ///
     /// Copies the bytes of the components into an owned allocation on the heap.
@@ -786,4 +814,20 @@ fn fixed_width_increment(buf: &mut [u8]) {
             return;
         }
     }
+}
+
+#[test]
+fn new_max() {
+    let path1 = Path::<3, 3, 6>::new_max();
+
+    assert!(path1.successor().is_none());
+
+    let path2 = Path::<4, 4, 16>::new_max();
+    assert!(path2.successor().is_none());
+
+    let path3 = Path::<0, 4, 0>::new_max();
+    assert!(path3.successor().is_none());
+
+    let path4 = Path::<4, 2, 6>::new_max();
+    assert!(path4.successor().is_none())
 }
