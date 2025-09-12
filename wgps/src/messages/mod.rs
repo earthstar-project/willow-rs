@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
@@ -129,6 +129,88 @@ pub(crate) enum DataMessage<const MCL: usize, const MCC: usize, const MPL: usize
     PayloadRequestSendResponse(PayloadRequestSendResponse),
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeDecodable<DecodeDataMessagesRelativeToThis<MCL, MCC, MPL, N, S, PD, AT>, Blame>
+    for DataMessage<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+        + for<'a> RelativeDecodable<
+            (
+                &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+                &'a Entry<MCL, MCC, MPL, N, S, PD>,
+            ),
+            Blame,
+        >,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &DecodeDataMessagesRelativeToThis<MCL, MCC, MPL, N, S, PD, AT>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        match producer.expose_items().await? {
+            Left(bytes) => {
+                let first_byte = bytes[0];
+
+                if first_byte & 0b1110_0000 == 0b0000_0000 {
+                    ReconciliationAnnounceEntries::relative_decode(
+                        producer,
+                        r.previously_received_itemset_3drange.read().await.deref(),
+                    )
+                    .await
+                    .map(DataMessage::ReconciliationAnnounceEntries)
+                } else if first_byte & 0b1110_0000 == 0b0010_0000 {
+                    ReconciliationSendEntry::relative_decode(
+                        producer,
+                        &(
+                            (
+                                r.granted_namespace_of_info_of_preceding_announce_entries_message
+                                    .read()
+                                    .await
+                                    .deref(),
+                                r.previously_received_itemset_3drange.read().await.deref(),
+                            ),
+                            r.reconciliation_current_entry.read().await.deref(),
+                        ),
+                    )
+                    .await
+                    .map(DataMessage::ReconciliationSendEntry)
+                } else if first_byte & 0b1110_0000 == 0b0100_0000 {
+                    ReconciliationSendPayload::decode(producer)
+                        .await
+                        .map(DataMessage::ReconciliationSendPayload)
+                } else if first_byte & 0b1110_0000 == 0b0110_0000 {
+                    ReconciliationTerminatePayload::decode(producer)
+                        .await
+                        .map(DataMessage::ReconciliationTerminatePayload)
+                } else if first_byte & 0b1110_0000 == 0b1000_0000 {
+                    DataSendEntry::relative_decode(
+                        producer,
+                        r.data_current_entry.read().await.deref(),
+                    )
+                    .await
+                    .map(DataMessage::DataSendEntry)
+                } else if first_byte & 0b1110_0000 == 0b1010_0000 {
+                    DataSendPayload::decode(producer)
+                        .await
+                        .map(DataMessage::DataSendPayload)
+                } else {
+                    PayloadRequestSendResponse::decode(producer)
+                        .await
+                        .map(DataMessage::PayloadRequestSendResponse)
+                }
+            }
+            Right(fin) => return Err(DecodeError::UnexpectedEndOfInput(fin)),
+        }
+    }
+}
+
+// relative to the pair of previously_received_itemset_3drange and the granted namespace of the info of the preceding ReconciliationAnnounceEntries message.
+
 pub(crate) struct DecodeDataMessagesRelativeToThis<
     const MCL: usize,
     const MCC: usize,
@@ -139,6 +221,7 @@ pub(crate) struct DecodeDataMessagesRelativeToThis<
     AT,
 > {
     previously_received_itemset_3drange: Rc<Mutex<Range3d<MCL, MCC, MPL, S>>>,
+    granted_namespace_of_info_of_preceding_announce_entries_message: Rc<Mutex<N>>,
     reconciliation_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
     data_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
@@ -146,7 +229,7 @@ pub(crate) struct DecodeDataMessagesRelativeToThis<
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     DecodeDataMessagesRelativeToThis<MCL, MCC, MPL, N, S, PD, AT>
 where
-    N: Clone,
+    N: Default + Clone,
     S: Default + Clone,
     PD: Clone,
     AT: Clone,
@@ -156,6 +239,9 @@ where
     ) -> Self {
         Self {
             previously_received_itemset_3drange: Rc::new(Mutex::new(Range3d::default())),
+            granted_namespace_of_info_of_preceding_announce_entries_message: Rc::new(Mutex::new(
+                N::default(),
+            )),
             reconciliation_current_entry: Rc::new(Mutex::new(default_authorised_entry.clone())),
             data_current_entry: Rc::new(Mutex::new(default_authorised_entry)),
         }
@@ -1230,11 +1316,110 @@ pub(crate) struct DataSendEntry<const MCL: usize, const MCC: usize, const MPL: u
     pub offset: u64,
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodable<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
+    for DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + Encodable + EncodableKnownSize,
+    S: SubspaceId + Encodable + EncodableKnownSize,
+    PD: PayloadDigest + Encodable + EncodableKnownSize,
+    AT: for<'a> RelativeEncodable<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>,
+{
+    async fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        r: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    ) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodableKnownSize<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>
+    for DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize,
+    S: SubspaceId + EncodableKnownSize,
+    PD: PayloadDigest + EncodableKnownSize,
+    AT: for<'a> RelativeEncodableKnownSize<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )>,
+{
+    fn relative_len_of_encoding(&self, r: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) -> usize {
+        todo!()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeDecodable<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Blame>
+    for DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    PD: PayloadDigest + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+        + for<'a> RelativeDecodable<
+            (
+                &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+                &'a Entry<MCL, MCC, MPL, N, S, PD>,
+            ),
+            Blame,
+        >,
+{
+    async fn relative_decode<P>(
+        producer: &mut P,
+        r: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        todo!()
+    }
+}
+
 /// Send some Chunks of the receiver’s data_current_entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DataSendPayload {
     /// The number of transmitted Chunks.
     pub amount: u64,
+}
+
+impl Encodable for DataSendPayload {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl EncodableKnownSize for DataSendPayload {
+    fn len_of_encoding(&self) -> usize {
+        todo!()
+    }
+}
+
+impl EncodableSync for DataSendPayload {}
+
+impl Decodable for DataSendPayload {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        todo!()
+    }
 }
 
 /// Express eagerness preferences for the Payload transmissions in the overlaps of the granted areas of two ReadCapabilities.
@@ -1303,6 +1488,36 @@ pub(crate) struct PayloadRequestSendResponse {
     // The number of transmitted Chunks.
     pub amount: u64,
     // The bytes to transmit, the concatenation of the Chunks obtained by applying transform_payload to the Payload of the requestedEntry, starting at the requested offset plus the number of Chunks for the same request that were already transmitted by prior PayloadRequestSendResponse messages.
+}
+
+impl Encodable for PayloadRequestSendResponse {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        todo!()
+    }
+}
+
+impl EncodableKnownSize for PayloadRequestSendResponse {
+    fn len_of_encoding(&self) -> usize {
+        todo!()
+    }
+}
+
+impl EncodableSync for PayloadRequestSendResponse {}
+
+impl Decodable for PayloadRequestSendResponse {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        todo!()
+    }
 }
 
 /// The different resource handles employed by the WGPS.
