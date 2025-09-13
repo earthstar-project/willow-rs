@@ -1,9 +1,9 @@
 use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, rc::Rc};
 
-use either::Either::{Left, Right};
+use either::Either::{self, Left, Right};
 use futures::try_join;
 use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, Session};
-use ufotofu::{BulkConsumer, BulkProducer, Consumer, Producer};
+use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
     shared_producer::{self, SharedProducer},
@@ -11,7 +11,8 @@ use wb_async_utils::{
 };
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
-    AuthorisationToken, AuthorisedEntry, LengthyAuthorisedEntry, NamespaceId, PayloadDigest,
+    AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryOrigin,
+    LengthyAuthorisedEntry, LengthyEntry, NamespaceId, PayloadAppendError, PayloadDigest,
     QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
@@ -38,7 +39,7 @@ use crate::{
         WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
     pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
-    rbsr::{RbsrError, ReconciliationSender},
+    rbsr::{order_entries, RbsrError, ReconciliationSender},
     storedinator::Storedinator,
 };
 
@@ -301,6 +302,8 @@ pub fn sync_with_peer<
     consumer: C,
     producer: P,
     storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
+    chunk_to_byte_fun: fn(u64) -> u64,
+    chunk_offset_and_count_to_byte_length: fn(u64 /* offset */, u64 /* count */) -> u64,
 ) -> (
     AoiInput<
         HANDSHAKE_HASHLEN_IN_BYTES,
@@ -407,6 +410,8 @@ where
             consumer,
             producer,
             storedinator,
+            chunk_to_byte_fun,
+            chunk_offset_and_count_to_byte_length,
             stop_inputting_aois,
             obtaining_the_aoi_consumer,
         ),
@@ -460,6 +465,8 @@ async fn do_sync_with_peer<
     consumer: C,
     producer: P,
     storedinator: Rc<Storedinator<Store, StoreCreationFunction, N>>,
+    chunk_to_byte_fun: fn(u64) -> u64,
+    chunk_offset_and_count_to_byte_length: fn(u64 /* offset */, u64 /* count */) -> u64,
     stop_inputting_aois: Rc<Cell<bool>>,
     obtaining_the_aoi_consumer: Rc<
         TakeCell<
@@ -658,7 +665,7 @@ where
 
     let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender, payload_request_channel_sender] =
         channel_senders;
-    let [mut reconciliation_channel_receiver, data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
+    let [mut reconciliation_channel_receiver, mut data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
         channel_receivers;
 
     let data_channel_sender = Rc::new(Mutex::new(data_channel_sender));
@@ -766,17 +773,6 @@ where
         options.session_id,
         options.default_authorised_entry.clone(),
     ));
-
-    // let ReconciliationSession {
-    //     initiator: mut rbsr_initiator,
-    //     receiver: mut rbsr_message_receiver,
-    // } = ReconciliationSession::new(
-    //     pio_state.clone(),
-    //     storedinator,
-    //     reconciliation_channel_sender,
-    //     reconciliation_channel_receiver,
-    //     options.entry_buffer_capacity,
-    // );
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // Every unit of work that the WGPS needs to perform is defined as a future in what follows, via an async block. //
@@ -980,12 +976,185 @@ where
         }
     };
 
+    // A future to receive data-channel messages and act on them.
+    let receive_data_messages = async {
+        let r = DecodeDataMessagesRelativeToThis::new(options.default_authorised_entry.clone());
+
+        // Buffers the received entries after a ReconciliationAnnounceEntries message, so that our reply can omit them.
+        let mut received_entry_buffer: Vec<LengthyEntry<MCL, MCC, MPL, N, S, PD>> =
+            Vec::with_capacity(options.entry_buffer_capacity);
+
+        // State per announced range.
+        let mut received_all_messages_for_current_range = false;
+        let mut they_want_response_for_current_range = false;
+        let mut root_id_for_current_range = 0;
+        let mut my_handle_for_current_range = 0;
+        let mut their_handle_for_current_range = 0;
+
+        // State per rbsr-transmitted entry (and its payload)
+        // This flag ensures that receiving the payload for the same entry concurrently form multiple peers doesn't result in storing an incorrect payload.
+        let mut try_appending_payload = false;
+        let mut payload_current_chunk_offset = 0;
+
+        loop {
+            match DataMessage::<MCL, MCC, MPL, N, S, PD, AT>::relative_decode(
+                &mut data_channel_receiver,
+                &r,
+            )
+            .await
+            {
+                Err(DecodeError::UnexpectedEndOfInput(())) => {
+                    // They closed their data channel, stop processing it.
+                    return Ok(());
+                }
+                Err(DecodeError::Producer(())) | Err(DecodeError::Other(Blame::TheirFault)) => {
+                    return Err(WgpsError::PeerMisbehaved)
+                }
+                Err(DecodeError::Other(Blame::OurFault)) => return Err(WgpsError::OurFault),
+                Ok(DataMessage::ReconciliationAnnounceEntries(announce_msg)) => {
+                    *r.previously_received_itemset_3drange.write().await =
+                        announce_msg.info.range.clone();
+
+                    *r.granted_namespace_of_info_of_preceding_announce_entries_message
+                        .write()
+                        .await = match intersection_info.read().await.get(&IntersectionKey {
+                        my_handle: announce_msg.info.receiver_handle,
+                        their_handle: announce_msg.info.sender_handle,
+                    }) {
+                        None => return Err(WgpsError::PeerMisbehaved),
+                        Some(intersection_data) => intersection_data.namespace_id.clone(),
+                    };
+
+                    received_entry_buffer.clear();
+                    received_all_messages_for_current_range = announce_msg.is_empty;
+                    they_want_response_for_current_range = announce_msg.want_response;
+                    root_id_for_current_range = announce_msg.info.root_id;
+                    my_handle_for_current_range = announce_msg.info.receiver_handle;
+                    their_handle_for_current_range = announce_msg.info.sender_handle;
+
+                    // That's it. Leave the match statement and continue after it, which means sending a response if received_all_messages_for_current_range.
+                }
+
+                Ok(DataMessage::ReconciliationSendEntry(entry_msg)) => {
+                    *r.reconciliation_current_entry.write().await = entry_msg.entry.entry().clone();
+
+                    payload_current_chunk_offset = entry_msg.offset;
+
+                    let store = storedinator
+                        .get_store(entry_msg.entry.entry().entry().namespace_id())
+                        .await
+                        .map_err(|store_creation_error| {
+                            RbsrError::StoreCreation(store_creation_error)
+                        })?;
+
+                    match store
+                        .ingest_entry(
+                            entry_msg.entry.entry().clone(),
+                            false,
+                            EntryOrigin::Remote(options.session_id),
+                        )
+                        .await {
+                            Ok(_) => {/* no-op */}
+                            Err(EntryIngestionError::PruningPrevented) => panic!("Got a EntryIngestionError::PruningPrevented error despite calling Store::ingest_entry with prevent_pruning set to false. The store implementation is buggy."),
+                            Err(EntryIngestionError::OperationsError(store_err)) => return Err(WgpsError::Store(store_err)),
+                        }
+
+                    if received_entry_buffer.len() < options.entry_buffer_capacity {
+                        received_entry_buffer.push(entry_msg.entry.clone().into_lengthy_entry());
+                    }
+
+                    try_appending_payload = true;
+                }
+
+                Ok(DataMessage::ReconciliationSendPayload(payload_msg)) => {
+                    let payload_start_byte_offset = chunk_to_byte_fun(payload_current_chunk_offset);
+                    let transmitted_payload_bytes_in_this_message =
+                        chunk_offset_and_count_to_byte_length(
+                            payload_current_chunk_offset,
+                            payload_msg.amount,
+                        );
+
+                    if try_appending_payload {
+                        let entry = r.reconciliation_current_entry.read().await.entry().clone();
+
+                        let store = storedinator.get_store(entry.namespace_id()).await.map_err(
+                            |store_creation_error| RbsrError::StoreCreation(store_creation_error),
+                        )?;
+
+                        let _ = data_channel_receiver.produce().await;
+
+                        let mut bytes_to_append = ufotofu::producer::Limit::new(
+                            BorrowedProducer(&mut data_channel_receiver),
+                            transmitted_payload_bytes_in_this_message as usize,
+                        );
+
+                        match store
+                            .append_payload(
+                                entry.subspace_id(),
+                                entry.path(),
+                                Some(entry.payload_digest().clone()),
+                                Some(payload_start_byte_offset),
+                                &mut bytes_to_append,
+                            )
+                            .await
+                        {
+                            Ok(_) => { /* no-op */ }
+                            Err(PayloadAppendError::OperationError(store_err)) => {
+                                return Err(WgpsError::Store(store_err));
+                            }
+                            Err(_) => {
+                                try_appending_payload = false;
+                            }
+                        }
+                    }
+
+                    payload_current_chunk_offset += payload_msg.amount;
+                }
+
+                Ok(DataMessage::ReconciliationTerminatePayload(terminate_payload_msg)) => {
+                    received_all_messages_for_current_range = terminate_payload_msg.is_final;
+
+                    // That's it. Leave the match statement and continue after it, which means sending a response if received_all_messages_for_current_range.
+                }
+
+                Ok(_) => todo!("Handle other, non-reconciliation messages"),
+                // DataSendEntry(DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>),
+                // DataSendPayload(DataSendPayload),
+                // PayloadRequestSendResponse(PayloadRequestSendResponse),
+            }
+
+            // The following code is only reached after processing a reconciliation message (all other messages `continue` to the next iteration of the data-message-decoding-loop inside the above match statement)
+            if received_all_messages_for_current_range && they_want_response_for_current_range {
+                // Sort buffered received entries so we can query more efficiently whether a given entry is currently buffered.
+                received_entry_buffer.sort_by(order_entries);
+
+                let subscription = reconciliation_sender
+                    .send_entries_in_range(
+                        &*r.granted_namespace_of_info_of_preceding_announce_entries_message
+                            .read()
+                            .await,
+                        &*r.previously_received_itemset_3drange.read().await,
+                        root_id_for_current_range,
+                        my_handle_for_current_range,
+                        their_handle_for_current_range,
+                        Some(&received_entry_buffer[..]),
+                    )
+                    .await?;
+
+                todo!("use the subscription when implementing post-rbsr forwarding");
+            }
+
+            // All done processing the current reconciliation message; move on to the beginning of the loop, decoding the next data message.
+        }
+    };
+
     // Actually run all the concurrent operations of the WGPS.
     let _ = try_join!(
         do_the_lcmux_bookkeeping,
         receive_global_messages,
         initiate_rbsr,
         process_incoming_fingerprint_messages,
+        receive_data_messages,
     )?; // TODO add futures for the remaining, as of yet unimplemented tasks: doing post-reconciliation forwarding, receiving `data` messages. Will be fleshed out as we progress with the WGPS implementation.
 
     Ok(())
@@ -1278,4 +1447,47 @@ where
             Self::Error,
         >,
     >;
+}
+
+// TODO: Think through whether this could make sense in ufotofu proper, or even whether `&mut P` should implement `Producer` when `P` does.
+struct BorrowedProducer<'p, P>(&'p mut P);
+
+impl<'p, P> Producer for BorrowedProducer<'p, P>
+where
+    P: Producer,
+{
+    type Item = P::Item;
+    type Final = P::Final;
+    type Error = P::Error;
+
+    async fn produce(&mut self) -> Result<either::Either<Self::Item, Self::Final>, Self::Error> {
+        self.0.produce().await
+    }
+}
+
+impl<'p, P> BufferedProducer for BorrowedProducer<'p, P>
+where
+    P: BufferedProducer,
+{
+    async fn slurp(&mut self) -> Result<(), Self::Error> {
+        self.0.slurp().await
+    }
+}
+
+impl<'p, P> BulkProducer for BorrowedProducer<'p, P>
+where
+    P: BulkProducer,
+{
+    async fn expose_items<'a>(
+        &'a mut self,
+    ) -> Result<Either<&'a [Self::Item], Self::Final>, Self::Error>
+    where
+        Self::Item: 'a,
+    {
+        self.0.expose_items().await
+    }
+
+    async fn consider_produced(&mut self, amount: usize) -> Result<(), Self::Error> {
+        self.0.consider_produced(amount).await
+    }
 }

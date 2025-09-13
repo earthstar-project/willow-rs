@@ -104,9 +104,13 @@ where
                 let first_byte = bytes[0];
 
                 if first_byte & 0b1100_0000 == 0b1000_0000 {
-                    todo!("DataSetEagerness")
+                    DataSetEagerness::decode(producer)
+                        .await
+                        .map(GlobalMessage::DataSetEagerness)
                 } else if first_byte & 0b1100_0000 == 0b1100_0000 {
-                    todo!("ResourceHandleFree")
+                    ResourceHandleFree::decode(producer)
+                        .await
+                        .map(GlobalMessage::ResourceHandleFree)
                 } else {
                     PioAnnounceOverlap::relative_decode(producer, r)
                         .await
@@ -209,8 +213,6 @@ where
     }
 }
 
-// relative to the pair of previously_received_itemset_3drange and the granted namespace of the info of the preceding ReconciliationAnnounceEntries message.
-
 pub(crate) struct DecodeDataMessagesRelativeToThis<
     const MCL: usize,
     const MCC: usize,
@@ -220,10 +222,10 @@ pub(crate) struct DecodeDataMessagesRelativeToThis<
     PD,
     AT,
 > {
-    previously_received_itemset_3drange: Rc<Mutex<Range3d<MCL, MCC, MPL, S>>>,
-    granted_namespace_of_info_of_preceding_announce_entries_message: Rc<Mutex<N>>,
-    reconciliation_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
-    data_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
+    pub previously_received_itemset_3drange: Rc<Mutex<Range3d<MCL, MCC, MPL, S>>>,
+    pub granted_namespace_of_info_of_preceding_announce_entries_message: Rc<Mutex<N>>,
+    pub reconciliation_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
+    pub data_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>

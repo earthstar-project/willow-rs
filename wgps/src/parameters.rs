@@ -41,7 +41,14 @@ pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: 
     + for<'a> RelativeEncodableKnownSize<(
         &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
         &'a Entry<MCL, MCC, MPL, N, S, PD>,
-    )>
+    )> + AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + for<'a> RelativeDecodable<
+        (
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+        Blame,
+    >
 {
 }
 

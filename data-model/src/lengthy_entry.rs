@@ -82,6 +82,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
     pub fn into_authorised_entry(self) -> AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT> {
         self.entry
     }
+
+    /// Turns this into a [`LengthyEntry`].
+    pub fn into_lengthy_entry(self) -> LengthyEntry<MCL, MCC, MPL, N, S, PD> {
+        LengthyEntry {
+            entry: self.entry.into_parts().0,
+            available: self.available,
+        }
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
