@@ -48,7 +48,7 @@ pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: 
             &'a Entry<MCL, MCC, MPL, N, S, PD>,
         ),
         Blame,
-    >
+    > + 'static
 {
 }
 
@@ -110,6 +110,10 @@ pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S
 }
 
 pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
-    Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + EncodableKnownSize + Decodable<ErrorReason = Blame> + Eq
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT>
+    + EncodableKnownSize
+    + Decodable<ErrorReason = Blame>
+    + Eq
+    + 'static
 {
 }

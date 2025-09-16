@@ -1,7 +1,7 @@
-use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, rc::Rc};
+use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, pin::Pin, rc::Rc};
 
 use either::Either::{self, Left, Right};
-use futures::try_join;
+use futures::{try_join, SinkExt, StreamExt};
 use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, Session};
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
@@ -39,7 +39,7 @@ use crate::{
         WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
     pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
-    rbsr::{order_entries, RbsrError, ReconciliationSender},
+    rbsr::{order_entries, process_subscription, RbsrError, ReconciliationSender},
     storedinator::Storedinator,
 };
 
@@ -359,7 +359,8 @@ where
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
-    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
+    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError> + 'static,
+    StoreCreationError: 'static,
     Store: RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP>,
     FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
@@ -525,7 +526,8 @@ where
     MyEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
     TheirReadCap: WgpsReadCapability<MCL, MCC, MPL, NamespaceId = N, SubspaceId = S>,
     TheirEnumCap: WgpsEnumerationCapability<NamespaceId = N, Receiver = S>,
-    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError>,
+    StoreCreationFunction: AsyncFn(&N) -> Result<Store, StoreCreationError> + 'static,
+    StoreCreationError: 'static,
     Store: RbsrStore<MCL, MCC, MPL, N, S, PD, AT, FP>,
     FP: WgpsFingerprint<MCL, MCC, MPL, N, S, PD, AT>,
 {
@@ -769,7 +771,7 @@ where
         pio_state.clone(),
         storedinator.clone(),
         reconciliation_channel_sender,
-        data_channel_sender,
+        data_channel_sender.clone(),
         options.session_id,
         options.default_authorised_entry.clone(),
     ));
@@ -818,6 +820,21 @@ where
         IntersectionKey,
         IntersectionInfo<MCL, MCC, MPL, N, S>,
     >::new()));
+
+    // As part of synchronising data, we obtain store subscriptions. We want to process all of these subscriptions concurrently, and forward new entries to the peer. Doing so is a bit tricky, we basically go with approach sketched here:
+    // https://rust-lang.github.io/wg-async/vision/submitted_stories/status_quo/barbara_battles_buffered_streams.html#is-there-any-way-for-barbara-to-both-produce-and-process-work-items-simultaneously-without-the-buffering-and-so-forth
+    //
+    // For this approach, we need a stream of all subscriptions we want to process. But subscriptions can occur in three different futures. Hence, we collect them in a mpsc channel.
+    let (
+        mut subscriptions_we_want_to_process_sender,
+        mut subscriptions_we_want_to_process_receiver12,
+    ) = futures::channel::mpsc::unbounded();
+    let mut subscriptions_we_want_to_process_sender2 =
+        subscriptions_we_want_to_process_sender.clone();
+    let (
+        mut subscriptions_we_want_to_process_sender3,
+        mut subscriptions_we_want_to_process_receiver3,
+    ) = futures::channel::mpsc::unbounded();
 
     // A future to listen for overlaps detected in pio and to initiate set reconciliation if appropriate.
     let initiate_rbsr_storedinator = storedinator.clone();
@@ -873,7 +890,10 @@ where
                                     // nothing else to do
                                 }
                                 Some(subscription) => {
-                                    todo!("use the subscription when implementing post-rbsr forwarding");
+                                    // Store the subscription for later processing. In case of an error, the subscription will not be processed later, but we can ignore that here.
+                                    let _ = subscriptions_we_want_to_process_sender
+                                        .send(subscription)
+                                        .await;
                                 }
                             }
                         }
@@ -961,7 +981,10 @@ where
                                     // nothing else to do
                                 }
                                 Some(subscription) => {
-                                    todo!("use the subscription when implementing post-rbsr forwarding");
+                                    // Store the subscription for later processing. In case of an error, the subscription will not be processed later, but we can ignore that here.
+                                    let _ = subscriptions_we_want_to_process_sender2
+                                        .send(subscription)
+                                        .await;
                                 }
                             }
                                 }
@@ -1141,11 +1164,53 @@ where
                     )
                     .await?;
 
-                todo!("use the subscription when implementing post-rbsr forwarding");
+                // Store the subscription for later processing. In case of an error, the subscription will not be processed later, but we can ignore that here.
+                let _ = subscriptions_we_want_to_process_sender3
+                    .send(subscription)
+                    .await;
             }
 
             // All done processing the current reconciliation message; move on to the beginning of the loop, decoding the next data message.
         }
+    };
+
+    // An extra clone that can be moved into the `forward_new_entries` future.
+    let data_channel_sender_clone = data_channel_sender.clone();
+    // A future to collect store subscriptions and forward new entries to the peer.
+    let forward_new_entries = async {
+        let mut push_new_entries: futures::stream::FuturesUnordered<
+            Pin<Box<dyn futures::Future<Output = Result<_, RbsrError<_, StoreCreationError, _>>>>>,
+        > = futures::stream::FuturesUnordered::new();
+
+        let data_current_entry = Rc::new(Mutex::new(options.default_authorised_entry.clone()));
+
+        loop {
+            futures::select! {
+                new_subscription_to_add = subscriptions_we_want_to_process_receiver12.next() => {
+                    match new_subscription_to_add {
+                        None => {
+                            // do nothing, the FuturesUnordered will eventually be done if it isn't refilled
+                        }
+                        Some(new_subscription) => push_new_entries.push(process_subscription(new_subscription.0, new_subscription.1, data_channel_sender_clone.clone(), data_current_entry.clone(), options.session_id)),
+                    }
+                }
+                new_subscription_to_add = subscriptions_we_want_to_process_receiver3.next() => {
+                    match new_subscription_to_add {
+                        None => {
+                            // do nothing, the FuturesUnordered will eventually be done if it isn't refilled
+                        }
+                        Some(new_subscription) => push_new_entries.push(process_subscription(new_subscription.0, new_subscription.1, data_channel_sender_clone.clone(), data_current_entry.clone(), options.session_id)),
+                    }
+                }
+                _done_with_a_subscription = push_new_entries.next() => {
+                    // nothing to do here. We just keep polling those futures, each of which processes a subscription
+                }
+            }
+        }
+
+        // This is unreachable, but it allows the compiler to infer the correct return type of this future so that the `try_join!` below compiles.
+        #[allow(unreachable_code)]
+        return Result::<(), WgpsError<_, _, _>>::Ok(());
     };
 
     // Actually run all the concurrent operations of the WGPS.
@@ -1155,7 +1220,8 @@ where
         initiate_rbsr,
         process_incoming_fingerprint_messages,
         receive_data_messages,
-    )?; // TODO add futures for the remaining, as of yet unimplemented tasks: doing post-reconciliation forwarding, receiving `data` messages. Will be fleshed out as we progress with the WGPS implementation.
+        forward_new_entries,
+    )?;
 
     Ok(())
 }

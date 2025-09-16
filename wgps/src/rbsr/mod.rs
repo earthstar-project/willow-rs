@@ -1,5 +1,7 @@
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::rc::Rc;
 
 use either::Either::{Left, Right};
@@ -8,11 +10,12 @@ use ufotofu::{BulkConsumer, Producer};
 use wb_async_utils::Mutex;
 use willow_data_model::grouping::Range3d;
 use willow_data_model::{
-    AuthorisationToken, AuthorisedEntry, LengthyEntry, QueryIgnoreParams, StoreEvent,
+    AuthorisationToken, AuthorisedEntry, Entry, EntryOrigin, LengthyEntry, QueryIgnoreParams,
+    StoreEvent,
 };
 
 use crate::messages::{
-    RangeInfo, ReconciliationAnnounceEntries, ReconciliationSendEntry,
+    DataSendEntry, RangeInfo, ReconciliationAnnounceEntries, ReconciliationSendEntry,
     ReconciliationSendFingerprint, ReconciliationTerminatePayload,
 };
 use crate::parameters::{
@@ -518,6 +521,88 @@ where
         .cmp(b.entry().subspace_id())
         .then_with(|| a.entry().path().cmp(b.entry().path()))
         .then_with(|| a.available().cmp(&b.available()))
+}
+
+/// Takes a store subscription, processes it and sends all new entries to the peer.
+pub(crate) fn process_subscription<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    StoreError,
+    StoreCreationError,
+    Sub,
+    P: 'static,
+    PFinal: 'static,
+    PErr: 'static,
+    C: 'static,
+    CErr: 'static,
+>(
+    mut subscription: Sub,
+    _meta: SubscriptionMetadata<MCL, MCC, MPL, N, S>,
+    data_channel_sender: Rc<Mutex<ChannelSender<5, P, PFinal, PErr, C, CErr>>>,
+    data_current_entry: Rc<Mutex<AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>>,
+    session_id: u64,
+) -> Pin<
+    Box<dyn Future<Output = Result<(), RbsrError<CErr, StoreCreationError, StoreError>>> + 'static>,
+>
+where
+    Sub: Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = StoreError>
+        + 'static,
+    N: WgpsNamespaceId,
+    S: WgpsSubspaceId,
+    PD: WgpsPayloadDigest,
+    AT: WgpsAuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+    C: BulkConsumer<Item = u8, Final = (), Error = CErr>,
+    CErr: Clone,
+{
+    Box::pin(async move {
+        loop {
+            match subscription.produce().await {
+                Err(_) | Ok(Right(())) => return Ok(()),
+                Ok(Left(StoreEvent::Ingested { entry, origin })) => {
+                    // Skip entries which we received from this very peer.
+                    if let EntryOrigin::Remote(id) = origin {
+                        if id == session_id {
+                            continue;
+                        }
+                    }
+
+                    // We should forward this entry to the peer. Do so.
+                    let msg = DataSendEntry {
+                        entry: entry.clone(),
+                        offset: 0,
+                    };
+
+                    let mut data_current_entry_ref = data_current_entry.write().await;
+
+                    data_channel_sender
+                        .write()
+                        .await
+                        .send_to_channel_relative(&msg, data_current_entry_ref.deref())
+                        .await
+                        .map_err(
+                            |logical_channel_client_error| match logical_channel_client_error {
+                                LogicalChannelClientError::Underlying(inner_err) => {
+                                    RbsrError::Sending(inner_err)
+                                }
+                                LogicalChannelClientError::LogicalChannelClosed => {
+                                    RbsrError::DataChannelClosedByPeer
+                                }
+                            },
+                        )?;
+
+                    *data_current_entry_ref = entry.clone();
+
+                    todo!();
+                }
+                _ => { /* do nothing for all other kinds of events */ }
+            }
+        }
+    })
 }
 
 pub(crate) struct SubscriptionMetadata<const MCL: usize, const MCC: usize, const MPL: usize, N, S> {
