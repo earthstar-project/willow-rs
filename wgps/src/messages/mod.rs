@@ -11,7 +11,7 @@ use willow_data_model::{
 
 use crate::{
     parameters::{EnumerationCapability, ReadCapability},
-    pio,
+    pio, Fingerprint,
 };
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
@@ -526,7 +526,7 @@ where
 
 /// The data shared between ReconciliationSendFingerprint and ReconciliationAnnounceEntries messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
+pub struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     // Indicates the root message id of the prior root message this message refers to (when set to a non-zero U64), or indicates that this message is a fresh root message itself (when set to 0).
     pub root_id: u64,
     /// The 3dRange the message pertains to.
@@ -537,9 +537,24 @@ pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize
     pub receiver_handle: u64,
 }
 
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for RangeInfo<MCL, MCC, MPL, S>
+where
+    S: PartialOrd + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            root_id: Arbitrary::arbitrary(u)?,
+            range: Arbitrary::arbitrary(u)?,
+            sender_handle: Arbitrary::arbitrary(u)?,
+            receiver_handle: Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
 /// Send a Fingerprint as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendFingerprint<
+pub struct ReconciliationSendFingerprint<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -550,6 +565,20 @@ pub(crate) struct ReconciliationSendFingerprint<
     pub info: RangeInfo<MCL, MCC, MPL, S>,
     /// The Fingerprint of all LengthyAuthorisedEntries the peer has in info.range.
     pub fingerprint: Fingerprint,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S, FP> Arbitrary<'a>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
+where
+    S: PartialOrd + Arbitrary<'a>,
+    FP: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            info: Arbitrary::arbitrary(u)?,
+            fingerprint: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>

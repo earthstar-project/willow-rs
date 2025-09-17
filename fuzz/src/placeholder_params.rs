@@ -311,11 +311,12 @@ impl TrustedDecodable for FakeAuthorisationToken {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeFingerprint([u8; 1]);
 
 impl<'a> Arbitrary<'a> for FakeFingerprint {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(FakePayloadDigest([u8::arbitrary(u).unwrap()]))
+        Ok(FakeFingerprint([u8::arbitrary(u).unwrap()]))
     }
 }
 
@@ -340,7 +341,7 @@ impl Decodable for FakeFingerprint {
     {
         let bytes: [u8; 1] = decode_bytes(producer).await?;
 
-        Ok(FakePayloadDigest([bytes[0] & 0b0000_0011]))
+        Ok(FakeFingerprint([bytes[0]]))
     }
 }
 
