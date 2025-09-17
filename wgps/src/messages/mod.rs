@@ -1186,7 +1186,8 @@ impl Decodable for ReconciliationSendPayload {
 
 /// Signal the end of the currentPayload transmission as part of 3d range-based set reconciliation, and indicate whether another LengthyAuthorisedEntry transmission will follow for the current 3dRange.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationTerminatePayload {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct ReconciliationTerminatePayload {
     /// Set to true if and only if no further ReconciliationSendEntry message will be sent as part of reconciling the current 3dRange.
     pub is_final: bool,
 }

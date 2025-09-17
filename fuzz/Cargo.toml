@@ -649,8 +649,15 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_reconciliationaddpayload_abs"
-path = "fuzz_targets/enc_reconciliationaddpayload_abs.rs"
+name = "enc_reconciliationsendpayload_abs"
+path = "fuzz_targets/enc_reconciliationsendpayload_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconcilitionterminatepayload_abs"
+path = "fuzz_targets/enc_reconcilitionterminatepayload_abs.rs"
 test = false
 doc = false
 bench = false
