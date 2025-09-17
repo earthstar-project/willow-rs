@@ -633,3 +633,10 @@ path = "fuzz_targets/enc_reconciliationsendfingerprint_rel_range.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_reconciliationannounceentries_rel_range3d"
+path = "fuzz_targets/enc_reconciliationannounceentries_rel_range3d.rs"
+test = false
+doc = false
+bench = false

@@ -705,12 +705,7 @@ where
 
 /// Prepare transmission of the LengthyAuthorisedEntries a peer has in a 3dRange as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationAnnounceEntries<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    S,
-> {
+pub struct ReconciliationAnnounceEntries<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// The RangeInfo for this message.
     pub info: RangeInfo<MCL, MCC, MPL, S>,
     /// Must be true if and only if the the sender has zero Entries in info.range.
@@ -719,6 +714,21 @@ pub(crate) struct ReconciliationAnnounceEntries<
     pub want_response: bool,
     /// Whether the sender promises to send the Entries in info.range sorted ascendingly by subspace_id , using paths (sorted lexicographically) as the tiebreaker.
     pub will_sort: bool,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
+where
+    S: PartialOrd + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            info: Arbitrary::arbitrary(u)?,
+            is_empty: Arbitrary::arbitrary(u)?,
+            want_response: Arbitrary::arbitrary(u)?,
+            will_sort: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
@@ -750,7 +760,7 @@ where
 
         let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::two());
 
-        header_1 |= root_id_tag.data_at_offset(5);
+        header_1 |= root_id_tag.data_at_offset(6);
 
         consumer.consume(header_1).await?;
 
@@ -823,7 +833,7 @@ where
         let is_empty = is_bitflagged(header_1, 3);
         let want_response = is_bitflagged(header_1, 4);
         let will_sort = is_bitflagged(header_1, 5);
-        let root_id_tag = Tag::from_raw(header_1, TagWidth::two(), 5);
+        let root_id_tag = Tag::from_raw(header_1, TagWidth::two(), 6);
 
         let header_2 = producer.produce_item().await?;
 
