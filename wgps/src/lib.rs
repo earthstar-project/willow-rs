@@ -1014,10 +1014,13 @@ where
         let mut my_handle_for_current_range = 0;
         let mut their_handle_for_current_range = 0;
 
-        // State per rbsr-transmitted entry (and its payload)
+        // State per rbsr-transmitted entry (and its payload).
         // This flag ensures that receiving the payload for the same entry concurrently form multiple peers doesn't result in storing an incorrect payload.
         let mut try_appending_payload = false;
         let mut payload_current_chunk_offset = 0;
+
+        // State per data-transmitted entry (and its payload).
+        let mut data_payload_current_chunk_offset = 0;
 
         loop {
             match DataMessage::<MCL, MCC, MPL, N, S, PD, AT>::relative_decode(
@@ -1138,6 +1141,81 @@ where
                     received_all_messages_for_current_range = terminate_payload_msg.is_final;
 
                     // That's it. Leave the match statement and continue after it, which means sending a response if received_all_messages_for_current_range.
+                }
+
+                Ok(DataMessage::DataSendEntry(entry_msg)) => {
+                    *r.data_current_entry.write().await = entry_msg.entry.clone();
+
+                    data_payload_current_chunk_offset = entry_msg.offset;
+
+                    let store = storedinator
+                        .get_store(entry_msg.entry.entry().namespace_id())
+                        .await
+                        .map_err(|store_creation_error| {
+                            RbsrError::StoreCreation(store_creation_error)
+                        })?;
+
+                    match store
+                        .ingest_entry(
+                            entry_msg.entry.clone(),
+                            false,
+                            EntryOrigin::Remote(options.session_id),
+                        )
+                        .await {
+                            Ok(_) => {/* no-op */}
+                            Err(EntryIngestionError::PruningPrevented) => panic!("Got a EntryIngestionError::PruningPrevented error despite calling Store::ingest_entry with prevent_pruning set to false. The store implementation is buggy."),
+                            Err(EntryIngestionError::OperationsError(store_err)) => return Err(WgpsError::Store(store_err)),
+                        }
+
+                    // Explicitly continue to the next iteration of the loop; the logic after the loop must only be executed when receiving rbsr messages.
+                    continue;
+                }
+
+                Ok(DataMessage::DataSendPayload(payload_msg)) => {
+                    let payload_start_byte_offset =
+                        chunk_to_byte_fun(data_payload_current_chunk_offset);
+                    let transmitted_payload_bytes_in_this_message =
+                        chunk_offset_and_count_to_byte_length(
+                            data_payload_current_chunk_offset,
+                            payload_msg.amount,
+                        );
+
+                    let entry = r.reconciliation_current_entry.read().await.entry().clone();
+
+                    let store = storedinator.get_store(entry.namespace_id()).await.map_err(
+                        |store_creation_error| RbsrError::StoreCreation(store_creation_error),
+                    )?;
+
+                    let _ = data_channel_receiver.produce().await;
+
+                    let mut bytes_to_append = ufotofu::producer::Limit::new(
+                        BorrowedProducer(&mut data_channel_receiver),
+                        transmitted_payload_bytes_in_this_message as usize,
+                    );
+
+                    match store
+                        .append_payload(
+                            entry.subspace_id(),
+                            entry.path(),
+                            Some(entry.payload_digest().clone()),
+                            Some(payload_start_byte_offset),
+                            &mut bytes_to_append,
+                        )
+                        .await
+                    {
+                        Ok(_) => { /* no-op */ }
+                        Err(PayloadAppendError::OperationError(store_err)) => {
+                            return Err(WgpsError::Store(store_err));
+                        }
+                        Err(_) => {
+                            try_appending_payload = false;
+                        }
+                    }
+
+                    data_payload_current_chunk_offset += payload_msg.amount;
+
+                    // Explicitly continue to the next iteration of the loop; the logic after the loop must only be executed when receiving rbsr messages.
+                    continue;
                 }
 
                 Ok(_) => todo!("Handle other, non-reconciliation messages"),
