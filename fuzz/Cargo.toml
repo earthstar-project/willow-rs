@@ -627,3 +627,9 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "enc_reconciliationsendfingerprint_rel_range"
+path = "fuzz_targets/enc_reconciliationsendfingerprint_rel_range.rs"
+test = false
+doc = false
+bench = false
