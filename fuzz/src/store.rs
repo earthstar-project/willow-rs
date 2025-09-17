@@ -399,6 +399,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -412,6 +413,12 @@ where
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
                         return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
+
+                if let Some(expected) = expected_available_bytes {
+                    if entry.payload.len() != expected as usize {
+                        return Err(PayloadAppendError::IncorrectAvailableLength);
                     }
                 }
 
@@ -712,17 +719,17 @@ where
     }
 
     async fn payload(
-        &self,
-        subspace: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
         Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
-        let mut subspace_store = self.get_or_create_subspace_store(subspace);
-        match subspace_store.entries.get_mut(path) {
+        let mut subspace_store = self.get_or_create_subspace_store(&subspace);
+        match subspace_store.entries.get_mut(&path) {
             None => Err(PayloadError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
@@ -786,25 +793,25 @@ where
     }
 
     fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()> {
-        self.area_entry_producer(area, ignore)
+        self.area_entry_producer(&area, ignore)
     }
 
     async fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
-        EventSystem::add_subscription(self.event_system.clone(), area.clone().into(), ignore)
+        EventSystem::add_subscription(self.event_system.clone(), area.into(), ignore)
     }
 
     fn query_and_subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Result<
         impl Producer<
@@ -821,7 +828,7 @@ where
         let subscriber =
             EventSystem::add_subscription(self.event_system.clone(), area.clone().into(), ignore);
 
-        let entry_producer = self.area_entry_producer(area, ignore);
+        let entry_producer = self.area_entry_producer(&area, ignore);
 
         Ok(EntriesAndSubProducer {
             entry_producer,
@@ -929,8 +936,8 @@ pub async fn check_store_equality<
     Store1,
     Store2,
 >(
-    store1: &mut Store1,
-    store2: &mut Store2,
+    store1: Rc<Store1>,
+    store2: Rc<Store2>,
     ops: &[StoreOp<MCL, MCC, MPL, N, S, PD, AT>],
 ) where
     N: NamespaceId + std::hash::Hash,
@@ -980,10 +987,22 @@ pub async fn check_store_equality<
                 let mut payload_2 = FromSlice::new(data);
 
                 let res_1 = store1
-                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_1)
+                    .append_payload(
+                        subspace,
+                        path,
+                        expected_digest.clone(),
+                        None,
+                        &mut payload_1,
+                    )
                     .await;
                 let res_2 = store2
-                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_2)
+                    .append_payload(
+                        subspace,
+                        path,
+                        expected_digest.clone(),
+                        None,
+                        &mut payload_2,
+                    )
                     .await;
 
                 match (res_1, res_2) {
@@ -1073,11 +1092,11 @@ pub async fn check_store_equality<
                 expected_digest,
             } => {
                 match (
-                    store1
-                        .payload(subspace, path, *offset, expected_digest.clone())
+                    store1.clone()
+                        .payload(subspace.clone(), path.clone(), *offset, expected_digest.clone())
                         .await,
-                    store2
-                        .payload(subspace, path, *offset, expected_digest.clone())
+                    store2.clone()
+                        .payload(subspace.clone(), path.clone(), *offset, expected_digest.clone())
                         .await,
                 ) {
                     (Ok(Payload::Complete(mut producer1)), Ok(Payload::Complete(mut producer2))) | (Ok(Payload::Incomplete(mut producer1)), Ok(Payload::Incomplete(mut producer2))) => loop {
@@ -1122,8 +1141,8 @@ pub async fn check_store_equality<
                 }
             }
             StoreOp::QueryArea { area, ignore } => {
-                let mut producer1 = store1.query_area(area, ignore.to_owned());
-                let mut producer2 = store2.query_area(area, ignore.to_owned());
+                let mut producer1 = store1.clone().query_area(area.clone(), ignore.to_owned());
+                let mut producer2 = store2.clone().query_area(area.clone(), ignore.to_owned());
 
                 let mut set1 =
                     HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();

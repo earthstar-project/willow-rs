@@ -1201,7 +1201,7 @@ pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     (Range3d<MCL, MCC, MPL, S>, SplitAction<FP>);
 
 /// Whether to send a split range's fingerprint or its included entries.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SplitAction<FP> {
     SendFingerprint(FP),
     /// Stores an approximate number of entries in the range.

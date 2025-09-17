@@ -31,8 +31,8 @@
 
 use either::Either;
 
-use std::{cell::RefCell, cmp::max, rc::Rc};
-use ufotofu::BufferedProducer;
+use std::{borrow::Borrow, cell::RefCell, cmp::max, marker::PhantomData, rc::Rc};
+use ufotofu::{producer, BufferedProducer};
 
 use willow_data_model::{
     grouping::Range, grouping::Range3d, grouping::RangeEnd, ForgetEntryError, ForgetPayloadError,
@@ -64,13 +64,7 @@ pub trait SledSubspaceId: SubspaceId {
 }
 
 /// A simple, [sled](https://docs.rs/sled/latest/sled/)-powered Willow data [store](https://willowprotocol.org/specs/data-model/index.html#store) implementing the [willow_data_model::Store] trait.
-pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId + EncodableKnownSize + Decodable,
-    S: SledSubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
+pub struct StoreSimpleSled<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
     namespace_id: N,
     db: Db,
     event_system: Rc<RefCell<EventSystem<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>>>,
@@ -267,6 +261,7 @@ pub enum StoreSimpleSledError {
     Sled(SledError),
     Transaction(TransactionError<()>),
     ConflictableTransaction(ConflictableTransactionError<()>),
+    Other,
 }
 
 impl core::fmt::Display for StoreSimpleSledError {
@@ -278,6 +273,9 @@ impl core::fmt::Display for StoreSimpleSledError {
             }
             StoreSimpleSledError::ConflictableTransaction(_) => {
                 write!(f, "sled conflictable transaction error occurred.")
+            }
+            StoreSimpleSledError::Other => {
+                write!(f, "Some other error occurred.")
             }
         }
     }
@@ -291,7 +289,7 @@ where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SledSubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable + 'static,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
 {
@@ -592,7 +590,7 @@ where
                 let tsp_tree = self.tsp_entry_tree().map_err(StoreSimpleSledError::from)?;
                 let tsp_key = encode_tsp_entry_key(
                     authed_entry.entry().subspace_id(),
-                    &authed_entry.entry().path(),
+                    authed_entry.entry().path(),
                     timestamp,
                 )
                 .await;
@@ -1194,10 +1192,10 @@ where
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SledSubspaceId + EncodableSync + EncodableKnownSize + Decodable,
     PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable + 'static,
     S::ErrorReason: core::fmt::Debug,
     PD::ErrorReason: core::fmt::Debug,
-    FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT>,
+    FP: Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + Clone + 'static,
 {
     fn query_range(
         self: Rc<Self>,
@@ -1334,120 +1332,7 @@ where
         impl Producer<Item = RangeSplit<MCL, MCC, MPL, S, FP>, Final = (), Error = Self::Error>,
         Self::Error,
     > {
-        let tsp_tree = self.tsp_entry_tree().unwrap();
-
-        let (_fp, count): (FP, usize) = self.summarise(&range).await?;
-
-        let target_size = count / options.target_split_count;
-
-        let open_subspace_end = S::max_id();
-        let open_path_end = Path::<MCL, MCC, MPL>::new_max();
-
-        let subspace_end = range.subspaces().get_end().unwrap_or(&open_subspace_end);
-        let path_end = range.paths().get_end().unwrap_or(&open_path_end);
-        let time_end = range.times().get_end().unwrap_or(&u64::MAX);
-        let range_end_key = encode_tsp_entry_key(subspace_end, path_end, *time_end).await;
-
-        let range_start_key = encode_tsp_entry_key(
-            &range.subspaces().start,
-            &range.paths().start,
-            range.times().start,
-        )
-        .await;
-
-        let entry_iterator = tsp_tree.range(range_start_key..=range_end_key);
-
-        let mut splits = Vec::<RangeSplit<MCL, MCC, MPL, S, FP>>::new();
-
-        let mut current_lower_bound = range.times().start;
-        let mut current_size = 0;
-
-        for (i, (tsp_key, _entry_value)) in entry_iterator.flatten().enumerate() {
-            current_size += 1;
-
-            if i == count - 1 || current_size > target_size {
-                // The timestamp of this entry is the upper bound of the previous range, and the lower bound of the next one.
-                let time_upper_bound = if i == count - 1 {
-                    // This is the last item in the range, so the upper bound should be
-                    range.times().end
-                } else {
-                    let (timestamp, _subspace, _path) =
-                        decode_tsp_entry_key::<MCL, MCC, MPL, S>(&tsp_key).await;
-
-                    RangeEnd::Closed(timestamp)
-                };
-
-                match time_upper_bound {
-                    RangeEnd::Closed(upper_timestamp) => {
-                        match Range::new_closed(current_lower_bound, upper_timestamp) {
-                            Some(new_time_range) => {
-                                let new_range = Range3d::new(
-                                    range.subspaces().clone(),
-                                    range.paths().clone(),
-                                    new_time_range,
-                                );
-
-                                let (split_fp, split_size) = self.summarise(&new_range).await?;
-
-                                let split_action = if split_size < options.min_range_size {
-                                    SplitAction::<FP>::SendEntries(split_size)
-                                } else {
-                                    SplitAction::SendFingerprint(split_fp)
-                                };
-
-                                splits.push((new_range, split_action));
-
-                                current_lower_bound = upper_timestamp;
-                                current_size = 0;
-                            }
-                            None => {
-                                // Uh-oh! This had the same timestamp as the last one.
-                                // What we should do is try and split along another dimension, say, subspaces.
-                                // But for now let's continue and pretend this never happened.
-                                continue;
-                            }
-                        }
-                    }
-                    RangeEnd::Open => {
-                        // Only way this can happen is if we use the upper bound of the original range.
-                        let new_range = Range3d::new(
-                            range.subspaces().clone(),
-                            range.paths().clone(),
-                            Range::new_open(current_lower_bound),
-                        );
-
-                        let (split_fp, split_size) = self.summarise(&new_range).await?;
-
-                        let split_action = if split_size < options.min_range_size {
-                            SplitAction::<FP>::SendEntries(split_size)
-                        } else {
-                            SplitAction::SendFingerprint(split_fp)
-                        };
-
-                        splits.push((new_range, split_action));
-
-                        // We don't need to reset the variables here because we know this is the last iteration.
-                        break;
-                    }
-                }
-            }
-        }
-
-        todo!()
-    }
-}
-
-fn option_max<T: Ord>(max: Option<T>, other: T) -> Option<T> {
-    match max {
-        Some(ours) => Some(std::cmp::max(ours, other)),
-        None => Some(other),
-    }
-}
-
-fn option_min<T: Ord>(max: Option<T>, other: T) -> Option<T> {
-    match max {
-        Some(ours) => Some(std::cmp::min(ours, other)),
-        None => Some(other),
+        SplitProducer::new(self, range, options).await
     }
 }
 
@@ -1870,45 +1755,42 @@ impl BulkProducer for PayloadProducer {
     }
 }
 
-/// Produces [`willow_data_model::LengthyAuthorisedEntry`] for a given [`willow_data_model::grouping::Area`] and [`willow_data_model::QueryIgnoreParams`].
-pub struct EntryProducer<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-where
-    N: NamespaceId + EncodableKnownSize + Decodable,
-    S: SledSubspaceId,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
-{
+/// Produces [`willow_data_model::LengthyAuthorisedEntry`] for a given [`willow_data_model::grouping::Range3d`] and [`willow_data_model::QueryIgnoreParams`].
+pub struct EntryProducer<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    StoreRef,
+    N,
+    S,
+    PD,
+    AT,
+> {
     iter: Option<sled::Iter>,
-    store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
+    store: StoreRef,
     ignore: QueryIgnoreParams,
     range: Range3d<MCL, MCC, MPL, S>,
+    _phantoms: PhantomData<(N, PD, AT)>,
 }
 
-impl<'store, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
-    EntryProducer<'store, MCL, MCC, MPL, N, S, PD, AT>
-where
-    N: NamespaceId + EncodableKnownSize + DecodableSync,
-    S: SledSubspaceId + EncodableKnownSize + EncodableSync,
-    PD: PayloadDigest,
-    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
+impl<const MCL: usize, const MCC: usize, const MPL: usize, StoreRef, N, S, PD, AT>
+    EntryProducer<MCL, MCC, MPL, StoreRef, N, S, PD, AT>
 {
-    fn new(
-        store: &'store StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>,
-        range: Range3d<MCL, MCC, MPL, S>,
-        ignore: QueryIgnoreParams,
-    ) -> Self {
+    fn new(store: StoreRef, range: Range3d<MCL, MCC, MPL, S>, ignore: QueryIgnoreParams) -> Self {
         Self {
             iter: None,
             range,
             ignore,
             store,
+            _phantoms: PhantomData,
         }
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
-    for EntryProducer<'_, MCL, MCC, MPL, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, StoreRef, N, S, PD, AT> Producer
+    for EntryProducer<MCL, MCC, MPL, StoreRef, N, S, PD, AT>
 where
+    StoreRef: Borrow<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
     N: NamespaceId + EncodableKnownSize + Decodable + DecodableSync,
     S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest + Decodable,
@@ -1923,11 +1805,13 @@ where
     type Error = StoreSimpleSledError;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        let store = self.store.borrow();
+
         loop {
             let result = match self.iter.as_mut() {
                 Some(iter) => iter.next(),
                 None => {
-                    let entry_tree = self.store.spt_entry_tree()?;
+                    let entry_tree = store.spt_entry_tree()?;
 
                     let range_start_key = encode_spt_entry_key(
                         &self.range.subspaces().start,
@@ -1967,7 +1851,7 @@ where
                         decode_entry_values::<PD, AT>(&value).await;
 
                     let entry = Entry::new(
-                        self.store.namespace_id.clone(),
+                        store.namespace_id.clone(),
                         subspace,
                         path,
                         timestamp,
@@ -2003,10 +1887,10 @@ where
 }
 
 pub struct EntryAndSubProducer<
-    'a,
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
+    StoreRef,
     N,
     S,
     PD,
@@ -2017,13 +1901,14 @@ pub struct EntryAndSubProducer<
     PD: PayloadDigest,
     AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD>,
 {
-    entry_producer: EntryProducer<'a, MCL, MCC, MPL, N, S, PD, AT>,
+    entry_producer: EntryProducer<MCL, MCC, MPL, StoreRef, N, S, PD, AT>,
     subscriber: Option<Subscriber<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>>,
 }
 
-impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
-    for EntryAndSubProducer<'a, MCL, MCC, MPL, N, S, PD, AT>
+impl<const MCL: usize, const MCC: usize, const MPL: usize, StoreRef, N, S, PD, AT> Producer
+    for EntryAndSubProducer<MCL, MCC, MPL, StoreRef, N, S, PD, AT>
 where
+    StoreRef: Borrow<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
     N: NamespaceId + EncodableKnownSize + DecodableSync,
     S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
     PD: PayloadDigest + Decodable,
@@ -2034,18 +1919,200 @@ where
     type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
 
     type Final = Subscriber<MCL, MCC, MPL, N, S, PD, AT, StoreSimpleSledError>;
-
     type Error = StoreSimpleSledError;
 
     async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
         match self.entry_producer.produce().await {
-            Ok(Either::Left(item)) => return Ok(Either::Left(item)),
+            Ok(Either::Left(item)) => Ok(Either::Left(item)),
             Ok(Either::Right(_)) => {
                 // Return the subscriber!
                 // We unwrap here because this is the final item.
-                return Ok(Either::Right(self.subscriber.take().unwrap()));
+                Ok(Either::Right(self.subscriber.take().unwrap()))
             }
-            Err(err) => return Err(err),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub struct SplitProducer<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    AT,
+    FP,
+    StoreRef,
+> {
+    iter: std::iter::Enumerate<std::iter::Flatten<sled::Iter>>,
+    store: StoreRef,
+    range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+    options: wgps::PartitionOpts,
+    current_size: usize,
+    target_size: usize,
+    total_count: usize,
+    _phantoms: PhantomData<(N, PD, AT, FP)>,
+    current_lower_bound_timestamp: u64,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP, StoreRef>
+    SplitProducer<MCL, MCC, MPL, N, S, PD, AT, FP, StoreRef>
+where
+    StoreRef: Borrow<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest + Decodable + Encodable + EncodableSync + EncodableKnownSize,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable + 'static,
+    FP: Clone + Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + 'static,
+    S::ErrorReason: std::fmt::Debug,
+    PD::ErrorReason: std::fmt::Debug,
+{
+    pub async fn new(
+        store: StoreRef,
+        range: willow_data_model::grouping::Range3d<MCL, MCC, MPL, S>,
+        options: wgps::PartitionOpts,
+    ) -> Result<Self, StoreSimpleSledError> {
+        let borrowed_store = store.borrow();
+
+        // If there is no iter yet, make one.
+        let tsp_tree = borrowed_store.tsp_entry_tree()?;
+
+        let (_fp, count): (FP, usize) = borrowed_store.summarise(&range).await?;
+
+        let target_size = count / options.target_split_count;
+
+        let open_subspace_end = S::max_id();
+        let open_path_end = Path::<MCL, MCC, MPL>::new_max();
+
+        let subspace_end = range.subspaces().get_end().unwrap_or(&open_subspace_end);
+        let path_end = range.paths().get_end().unwrap_or(&open_path_end);
+        let time_end = range.times().get_end().unwrap_or(&u64::MAX);
+        let range_end_key = encode_tsp_entry_key(subspace_end, path_end, *time_end).await;
+
+        let range_start_key = encode_tsp_entry_key(
+            &range.subspaces().start,
+            &range.paths().start,
+            range.times().start,
+        )
+        .await;
+
+        let entry_iterator = tsp_tree
+            .range(range_start_key..=range_end_key)
+            .flatten()
+            .enumerate();
+
+        let current_lower_bound_timestamp = range.times().start;
+
+        Ok(Self {
+            iter: entry_iterator,
+            store,
+            range,
+            options,
+            _phantoms: PhantomData,
+            current_size: 0,
+            target_size,
+            total_count: count,
+            current_lower_bound_timestamp,
+        })
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT, FP, StoreRef> Producer
+    for SplitProducer<MCL, MCC, MPL, N, S, PD, AT, FP, StoreRef>
+where
+    StoreRef: Borrow<StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>>,
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + Decodable + EncodableKnownSize + EncodableSync,
+    PD: PayloadDigest + Decodable + Encodable + EncodableSync + EncodableKnownSize,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable + 'static,
+    FP: Clone + Fingerprint<MCL, MCC, MPL, N, S, PD, AT> + 'static,
+    S::ErrorReason: std::fmt::Debug,
+    PD::ErrorReason: std::fmt::Debug,
+{
+    type Item = RangeSplit<MCL, MCC, MPL, S, FP>;
+
+    type Final = ();
+
+    type Error = StoreSimpleSledError;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        match self.iter.next() {
+            Some((i, (tsp_key, _val))) => {
+                self.current_size += 1;
+
+                if i == self.total_count - 1 || self.current_size > self.target_size {
+                    // The timestamp of this entry is the upper bound of the previous range, and the lower bound of the next one.
+                    let time_upper_bound = if i == self.total_count - 1 {
+                        // This is the last item in the range, so the upper bound should be
+                        self.range.times().end
+                    } else {
+                        let (timestamp, _subspace, _path) =
+                            decode_tsp_entry_key::<MCL, MCC, MPL, S>(&tsp_key).await;
+
+                        RangeEnd::Closed(timestamp)
+                    };
+
+                    match time_upper_bound {
+                        RangeEnd::Closed(upper_timestamp) => {
+                            match Range::new_closed(
+                                self.current_lower_bound_timestamp,
+                                upper_timestamp,
+                            ) {
+                                Some(new_time_range) => {
+                                    let new_range = Range3d::new(
+                                        self.range.subspaces().clone(),
+                                        self.range.paths().clone(),
+                                        new_time_range,
+                                    );
+
+                                    let (split_fp, split_size) =
+                                        self.store.borrow().summarise(&new_range).await?;
+
+                                    let split_action = if split_size < self.options.min_range_size {
+                                        SplitAction::<FP>::SendEntries(split_size)
+                                    } else {
+                                        SplitAction::SendFingerprint(split_fp)
+                                    };
+
+                                    self.current_lower_bound_timestamp = upper_timestamp;
+                                    self.current_size = 0;
+
+                                    Ok(Either::Left((new_range, split_action)))
+                                }
+                                None => {
+                                    // Uh-oh! This had the same timestamp as the last one.
+                                    // What we should do is try and split along another dimension, say, subspaces.
+                                    // But for now let's continue and pretend this never happened.
+                                    self.produce().await
+                                }
+                            }
+                        }
+                        RangeEnd::Open => {
+                            // Only way this can happen is if we use the upper bound of the original range.
+                            let new_range = Range3d::new(
+                                self.range.subspaces().clone(),
+                                self.range.paths().clone(),
+                                Range::new_open(self.current_lower_bound_timestamp),
+                            );
+
+                            let (split_fp, split_size) =
+                                self.store.borrow().summarise(&new_range).await?;
+
+                            let split_action = if split_size < self.options.min_range_size {
+                                SplitAction::<FP>::SendEntries(split_size)
+                            } else {
+                                SplitAction::SendFingerprint(split_fp)
+                            };
+
+                            Ok(Either::Left((new_range, split_action)))
+                        }
+                    }
+                } else {
+                    self.produce().await
+                }
+            }
+            None => Ok(Either::Right(())),
         }
     }
 }
