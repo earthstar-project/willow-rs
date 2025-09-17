@@ -647,3 +647,10 @@ path = "fuzz_targets/enc_reconciliationsendentry_rel_pair.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_reconciliationaddpayload_abs"
+path = "fuzz_targets/enc_reconciliationaddpayload_abs.rs"
+test = false
+doc = false
+bench = false

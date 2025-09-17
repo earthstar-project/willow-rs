@@ -49,12 +49,6 @@ where
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct FakeNamespaceId(SillyPublicKey);
 
-impl<'a> Arbitrary<'a> for &FakeNamespaceId {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(&FakeNamespaceId(Arbitrary::arbitrary(u)?))
-    }
-}
-
 impl Encodable for FakeNamespaceId {
     async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
     where

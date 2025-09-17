@@ -1120,7 +1120,8 @@ where
 
 /// Send some Chunks as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendPayload {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct ReconciliationSendPayload {
     /// The number of transmitted Chunks.
     pub amount: u64,
 }
@@ -1130,9 +1131,11 @@ impl Encodable for ReconciliationSendPayload {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        let header = 0b_0100_0000;
+        let mut header = 0b_0100_0000;
 
         let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+
+        header |= amount_tag.data_at_offset(3);
 
         consumer.consume(header).await?;
 
