@@ -640,3 +640,10 @@ path = "fuzz_targets/enc_reconciliationannounceentries_rel_range3d.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_reconciliationsendentry_rel_pair"
+path = "fuzz_targets/enc_reconciliationsendentry_rel_pair.rs"
+test = false
+doc = false
+bench = false

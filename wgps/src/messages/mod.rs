@@ -871,7 +871,7 @@ where
 
 /// Send a LengthyAuthorisedEntry as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendEntry<
+pub struct ReconciliationSendEntry<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -884,6 +884,22 @@ pub(crate) struct ReconciliationSendEntry<
     pub entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     /// The index of the first (transformed) Payload Chunk that will be transmitted for entry. Set this to the total number of Chunks to indicate that no Chunks will be transmitted. In this case, the receiver must act as if it had received a ReconciliationTerminatePayload message immediately after this message.
     pub offset: u64,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Arbitrary<'a>
+    for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
+    PD: Arbitrary<'a>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            entry: Arbitrary::arbitrary(u)?,
+            offset: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
