@@ -9,11 +9,13 @@ use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync,
+    EncodableSync, RelativeDecodable, RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
+    AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, PayloadDigest, SubspaceId,
+    TrustedDecodable,
 };
+use willow_store_simple_sled::SledSubspaceId;
 
 async fn encode_bytes<const BYTES_LENGTH: usize, C>(
     bytes: &[u8; BYTES_LENGTH],
@@ -166,6 +168,12 @@ impl Verifier<SillySig> for FakeSubspaceId {
 
 impl McPublicUserKey<SillySig> for FakeSubspaceId {}
 
+impl SledSubspaceId for FakeSubspaceId {
+    fn max_id() -> Self {
+        Self(SillyPublicKey::new(255))
+    }
+}
+
 // Payload digest
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
@@ -301,5 +309,107 @@ impl TrustedDecodable for FakeAuthorisationToken {
         P: ufotofu::BulkProducer<Item = u8>,
     {
         Self::decode(producer).await
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodable<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )> for FakeAuthorisationToken
+{
+    fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> impl Future<Output = Result<(), C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        self.encode(consumer)
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodableKnownSize<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )> for FakeAuthorisationToken
+{
+    fn relative_len_of_encoding(
+        &self,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> usize {
+        1
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeDecodable<
+        (
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+        Blame,
+    > for FakeAuthorisationToken
+{
+    fn relative_decode<P>(
+        producer: &mut P,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> impl Future<Output = Result<Self, DecodeError<P::Final, P::Error, Blame>>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        Self::decode(producer)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeFingerprint([u8; 1]);
+
+impl<'a> Arbitrary<'a> for FakeFingerprint {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(FakeFingerprint([u8::arbitrary(u).unwrap()]))
+    }
+}
+
+impl Encodable for FakeFingerprint {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        encode_bytes(&self.0, consumer).await
+    }
+}
+
+impl Decodable for FakeFingerprint {
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let bytes: [u8; 1] = decode_bytes(producer).await?;
+
+        Ok(FakeFingerprint([bytes[0]]))
+    }
+}
+
+impl EncodableKnownSize for FakeFingerprint {
+    fn len_of_encoding(&self) -> usize {
+        1
     }
 }

@@ -626,3 +626,38 @@ path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "enc_reconciliationsendfingerprint_rel_range"
+path = "fuzz_targets/enc_reconciliationsendfingerprint_rel_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationannounceentries_rel_range3d"
+path = "fuzz_targets/enc_reconciliationannounceentries_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationsendentry_rel_pair"
+path = "fuzz_targets/enc_reconciliationsendentry_rel_pair.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationsendpayload_abs"
+path = "fuzz_targets/enc_reconciliationsendpayload_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconcilitionterminatepayload_abs"
+path = "fuzz_targets/enc_reconcilitionterminatepayload_abs.rs"
+test = false
+doc = false
+bench = false

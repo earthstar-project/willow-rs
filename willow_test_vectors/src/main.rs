@@ -109,7 +109,7 @@ fn main() {
 
         generate_test_vectors_relative_custom_serialisation::<
             Entry<MCL25, MCC25, MPL25, NamespaceId25, SubspaceId25, PayloadDigest25>,
-            (NamespaceId25, Range3d<MCL25, MCC25, MPL25, SubspaceId25>),
+            (&NamespaceId25, &Range3d<MCL25, MCC25, MPL25, SubspaceId25>),
             _,
             _,
             _,

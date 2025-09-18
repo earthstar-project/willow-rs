@@ -12,7 +12,7 @@ use willow_data_model::{
 
 use crate::{
     parameters::{EnumerationCapability, ReadCapability},
-    pio,
+    pio, Fingerprint,
 };
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
@@ -659,7 +659,7 @@ where
 
 /// The data shared between ReconciliationSendFingerprint and ReconciliationAnnounceEntries messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
+pub struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     // Indicates the root message id of the prior root message this message refers to (when set to a non-zero U64), or indicates that this message is a fresh root message itself (when set to 0).
     pub root_id: u64,
     /// The 3dRange the message pertains to.
@@ -670,9 +670,24 @@ pub(crate) struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize
     pub receiver_handle: u64,
 }
 
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for RangeInfo<MCL, MCC, MPL, S>
+where
+    S: PartialOrd + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            root_id: Arbitrary::arbitrary(u)?,
+            range: Arbitrary::arbitrary(u)?,
+            sender_handle: Arbitrary::arbitrary(u)?,
+            receiver_handle: Arbitrary::arbitrary(u)?,
+        })
+    }
+}
+
 /// Send a Fingerprint as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendFingerprint<
+pub struct ReconciliationSendFingerprint<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -683,6 +698,20 @@ pub(crate) struct ReconciliationSendFingerprint<
     pub info: RangeInfo<MCL, MCC, MPL, S>,
     /// The Fingerprint of all LengthyAuthorisedEntries the peer has in info.range.
     pub fingerprint: Fingerprint,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S, FP> Arbitrary<'a>
+    for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
+where
+    S: PartialOrd + Arbitrary<'a>,
+    FP: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            info: Arbitrary::arbitrary(u)?,
+            fingerprint: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
@@ -809,12 +838,7 @@ where
 
 /// Prepare transmission of the LengthyAuthorisedEntries a peer has in a 3dRange as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationAnnounceEntries<
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    S,
-> {
+pub struct ReconciliationAnnounceEntries<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// The RangeInfo for this message.
     pub info: RangeInfo<MCL, MCC, MPL, S>,
     /// Must be true if and only if the the sender has zero Entries in info.range.
@@ -823,6 +847,21 @@ pub(crate) struct ReconciliationAnnounceEntries<
     pub want_response: bool,
     /// Whether the sender promises to send the Entries in info.range sorted ascendingly by subspace_id , using paths (sorted lexicographically) as the tiebreaker.
     pub will_sort: bool,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
+    for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
+where
+    S: PartialOrd + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            info: Arbitrary::arbitrary(u)?,
+            is_empty: Arbitrary::arbitrary(u)?,
+            want_response: Arbitrary::arbitrary(u)?,
+            will_sort: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
@@ -854,7 +893,7 @@ where
 
         let root_id_tag = Tag::min_tag(self.info.root_id, TagWidth::two());
 
-        header_1 |= root_id_tag.data_at_offset(5);
+        header_1 |= root_id_tag.data_at_offset(6);
 
         consumer.consume(header_1).await?;
 
@@ -927,7 +966,7 @@ where
         let is_empty = is_bitflagged(header_1, 3);
         let want_response = is_bitflagged(header_1, 4);
         let will_sort = is_bitflagged(header_1, 5);
-        let root_id_tag = Tag::from_raw(header_1, TagWidth::two(), 5);
+        let root_id_tag = Tag::from_raw(header_1, TagWidth::two(), 6);
 
         let header_2 = producer.produce_item().await?;
 
@@ -965,7 +1004,7 @@ where
 
 /// Send a LengthyAuthorisedEntry as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendEntry<
+pub struct ReconciliationSendEntry<
     const MCL: usize,
     const MCC: usize,
     const MPL: usize,
@@ -978,6 +1017,22 @@ pub(crate) struct ReconciliationSendEntry<
     pub entry: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
     /// The index of the first (transformed) Payload Chunk that will be transmitted for entry. Set this to the total number of Chunks to indicate that no Chunks will be transmitted. In this case, the receiver must act as if it had received a ReconciliationTerminatePayload message immediately after this message.
     pub offset: u64,
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Arbitrary<'a>
+    for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Arbitrary<'a>,
+    S: Arbitrary<'a>,
+    PD: Arbitrary<'a>,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            entry: Arbitrary::arbitrary(u)?,
+            offset: Arbitrary::arbitrary(u)?,
+        })
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
@@ -1028,7 +1083,7 @@ where
         let available_tag = Tag::min_tag(self.entry.available(), TagWidth::two());
 
         header |= offset_tag.data_at_offset(4);
-        header |= offset_tag.data_at_offset(6);
+        header |= available_tag.data_at_offset(6);
 
         consumer.consume(header).await?;
 
@@ -1198,7 +1253,8 @@ where
 
 /// Send some Chunks as part of 3d range-based set reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationSendPayload {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct ReconciliationSendPayload {
     /// The number of transmitted Chunks.
     pub amount: u64,
 }
@@ -1208,9 +1264,11 @@ impl Encodable for ReconciliationSendPayload {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        let header = 0b_0100_0000;
+        let mut header = 0b_0100_0000;
 
         let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+
+        header |= amount_tag.data_at_offset(3);
 
         consumer.consume(header).await?;
 
@@ -1261,7 +1319,8 @@ impl Decodable for ReconciliationSendPayload {
 
 /// Signal the end of the currentPayload transmission as part of 3d range-based set reconciliation, and indicate whether another LengthyAuthorisedEntry transmission will follow for the current 3dRange.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReconciliationTerminatePayload {
+#[cfg_attr(feature = "dev", derive(Arbitrary))]
+pub struct ReconciliationTerminatePayload {
     /// Set to true if and only if no further ReconciliationSendEntry message will be sent as part of reconciling the current 3dRange.
     pub is_final: bool,
 }

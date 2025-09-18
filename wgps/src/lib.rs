@@ -17,6 +17,8 @@ use willow_data_model::{
 };
 
 mod parameters;
+pub use parameters::Fingerprint;
+
 mod rbsr;
 mod storedinator;
 
@@ -1503,8 +1505,8 @@ struct IntersectionInfo<const MCL: usize, const MCC: usize, const MPL: usize, N,
 pub struct PartitionOpts {
     /// The largest number of entries that can be included by a range before it is better to send that range's fingerprint instead of sending its entries.
     pub min_range_size: usize,
-    /// The maximum number of partitions to split a range into. Must be at least 2.
-    pub max_splits: usize,
+    /// The targeted number of partitions to split a range into. Must be at least 2.
+    pub target_split_count: usize,
 }
 
 /// A split range and the action which should be taken with that split range during range-based set reconciliation.
@@ -1512,7 +1514,7 @@ pub type RangeSplit<const MCL: usize, const MCC: usize, const MPL: usize, S, FP>
     (Range3d<MCL, MCC, MPL, S>, SplitAction<FP>);
 
 /// Whether to send a split range's fingerprint or its included entries.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SplitAction<FP> {
     SendFingerprint(FP),
     /// Stores an approximate number of entries in the range.
@@ -1535,8 +1537,8 @@ where
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn query_range(
         self: Rc<Self>,
-        range: Range3d<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        range: &Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>;
 
     /// Subscribe to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Range3d`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
@@ -1545,27 +1547,25 @@ where
     /// If `ignore_empty_payloads` is `true`, the producer will not produce entries with a `payload_length` of `0`.
     fn subscribe_range(
         self: Rc<Self>,
-        range: Range3d<MCL, MCC, MPL, S>,
-        ignore: Option<QueryIgnoreParams>,
+        range: &Range3d<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>;
 
     fn query_and_subscribe_range(
         self: Rc<Self>,
         range: Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<
-                Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-                Final = impl Producer<
-                    Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-                    Final = (),
-                    Error = Self::Error,
-                >,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
                 Error = Self::Error,
             >,
-            Self::Error,
+            Error = Self::Error,
         >,
+        Self::Error,
     >;
 
     /// Summarise a [`Range3d`] as a [fingerprint](https://willowprotocol.org/specs/3d-range-based-set-reconciliation/index.html#d3rbsr_fp).

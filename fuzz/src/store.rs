@@ -12,12 +12,13 @@ use ufotofu::{
     producer::{FromBoxedSlice, FromSlice},
     BulkProducer, Producer,
 };
+
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
     AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryIngestionSuccess,
     EntryOrigin, EventSystem, ForgetEntryError, ForgetPayloadError, LengthyAuthorisedEntry,
     NamespaceId, Path, Payload, PayloadAppendError, PayloadAppendSuccess, PayloadDigest,
-    PayloadError, QueryIgnoreParams, Store, StoreEvent, SubspaceId, Timestamp,
+    PayloadError, QueryIgnoreParams, Store, StoreEvent, Subscriber, SubspaceId, Timestamp,
 };
 
 #[derive(Debug)]
@@ -140,6 +141,100 @@ where
         RefMut::map(subspaces, |subspaces| {
             subspaces.get_mut(subspace_id).unwrap()
         })
+    }
+
+    /// A producer of an area's authorised entries, but with a concrete return type.
+    fn area_entry_producer(
+        &self,
+        area: &Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> FromBoxedSlice<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>> {
+        let mut candidates = vec![];
+
+        match area.subspace() {
+            AreaSubspace::Id(subspace_id) => {
+                let subspace_store = self.get_or_create_subspace_store(subspace_id);
+
+                for path in subspace_store.entries.keys() {
+                    if !path.is_prefixed_by(area.path()) {
+                        continue;
+                    }
+
+                    if let Some(entry) = subspace_store.entries.get(path) {
+                        if !area.times().includes(&entry.timestamp) {
+                            continue;
+                        }
+
+                        let available = entry.payload.len() as u64;
+
+                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                            || (ignore.ignore_incomplete_payloads
+                                && available != entry.payload_length)
+                        {
+                            continue;
+                        } else {
+                            candidates.push(LengthyAuthorisedEntry::new(
+                                AuthorisedEntry::new(
+                                    Entry::new(
+                                        self.namespace.clone(),
+                                        subspace_id.clone(),
+                                        path.clone(),
+                                        entry.timestamp,
+                                        entry.payload_length,
+                                        entry.payload_digest.clone(),
+                                    ),
+                                    entry.authorisation_token.clone(),
+                                )
+                                .unwrap(),
+                                available,
+                            ));
+                        }
+                    }
+                }
+            }
+            AreaSubspace::Any => {
+                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
+                    for path in subspace_store.entries.keys() {
+                        if !path.is_prefixed_by(area.path()) {
+                            continue;
+                        }
+
+                        if let Some(entry) = subspace_store.entries.get(path) {
+                            if !area.times().includes(&entry.timestamp) {
+                                continue;
+                            }
+
+                            let available = entry.payload.len() as u64;
+
+                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
+                                || (ignore.ignore_incomplete_payloads
+                                    && available != entry.payload_length)
+                            {
+                                continue;
+                            } else {
+                                candidates.push(LengthyAuthorisedEntry::new(
+                                    AuthorisedEntry::new(
+                                        Entry::new(
+                                            self.namespace.clone(),
+                                            subspace_id.clone(),
+                                            path.clone(),
+                                            entry.timestamp,
+                                            entry.payload_length,
+                                            entry.payload_digest.clone(),
+                                        ),
+                                        entry.authorisation_token.clone(),
+                                    )
+                                    .unwrap(),
+                                    available,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        FromBoxedSlice::from_vec(candidates)
     }
 }
 
@@ -304,6 +399,7 @@ where
         subspace: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>
     where
@@ -317,6 +413,12 @@ where
                 if let Some(expected) = expected_digest {
                     if entry.payload_digest != expected {
                         return Err(PayloadAppendError::WrongEntry);
+                    }
+                }
+
+                if let Some(expected) = expected_available_bytes {
+                    if entry.payload.len() != expected as usize {
+                        return Err(PayloadAppendError::IncorrectAvailableLength);
                     }
                 }
 
@@ -617,17 +719,17 @@ where
     }
 
     async fn payload(
-        &self,
-        subspace: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> Result<
         Payload<Self::Error, impl BulkProducer<Item = u8, Final = (), Error = Self::Error>>,
         PayloadError<Self::Error>,
     > {
-        let mut subspace_store = self.get_or_create_subspace_store(subspace);
-        match subspace_store.entries.get_mut(path) {
+        let mut subspace_store = self.get_or_create_subspace_store(&subspace);
+        match subspace_store.entries.get_mut(&path) {
             None => Err(PayloadError::NoSuchEntry),
             Some(entry) => {
                 if let Some(expected) = expected_digest {
@@ -690,109 +792,81 @@ where
         }
     }
 
-    async fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+    fn query_area(
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> Result<
-        impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
-        Self::Error,
-    > {
-        let mut candidates = vec![];
-
-        match area.subspace() {
-            AreaSubspace::Id(subspace_id) => {
-                let subspace_store = self.get_or_create_subspace_store(subspace_id);
-
-                for path in subspace_store.entries.keys() {
-                    if !path.is_prefixed_by(area.path()) {
-                        continue;
-                    }
-
-                    if let Some(entry) = subspace_store.entries.get(path) {
-                        if !area.times().includes(&entry.timestamp) {
-                            continue;
-                        }
-
-                        let available = entry.payload.len() as u64;
-
-                        if (ignore.ignore_empty_payloads && entry.payload_length == 0)
-                            || (ignore.ignore_incomplete_payloads
-                                && available != entry.payload_length)
-                        {
-                            continue;
-                        } else {
-                            candidates.push(LengthyAuthorisedEntry::new(
-                                AuthorisedEntry::new(
-                                    Entry::new(
-                                        self.namespace.clone(),
-                                        subspace_id.clone(),
-                                        path.clone(),
-                                        entry.timestamp,
-                                        entry.payload_length,
-                                        entry.payload_digest.clone(),
-                                    ),
-                                    entry.authorisation_token.clone(),
-                                )
-                                .unwrap(),
-                                available,
-                            ));
-                        }
-                    }
-                }
-            }
-            AreaSubspace::Any => {
-                for (subspace_id, subspace_store) in self.subspaces.borrow().iter() {
-                    for path in subspace_store.entries.keys() {
-                        if !path.is_prefixed_by(area.path()) {
-                            continue;
-                        }
-
-                        if let Some(entry) = subspace_store.entries.get(path) {
-                            if !area.times().includes(&entry.timestamp) {
-                                continue;
-                            }
-
-                            let available = entry.payload.len() as u64;
-
-                            if (ignore.ignore_empty_payloads && entry.payload_length == 0)
-                                || (ignore.ignore_incomplete_payloads
-                                    && available != entry.payload_length)
-                            {
-                                continue;
-                            } else {
-                                candidates.push(LengthyAuthorisedEntry::new(
-                                    AuthorisedEntry::new(
-                                        Entry::new(
-                                            self.namespace.clone(),
-                                            subspace_id.clone(),
-                                            path.clone(),
-                                            entry.timestamp,
-                                            entry.payload_length,
-                                            entry.payload_digest.clone(),
-                                        ),
-                                        entry.authorisation_token.clone(),
-                                    )
-                                    .unwrap(),
-                                    available,
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(FromBoxedSlice::from_vec(candidates))
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()> {
+        self.area_entry_producer(&area, ignore)
     }
 
     async fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Producer<Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>, Final = (), Error = Self::Error>
     {
-        EventSystem::add_subscription(self.event_system.clone(), area.clone(), ignore)
+        EventSystem::add_subscription(self.event_system.clone(), area.into(), ignore)
+    }
+
+    fn query_and_subscribe_area(
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Self::Error,
+            >,
+            Error = Self::Error,
+        >,
+        Self::Error,
+    > {
+        let subscriber =
+            EventSystem::add_subscription(self.event_system.clone(), area.clone().into(), ignore);
+
+        let entry_producer = self.area_entry_producer(&area, ignore);
+
+        Ok(EntriesAndSubProducer {
+            entry_producer,
+            subscriber: Some(subscriber),
+        })
+    }
+}
+
+pub struct EntriesAndSubProducer<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+{
+    entry_producer: FromBoxedSlice<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>,
+    subscriber: Option<Subscriber<MCL, MCC, MPL, N, S, PD, AT, Infallible>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Producer
+    for EntriesAndSubProducer<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: Clone,
+    S: Clone,
+    PD: Clone,
+    AT: Clone,
+{
+    type Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>;
+
+    type Final = Subscriber<MCL, MCC, MPL, N, S, PD, AT, Infallible>;
+
+    type Error = Infallible;
+
+    async fn produce(&mut self) -> Result<Either<Self::Item, Self::Final>, Self::Error> {
+        match self.entry_producer.produce().await {
+            Ok(Either::Left(item)) => return Ok(Either::Left(item)),
+            Ok(Either::Right(_)) => {
+                // Return the subscriber!
+                // We unwrap here because this is the final item.
+                return Ok(Either::Right(self.subscriber.take().unwrap()));
+            }
+            Err(err) => return Err(err),
+        }
     }
 }
 
@@ -862,8 +936,8 @@ pub async fn check_store_equality<
     Store1,
     Store2,
 >(
-    store1: &mut Store1,
-    store2: &mut Store2,
+    store1: Rc<Store1>,
+    store2: Rc<Store2>,
     ops: &[StoreOp<MCL, MCC, MPL, N, S, PD, AT>],
 ) where
     N: NamespaceId + std::hash::Hash,
@@ -913,10 +987,22 @@ pub async fn check_store_equality<
                 let mut payload_2 = FromSlice::new(data);
 
                 let res_1 = store1
-                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_1)
+                    .append_payload(
+                        subspace,
+                        path,
+                        expected_digest.clone(),
+                        None,
+                        &mut payload_1,
+                    )
                     .await;
                 let res_2 = store2
-                    .append_payload(subspace, path, expected_digest.clone(), &mut payload_2)
+                    .append_payload(
+                        subspace,
+                        path,
+                        expected_digest.clone(),
+                        None,
+                        &mut payload_2,
+                    )
                     .await;
 
                 match (res_1, res_2) {
@@ -1006,11 +1092,11 @@ pub async fn check_store_equality<
                 expected_digest,
             } => {
                 match (
-                    store1
-                        .payload(subspace, path, *offset, expected_digest.clone())
+                    store1.clone()
+                        .payload(subspace.clone(), path.clone(), *offset, expected_digest.clone())
                         .await,
-                    store2
-                        .payload(subspace, path, *offset, expected_digest.clone())
+                    store2.clone()
+                        .payload(subspace.clone(), path.clone(), *offset, expected_digest.clone())
                         .await,
                 ) {
                     (Ok(Payload::Complete(mut producer1)), Ok(Payload::Complete(mut producer2))) | (Ok(Payload::Incomplete(mut producer1)), Ok(Payload::Incomplete(mut producer2))) => loop {
@@ -1055,40 +1141,35 @@ pub async fn check_store_equality<
                 }
             }
             StoreOp::QueryArea { area, ignore } => {
-                match (
-                    store1.query_area(area, ignore.to_owned()).await,
-                    store2.query_area(area, ignore.to_owned()).await,
-                ) {
-                    (Ok(mut producer1), Ok(mut producer2)) => {
-                        let mut set1 =
-                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
-                        let mut set2 =
-                            HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+                let mut producer1 = store1.clone().query_area(area.clone(), ignore.to_owned());
+                let mut producer2 = store2.clone().query_area(area.clone(), ignore.to_owned());
 
-                        loop {
-                            match producer1.produce().await {
-                                Ok(Either::Left(entry)) => {
-                                    set1.insert(entry);
-                                }
-                                Ok(Either::Right(_)) => break,
-                                Err(_) => panic!("QueryArea: Store producer error"),
-                            }
+                let mut set1 =
+                    HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+                let mut set2 =
+                    HashSet::<LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>>::new();
+
+                loop {
+                    match producer1.produce().await {
+                        Ok(Either::Left(entry)) => {
+                            set1.insert(entry);
                         }
-
-                        loop {
-                            match producer2.produce().await {
-                                Ok(Either::Left(entry)) => {
-                                    set2.insert(entry);
-                                }
-                                Ok(Either::Right(_)) => break,
-                                Err(_) => panic!("QueryArea: Store producer error"),
-                            }
-                        }
-
-                        assert_eq!(set1, set2)
+                        Ok(Either::Right(_)) => break,
+                        Err(_) => panic!("QueryArea: Store producer error"),
                     }
-                    (_, _) => panic!("QueryArea: non-equivalent behaviour.",),
                 }
+
+                loop {
+                    match producer2.produce().await {
+                        Ok(Either::Left(entry)) => {
+                            set2.insert(entry);
+                        }
+                        Ok(Either::Right(_)) => break,
+                        Err(_) => panic!("QueryArea: Store producer error"),
+                    }
+                }
+
+                assert_eq!(set1, set2)
             }
         }
     }

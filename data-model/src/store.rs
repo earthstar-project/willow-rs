@@ -13,8 +13,10 @@ use ufotofu::{BulkProducer, Producer};
 use wb_async_utils::TakeCell;
 
 use crate::{
-    entry::AuthorisedEntry, grouping::Area, AuthorisationToken, Entry, LengthyAuthorisedEntry,
-    NamespaceId, Path, PayloadDigest, SubspaceId,
+    entry::AuthorisedEntry,
+    grouping::{Area, Range3d},
+    AuthorisationToken, Entry, LengthyAuthorisedEntry, NamespaceId, Path, PayloadDigest,
+    SubspaceId,
 };
 
 #[cfg(feature = "dev")]
@@ -493,12 +495,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         self: Rc<Self>,
         area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
-            Self::Error,
-        >,
-    >;
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>;
 
     /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`crate::grouping::Area`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
@@ -517,19 +514,17 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         self: Rc<Self>,
         area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<
-                Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
-                Final = impl Producer<
-                    Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
-                    Final = (),
-                    Error = Self::Error,
-                >,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
                 Error = Self::Error,
             >,
-            Self::Error,
+            Error = Self::Error,
         >,
+        Self::Error,
     >;
 }
 
@@ -612,7 +607,7 @@ where
     /// Create a new subscription: setting up the internals, and returning the external part.
     pub fn add_subscription(
         this: Rc<RefCell<Self>>,
-        area: Area<MCL, MCC, MPL, S>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Subscriber<MCL, MCC, MPL, N, S, PD, AT, Err> {
         let cell = Rc::new(TakeCell::new());
@@ -626,7 +621,7 @@ where
             events: this,
             next_op_id: cell,
             slab_key: key,
-            area,
+            range,
             ignore,
             buffered_event: None,
         }
@@ -733,7 +728,7 @@ pub struct Subscriber<const MCL: usize, const MCC: usize, const MPL: usize, N, S
     next_op_id: Rc<TakeCell<Result<u64, Err>>>,
     /// The key by which the internal subscriber part is stored in the EventSystem. Upon dropping, the Subscriber, the corresponding InternalSubscriber is removed from the slab.
     slab_key: usize,
-    area: Area<MCL, MCC, MPL, S>,
+    range: Range3d<MCL, MCC, MPL, S>,
     ignore: QueryIgnoreParams,
     /// Some store ops trigger *two* events. In those cases, the second event is stored here. Each call to `produce` checks for a buffered event first before continuing to process the op queue.
     buffered_event: Option<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
@@ -794,7 +789,7 @@ where
                                     previous_available,
                                     now_available,
                                 } => {
-                                    if !self.area.includes_entry(entry.entry())
+                                    if !self.range.includes_entry(entry.entry())
                                         || self
                                             .ignore
                                             .ignores_lengthy_authorised_entry(entry, *now_available)
@@ -824,9 +819,14 @@ where
                                     }
                                 }
                                 QueuedOp::AreaForgotten { area, protected } => {
-                                    if area.intersection(&self.area).is_some() {
+                                    if Range3d::from(area.clone())
+                                        .intersection(&self.range)
+                                        .is_some()
+                                    {
                                         if let Some(prot) = protected {
-                                            if prot.includes_area(&self.area) {
+                                            if Range3d::from(prot.clone())
+                                                .includes_range(&self.range)
+                                            {
                                                 // continue with area, since the subscribed area is fully protected
                                                 continue;
                                             }
@@ -841,9 +841,14 @@ where
                                     }
                                 }
                                 QueuedOp::AreaPayloadsForgotten { area, protected } => {
-                                    if area.intersection(&self.area).is_some() {
+                                    if Range3d::from(area.clone())
+                                        .intersection(&self.range)
+                                        .is_some()
+                                    {
                                         if let Some(prot) = protected {
-                                            if prot.includes_area(&self.area) {
+                                            if Range3d::from(prot.clone())
+                                                .includes_range(&self.range)
+                                            {
                                                 // continue with area, since the subscribed area is fully protected
                                                 continue;
                                             }
@@ -858,7 +863,7 @@ where
                                     }
                                 }
                                 QueuedOp::EntryForgotten { entry } => {
-                                    if self.area.includes_entry(entry.entry().entry())
+                                    if self.range.includes_entry(entry.entry().entry())
                                         && !self.ignore.ignores_lengthy_authorised_entry(
                                             entry.entry(),
                                             entry.available(),
@@ -879,7 +884,7 @@ where
                                     // );
 
                                     // Is the entry in the subscribed-to area?
-                                    if self.area.includes_entry(entry.entry()) {
+                                    if self.range.includes_entry(entry.entry()) {
                                         // println!("Entry included in area {:?}", self.area);
 
                                         if self.ignore.ignores_fresh_entry(entry.entry()) {
@@ -902,7 +907,7 @@ where
                                                 cause: entry.clone(),
                                             }));
                                         }
-                                    } else if self.area.could_be_pruned_by(entry.entry()) {
+                                    } else if self.range.could_be_pruned_by(entry.entry()) {
                                         // println!("Insertion outside area but might still prune something inside the area");
 
                                         // Insertion outside area but might still prune something inside the area.
@@ -917,7 +922,7 @@ where
                                 }
 
                                 QueuedOp::PayloadForgotten { entry } => {
-                                    if self.area.includes_entry(entry.entry().entry())
+                                    if self.range.includes_entry(entry.entry().entry())
                                         && !self.ignore.ignores_lengthy_authorised_entry(
                                             entry.entry(),
                                             entry.available(),

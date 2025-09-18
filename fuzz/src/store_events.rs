@@ -50,7 +50,9 @@ pub fn check_store_events(
 
         let done = Rc::new(RefCell::new(false));
 
-        let mut sub = store.subscribe_area(&area, ignores).await;
+        let rc_store = Rc::new(store);
+
+        let mut sub = rc_store.clone().subscribe_area(area.clone(), ignores).await;
 
         let ((), collected) = futures::future::join(
             async {
@@ -64,7 +66,7 @@ pub fn check_store_events(
                             if authorised_entry.entry().namespace_id() != &namespace_id {
                                 continue;
                             } else {
-                                let _ = store
+                                let _ = rc_store
                                     .ingest_entry(authorised_entry.clone(), prevent_pruning, origin)
                                     .await;
                             }
@@ -77,11 +79,12 @@ pub fn check_store_events(
                         } => {
                             let mut payload_1 = FromSlice::new(&data);
 
-                            let _ = store
+                            let _ = rc_store
                                 .append_payload(
                                     &subspace,
                                     &path,
                                     expected_digest.clone(),
+                                    None,
                                     &mut payload_1,
                                 )
                                 .await;
@@ -91,24 +94,26 @@ pub fn check_store_events(
                             path,
                             expected_digest,
                         } => {
-                            let _ = store
+                            let _ = rc_store
                                 .forget_entry(&subspace_id, &path, expected_digest.clone())
                                 .await;
                         }
                         StoreOp::ForgetArea { area, protected } => {
-                            let _ = store.forget_area(&area, protected.as_ref()).await;
+                            let _ = rc_store.forget_area(&area, protected.as_ref()).await;
                         }
                         StoreOp::ForgetPayload {
                             subspace_id,
                             path,
                             expected_digest,
                         } => {
-                            let _ = store
+                            let _ = rc_store
                                 .forget_payload(&subspace_id, &path, expected_digest.clone())
                                 .await;
                         }
                         StoreOp::ForgetAreaPayloads { area, protected } => {
-                            let _ = store.forget_area_payloads(&area, protected.as_ref()).await;
+                            let _ = rc_store
+                                .forget_area_payloads(&area, protected.as_ref())
+                                .await;
                         }
                         StoreOp::GetPayload { .. }
                         | StoreOp::GetEntry { .. }
@@ -123,9 +128,9 @@ pub fn check_store_events(
                 }
 
                 YieldOnce::new().await;
-                store.flush().await.unwrap();
+                rc_store.flush().await.unwrap();
                 YieldOnce::new().await;
-                store.debug_cancel_subscribers();
+                rc_store.debug_cancel_subscribers();
 
                 *done.borrow_mut() = true;
             },
@@ -140,6 +145,8 @@ pub fn check_store_events(
                     FakeAuthorisationToken,
                 >::new(namespace_id.clone(), 1024);
 
+                let rc_collected = Rc::new(collected);
+
                 while !*done.borrow() {
                     match sub.produce().await {
                         Err(_) => unreachable!(),
@@ -149,13 +156,13 @@ pub fn check_store_events(
 
                             match event {
                                 StoreEvent::Ingested { entry, origin } => {
-                                    let _ = collected
+                                    let _ = rc_collected
                                         .ingest_entry(entry.clone(), false, origin)
                                         .await
                                         .unwrap();
                                 }
                                 StoreEvent::EntryForgotten { entry } => {
-                                    let _ = collected
+                                    let _ = rc_collected
                                         .forget_entry(
                                             entry.entry().subspace_id(),
                                             entry.entry().path(),
@@ -164,10 +171,11 @@ pub fn check_store_events(
                                         .await;
                                 }
                                 StoreEvent::AreaForgotten { area, protected } => {
-                                    let _ = collected.forget_area(&area, protected.as_ref()).await;
+                                    let _ =
+                                        rc_collected.forget_area(&area, protected.as_ref()).await;
                                 }
                                 StoreEvent::PayloadForgotten(entry) => {
-                                    let _ = collected
+                                    let _ = rc_collected
                                         .forget_payload(
                                             entry.entry().subspace_id(),
                                             entry.entry().path(),
@@ -176,7 +184,7 @@ pub fn check_store_events(
                                         .await;
                                 }
                                 StoreEvent::AreaPayloadsForgotten { area, protected } => {
-                                    let _ = collected
+                                    let _ = rc_collected
                                         .forget_area_payloads(&area, protected.as_ref())
                                         .await;
                                 }
@@ -185,10 +193,11 @@ pub fn check_store_events(
                                     previous_available,
                                     now_available,
                                 } => {
-                                    match store
+                                    match rc_store
+                                        .clone()
                                         .payload(
-                                            entry.entry().subspace_id(),
-                                            entry.entry().path(),
+                                            entry.entry().subspace_id().clone(),
+                                            entry.entry().path().clone(),
                                             previous_available,
                                             None,
                                         )
@@ -201,10 +210,11 @@ pub fn check_store_events(
                                                 (now_available - previous_available) as usize,
                                             );
 
-                                            let _ = collected
+                                            let _ = rc_collected
                                                 .append_payload(
                                                     entry.entry().subspace_id(),
                                                     entry.entry().path(),
+                                                    None,
                                                     None,
                                                     &mut limited,
                                                 )
@@ -214,7 +224,7 @@ pub fn check_store_events(
                                     }
                                 }
                                 StoreEvent::PruneAlert { cause } => {
-                                    collected.prune(&cause).await;
+                                    rc_collected.prune(&cause).await;
                                 }
                             }
                         }
@@ -223,7 +233,7 @@ pub fn check_store_events(
 
                 // println!("collected: {:?}", collected);
 
-                collected
+                rc_collected
             },
         )
         .await;
@@ -231,11 +241,8 @@ pub fn check_store_events(
         // If events were implemented correctly, then querying the original store for the area and ignores of the subscription yields the same set of entries as querying the collected store for *all* its entries.
 
         let full_area = Area::new_full();
-        let mut producer1 = store.query_area(&area, ignores).await.unwrap();
-        let mut producer2 = collected
-            .query_area(&full_area, QueryIgnoreParams::default())
-            .await
-            .unwrap();
+        let mut producer1 = rc_store.query_area(area, ignores);
+        let mut producer2 = collected.query_area(full_area, QueryIgnoreParams::default());
 
         let mut set1 = HashSet::<
             LengthyAuthorisedEntry<

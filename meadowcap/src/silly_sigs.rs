@@ -17,6 +17,10 @@ impl<'a> Arbitrary<'a> for SillyPublicKey {
 }
 
 impl SillyPublicKey {
+    pub fn new(id: u8) -> Self {
+        Self(id)
+    }
+
     pub fn corresponding_secret_key(&self) -> SillySecret {
         SillySecret(self.0)
     }
