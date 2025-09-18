@@ -1519,6 +1519,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "willow-sideload"
+version = "0.1.0"
+dependencies = [
+ "compact_u64",
+ "either",
+ "ufotofu",
+ "ufotofu_codec",
+ "willow-data-model",
+ "willow-encoding",
+]
+
+[[package]]
 name = "willow-store-simple-sled"
 version = "0.1.0"
 dependencies = [
@@ -1531,6 +1543,7 @@ dependencies = [
  "wb_async_utils",
  "wgps",
  "willow-data-model",
+ "willow-sideload",
  "willow_25",
 ]
 
@@ -1564,6 +1577,7 @@ dependencies = [
  "willow-data-model",
  "willow-encoding",
  "willow-pio",
+ "willow-sideload",
 ]
 
 [[package]]

@@ -16,8 +16,7 @@ use willow_data_model::{
     QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
-mod parameters;
-pub use parameters::Fingerprint;
+pub mod parameters;
 
 mod rbsr;
 mod storedinator;

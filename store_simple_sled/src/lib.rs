@@ -55,8 +55,9 @@ use willow_data_model::{
     PayloadAppendError, PayloadAppendSuccess, PayloadDigest, QueryIgnoreParams, Store, StoreEvent,
     SubspaceId,
 };
+use willow_sideload::SideloadStore;
 
-use wgps::{Fingerprint, RangeSplit, RbsrStore, SplitAction};
+use wgps::{parameters::Fingerprint, RangeSplit, RbsrStore, SplitAction};
 
 pub trait SledSubspaceId: SubspaceId {
     /// Returns the greatest possible subspace, for which the result of `successor` is always `None`.
@@ -201,8 +202,6 @@ where
         let prefix = entry.subspace_id().sync_encode_into_vec();
 
         for (key, value) in tree.scan_prefix(&prefix).flatten() {
-            // println!("key: {:?}", key);
-
             let (other_subspace, other_path, other_timestamp) =
                 decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
             let (payload_length, payload_digest, authorisation_token, _local_length) =
@@ -461,7 +460,7 @@ where
                     }
                 }
 
-                let payload_key = encode_subspace_path_key(&subspace, &path, false).await;
+                let payload_key = encode_subspace_path_key(&subspace, &path, true).await;
 
                 let existing_payload = payload_tree
                     .get(&payload_key)
@@ -1068,6 +1067,10 @@ where
                     if expected != digest {
                         return Err(PayloadError::WrongEntry);
                     }
+                }
+
+                if length > 0 && length == local_length {
+                    panic!("State mismatch: store says we have all bytes of a payload but we are unable to fetch it!");
                 }
 
                 if length == local_length {
@@ -2113,6 +2116,50 @@ where
                 }
             }
             None => Ok(Either::Right(())),
+        }
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    SideloadStore<MCL, MCC, MPL, N, S, PD, AT> for StoreSimpleSled<MCL, MCC, MPL, N, S, PD, AT>
+where
+    N: NamespaceId + EncodableKnownSize + DecodableSync,
+    S: SledSubspaceId + EncodableSync + EncodableKnownSize + Decodable,
+    PD: PayloadDigest + Encodable + EncodableSync + EncodableKnownSize + Decodable,
+    AT: AuthorisationToken<MCL, MCC, MPL, N, S, PD> + TrustedDecodable + Encodable + 'static,
+    S::ErrorReason: core::fmt::Debug,
+    PD::ErrorReason: core::fmt::Debug,
+{
+    async fn count_area(&self, area: &Area<MCL, MCC, MPL, S>) -> Result<usize, Self::Error> {
+        let entry_tree = self.spt_entry_tree()?;
+
+        let mut entry_iterator = match area.subspace() {
+            AreaSubspace::Any => entry_tree.iter(),
+            AreaSubspace::Id(subspace) => {
+                let matching_subspace_path =
+                    encode_subspace_path_key(subspace, area.path(), false).await;
+
+                entry_tree.scan_prefix(&matching_subspace_path)
+            }
+        };
+
+        let mut counted = 0;
+
+        loop {
+            let result = entry_iterator.next();
+
+            match result {
+                Some(Ok((key, _value))) => {
+                    let (subspace, path, timestamp) =
+                        decode_spt_entry_key::<MCL, MCC, MPL, S>(&key).await;
+
+                    if area.includes_triplet(&subspace, &path, timestamp) {
+                        counted += 1;
+                    }
+                }
+                Some(Err(err)) => return Err(StoreSimpleSledError::from(err)),
+                None => return Ok(counted),
+            }
         }
     }
 }

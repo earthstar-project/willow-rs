@@ -32,19 +32,8 @@ fuzz_target!(|data: (
     let file_path = tmp_dir.path().join("db");
     let sled_db = sled::open(file_path).unwrap();
 
-    let mut sled_store = StoreSimpleSled::<
-        16,
-        16,
-        16,
-        FakeNamespaceId,
-        FakeSubspaceId,
-        FakePayloadDigest,
-        FakeAuthorisationToken,
-    >::new(&namespace, sled_db)
-    .unwrap();
-
-    for op_sequence in op_sequences {
-        let mut control_store = ControlStore::<
+    let sled_store = std::rc::Rc::new(
+        StoreSimpleSled::<
             16,
             16,
             16,
@@ -52,11 +41,26 @@ fuzz_target!(|data: (
             FakeSubspaceId,
             FakePayloadDigest,
             FakeAuthorisationToken,
-        >::new(namespace.clone(), 1024);
+        >::new(&namespace, sled_db)
+        .unwrap(),
+    );
+
+    for op_sequence in op_sequences {
+        let control_store = std::rc::Rc::new(ControlStore::<
+            16,
+            16,
+            16,
+            FakeNamespaceId,
+            FakeSubspaceId,
+            FakePayloadDigest,
+            FakeAuthorisationToken,
+        >::new(namespace.clone(), 1024));
 
         //  println!("y...");
-        pollster::block_on(async {
-            check_store_equality(&mut control_store, &mut sled_store, &op_sequence).await
+        let sled_clone = sled_store.clone();
+
+        pollster::block_on(async move {
+            check_store_equality(control_store, sled_clone, &op_sequence).await
         });
 
         sled_store.clear().unwrap();

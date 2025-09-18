@@ -93,6 +93,14 @@ impl SigningKey25 {
     }
 }
 
+impl Default for SigningKey25 {
+    fn default() -> Self {
+        Self(ed25519_dalek::SigningKey::from_bytes(
+            &crate::DEFAULT_SIGNING_KEY,
+        ))
+    }
+}
+
 impl Signer<Signature25> for SigningKey25 {
     fn try_sign(&self, msg: &[u8]) -> Result<Signature25, signature::Error> {
         self.0.try_sign(msg).map(Signature25)

@@ -114,7 +114,7 @@ where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
 {
     /// Creates a new communal capability granting access to the [`willow_data_model::SubspaceId`] corresponding to the given `UserPublicKey`, or return an error if the namespace key is not communal.
     pub fn new_communal(
@@ -349,7 +349,7 @@ where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
 {
     async fn relative_encode<C>(
         &self,
@@ -442,7 +442,8 @@ where
         + EncodableKnownSize
         + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
         + Clone,
-    UserSignature: EncodableSync
+    UserSignature: PartialEq
+        + EncodableSync
         + EncodableKnownSize
         + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
         + Clone,
@@ -484,7 +485,8 @@ where
         + EncodableKnownSize
         + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
         + Clone,
-    UserSignature: EncodableSync
+    UserSignature: PartialEq
+        + EncodableSync
         + EncodableKnownSize
         + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
         + Clone,
@@ -584,7 +586,7 @@ where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone,
+    UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
 {
     fn relative_len_of_encoding(&self, r: &Area<MCL, MCC, MPL, UserPublicKey>) -> usize {
         let namespace_len = self.granted_namespace().len_of_encoding();
@@ -641,7 +643,8 @@ where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
     NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+    UserSignature:
+        PartialEq + EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
 {
     /// Unsafely decode a [`McCapability`] from a [`ufotofu::BulkProducer`] of bytes, that is, decode without verifying the validity of the inner capability.
     ///

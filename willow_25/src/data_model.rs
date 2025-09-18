@@ -95,6 +95,7 @@ pub use willow_data_model::ForgetEntryError;
 pub use willow_data_model::ForgetPayloadError;
 pub use willow_data_model::InternalSubscriber;
 pub use willow_data_model::InvalidPathError;
+pub use willow_data_model::Payload;
 pub use willow_data_model::PayloadAppendError;
 pub use willow_data_model::PayloadAppendSuccess;
 pub use willow_data_model::PayloadError;

@@ -23,6 +23,16 @@ pub const MCC25: usize = 1024;
 /// A usize for the Willow Data Model's [`max_component_length`](https://willowprotocol.org/specs/data-model/index.html#max_path_length) parameter.
 pub const MPL25: usize = 1024;
 
+pub const DEFAULT_SIGNING_KEY: [u8; 32] = [
+    94, 20, 172, 228, 210, 200, 2, 143, 200, 154, 143, 4, 118, 91, 25, 210, 205, 117, 45, 145, 187,
+    55, 60, 12, 158, 212, 118, 39, 107, 92, 69, 65,
+];
+
+pub const DEFAULT_PUBLIC_KEY: [u8; 32] = [
+    147, 78, 96, 33, 51, 158, 31, 1, 59, 169, 73, 0, 237, 194, 93, 141, 116, 192, 180, 229, 115,
+    118, 137, 16, 174, 15, 80, 125, 140, 129, 115, 24,
+];
+
 mod namespace;
 pub use namespace::*;
 
@@ -45,3 +55,6 @@ pub mod meadowcap;
 pub use meadowcap::{
     AccessMode, AuthorisationToken, Capability, CommunalCapability, OwnedCapability,
 };
+
+pub mod sideload;
+pub use sideload::{create_drop, ingest_drop};

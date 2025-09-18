@@ -11,8 +11,8 @@ use willow_data_model::{
 };
 
 use crate::{
-    parameters::{EnumerationCapability, ReadCapability},
-    pio, Fingerprint,
+    parameters::{EnumerationCapability, Fingerprint, ReadCapability},
+    pio,
 };
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,

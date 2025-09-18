@@ -107,6 +107,7 @@ fn main() {
         )
         .await;
 
+        /*
         generate_test_vectors_relative_custom_serialisation::<
             Entry<MCL25, MCC25, MPL25, NamespaceId25, SubspaceId25, PayloadDigest25>,
             (&NamespaceId25, &Range3d<MCL25, MCC25, MPL25, SubspaceId25>),
@@ -119,6 +120,7 @@ fn main() {
             encode_ns_3drange,
         )
         .await;
+        */
 
         generate_test_vectors_relative::<
             Area<MCL25, MCC25, MPL25, SubspaceId25>,

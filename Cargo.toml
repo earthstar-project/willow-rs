@@ -12,6 +12,7 @@ members = [
     "transport_encryption",
     "pio",
     "willow_test_vectors",
+    "sideload"
 ]
 
 resolver = "2"

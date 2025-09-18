@@ -280,7 +280,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Complexity
     ///
     /// Runs in `O(1)`, performs no allocations.
-    pub fn component(&self, i: usize) -> Option<Component<'_, MCL>> {
+    pub fn component(&'_ self, i: usize) -> Option<Component<'_, MCL>> {
         if i < self.component_count {
             Some(Representation::component(&self.data, i))
         } else {
@@ -311,7 +311,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn components(
-        &self,
+        &'_ self,
     ) -> impl DoubleEndedIterator<Item = Component<'_, MCL>> + ExactSizeIterator<Item = Component<'_, MCL>>
     {
         self.suffix_components(0)
@@ -325,7 +325,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// Runs in `O(1)`, performs no allocations.
     pub fn suffix_components(
-        &self,
+        &'_ self,
         i: usize,
     ) -> impl DoubleEndedIterator<Item = Component<'_, MCL>> + ExactSizeIterator<Item = Component<'_, MCL>>
     {

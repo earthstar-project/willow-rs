@@ -6,6 +6,7 @@ use willow_data_model::PayloadDigest;
 
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+use willow_sideload::SideloadPayloadDigest;
 
 /// A [BLAKE3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3) hash digest suitable for the Willow Data Model's [`PayloadDigest`](https://willowprotocol.org/specs/data-model/index.html#PayloadDigest) parameter.
 ///
@@ -71,6 +72,12 @@ impl PayloadDigest for PayloadDigest25 {
 
     fn write(hasher: &mut Self::Hasher, bytes: &[u8]) {
         hasher.update(bytes);
+    }
+}
+
+impl SideloadPayloadDigest for PayloadDigest25 {
+    fn default_payload_digest() -> Self {
+        Self(blake3::Hash::from_bytes([0; 32]))
     }
 }
 

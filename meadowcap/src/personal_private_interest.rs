@@ -67,7 +67,7 @@ impl<
         const MPL: usize,
         N: McNamespacePublicKey,
         UserPublicKey: McPublicUserKey<UserSignature>,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone,
+        UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
     > RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>>
     for CommunalCapability<MCL, MCC, MPL, N, UserPublicKey, UserSignature>
 {
@@ -150,7 +150,7 @@ impl<
         const MPL: usize,
         N: McNamespacePublicKey,
         UserPublicKey: McPublicUserKey<UserSignature>,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+        UserSignature: PartialEq + EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
     > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
     for CommunalCapability<MCL, MCC, MPL, N, UserPublicKey, UserSignature>
 {
@@ -223,8 +223,8 @@ impl<
         const MPL: usize,
         N: McNamespacePublicKey + Verifier<NamespaceSignature>,
         NamespaceSignature: EncodableSync + EncodableKnownSize + Clone,
-        UserPublicKey: McPublicUserKey<UserSignature> + Encodable,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone,
+        UserPublicKey: McPublicUserKey<UserSignature> + Encodable + PartialEq,
+        UserSignature: EncodableSync + EncodableKnownSize + Clone + PartialEq,
     > RelativeEncodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>>
     for OwnedCapability<MCL, MCC, MPL, N, NamespaceSignature, UserPublicKey, UserSignature>
 {
@@ -320,7 +320,7 @@ impl<
         N: McNamespacePublicKey + Verifier<NamespaceSignature>,
         NamespaceSignature: Decodable<ErrorReason = Blame> + EncodableSync + EncodableKnownSize + Clone,
         UserPublicKey: McPublicUserKey<UserSignature>,
-        UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+        UserSignature: PartialEq + EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
     > RelativeDecodable<PersonalPrivateInterest<MCL, MCC, MPL, N, UserPublicKey>, Blame>
     for OwnedCapability<MCL, MCC, MPL, N, NamespaceSignature, UserPublicKey, UserSignature>
 {
