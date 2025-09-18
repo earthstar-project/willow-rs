@@ -9,10 +9,11 @@ use signature::Verifier;
 use ufotofu::{BulkConsumer, BulkProducer};
 use ufotofu_codec::{
     Blame, Decodable, DecodableCanonic, DecodableSync, DecodeError, Encodable, EncodableKnownSize,
-    EncodableSync,
+    EncodableSync, RelativeDecodable, RelativeEncodable, RelativeEncodableKnownSize,
 };
 use willow_data_model::{
-    AuthorisationToken, NamespaceId, PayloadDigest, SubspaceId, TrustedDecodable,
+    AuthorisationToken, AuthorisedEntry, Entry, NamespaceId, PayloadDigest, SubspaceId,
+    TrustedDecodable,
 };
 use willow_store_simple_sled::SledSubspaceId;
 
@@ -308,6 +309,68 @@ impl TrustedDecodable for FakeAuthorisationToken {
         P: ufotofu::BulkProducer<Item = u8>,
     {
         Self::decode(producer).await
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodable<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )> for FakeAuthorisationToken
+{
+    fn relative_encode<C>(
+        &self,
+        consumer: &mut C,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> impl Future<Output = Result<(), C::Error>>
+    where
+        C: BulkConsumer<Item = u8>,
+    {
+        self.encode(consumer)
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeEncodableKnownSize<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )> for FakeAuthorisationToken
+{
+    fn relative_len_of_encoding(
+        &self,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> usize {
+        1
+    }
+}
+
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>
+    RelativeDecodable<
+        (
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+        Blame,
+    > for FakeAuthorisationToken
+{
+    fn relative_decode<P>(
+        producer: &mut P,
+        _r: &(
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+    ) -> impl Future<Output = Result<Self, DecodeError<P::Final, P::Error, Blame>>>
+    where
+        P: BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        Self::decode(producer)
     }
 }
 

@@ -77,20 +77,17 @@ fuzz_target!(|data: (
 
     let actual_r = ((&namespace_id, &range_3d), &authed_entry);
 
-    pollster::block_on(async {
-        assert_relative_basic_invariants::<
-            ReconciliationSendEntry<
-                16,
-                16,
-                16,
-                FakeNamespaceId,
-                FakeSubspaceId,
-                FakePayloadDigest,
-                FakeAuthorisationToken,
-            >,
-            (
-                (&FakeNamespaceId, &Range3d<16, 16, 16, FakeSubspaceId>),
-                &AuthorisedEntry<
+    if t1.entry.entry().entry().namespace_id() == &namespace_id
+        && t2.entry.entry().entry().namespace_id() == &namespace_id
+        && t1.entry.entry().entry().namespace_id() == authed_entry.entry().namespace_id()
+        && t2.entry.entry().entry().namespace_id() == authed_entry.entry().namespace_id()
+        && authed_entry.entry().namespace_id() == &namespace_id
+        && range_3d.includes_entry(t1.entry.entry().entry())
+        && range_3d.includes_entry(t2.entry.entry().entry())
+    {
+        pollster::block_on(async {
+            assert_relative_basic_invariants::<
+                ReconciliationSendEntry<
                     16,
                     16,
                     16,
@@ -99,24 +96,36 @@ fuzz_target!(|data: (
                     FakePayloadDigest,
                     FakeAuthorisationToken,
                 >,
-            ),
-            Blame,
-        >(
-            &actual_r,
-            &t1,
-            &t2,
-            c1,
-            c2,
-            &potential_encoding1,
-            exposed_items_sizes1,
-            exposed_items_sizes2,
-            yield_pattern1,
-            yield_pattern2,
-        )
-        .await;
+                (
+                    (&FakeNamespaceId, &Range3d<16, 16, 16, FakeSubspaceId>),
+                    &AuthorisedEntry<
+                        16,
+                        16,
+                        16,
+                        FakeNamespaceId,
+                        FakeSubspaceId,
+                        FakePayloadDigest,
+                        FakeAuthorisationToken,
+                    >,
+                ),
+                Blame,
+            >(
+                &actual_r,
+                &t1,
+                &t2,
+                c1,
+                c2,
+                &potential_encoding1,
+                exposed_items_sizes1,
+                exposed_items_sizes2,
+                yield_pattern1,
+                yield_pattern2,
+            )
+            .await;
 
-        assert_relative_known_size_invariants(&actual_r, &t1).await;
-    });
+            assert_relative_known_size_invariants(&actual_r, &t1).await;
+        });
+    }
 });
 // };
 

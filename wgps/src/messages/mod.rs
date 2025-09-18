@@ -950,7 +950,7 @@ where
         let available_tag = Tag::min_tag(self.entry.available(), TagWidth::two());
 
         header |= offset_tag.data_at_offset(4);
-        header |= offset_tag.data_at_offset(6);
+        header |= available_tag.data_at_offset(6);
 
         consumer.consume(header).await?;
 
