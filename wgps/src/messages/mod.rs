@@ -1401,7 +1401,31 @@ where
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header = 0b1000_0000;
+
+        let offset_tag = Tag::min_tag(self.offset, TagWidth::five());
+
+        header |= offset_tag.data_at_offset(3);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.offset)
+            .relative_encode(consumer, &offset_tag.encoding_width())
+            .await?;
+
+        self.entry
+            .entry()
+            .relative_encode(consumer, r.entry())
+            .await?;
+
+        let auth_rel = (r, self.entry.entry());
+
+        self.entry
+            .token()
+            .relative_encode(consumer, &auth_rel)
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -1418,7 +1442,18 @@ where
     )>,
 {
     fn relative_len_of_encoding(&self, r: &AuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) -> usize {
-        todo!()
+        let offset_tag = Tag::min_tag(self.offset, TagWidth::five());
+
+        let offset_len =
+            CompactU64(self.offset).relative_len_of_encoding(&offset_tag.encoding_width());
+
+        let rel_to_entry_len = self.entry.entry().relative_len_of_encoding(r.entry());
+
+        let auth_rel = (r, self.entry.entry());
+
+        let auth_token_len = self.entry.token().relative_len_of_encoding(&auth_rel);
+
+        1 + offset_len + rel_to_entry_len + auth_token_len
     }
 }
 
@@ -1446,7 +1481,28 @@ where
         P: ufotofu::BulkProducer<Item = u8>,
         Self: Sized,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let offset_tag = Tag::from_raw(header, TagWidth::five(), 3);
+
+        let offset = CompactU64::relative_decode(producer, &offset_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let entry = Entry::relative_decode(producer, r.entry()).await?;
+
+        let auth_rel = (r, &entry);
+
+        let token = AT::relative_decode(producer, &auth_rel).await?;
+
+        let authed_entry = AuthorisedEntry::new(entry, token)
+            .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
+
+        Ok(Self {
+            offset,
+            entry: authed_entry,
+        })
     }
 }
 
@@ -1462,13 +1518,32 @@ impl Encodable for DataSendPayload {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header = 0b_1010_0000;
+
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+
+        header |= amount_tag.data_at_offset(3);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.amount)
+            .relative_encode(consumer, &amount_tag.encoding_width())
+            .await?;
+
+        // The spec mentions the messages `bytes` field here,
+        // But we deal with that outside this trait definition.
+
+        Ok(())
     }
 }
 
 impl EncodableKnownSize for DataSendPayload {
     fn len_of_encoding(&self) -> usize {
-        todo!()
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::five());
+        let amount_len =
+            CompactU64(self.amount).relative_len_of_encoding(&amount_tag.encoding_width());
+
+        1 + amount_len
     }
 }
 
@@ -1483,7 +1558,16 @@ impl Decodable for DataSendPayload {
     where
         P: ufotofu::BulkProducer<Item = u8>,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let amount_tag = Tag::from_raw(header, TagWidth::five(), 3);
+
+        let amount = CompactU64::relative_decode(producer, &amount_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        Ok(Self { amount })
     }
 }
 

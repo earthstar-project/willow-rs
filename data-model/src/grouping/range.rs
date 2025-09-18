@@ -161,7 +161,7 @@ impl<T> Range<T> {
             _ => false,
         }
     }
-    
+
     /// Returns the end value if the range is closed, or `None` if the range is open.
     pub fn get_end(&self) -> Option<&T> {
         match self.end {
