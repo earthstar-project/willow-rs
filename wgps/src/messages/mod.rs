@@ -670,6 +670,7 @@ pub struct RangeInfo<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     pub receiver_handle: u64,
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
     for RangeInfo<MCL, MCC, MPL, S>
 where
@@ -700,6 +701,7 @@ pub struct ReconciliationSendFingerprint<
     pub fingerprint: Fingerprint,
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S, FP> Arbitrary<'a>
     for ReconciliationSendFingerprint<MCL, MCC, MPL, S, FP>
 where
@@ -849,6 +851,7 @@ pub struct ReconciliationAnnounceEntries<const MCL: usize, const MCC: usize, con
     pub will_sort: bool,
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, S> Arbitrary<'a>
     for ReconciliationAnnounceEntries<MCL, MCC, MPL, S>
 where
@@ -1019,6 +1022,7 @@ pub struct ReconciliationSendEntry<
     pub offset: u64,
 }
 
+#[cfg(feature = "dev")]
 impl<'a, const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> Arbitrary<'a>
     for ReconciliationSendEntry<MCL, MCC, MPL, N, S, PD, AT>
 where
