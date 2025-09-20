@@ -12,7 +12,7 @@ use wb_async_utils::{
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryOrigin,
-    LengthyAuthorisedEntry, LengthyEntry, NamespaceId, PayloadAppendError, PayloadDigest,
+    LengthyAuthorisedEntry, LengthyEntry, NamespaceId, Path, PayloadAppendError, PayloadDigest,
     QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
@@ -1000,6 +1000,11 @@ where
         }
     };
 
+    // Collection of the PayloadRequests we have issued.
+    // Maps PayloadRequestHandles to the requested namespace/subspace/path/payload_digest, plus the chunk offset at which the incoming response bytes should be appended to the store.
+    let mut my_payload_requests: HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, u64)> =
+        HashMap::new();
+
     // A future to receive data-channel messages and act on them.
     let receive_data_messages = async {
         let r = DecodeDataMessagesRelativeToThis::new(options.default_authorised_entry.clone());
@@ -1108,8 +1113,6 @@ where
                             |store_creation_error| RbsrError::StoreCreation(store_creation_error),
                         )?;
 
-                        let _ = data_channel_receiver.produce().await;
-
                         let mut bytes_to_append = ufotofu::producer::Limit::new(
                             BorrowedProducer(&mut data_channel_receiver),
                             transmitted_payload_bytes_in_this_message as usize,
@@ -1187,8 +1190,6 @@ where
                         |store_creation_error| RbsrError::StoreCreation(store_creation_error),
                     )?;
 
-                    let _ = data_channel_receiver.produce().await;
-
                     let mut bytes_to_append = ufotofu::producer::Limit::new(
                         BorrowedProducer(&mut data_channel_receiver),
                         transmitted_payload_bytes_in_this_message as usize,
@@ -1219,10 +1220,53 @@ where
                     continue;
                 }
 
-                Ok(_) => todo!("Handle other, non-reconciliation messages"),
-                // DataSendEntry(DataSendEntry<MCL, MCC, MPL, N, S, PD, AT>),
-                // DataSendPayload(DataSendPayload),
-                // PayloadRequestSendResponse(PayloadRequestSendResponse),
+                // let mut my_payload_requests: HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, usize)> = HashMap::new();
+                Ok(DataMessage::PayloadRequestSendResponse(payload_msg)) => {
+                    match my_payload_requests.get_mut(&payload_msg.handle) {
+                        None => return Err(WgpsError::PeerMisbehaved),
+                        Some(request_info) => {
+                            let payload_start_byte_offset = chunk_to_byte_fun(request_info.4);
+                            let transmitted_payload_bytes_in_this_message =
+                                chunk_offset_and_count_to_byte_length(
+                                    data_payload_current_chunk_offset,
+                                    payload_msg.amount,
+                                );
+
+                            let store = storedinator.get_store(&request_info.0).await.map_err(
+                                |store_creation_error| {
+                                    RbsrError::StoreCreation(store_creation_error)
+                                },
+                            )?;
+
+                            let mut bytes_to_append = ufotofu::producer::Limit::new(
+                                BorrowedProducer(&mut data_channel_receiver),
+                                transmitted_payload_bytes_in_this_message as usize,
+                            );
+
+                            match store
+                                .append_payload(
+                                    &request_info.1,
+                                    &request_info.2,
+                                    Some(request_info.3.clone()),
+                                    Some(request_info.4),
+                                    &mut bytes_to_append,
+                                )
+                                .await
+                            {
+                                Ok(_) => { /* no-op */ }
+                                Err(PayloadAppendError::OperationError(store_err)) => {
+                                    return Err(WgpsError::Store(store_err));
+                                }
+                                Err(_) => { /* no-op */ }
+                            }
+
+                            request_info.4 += payload_msg.amount;
+
+                            // Explicitly continue to the next iteration of the loop; the logic after the loop must only be executed when receiving rbsr messages.
+                            continue;
+                        }
+                    }
+                }
             }
 
             // The following code is only reached after processing a reconciliation message (all other messages `continue` to the next iteration of the data-message-decoding-loop inside the above match statement)
