@@ -1644,13 +1644,42 @@ impl Encodable for PayloadRequestSendResponse {
     where
         C: ufotofu::BulkConsumer<Item = u8>,
     {
-        todo!()
+        let mut header = 0b_1100_0000;
+
+        let handle_tag = Tag::min_tag(self.handle, TagWidth::two());
+        header |= handle_tag.data_at_offset(2);
+
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::four());
+        header |= amount_tag.data_at_offset(4);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.handle)
+            .relative_encode(consumer, &handle_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.amount)
+            .relative_encode(consumer, &amount_tag.encoding_width())
+            .await?;
+
+        // The spec mentions the messages `bytes` field here,
+        // But we deal with that outside this trait definition.
+
+        Ok(())
     }
 }
 
 impl EncodableKnownSize for PayloadRequestSendResponse {
     fn len_of_encoding(&self) -> usize {
-        todo!()
+        let handle_tag = Tag::min_tag(self.handle, TagWidth::two());
+        let handle_len =
+            CompactU64(self.handle).relative_len_of_encoding(&handle_tag.encoding_width());
+
+        let amount_tag = Tag::min_tag(self.amount, TagWidth::four());
+        let amount_len =
+            CompactU64(self.amount).relative_len_of_encoding(&amount_tag.encoding_width());
+
+        1 + handle_len + amount_len
     }
 }
 
@@ -1665,7 +1694,21 @@ impl Decodable for PayloadRequestSendResponse {
     where
         P: ufotofu::BulkProducer<Item = u8>,
     {
-        todo!()
+        let header = producer.produce_item().await?;
+
+        let handle_tag = Tag::from_raw(header, TagWidth::two(), 2);
+        let handle = CompactU64::relative_decode(producer, &handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let amount_tag = Tag::from_raw(header, TagWidth::four(), 4);
+        let amount = CompactU64::relative_decode(producer, &amount_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        Ok(Self { amount, handle })
     }
 }
 
