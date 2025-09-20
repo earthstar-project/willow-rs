@@ -1629,6 +1629,123 @@ pub(crate) struct PayloadRequestBindRequest<
     receiver_handle: u64,
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
+    for PayloadRequestBindRequest<MCL, MCC, MPL, N, S, PD>
+where
+    N: Encodable,
+    S: Encodable,
+    PD: Encodable,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let mut header = 0;
+
+        let sender_handle_tag = Tag::min_tag(self.sender_handle, TagWidth::four());
+        header |= sender_handle_tag.data_at_offset(0);
+
+        let receiver_handle_tag = Tag::min_tag(self.receiver_handle, TagWidth::four());
+        header |= receiver_handle_tag.data_at_offset(4);
+
+        consumer.consume(header).await?;
+
+        CompactU64(self.sender_handle)
+            .relative_encode(consumer, &sender_handle_tag.encoding_width())
+            .await?;
+
+        CompactU64(self.receiver_handle)
+            .relative_encode(consumer, &receiver_handle_tag.encoding_width())
+            .await?;
+
+        self.namespace_id.encode(consumer).await?;
+        self.subspace_id.encode(consumer).await?;
+        self.path.encode(consumer).await?;
+        self.payload_digest.encode(consumer).await?;
+
+        Ok(())
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableKnownSize
+    for PayloadRequestBindRequest<MCL, MCC, MPL, N, S, PD>
+where
+    N: EncodableKnownSize,
+    S: EncodableKnownSize,
+    PD: EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        let sender_handle_tag = Tag::min_tag(self.sender_handle, TagWidth::four());
+        let sender_handle_len = CompactU64(self.sender_handle)
+            .relative_len_of_encoding(&sender_handle_tag.encoding_width());
+
+        let receiver_handle_tag = Tag::min_tag(self.receiver_handle, TagWidth::four());
+        let receiver_handle_len = CompactU64(self.receiver_handle)
+            .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
+
+        1 + sender_handle_len
+            + receiver_handle_len
+            + self.namespace_id.len_of_encoding()
+            + self.subspace_id.len_of_encoding()
+            + self.path.len_of_encoding()
+            + self.payload_digest.len_of_encoding()
+    }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> EncodableSync
+    for PayloadRequestBindRequest<MCL, MCC, MPL, N, S, PD>
+where
+    N: Encodable,
+    S: Encodable,
+    PD: Encodable,
+{
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Decodable
+    for PayloadRequestBindRequest<MCL, MCC, MPL, N, S, PD>
+where
+    N: Decodable<ErrorReason = Blame>,
+    S: Decodable<ErrorReason = Blame>,
+    PD: Decodable<ErrorReason = Blame>,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, ufotofu_codec::DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+    {
+        let header = producer.produce_item().await?;
+
+        let sender_handle_tag = Tag::from_raw(header, TagWidth::four(), 0);
+        let sender_handle = CompactU64::relative_decode(producer, &sender_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let receiver_handle_tag = Tag::from_raw(header, TagWidth::four(), 4);
+        let receiver_handle = CompactU64::relative_decode(producer, &receiver_handle_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let namespace_id = N::decode(producer).await?;
+        let subspace_id = S::decode(producer).await?;
+        let path = Path::<MCL, MCC, MPL>::decode(producer).await?;
+        let payload_digest = PD::decode(producer).await?;
+
+        Ok(Self {
+            sender_handle,
+            receiver_handle,
+            namespace_id,
+            subspace_id,
+            path,
+            payload_digest,
+        })
+    }
+}
+
 /// Send some Chunks of a requested Entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PayloadRequestSendResponse {
