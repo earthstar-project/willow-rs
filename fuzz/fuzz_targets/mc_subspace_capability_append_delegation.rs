@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{McEnumerationCapability, SillyPublicKey, SillySig, EnumerationDelegation};
+use meadowcap::{EnumerationDelegation, McEnumerationCapability, SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
     EnumerationDelegation<SillyPublicKey, SillySig>,
