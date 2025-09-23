@@ -2,7 +2,10 @@ use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, pin::Pin
 
 use either::Either::{self, Left, Right};
 use futures::{try_join, SinkExt, StreamExt};
-use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, LogicalChannelClientError, Session};
+use lcmux::{
+    ChannelOptions, ChannelSender, GlobalMessageError, InitOptions, LogicalChannelClientError,
+    Session,
+};
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -338,6 +341,35 @@ pub fn sync_with_peer<
         >,
         EncryptionError<E>,
     >,
+    PayloadRequestInput<
+        MCL,
+        MCC,
+        MPL,
+        N,
+        S,
+        PD,
+        Decryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            P,
+        >,
+        (),
+        DecryptionError<E>,
+        Encryptor<
+            HANDSHAKE_TAG_WIDTH_IN_BYTES,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+            HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+            HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+            HANDSHAKE_IS_TAG_PREPENDED,
+            AEAD,
+            C,
+        >,
+        EncryptionError<E>,
+    >,
     impl Future<Output = Result<(), WgpsError<E, StoreCreationError, Store::Error>>>,
 )
 where
@@ -374,8 +406,16 @@ where
         stop_accepting_aois: stop_inputting_aois.clone(),
     };
 
+    let obtaining_the_payload_request_consumer = Rc::new(TakeCell::new());
+
+    let payload_request_input = PayloadRequestInput {
+        obtaining_the_actual_consumer: obtaining_the_payload_request_consumer.clone(),
+        the_actual_consumer: None,
+    };
+
     return (
         aoi_input,
+        payload_request_input,
         do_sync_with_peer::<
             HANDSHAKE_HASHLEN_IN_BYTES,
             HANDSHAKE_BLOCKLEN_IN_BYTES,
@@ -416,6 +456,7 @@ where
             chunk_offset_and_count_to_byte_length,
             stop_inputting_aois,
             obtaining_the_aoi_consumer,
+            obtaining_the_payload_request_consumer,
         ),
     );
 }
@@ -482,6 +523,39 @@ async fn do_sync_with_peer<
                 S,
                 MyReadCap,
                 MyEnumCap,
+                Decryptor<
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                    HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                    HANDSHAKE_IS_TAG_PREPENDED,
+                    AEAD,
+                    P,
+                >,
+                (),
+                DecryptionError<E>,
+                Encryptor<
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
+                    HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_4096,
+                    HANDSHAKE_NONCE_WIDTH_IN_BYTES,
+                    HANDSHAKE_IS_TAG_PREPENDED,
+                    AEAD,
+                    C,
+                >,
+                EncryptionError<E>,
+            >,
+        >,
+    >,
+    obtaining_the_payload_request_consumer: Rc<
+        TakeCell<
+            RequestPayloadsConsumer<
+                MCL,
+                MCC,
+                MPL,
+                N,
+                S,
+                PD,
                 Decryptor<
                     HANDSHAKE_TAG_WIDTH_IN_BYTES,
                     HANDSHAKE_TAG_WIDTH_IN_BYTES_PLUS_2,
@@ -1002,8 +1076,15 @@ where
 
     // Collection of the PayloadRequests we have issued.
     // Maps PayloadRequestHandles to the requested namespace/subspace/path/payload_digest, plus the chunk offset at which the incoming response bytes should be appended to the store.
-    let mut my_payload_requests: HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, u64)> =
-        HashMap::new();
+    let my_payload_requests: Rc<Mutex<HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, u64)>>> =
+        Rc::new(Mutex::new(HashMap::new()));
+
+    // Move the `payload_request_channel_sender` into the actual payload request input input.
+    obtaining_the_payload_request_consumer.set(RequestPayloadsConsumer {
+        my_payload_requests: my_payload_requests.clone(),
+        payload_request_channel_sender: payload_request_channel_sender,
+        handle_count: 0,
+    });
 
     // A future to receive data-channel messages and act on them.
     let receive_data_messages = async {
@@ -1220,9 +1301,12 @@ where
                     continue;
                 }
 
-                // let mut my_payload_requests: HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, usize)> = HashMap::new();
                 Ok(DataMessage::PayloadRequestSendResponse(payload_msg)) => {
-                    match my_payload_requests.get_mut(&payload_msg.handle) {
+                    match my_payload_requests
+                        .write()
+                        .await
+                        .get_mut(&payload_msg.handle)
+                    {
                         None => return Err(WgpsError::PeerMisbehaved),
                         Some(request_info) => {
                             let payload_start_byte_offset = chunk_to_byte_fun(request_info.4);
@@ -1248,7 +1332,7 @@ where
                                     &request_info.1,
                                     &request_info.2,
                                     Some(request_info.3.clone()),
-                                    Some(request_info.4),
+                                    Some(payload_start_byte_offset),
                                     &mut bytes_to_append,
                                 )
                                 .await
@@ -1629,6 +1713,158 @@ where
             }
         }
     }
+}
+
+/// A consumer of the [`Entry`]s whose payloads you want to request.
+pub struct PayloadRequestInput<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
+> {
+    obtaining_the_actual_consumer:
+        Rc<TakeCell<RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>>>,
+    the_actual_consumer:
+        Option<RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>>,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, P, PFinal, PErr, C, CErr>
+    Consumer for PayloadRequestInput<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>
+where
+    N: WgpsNamespaceId,
+    S: WgpsSubspaceId,
+    PD: WgpsPayloadDigest,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
+    CErr: Clone,
+{
+    type Item = Entry<MCL, MCC, MPL, N, S, PD>;
+
+    type Final = ();
+
+    type Error = PayloadRequestError;
+
+    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
+        loop {
+            match self.the_actual_consumer.as_mut() {
+                None => {
+                    self.the_actual_consumer =
+                        Some(self.obtaining_the_actual_consumer.take().await);
+                    // Go to next loop iteration, where the actual consumer now is available.
+                }
+                Some(actual_consumer) => {
+                    return Ok(actual_consumer.consume(item).await?);
+                }
+            }
+        }
+    }
+
+    async fn close(&mut self, fin: Self::Final) -> Result<(), Self::Error> {
+        loop {
+            match self.the_actual_consumer.as_mut() {
+                None => {
+                    self.the_actual_consumer =
+                        Some(self.obtaining_the_actual_consumer.take().await);
+                    // Go to next loop iteration, where the actual consumer now is available.
+                }
+                Some(actual_consumer) => {
+                    return Ok(actual_consumer.close(fin).await?);
+                }
+            }
+        }
+    }
+}
+
+struct RequestPayloadsConsumer<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    N,
+    S,
+    PD,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
+> {
+    // Collection of the PayloadRequests we have issued.
+    // Maps PayloadRequestHandles to the requested namespace/subspace/path/payload_digest, plus the chunk offset at which the incoming response bytes should be appended to the store.
+    my_payload_requests: Rc<Mutex<HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, u64)>>>,
+    payload_request_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
+    handle_count: u64,
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, P, PFinal, PErr, C, CErr>
+    Consumer for RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>
+where
+    N: WgpsNamespaceId,
+    S: WgpsSubspaceId,
+    PD: WgpsPayloadDigest,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
+    CErr: Clone,
+{
+    type Item = Entry<MCL, MCC, MPL, N, S, PD>;
+
+    type Final = ();
+
+    type Error = PayloadRequestError;
+
+    async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
+        let msg = PayloadRequestBindRequest {
+            namespace_id: item.namespace_id().clone(),
+            subspace_id: item.subspace_id().clone(),
+            path: item.path().clone(),
+            payload_digest: item.payload_digest().clone(),
+            sender_handle: todo!(),
+            receiver_handle: todo!(),
+        };
+
+        self.payload_request_channel_sender
+            .send_to_channel(&msg)
+            .await
+            .map_err(|err| match err {
+                LogicalChannelClientError::LogicalChannelClosed => PayloadRequestError::Done,
+                LogicalChannelClientError::Underlying(_) => PayloadRequestError::Fatal,
+            })?;
+
+        self.my_payload_requests.write().await.insert(
+            self.handle_count,
+            (
+                item.namespace_id().clone(),
+                item.subspace_id().clone(),
+                item.path().clone(),
+                item.payload_digest().clone(),
+                0,
+            ),
+        );
+
+        self.handle_count += 1;
+
+        Ok(())
+    }
+
+    async fn close(&mut self, _fin: Self::Final) -> Result<(), Self::Error> {
+        self.payload_request_channel_sender
+            .close()
+            .await
+            .map_err(|_| PayloadRequestError::Fatal)?;
+        Ok(())
+    }
+}
+
+/// Everything that can go wrong when submitting a request for a payload.
+pub enum PayloadRequestError {
+    /// Syncing with the peer had to be aborted for reasons outside our control.
+    Fatal,
+    /// The peer will not accept more input. Syncing will still continue for all areas consumed so far.
+    Done,
 }
 
 /// Everything that can go wrong when submitting an AreaOfInterest to the private interest overlap detection process.
