@@ -1,4 +1,11 @@
-use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, pin::Pin, rc::Rc};
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+    future::Future,
+    hash::Hash,
+    pin::Pin,
+    rc::Rc,
+};
 
 use either::Either::{self, Left, Right};
 use futures::{try_join, SinkExt, StreamExt};
@@ -42,7 +49,10 @@ use crate::{
         EnumerationCapability, ReadCapability, WgpsAuthorisationToken, WgpsEnumerationCapability,
         WgpsFingerprint, WgpsNamespaceId, WgpsPayloadDigest, WgpsReadCapability, WgpsSubspaceId,
     },
-    pio::{AoiInputError, AoiOutputError, CapableAoi, MyAoiInput, PioSession},
+    pio::{
+        overlap_finder::NamespacedAoIWithMaxPayloadPower, AoiInputError, AoiOutputError,
+        CapableAoi, MyAoiInput, PioSession,
+    },
     rbsr::{order_entries, process_subscription, RbsrError, ReconciliationSender},
     storedinator::Storedinator,
 };
@@ -369,6 +379,7 @@ pub fn sync_with_peer<
             C,
         >,
         EncryptionError<E>,
+        MyReadCap,
     >,
     impl Future<Output = Result<(), WgpsError<E, StoreCreationError, Store::Error>>>,
 )
@@ -577,6 +588,7 @@ async fn do_sync_with_peer<
                     C,
                 >,
                 EncryptionError<E>,
+                MyReadCap,
             >,
         >,
     >,
@@ -1084,6 +1096,7 @@ where
         my_payload_requests: my_payload_requests.clone(),
         payload_request_channel_sender: payload_request_channel_sender,
         handle_count: 0,
+        overlaps_by_readcap: pio_state.overlaps_by_readcap.clone(),
     });
 
     // A future to receive data-channel messages and act on them.
@@ -1715,7 +1728,7 @@ where
     }
 }
 
-/// A consumer of the [`Entry`]s whose payloads you want to request.
+/// A consumer of the [`Entry`]s whose payloads you want to request, together with a ReadCapability that certifies that you are allowed to request the payload.
 pub struct PayloadRequestInput<
     const MCL: usize,
     const MCC: usize,
@@ -1728,23 +1741,41 @@ pub struct PayloadRequestInput<
     PErr,
     C,
     CErr,
+    MyReadCap,
 > {
-    obtaining_the_actual_consumer:
-        Rc<TakeCell<RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>>>,
-    the_actual_consumer:
-        Option<RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>>,
+    obtaining_the_actual_consumer: Rc<
+        TakeCell<
+            RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr, MyReadCap>,
+        >,
+    >,
+    the_actual_consumer: Option<
+        RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr, MyReadCap>,
+    >,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, P, PFinal, PErr, C, CErr>
-    Consumer for PayloadRequestInput<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        PD,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        MyReadCap,
+    > Consumer for PayloadRequestInput<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr, MyReadCap>
 where
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
     PD: WgpsPayloadDigest,
     C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
     CErr: Clone,
+    MyReadCap: Hash + Eq,
 {
-    type Item = Entry<MCL, MCC, MPL, N, S, PD>;
+    type Item = (Entry<MCL, MCC, MPL, N, S, PD>, MyReadCap);
 
     type Final = ();
 
@@ -1793,61 +1824,106 @@ struct RequestPayloadsConsumer<
     PErr,
     C,
     CErr,
+    MyReadCap,
 > {
     // Collection of the PayloadRequests we have issued.
     // Maps PayloadRequestHandles to the requested namespace/subspace/path/payload_digest, plus the chunk offset at which the incoming response bytes should be appended to the store.
     my_payload_requests: Rc<Mutex<HashMap<u64, (N, S, Path<MCL, MCC, MPL>, PD, u64)>>>,
     payload_request_channel_sender: ChannelSender<5, P, PFinal, PErr, C, CErr>,
     handle_count: u64,
+    overlaps_by_readcap: Rc<
+        Mutex<HashMap<MyReadCap, HashSet<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>>>>,
+    >,
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, P, PFinal, PErr, C, CErr>
-    Consumer for RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr>
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        N,
+        S,
+        PD,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        MyReadCap,
+    > Consumer
+    for RequestPayloadsConsumer<MCL, MCC, MPL, N, S, PD, P, PFinal, PErr, C, CErr, MyReadCap>
 where
     N: WgpsNamespaceId,
     S: WgpsSubspaceId,
     PD: WgpsPayloadDigest,
     C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
     CErr: Clone,
+    MyReadCap: Hash + Eq,
 {
-    type Item = Entry<MCL, MCC, MPL, N, S, PD>;
+    type Item = (Entry<MCL, MCC, MPL, N, S, PD>, MyReadCap);
 
     type Final = ();
 
     type Error = PayloadRequestError;
 
     async fn consume(&mut self, item: Self::Item) -> Result<(), Self::Error> {
-        let msg = PayloadRequestBindRequest {
-            namespace_id: item.namespace_id().clone(),
-            subspace_id: item.subspace_id().clone(),
-            path: item.path().clone(),
-            payload_digest: item.payload_digest().clone(),
-            sender_handle: todo!(),
-            receiver_handle: todo!(),
-        };
+        let (entry, capa) = item;
 
-        self.payload_request_channel_sender
-            .send_to_channel(&msg)
-            .await
-            .map_err(|err| match err {
-                LogicalChannelClientError::LogicalChannelClosed => PayloadRequestError::Done,
-                LogicalChannelClientError::Underlying(_) => PayloadRequestError::Fatal,
-            })?;
+        match self.overlaps_by_readcap.read().await.get(&capa) {
+            None => {
+                return Err(PayloadRequestError::NoAuthorisation);
+            }
+            Some(overlaps) => {
+                for namespaced_aoi_info in overlaps {
+                    if entry.namespace_id() != &namespaced_aoi_info.namespace
+                        || !namespaced_aoi_info.aoi.area.includes_entry(&entry)
+                    {
+                        continue;
+                    } else {
+                        let sender_handle = namespaced_aoi_info.my_handle;
+                        let receiver_handle = namespaced_aoi_info.their_handle;
 
-        self.my_payload_requests.write().await.insert(
-            self.handle_count,
-            (
-                item.namespace_id().clone(),
-                item.subspace_id().clone(),
-                item.path().clone(),
-                item.payload_digest().clone(),
-                0,
-            ),
-        );
+                        let msg = PayloadRequestBindRequest {
+                            namespace_id: entry.namespace_id().clone(),
+                            subspace_id: entry.subspace_id().clone(),
+                            path: entry.path().clone(),
+                            payload_digest: entry.payload_digest().clone(),
+                            sender_handle,
+                            receiver_handle,
+                        };
 
-        self.handle_count += 1;
+                        self.payload_request_channel_sender
+                            .send_to_channel(&msg)
+                            .await
+                            .map_err(|err| match err {
+                                LogicalChannelClientError::LogicalChannelClosed => {
+                                    PayloadRequestError::Done
+                                }
+                                LogicalChannelClientError::Underlying(_) => {
+                                    PayloadRequestError::Fatal
+                                }
+                            })?;
 
-        Ok(())
+                        self.my_payload_requests.write().await.insert(
+                            self.handle_count,
+                            (
+                                entry.namespace_id().clone(),
+                                entry.subspace_id().clone(),
+                                entry.path().clone(),
+                                entry.payload_digest().clone(),
+                                0,
+                            ),
+                        );
+
+                        self.handle_count += 1;
+
+                        return Ok(());
+                    }
+                }
+
+                // No overlap contained the requested entry =(
+                return Err(PayloadRequestError::NoAuthorisation);
+            }
+        }
     }
 
     async fn close(&mut self, _fin: Self::Final) -> Result<(), Self::Error> {
@@ -1865,6 +1941,8 @@ pub enum PayloadRequestError {
     Fatal,
     /// The peer will not accept more input. Syncing will still continue for all areas consumed so far.
     Done,
+    /// The read capability you supplied has no overlap with the data in which the other peer is interested, so you cannot request this payload.
+    NoAuthorisation,
 }
 
 /// Everything that can go wrong when submitting an AreaOfInterest to the private interest overlap detection process.

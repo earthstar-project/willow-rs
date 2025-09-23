@@ -1,4 +1,10 @@
-use std::{cell::RefCell, collections::HashSet, hash::Hash, ops::Deref, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    ops::Deref,
+    rc::Rc,
+};
 
 use compact_u64::CompactU64;
 use either::Either::{Left, Right};
@@ -83,6 +89,10 @@ pub(crate) struct State<
             DecodeError<(), (), Blame>,
         >,
     >,
+    // A map from the ReadCapabilities we sent to the detected overlaps for them.
+    pub(crate) overlaps_by_readcap: Rc<
+        Mutex<HashMap<MyReadCap, HashSet<NamespacedAoIWithMaxPayloadPower<MCL, MCC, MPL, N, S>>>>,
+    >,
 }
 
 impl<
@@ -155,6 +165,7 @@ where
             my_public_key,
             their_public_key,
             read_capabilities_i_sent_sender: Mutex::new(read_capabilities_i_sent_sender),
+            overlaps_by_readcap: Rc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -260,15 +271,30 @@ where
                         .send_to_channel_relative(&msg, &ppi)
                         .await?;
 
+                    let naoiwmpp =
+                        NamespacedAoIWithMaxPayloadPower::from_bind_read_capability_msg(&msg);
+
                     self.read_capabilities_i_sent_sender
                         .write()
                         .await
-                        .consume(NamespacedAoIWithMaxPayloadPower::from_bind_read_capability_msg(&msg))
+                        .consume(naoiwmpp.clone())
                         .await.unwrap(/* infallible */);
 
                     self.caois_for_which_we_already_sent_a_bind_read_capability_message
                         .borrow_mut()
                         .insert(caoi.clone());
+
+                    let mut overlaps_map = self.overlaps_by_readcap.write().await;
+                    match overlaps_map.get_mut(&caoi.capability) {
+                        None => {
+                            let mut set = HashSet::new();
+                            set.insert(naoiwmpp);
+                            overlaps_map.insert(caoi.capability.clone(), set);
+                        }
+                        Some(set) => {
+                            set.insert(naoiwmpp);
+                        }
+                    }
                 }
             }
 
