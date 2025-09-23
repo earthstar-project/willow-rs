@@ -2,7 +2,7 @@ use std::{cell::Cell, collections::HashMap, future::Future, hash::Hash, pin::Pin
 
 use either::Either::{self, Left, Right};
 use futures::{try_join, SinkExt, StreamExt};
-use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, Session};
+use lcmux::{ChannelOptions, GlobalMessageError, InitOptions, LogicalChannelClientError, Session};
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -12,8 +12,8 @@ use wb_async_utils::{
 use willow_data_model::{
     grouping::{AreaOfInterest, Range3d},
     AuthorisationToken, AuthorisedEntry, Entry, EntryIngestionError, EntryOrigin,
-    LengthyAuthorisedEntry, LengthyEntry, NamespaceId, Path, PayloadAppendError, PayloadDigest,
-    QueryIgnoreParams, Store, StoreEvent, SubspaceId,
+    LengthyAuthorisedEntry, LengthyEntry, NamespaceId, Path, Payload, PayloadAppendError,
+    PayloadDigest, QueryIgnoreParams, Store, StoreEvent, SubspaceId,
 };
 
 pub mod parameters;
@@ -24,7 +24,7 @@ mod storedinator;
 pub mod messages;
 use messages::*;
 
-use ufotofu_codec::{Blame, DecodeError, RelativeDecodable, RelativeEncodableKnownSize};
+use ufotofu_codec::{Blame, Decodable, DecodeError, RelativeDecodable, RelativeEncodableKnownSize};
 use willow_pio::{PersonalPrivateInterest, PrivateInterest};
 use willow_transport_encryption::{
     parameters::{AEADEncryptionKey, DiffieHellmanSecretKey, Hashing},
@@ -668,7 +668,7 @@ where
 
     let [reconciliation_channel_sender, data_channel_sender, overlap_channel_sender, capability_channel_sender, payload_request_channel_sender] =
         channel_senders;
-    let [mut reconciliation_channel_receiver, mut data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, payload_request_channel_receiver] =
+    let [mut reconciliation_channel_receiver, mut data_channel_receiver, overlap_channel_receiver, capability_channel_receiver, mut payload_request_channel_receiver] =
         channel_receivers;
 
     let data_channel_sender = Rc::new(Mutex::new(data_channel_sender));
@@ -1297,6 +1297,132 @@ where
         }
     };
 
+    // An extra clone that can be moved into the `process_incoming_payload_request_messages` future.
+    let data_channel_sender_payload_clone = data_channel_sender.clone();
+    // Counter for tracking the handle nummber created by incoming PayloadRequestBindRequest messages.
+    let mut bind_payload_request_id = 0;
+    // A future to process all incoming messages on the payload-request channel.
+    let process_incoming_payload_request_messages = async {
+        loop {
+            match PayloadRequestBindRequest::<MCL, MCC, MPL, N, S, PD>::decode(
+                &mut payload_request_channel_receiver,
+            )
+            .await
+            {
+                Err(DecodeError::UnexpectedEndOfInput(())) => {
+                    // They closed their payload-request channel, stop processing it.
+                    return Ok(());
+                }
+                Err(DecodeError::Producer(())) | Err(DecodeError::Other(Blame::TheirFault)) => {
+                    return Err(WgpsError::PeerMisbehaved)
+                }
+                Err(DecodeError::Other(Blame::OurFault)) => return Err(WgpsError::OurFault),
+                Ok(bind_request_msg) => {
+                    bind_payload_request_id += 1;
+
+                    match intersection_info.read().await.get(&IntersectionKey {
+                        my_handle: bind_request_msg.receiver_handle,
+                        their_handle: bind_request_msg.sender_handle,
+                    }) {
+                        None => return Err(WgpsError::PeerMisbehaved),
+                        Some(intersection_data) => {
+                            let area = &intersection_data.aoi.area;
+
+                            if bind_request_msg.namespace_id != intersection_data.namespace_id
+                                || !area.subspace().includes(&bind_request_msg.subspace_id)
+                                || !area.path().is_prefix_of(&bind_request_msg.path)
+                            {
+                                return Err(WgpsError::PeerMisbehaved);
+                            } else {
+                                let store = process_incoming_fingerprint_storedinator
+                                    .get_store(&bind_request_msg.namespace_id)
+                                    .await
+                                    .map_err(|store_creation_error| {
+                                        RbsrError::StoreCreation(store_creation_error)
+                                    })?;
+
+                                if let Some(entry) = store
+                                    .entry(
+                                        &bind_request_msg.subspace_id,
+                                        &bind_request_msg.path,
+                                        QueryIgnoreParams::default(),
+                                    )
+                                    .await
+                                    .map_err(|store_error| RbsrError::Store(store_error))?
+                                {
+                                    if entry.entry().entry().payload_digest()
+                                        != &bind_request_msg.payload_digest
+                                    {
+                                        continue;
+                                    }
+                                    if !area.times().includes(&entry.entry().entry().timestamp()) {
+                                        continue;
+                                    }
+
+                                    match store
+                                        .payload(
+                                            bind_request_msg.subspace_id.clone(),
+                                            bind_request_msg.path.clone(),
+                                            0,
+                                            Some(bind_request_msg.payload_digest.clone()),
+                                        )
+                                        .await
+                                    {
+                                        Err(_) => continue,
+                                        Ok(Payload::Complete(mut payload_producer))
+                                        | Ok(Payload::Incomplete(mut payload_producer)) => loop {
+                                            let number_of_bytes_sent = match payload_producer
+                                                .expose_items()
+                                                .await
+                                            {
+                                                Err(_) => break,
+                                                Ok(Right(())) => break,
+                                                Ok(Left(items)) => {
+                                                    let msg = PayloadRequestSendResponseWithData {
+                                                        msg: PayloadRequestSendResponse {
+                                                            handle: bind_payload_request_id - 1,
+                                                            amount: items.len() as u64,
+                                                        },
+                                                        data: items,
+                                                    };
+
+                                                    data_channel_sender_payload_clone
+                                                        .write()
+                                                        .await
+                                                        .send_to_channel(&msg)
+                                                        .await
+                                                        .map_err(
+                                                            |logical_channel_client_error| {
+                                                                match logical_channel_client_error {
+                                                                    LogicalChannelClientError::Underlying(inner_err) => {
+                                                                        RbsrError::Sending(inner_err)
+                                                                    }
+                                                                    LogicalChannelClientError::LogicalChannelClosed => {
+                                                                        RbsrError::DataChannelClosedByPeer
+                                                                    }
+                                                                }
+                                                            },
+                                                        )?;
+
+                                                    items.len()
+                                                }
+                                            };
+
+                                            payload_producer
+                                                .consider_produced(number_of_bytes_sent)
+                                                .await
+                                                .map_err(|store_err| WgpsError::Store(store_err))?;
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    };
+                }
+            }
+        }
+    };
+
     // An extra clone that can be moved into the `forward_new_entries` future.
     let data_channel_sender_clone = data_channel_sender.clone();
     // A future to collect store subscriptions and forward new entries to the peer.
@@ -1344,6 +1470,7 @@ where
         process_incoming_fingerprint_messages,
         receive_data_messages,
         forward_new_entries,
+        process_incoming_payload_request_messages
     )?;
 
     Ok(())

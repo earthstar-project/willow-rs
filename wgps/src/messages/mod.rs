@@ -1616,17 +1616,17 @@ pub(crate) struct PayloadRequestBindRequest<
     PD,
 > {
     // The namespace_id of the Entry whose Payload to request.
-    namespace_id: N,
+    pub namespace_id: N,
     // The subspace_id of the Entry whose Payload to request.
-    subspace_id: S,
+    pub subspace_id: S,
     // The path of the Entry whose Payload to request.
-    path: Path<MCL, MCC, MPL>,
+    pub path: Path<MCL, MCC, MPL>,
     // The payload_digest of the Entry whose Payload to request.
-    payload_digest: PD,
+    pub payload_digest: PD,
     // A ReadCapabilityHandle bound by the sender of this message. The granted area of the corresponding read capability must contain the namespace_id, subspace_id, and path.
-    sender_handle: u64,
+    pub sender_handle: u64,
     // A ReadCapabilityHandle bound by the receiver of this message. The granted area of the corresponding read capability must contain the namespace_id, subspace_id, and path.
-    receiver_handle: u64,
+    pub receiver_handle: u64,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Encodable
@@ -1828,6 +1828,34 @@ impl Decodable for PayloadRequestSendResponse {
         Ok(Self { amount, handle })
     }
 }
+
+pub(crate) struct PayloadRequestSendResponseWithData<'data> {
+    // The PayloadRequestHandle of the request this is responding to.
+    pub msg: PayloadRequestSendResponse,
+    pub data: &'data [u8],
+}
+
+impl<'data> Encodable for PayloadRequestSendResponseWithData<'data> {
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        self.msg.encode(consumer).await?;
+        consumer
+            .bulk_consume_full_slice(self.data)
+            .await
+            .map_err(|err| err.reason)?;
+        Ok(())
+    }
+}
+
+impl<'data> EncodableKnownSize for PayloadRequestSendResponseWithData<'data> {
+    fn len_of_encoding(&self) -> usize {
+        self.msg.len_of_encoding() + self.data.len()
+    }
+}
+
+impl<'data> EncodableSync for PayloadRequestSendResponseWithData<'data> {}
 
 /// The different resource handles employed by the WGPS.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -42,17 +42,6 @@ features = ["dev"]
 path = "../meadowcap"
 features = ["dev"]
 
-################
-# compact_u64 #
-###############
-
-[[bin]]
-name = "compact_u64_codec"
-path = "fuzz_targets/compact_u64_codec.rs"
-test = false
-doc = false
-bench = false
-
 ########################
 # ufotofu_codec_endian #
 ########################
