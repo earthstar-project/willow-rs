@@ -534,7 +534,11 @@ pub fn path_extends_path_encoding_len<const MCL: usize, const MCC: usize, const 
     let path_len = path.path_length() - extends.path_length();
     let diff = path.component_count() - extends_count;
 
-    encoding_len_from_iterator_of_components(path_len as u64, diff, path.suffix_components(extends_count))
+    encoding_len_from_iterator_of_components(
+        path_len as u64,
+        diff,
+        path.suffix_components(extends_count),
+    )
 }
 
 pub async fn decode_path_extends_path<const MCL: usize, const MCC: usize, const MPL: usize, P>(
