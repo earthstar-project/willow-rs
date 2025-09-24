@@ -20,13 +20,13 @@ pub type AuthorisationToken = meadowcap::McAuthorisationToken<
     Signature25,
 >;
 
+pub type EnumerationCapability =
+    meadowcap::McEnumerationCapability<NamespaceId25, Signature25, SubspaceId25, Signature25>;
+
 impl SideloadAuthorisationToken<1024, 1024, 1024, NamespaceId25, SubspaceId25, PayloadDigest25>
     for AuthorisationToken
 {
 }
-
-pub type SubspaceCapability =
-    meadowcap::McSubspaceCapability<NamespaceId25, Signature25, SubspaceId25, Signature25>;
 
 pub type OwnedCapability = meadowcap::OwnedCapability<
     1024,

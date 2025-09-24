@@ -11,25 +11,28 @@ cargo-fuzz = true
 workspace = true
 
 [dependencies]
-ufotofu = { version = "0.6.5", features = ["std", "dev"] }
+ufotofu = { version = "0.7.1", features = ["std", "dev"] }
 # ufotofu = { path = "../../ufotofu/ufotofu", features = ["std", "dev"] }
+ufotofu_codec = { version = "0.1.3", features = ["std", "dev"] }
+ufotofu_codec_endian = { version = "0.2.0", features = ["std"] }
 ufotofu_queues = { version = "0.6.0", features = ["std"] }
+wb_async_utils = { version = "0.2.0", features = ["ufotofu_utils"] }
+compact_u64 = { version = "0.2.0", features = ["std", "dev"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 signature = "2.2.0"
 syncify = "0.1.0"
 willow-encoding = { path = "../encoding" }
-ufotofu_codec = { version = "0.1.0", features = ["std", "dev"] }
-ufotofu_codec_endian = { version = "0.1.0", features = ["std"] }
-compact_u64 = { version = "0.1.0", features = ["std", "dev"] }
 either = "1.10.0"
-wb_async_utils = { version = "0.1.3", features = ["ufotofu_utils"] }
 futures = { version = "0.3.31" }
 willow-store-simple-sled = { path = "../store_simple_sled" }
 sled = "0.34.7"
 tempdir = "0.3.7"
 willow-transport-encryption = { path = "../transport_encryption" }
+willow_25 = { path = "../willow_25", features = ["dev"] }
+wgps = { path = "../wgps", features = ["dev"] }
+willow-pio = { version = "0.1.0", path = "../pio", features = ["dev"] }
 
 [dependencies.willow-data-model]
 path = "../data-model"
@@ -38,17 +41,6 @@ features = ["dev"]
 [dependencies.meadowcap]
 path = "../meadowcap"
 features = ["dev"]
-
-################
-# compact_u64 #
-###############
-
-[[bin]]
-name = "compact_u64_codec"
-path = "fuzz_targets/compact_u64_codec.rs"
-test = false
-doc = false
-bench = false
 
 ########################
 # ufotofu_codec_endian #
@@ -379,8 +371,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_mcsubspacecapability_abs"
-path = "fuzz_targets/enc_mcsubspacecapability_abs.rs"
+name = "enc_mcenumerationcapability_abs"
+path = "fuzz_targets/enc_mcenumerationcapability_abs.rs"
 test = false
 doc = false
 bench = false
@@ -421,8 +413,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "enc_subspacecapability_rel_personalprivateinterest"
-path = "fuzz_targets/enc_subspacecapability_rel_personalprivateinterest.rs"
+name = "enc_enumerationcapability_rel_personalprivateinterest"
+path = "fuzz_targets/enc_enumerationcapability_rel_personalprivateinterest.rs"
 test = false
 doc = false
 bench = false
@@ -434,6 +426,62 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "enc_unverified_communal_capability_abs"
+path = "fuzz_targets/enc_unverified_communal_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_unverified_owned_capability_abs"
+path = "fuzz_targets/enc_unverified_owned_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_unverified_mc_capability_abs"
+path = "fuzz_targets/enc_unverified_mc_capability_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "area_map"
+path = "fuzz_targets/area_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "namespaced_area_map"
+path = "fuzz_targets/namespaced_area_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_piobindhash_abs"
+path = "fuzz_targets/enc_piobindhash_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_pioannounceoverlap_rel_pair"
+path = "fuzz_targets/enc_pioannounceoverlap_rel_pair.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_piobindreadcapability_rel_ppi"
+path = "fuzz_targets/enc_piobindreadcapability_rel_ppi.rs"
+test = false
+doc = false
+bench = false
+
 ##############################
 # compactransport_encryption #
 ##############################
@@ -441,6 +489,164 @@ bench = false
 [[bin]]
 name = "transport_encryption"
 path = "fuzz_targets/transport_encryption.rs"
+test = false
+doc = false
+bench = false
+
+####################################
+# willow 25 test vector generation #
+####################################
+
+[[bin]]
+name = "testvector_EncodePath"
+path = "fuzz_targets/testvector_EncodePath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_encode_path"
+path = "fuzz_targets/testvector_encode_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodePathRelativePath"
+path = "fuzz_targets/testvector_EncodePathRelativePath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_path_rel_path"
+path = "fuzz_targets/testvector_path_rel_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodePathExtendsPath"
+path = "fuzz_targets/testvector_EncodePathExtendsPath.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_path_extends_path"
+path = "fuzz_targets/testvector_path_extends_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntry"
+path = "fuzz_targets/testvector_EncodeEntry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_encode_entry"
+path = "fuzz_targets/testvector_encode_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntryRelativeEntry"
+path = "fuzz_targets/testvector_EncodeEntryRelativeEntry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeEntryInNamespace3dRange"
+path = "fuzz_targets/testvector_EncodeEntryInNamespace3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeAreaInArea"
+path = "fuzz_targets/testvector_EncodeAreaInArea.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_area_in_area"
+path = "fuzz_targets/testvector_area_in_area.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_Encode3dRangeRelative3dRange"
+path = "fuzz_targets/testvector_Encode3dRangeRelative3dRange.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeCommunalCapability"
+path = "fuzz_targets/testvector_EncodeCommunalCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeOwnedCapability"
+path = "fuzz_targets/testvector_EncodeOwnedCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcCapability"
+path = "fuzz_targets/testvector_EncodeMcCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "testvector_EncodeMcEnumerationCapability"
+path = "fuzz_targets/testvector_EncodeMcEnumerationCapability.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationsendfingerprint_rel_range"
+path = "fuzz_targets/enc_reconciliationsendfingerprint_rel_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationannounceentries_rel_range3d"
+path = "fuzz_targets/enc_reconciliationannounceentries_rel_range3d.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationsendentry_rel_pair"
+path = "fuzz_targets/enc_reconciliationsendentry_rel_pair.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconciliationsendpayload_abs"
+path = "fuzz_targets/enc_reconciliationsendpayload_abs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enc_reconcilitionterminatepayload_abs"
+path = "fuzz_targets/enc_reconcilitionterminatepayload_abs.rs"
 test = false
 doc = false
 bench = false

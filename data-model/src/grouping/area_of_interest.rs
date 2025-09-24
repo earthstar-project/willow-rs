@@ -24,6 +24,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, S> AreaOfInterest<MCL
     }
 }
 
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Default
+    for AreaOfInterest<MCL, MCC, MPL, S>
+{
+    fn default() -> Self {
+        Self::new(Area::default(), 0, 0)
+    }
+}
+
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S> AreaOfInterest<MCL, MCC, MPL, S>
 where
     S: PartialOrd + Clone,

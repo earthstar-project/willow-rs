@@ -13,7 +13,7 @@ pub async fn create_drop<C, AreaIterator, StoreType>(
     consumer: C,
     namespace_id: NamespaceId25,
     areas: AreaIterator,
-    store: &StoreType,
+    store: std::rc::Rc<StoreType>,
 ) -> Result<C, willow_sideload::CreateDropError<C::Error, StoreType::Error>>
 where
     C: BulkConsumer<Item = u8, Final = ()>,

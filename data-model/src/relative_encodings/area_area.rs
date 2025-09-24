@@ -8,8 +8,9 @@ use ufotofu_codec::{
 use willow_encoding::is_bitflagged;
 
 use crate::{
+    decode_path_extends_path, decode_path_extends_path_canonic, encode_path_extends_path,
     grouping::{Area, AreaSubspace, Range, RangeEnd},
-    Path, SubspaceId,
+    path_extends_path_encoding_len, SubspaceId,
 };
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
@@ -83,8 +84,6 @@ where
             }
         }
 
-        self.path().relative_encode(consumer, r.path()).await?;
-
         CompactU64(start_diff)
             .relative_encode(consumer, &start_diff_tag.encoding_width())
             .await?;
@@ -95,6 +94,8 @@ where
                 .await?;
         }
 
+        encode_path_extends_path(consumer, self.path(), r.path()).await?;
+
         Ok(())
     }
 }
@@ -102,8 +103,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     /// Decodes an [`Area`] relative to another [`Area`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
     ///
@@ -125,8 +125,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableCanonic<Area<MCL, MCC, MPL, S>, Blame, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     async fn relative_decode_canonic<P>(
         producer: &mut P,
@@ -174,8 +173,6 @@ where
             }
         };
 
-        let path_len = self.path().relative_len_of_encoding(r.path());
-
         let start_diff_len =
             CompactU64(start_diff).relative_len_of_encoding(&start_diff_tag.encoding_width());
 
@@ -184,6 +181,8 @@ where
         } else {
             0
         };
+
+        let path_len = path_extends_path_encoding_len(self.path(), r.path());
 
         1 + subspace_len + path_len + start_diff_len + end_diff_len
     }
@@ -199,8 +198,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableSync<Area<MCL, MCC, MPL, S>, Blame> for Area<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
 }
 
@@ -217,8 +215,7 @@ async fn relative_decode_maybe_canonic<
 ) -> Result<Area<MCL, MCC, MPL, S>, DecodeError<P::Final, P::Error, Blame>>
 where
     P: BulkProducer<Item = u8>,
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     let header = producer.produce_item().await?;
 
@@ -254,13 +251,9 @@ where
 
     let subspace = if is_subspace_encoded {
         let id = if CANONIC {
-            S::decode_canonic(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            S::decode_canonic(producer).await?
         } else {
-            S::decode(producer)
-                .await
-                .map_err(DecodeError::map_other_from)?
+            S::decode(producer).await?
         };
         let sub = AreaSubspace::Id(id);
 
@@ -288,21 +281,6 @@ where
                 return Err(DecodeError::Other(Blame::TheirFault));
             }
         }
-    }
-
-    let path = if CANONIC {
-        Path::relative_decode_canonic(producer, r.path())
-            .await
-            .map_err(DecodeError::map_other_from)?
-    } else {
-        Path::relative_decode(producer, r.path())
-            .await
-            .map_err(DecodeError::map_other_from)?
-    };
-
-    // Verify the decoded path is prefixed by the reference path
-    if !path.is_prefixed_by(r.path()) {
-        return Err(DecodeError::Other(Blame::TheirFault));
     }
 
     let start_diff = if CANONIC {
@@ -409,6 +387,16 @@ where
     if !r.times().includes_range(&times) {
         return Err(DecodeError::Other(Blame::TheirFault));
     }
+
+    let path = if CANONIC {
+        decode_path_extends_path_canonic(producer, r.path())
+            .await
+            .map_err(DecodeError::map_other_from)?
+    } else {
+        decode_path_extends_path(producer, r.path())
+            .await
+            .map_err(DecodeError::map_other_from)?
+    };
 
     Ok(Area::new(subspace, path, times))
 }

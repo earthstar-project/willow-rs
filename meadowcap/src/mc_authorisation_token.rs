@@ -197,17 +197,17 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable + DecodableCanonic,
-    UserSignature:
-        EncodableSync + EncodableKnownSize + Clone + Decodable + DecodableCanonic + PartialEq,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<NamespacePublicKey::ErrorCanonic>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorReason>
-        + From<NamespaceSignature::ErrorCanonic>
-        + From<UserSignature::ErrorReason>
-        + From<UserSignature::ErrorCanonic>,
+    NamespaceSignature: EncodableSync
+        + EncodableKnownSize
+        + Clone
+        + Decodable<ErrorReason = Blame>
+        + DecodableCanonic<ErrorCanonic = Blame>,
+    UserSignature: EncodableSync
+        + EncodableKnownSize
+        + Clone
+        + Decodable<ErrorReason = Blame>
+        + DecodableCanonic<ErrorCanonic = Blame>
+        + PartialEq,
 {
     type ErrorReason = Blame;
 
@@ -251,13 +251,9 @@ impl<
 where
     NamespacePublicKey: McNamespacePublicKey + Verifier<NamespaceSignature>,
     UserPublicKey: McPublicUserKey<UserSignature>,
-    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable,
-    UserSignature: EncodableSync + EncodableKnownSize + Clone + Decodable + PartialEq,
-    Blame: From<NamespacePublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorReason>
-        + From<UserPublicKey::ErrorCanonic>
-        + From<NamespaceSignature::ErrorReason>
-        + From<UserSignature::ErrorReason>,
+    NamespaceSignature: EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
+    UserSignature:
+        PartialEq + EncodableSync + EncodableKnownSize + Clone + Decodable<ErrorReason = Blame>,
 {
     async unsafe fn trusted_decode<P>(
         producer: &mut P,

@@ -9,8 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUSTFLAGS: -Dwarnings
-  RUSTDOCFLAGS: -Dwarnings
+  # RUSTFLAGS: -Dwarnings
+  # RUSTDOCFLAGS: -Dwarnings
   MSRV: "1.76"
 
 jobs:

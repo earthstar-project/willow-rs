@@ -10,9 +10,21 @@ members = [
     "store_simple_sled",
     "willow_25",
     "transport_encryption",
+    "pio",
+    "willow_test_vectors",
     "sideload"
 ]
+
 resolver = "2"
+
+# [patch.crates-io]
+# ufotofu_codec = { path = "../ufotofu/ufotofu_codec", features = ["std", "dev"] }
+# ufotofu = { path = "../ufotofu/ufotofu", features = ["std", "dev"] }
+# ufotofu_queues = { path = "../ufotofu/ufotofu_queues", features = [
+#     "std",
+#     "dev",
+# ] }
+# compact_u64 = { path = "../compact_u64", features = ["std", "dev"] }
 
 [workspace.lints.clippy]
 type_complexity = "allow"

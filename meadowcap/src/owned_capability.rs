@@ -8,9 +8,10 @@ use ufotofu_codec::{
 use willow_data_model::grouping::arbitrary_included_area;
 use willow_data_model::{
     grouping::{Area, AreaSubspace},
-    Entry, Path, PrivateAreaContext, PrivateInterest, SubspaceId,
+    Entry, Path, SubspaceId,
 };
 use willow_encoding::is_bitflagged;
+use willow_pio::{PrivateAreaContext, PrivateInterest};
 
 use crate::{
     AccessMode, Delegation, FailedDelegationError, InvalidDelegationError, McCapability,
@@ -971,5 +972,289 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
         }
 
         Ok(cap_with_delegations)
+    }
+}
+
+/// An [`OwnedCapability`] whose signatures have not been verified yet.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct UnverifiedOwnedCapability<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    NamespacePublicKey,
+    NamespaceSignature,
+    UserPublicKey,
+    UserSignature,
+> {
+    inner: OwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >,
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+    UnverifiedOwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+{
+    pub unsafe fn into_verifified_unchecked(
+        self,
+    ) -> OwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > {
+        self.inner
+    }
+
+    pub fn from_verified(
+        cap: OwnedCapability<
+            MCL,
+            MCC,
+            MPL,
+            NamespacePublicKey,
+            NamespaceSignature,
+            UserPublicKey,
+            UserSignature,
+        >,
+    ) -> Self {
+        Self { inner: cap }
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Encodable
+    for UnverifiedOwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    NamespaceSignature: Encodable + EncodableKnownSize,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + EncodableKnownSize,
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let inner = &self.inner;
+
+        let delegations_length = inner.delegations.len() as u64;
+
+        let mut header = 0;
+
+        if inner.access_mode == AccessMode::Write {
+            header |= 0b1100_0000;
+        } else {
+            header |= 0b1000_0000;
+        }
+
+        let delegations_length_tag = Tag::min_tag(delegations_length, TagWidth::six());
+        header |= delegations_length_tag.data_at_offset(2);
+
+        consumer.consume(header).await?;
+
+        inner.namespace_key.encode(consumer).await?;
+        inner.user_key.encode(consumer).await?;
+        inner.initial_authorisation.encode(consumer).await?;
+        CompactU64(delegations_length)
+            .relative_encode(consumer, &delegations_length_tag.encoding_width())
+            .await?;
+
+        let mut prev_area = &Area::new_full();
+        for delegation in inner.delegations.iter() {
+            let current_area = delegation.area();
+
+            current_area.relative_encode(consumer, prev_area).await?;
+            delegation.user().encode(consumer).await?;
+            delegation.signature().encode(consumer).await?;
+
+            prev_area = current_area;
+        }
+
+        Ok(())
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature: Encodable + EncodableKnownSize,
+        UserPublicKey,
+        UserSignature: Encodable + EncodableKnownSize,
+    > EncodableKnownSize
+    for UnverifiedOwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Encodable + EncodableKnownSize,
+{
+    fn len_of_encoding(&self) -> usize {
+        let inner = &self.inner;
+
+        let mut len = 0;
+        len += 1; // header byte
+
+        len += inner.namespace_key.len_of_encoding();
+        len += inner.user_key.len_of_encoding();
+        len += inner.initial_authorisation.len_of_encoding();
+        len += Tag::min_tag(inner.delegations.len() as u64, TagWidth::six())
+            .encoding_width()
+            .as_usize();
+
+        let mut prev_area = &Area::new_full();
+        for delegation in inner.delegations.iter() {
+            let current_area = delegation.area();
+
+            len += current_area.relative_len_of_encoding(prev_area);
+            len += delegation.user().len_of_encoding();
+            len += delegation.signature().len_of_encoding();
+
+            prev_area = current_area;
+        }
+
+        len
+    }
+}
+
+impl<
+        const MCL: usize,
+        const MCC: usize,
+        const MPL: usize,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    > Decodable
+    for UnverifiedOwnedCapability<
+        MCL,
+        MCC,
+        MPL,
+        NamespacePublicKey,
+        NamespaceSignature,
+        UserPublicKey,
+        UserSignature,
+    >
+where
+    NamespacePublicKey: McNamespacePublicKey,
+    NamespaceSignature: Decodable<ErrorReason = Blame>,
+    UserPublicKey: McPublicUserKey<UserSignature>,
+    UserSignature: Decodable<ErrorReason = Blame>,
+{
+    type ErrorReason = Blame;
+
+    async fn decode<P>(
+        producer: &mut P,
+    ) -> Result<Self, DecodeError<P::Final, P::Error, Self::ErrorReason>>
+    where
+        P: ufotofu::BulkProducer<Item = u8>,
+        Self: Sized,
+    {
+        let header = producer.produce_item().await?;
+
+        let access_mode = match header & 0b1100_0000 {
+            0b1000_0000 => AccessMode::Read,
+            0b1100_0000 => AccessMode::Write,
+            _ => return Err(DecodeError::Other(Blame::TheirFault)),
+        };
+        let delegations_length_tag = Tag::from_raw(header, TagWidth::six(), 2);
+
+        let namespace_key = NamespacePublicKey::decode(producer).await?;
+        let user_key = UserPublicKey::decode(producer).await?;
+        let initial_authorisation = NamespaceSignature::decode(producer).await?;
+        let delegations_length = CompactU64::relative_decode(producer, &delegations_length_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let full_area = Area::new_full();
+        let mut delegations: Vec<Delegation<MCL, MCC, MPL, UserPublicKey, UserSignature>> =
+            Vec::with_capacity(core::cmp::min(16, delegations_length as usize));
+        for i in 0..delegations_length {
+            let delegation_area = Area::relative_decode(
+                producer,
+                if i == 0 {
+                    &full_area
+                } else {
+                    delegations.last().unwrap().area()
+                },
+            )
+            .await?;
+            let delegation_user = UserPublicKey::decode(producer).await?;
+            let delegation_signature = UserSignature::decode(producer).await?;
+
+            delegations.push(Delegation::new(
+                delegation_area,
+                delegation_user,
+                delegation_signature,
+            ));
+        }
+
+        Ok(UnverifiedOwnedCapability {
+            inner: OwnedCapability {
+                access_mode,
+                namespace_key,
+                user_key,
+                initial_authorisation,
+                delegations,
+            },
+        })
+    }
+}
+
+#[cfg(feature = "dev")]
+impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
+    for UnverifiedOwnedCapability<MCL, MCC, MPL, SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+{
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            inner: Arbitrary::arbitrary(u)?,
+        })
     }
 }

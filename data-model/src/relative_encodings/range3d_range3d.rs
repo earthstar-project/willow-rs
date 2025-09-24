@@ -8,8 +8,8 @@ use ufotofu::{BulkConsumer, BulkProducer};
 
 use ufotofu_codec::{
     Blame, DecodableCanonic, DecodeError, Encodable, EncodableKnownSize, EncodableSync,
-    RelativeDecodable, RelativeDecodableCanonic, RelativeDecodableSync, RelativeEncodable,
-    RelativeEncodableKnownSize, RelativeEncodableSync,
+    RelativeDecodable, RelativeDecodableSync, RelativeEncodable, RelativeEncodableKnownSize,
+    RelativeEncodableSync,
 };
 use willow_encoding::is_bitflagged;
 
@@ -119,7 +119,7 @@ where
             header_2 |= 0b1000_0000;
         }
 
-        // Bit 9 -Add or subtract start_time_diff?
+        // Bit 9 - Add or subtract start_time_diff?
         if is_bitflagged(header_2, 0) && self.times().start >= r.times().start
             || !is_bitflagged(header_2, 0) && self.times().start >= r.times().end
         {
@@ -144,7 +144,7 @@ where
             header_2 |= 0b0000_0100;
         }
 
-        // Bits 14, 15 - ignored, or 2-bit integer n such that 2^n gives compact_width(end_time_diff)
+        // Bits 14, 15 - ignored, or the width-2 tag for end_time_diff
         if self.times().end == RangeEnd::Open {
             // do nothing
         } else {
@@ -210,8 +210,7 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodable<Range3d<MCL, MCC, MPL, S>, Blame> for Range3d<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
     /// Decodes a [`Range3d`] relative to another [`Range3d`] which [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) it.
     ///
@@ -226,25 +225,165 @@ where
         P: BulkProducer<Item = u8>,
         Self: Sized,
     {
-        relative_decode_maybe_canonic::<false, MCL, MCC, MPL, S, P>(producer, r).await
-    }
-}
+        let header_1 = producer.produce_item().await?;
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
-    RelativeDecodableCanonic<Range3d<MCL, MCC, MPL, S>, Blame, Blame> for Range3d<MCL, MCC, MPL, S>
-where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
-{
-    async fn relative_decode_canonic<P>(
-        producer: &mut P,
-        r: &Range3d<MCL, MCC, MPL, S>,
-    ) -> Result<Self, DecodeError<P::Final, P::Error, Blame>>
-    where
-        P: BulkProducer<Item = u8>,
-        Self: Sized,
-    {
-        relative_decode_maybe_canonic::<true, MCL, MCC, MPL, S, P>(producer, r).await
+        let subspace_start_flags = header_1 & 0b1100_0000;
+        let subspace_end_flags = header_1 & 0b0011_0000;
+        let is_path_start_rel_to_start = is_bitflagged(header_1, 4);
+        let is_path_end_open = is_bitflagged(header_1, 5);
+        let is_path_end_rel_to_start = is_bitflagged(header_1, 6);
+        let is_times_end_open = is_bitflagged(header_1, 7);
+
+        let header_2 = producer.produce_item().await?;
+
+        let is_time_start_rel_to_start = is_bitflagged(header_2, 0);
+        let add_or_subtract_start_time_diff = is_bitflagged(header_2, 1);
+
+        let start_time_diff_tag = Tag::from_raw(header_2, TagWidth::two(), 2);
+        let is_time_end_rel_to_start = is_bitflagged(header_2, 4);
+        let add_or_subtract_end_time_diff = is_bitflagged(header_2, 5);
+        let end_time_diff_tag = Tag::from_raw(header_2, TagWidth::two(), 6);
+
+        // Decode subspace start
+        let subspace_start = match subspace_start_flags {
+            0b0100_0000 => r.subspaces().start.clone(),
+            0b1000_0000 => match &r.subspaces().end {
+                RangeEnd::Closed(end) => end.clone(),
+                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+            },
+            0b1100_0000 => {
+                let decoded_subspace = S::decode(producer).await?;
+
+                if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace
+                {
+                    return Err(DecodeError::Other(Blame::TheirFault));
+                }
+
+                decoded_subspace
+            }
+            // This can only be b0000_0000 (which is not valid!)
+            _ => Err(DecodeError::Other(Blame::TheirFault))?,
+        };
+
+        let subspace_end = match subspace_end_flags {
+            0b0000_0000 => RangeEnd::Open,
+            0b0001_0000 => RangeEnd::Closed(r.subspaces().start.clone()),
+            0b0010_0000 => match &r.subspaces().end {
+                RangeEnd::Closed(end) => RangeEnd::Closed(end.clone()),
+                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+            },
+            // This can only be 0b0011_0000
+            _ => {
+                let decoded_subspace = RangeEnd::Closed(S::decode(producer).await?);
+
+                if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace
+                {
+                    return Err(DecodeError::Other(Blame::TheirFault));
+                }
+
+                decoded_subspace
+            }
+        };
+
+        // Check subspace end...
+
+        let path_start = match (is_path_start_rel_to_start, &r.paths().end) {
+            (true, RangeEnd::Closed(_)) => {
+                Path::relative_decode(producer, &r.paths().start).await?
+            }
+            (true, RangeEnd::Open) => Path::relative_decode(producer, &r.paths().start).await?,
+            (false, RangeEnd::Closed(path_end)) => {
+                Path::relative_decode(producer, path_end).await?
+            }
+            (false, RangeEnd::Open) => Err(DecodeError::Other(Blame::TheirFault))?,
+        };
+
+        let path_end = if is_path_end_open {
+            RangeEnd::Open
+        } else if is_path_end_rel_to_start {
+            RangeEnd::Closed(Path::relative_decode(producer, &r.paths().start).await?)
+        } else {
+            match &r.paths().end {
+                RangeEnd::Closed(end) => {
+                    RangeEnd::Closed(Path::relative_decode(producer, end).await?)
+                }
+                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+            }
+        };
+
+        let start_time_diff = CompactU64::relative_decode(producer, &start_time_diff_tag)
+            .await
+            .map_err(DecodeError::map_other_from)?
+            .0;
+
+        let time_start = match (is_time_start_rel_to_start, add_or_subtract_start_time_diff) {
+            (true, true) => r.times().start.checked_add(start_time_diff),
+            (true, false) => r.times().start.checked_sub(start_time_diff),
+            (false, true) => match r.times().end {
+                RangeEnd::Closed(ref_end) => ref_end.checked_add(start_time_diff),
+                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+            },
+            (false, false) => match r.times().end {
+                RangeEnd::Closed(ref_end) => ref_end.checked_sub(start_time_diff),
+                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+            },
+        }
+        .ok_or(DecodeError::Other(Blame::TheirFault))?;
+
+        let time_end = if is_times_end_open {
+            RangeEnd::Open
+        } else {
+            let end_time_diff = CompactU64::relative_decode(producer, &end_time_diff_tag)
+                .await
+                .map_err(DecodeError::map_other_from)?
+                .0;
+
+            let time_end = match (is_time_end_rel_to_start, add_or_subtract_end_time_diff) {
+                (true, true) => r
+                    .times()
+                    .start
+                    .checked_add(end_time_diff)
+                    .ok_or(DecodeError::Other(Blame::TheirFault))?,
+
+                (true, false) => r
+                    .times()
+                    .start
+                    .checked_sub(end_time_diff)
+                    .ok_or(DecodeError::Other(Blame::TheirFault))?,
+
+                (false, true) => match r.times().end {
+                    RangeEnd::Closed(ref_end) => ref_end
+                        .checked_add(end_time_diff)
+                        .ok_or(DecodeError::Other(Blame::TheirFault))?,
+
+                    RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+                },
+                (false, false) => match r.times().end {
+                    RangeEnd::Closed(ref_end) => ref_end
+                        .checked_sub(end_time_diff)
+                        .ok_or(DecodeError::Other(Blame::TheirFault))?,
+
+                    RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
+                },
+            };
+
+            RangeEnd::Closed(time_end)
+        };
+
+        Ok(Range3d::new(
+            Range {
+                start: subspace_start,
+                end: subspace_end,
+            },
+            Range {
+                start: path_start,
+                end: path_end,
+            },
+            Range {
+                start: time_start,
+                end: time_end,
+            },
+        ))
     }
 }
 
@@ -369,366 +508,6 @@ where
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S>
     RelativeDecodableSync<Range3d<MCL, MCC, MPL, S>, Blame> for Range3d<MCL, MCC, MPL, S>
 where
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
+    S: SubspaceId + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>,
 {
-}
-
-async fn relative_decode_maybe_canonic<
-    const CANONIC: bool,
-    const MCL: usize,
-    const MCC: usize,
-    const MPL: usize,
-    S,
-    P,
->(
-    producer: &mut P,
-    r: &Range3d<MCL, MCC, MPL, S>,
-) -> Result<Range3d<MCL, MCC, MPL, S>, DecodeError<P::Final, P::Error, Blame>>
-where
-    P: BulkProducer<Item = u8>,
-    S: SubspaceId + DecodableCanonic,
-    Blame: From<S::ErrorReason> + From<S::ErrorCanonic>,
-{
-    let header_1 = producer.produce_item().await?;
-
-    let subspace_start_flags = header_1 & 0b1100_0000;
-    let subspace_end_flags = header_1 & 0b0011_0000;
-    let is_path_start_rel_to_start = is_bitflagged(header_1, 4);
-    let is_path_end_open = is_bitflagged(header_1, 5);
-    let is_path_end_rel_to_start = is_bitflagged(header_1, 6);
-    let is_times_end_open = is_bitflagged(header_1, 7);
-
-    let header_2 = producer.produce_item().await?;
-
-    let is_time_start_rel_to_start = is_bitflagged(header_2, 0);
-    let add_or_subtract_start_time_diff = is_bitflagged(header_2, 1);
-
-    let start_time_diff_tag = Tag::from_raw(header_2, TagWidth::two(), 2);
-    let is_time_end_rel_to_start = is_bitflagged(header_2, 4);
-    let add_or_subtract_end_time_diff = is_bitflagged(header_2, 5);
-    let end_time_diff_tag = Tag::from_raw(header_2, TagWidth::two(), 6);
-
-    // Decode subspace start
-    let subspace_start = match subspace_start_flags {
-        0b0100_0000 => r.subspaces().start.clone(),
-        0b1000_0000 => match &r.subspaces().end {
-            RangeEnd::Closed(end) => end.clone(),
-            RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-        },
-        0b1100_0000 => {
-            let decoded_subspace = if CANONIC {
-                S::decode_canonic(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-            } else {
-                S::decode(producer)
-                    .await
-                    .map_err(DecodeError::map_other_from)?
-            };
-
-            if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            decoded_subspace
-        }
-        // This can only be b0000_0000 (which is not valid!)
-        _ => Err(DecodeError::Other(Blame::TheirFault))?,
-    };
-
-    let subspace_end = match subspace_end_flags {
-        0b0000_0000 => RangeEnd::Open,
-        0b0001_0000 => RangeEnd::Closed(r.subspaces().start.clone()),
-        0b0010_0000 => match &r.subspaces().end {
-            RangeEnd::Closed(end) => RangeEnd::Closed(end.clone()),
-            RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-        },
-        // This can only be 0b0011_0000
-        _ => {
-            let decoded_subspace = if CANONIC {
-                RangeEnd::Closed(
-                    S::decode_canonic(producer)
-                        .await
-                        .map_err(DecodeError::map_other_from)?,
-                )
-            } else {
-                RangeEnd::Closed(
-                    S::decode(producer)
-                        .await
-                        .map_err(DecodeError::map_other_from)?,
-                )
-            };
-
-            if decoded_subspace == r.subspaces().start || r.subspaces().end == decoded_subspace {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            decoded_subspace
-        }
-    };
-
-    // Check subspace end...
-
-    let path_start = match (is_path_start_rel_to_start, &r.paths().end) {
-        (true, RangeEnd::Closed(_)) => {
-            if CANONIC {
-                Path::relative_decode_canonic(producer, &r.paths().start).await?
-            } else {
-                Path::relative_decode(producer, &r.paths().start).await?
-            }
-        }
-        (true, RangeEnd::Open) => {
-            if CANONIC {
-                Path::relative_decode_canonic(producer, &r.paths().start).await?
-            } else {
-                Path::relative_decode(producer, &r.paths().start).await?
-            }
-        }
-        (false, RangeEnd::Closed(path_end)) => {
-            if CANONIC {
-                Path::relative_decode_canonic(producer, path_end).await?
-            } else {
-                Path::relative_decode(producer, path_end).await?
-            }
-        }
-        (false, RangeEnd::Open) => Err(DecodeError::Other(Blame::TheirFault))?,
-    };
-
-    // Canonicity check for path start
-    if CANONIC {
-        match &r.paths().end {
-            RangeEnd::Closed(ref_path_end) => {
-                let lcp_start_start = path_start.longest_common_prefix(&r.paths().start);
-                let lcp_start_end = path_start.longest_common_prefix(ref_path_end);
-
-                let expected_is_start_rel_to_start =
-                    lcp_start_start.component_count() >= lcp_start_end.component_count();
-
-                if expected_is_start_rel_to_start != is_path_start_rel_to_start {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-            }
-            RangeEnd::Open => {
-                if !is_path_start_rel_to_start {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-            }
-        }
-    }
-    // Canonicity check for path start over
-
-    let path_end = if is_path_end_open {
-        RangeEnd::Open
-    } else if is_path_end_rel_to_start {
-        if CANONIC {
-            RangeEnd::Closed(Path::relative_decode_canonic(producer, &r.paths().start).await?)
-        } else {
-            RangeEnd::Closed(Path::relative_decode(producer, &r.paths().start).await?)
-        }
-    } else {
-        match &r.paths().end {
-            RangeEnd::Closed(end) => {
-                if CANONIC {
-                    RangeEnd::Closed(Path::relative_decode_canonic(producer, end).await?)
-                } else {
-                    RangeEnd::Closed(Path::relative_decode(producer, end).await?)
-                }
-            }
-            RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-        }
-    };
-
-    // Canonicity check for path end
-    if CANONIC {
-        match &path_end {
-            RangeEnd::Closed(p_end) => match &r.paths().end {
-                RangeEnd::Closed(ref_end) => {
-                    let lcp_end_start = p_end.longest_common_prefix(&r.paths().start);
-                    let lcp_end_end = p_end.longest_common_prefix(ref_end);
-
-                    let expected_is_path_end_rel_to_start =
-                        lcp_end_start.component_count() >= lcp_end_end.component_count();
-
-                    if expected_is_path_end_rel_to_start != is_path_end_rel_to_start {
-                        return Err(DecodeError::Other(Blame::TheirFault));
-                    }
-                }
-                RangeEnd::Open => {}
-            },
-            RangeEnd::Open => {
-                if is_path_end_rel_to_start {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-            }
-        }
-    }
-    // End canonicity check
-
-    let start_time_diff = if CANONIC {
-        CompactU64::relative_decode_canonic(producer, &start_time_diff_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0
-    } else {
-        CompactU64::relative_decode(producer, &start_time_diff_tag)
-            .await
-            .map_err(DecodeError::map_other_from)?
-            .0
-    };
-
-    let time_start = match (is_time_start_rel_to_start, add_or_subtract_start_time_diff) {
-        (true, true) => r.times().start.checked_add(start_time_diff),
-        (true, false) => r.times().start.checked_sub(start_time_diff),
-        (false, true) => match r.times().end {
-            RangeEnd::Closed(ref_end) => ref_end.checked_add(start_time_diff),
-            RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-        },
-        (false, false) => match r.times().end {
-            RangeEnd::Closed(ref_end) => ref_end.checked_sub(start_time_diff),
-            RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-        },
-    }
-    .ok_or(DecodeError::Other(Blame::TheirFault))?;
-
-    // Canonicity check for start time
-    if CANONIC {
-        match r.times().end {
-            RangeEnd::Closed(ref_time_end) => {
-                let start_to_start = time_start.abs_diff(r.times().start);
-                let start_to_end = time_start.abs_diff(ref_time_end);
-
-                let expected_is_start_rel_to_start = start_to_start <= start_to_end;
-
-                if expected_is_start_rel_to_start != is_time_start_rel_to_start {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-
-                let expected_add_or_subtract_start_time_diff = is_time_start_rel_to_start
-                    && time_start >= r.times().start
-                    || !expected_is_start_rel_to_start && time_start >= ref_time_end;
-
-                if expected_add_or_subtract_start_time_diff != add_or_subtract_start_time_diff {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-            }
-            RangeEnd::Open => {
-                if !is_time_start_rel_to_start {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-
-                // I need to very add or subtract time diff here.
-                let expected_add_or_subtract_time_diff = time_start >= r.times().start;
-
-                if expected_add_or_subtract_time_diff != add_or_subtract_start_time_diff {
-                    return Err(DecodeError::Other(Blame::TheirFault));
-                }
-            }
-        }
-    }
-    // End of canonicity check for start time
-
-    let time_end = if is_times_end_open {
-        if CANONIC {
-            if add_or_subtract_end_time_diff {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            if is_time_end_rel_to_start {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            let end_time_diff_compact_width_flags = 0b0000_0011;
-            if header_2 & end_time_diff_compact_width_flags != 0b0000_0000 {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-        }
-
-        RangeEnd::Open
-    } else {
-        let end_time_diff = if CANONIC {
-            CompactU64::relative_decode_canonic(producer, &end_time_diff_tag)
-                .await
-                .map_err(DecodeError::map_other_from)?
-                .0
-        } else {
-            CompactU64::relative_decode(producer, &end_time_diff_tag)
-                .await
-                .map_err(DecodeError::map_other_from)?
-                .0
-        };
-
-        let time_end = match (is_time_end_rel_to_start, add_or_subtract_end_time_diff) {
-            (true, true) => r
-                .times()
-                .start
-                .checked_add(end_time_diff)
-                .ok_or(DecodeError::Other(Blame::TheirFault))?,
-
-            (true, false) => r
-                .times()
-                .start
-                .checked_sub(end_time_diff)
-                .ok_or(DecodeError::Other(Blame::TheirFault))?,
-
-            (false, true) => match r.times().end {
-                RangeEnd::Closed(ref_end) => ref_end
-                    .checked_add(end_time_diff)
-                    .ok_or(DecodeError::Other(Blame::TheirFault))?,
-
-                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-            },
-            (false, false) => match r.times().end {
-                RangeEnd::Closed(ref_end) => ref_end
-                    .checked_sub(end_time_diff)
-                    .ok_or(DecodeError::Other(Blame::TheirFault))?,
-
-                RangeEnd::Open => Err(DecodeError::Other(Blame::TheirFault))?,
-            },
-        };
-
-        let end_to_start = time_end.abs_diff(r.times().start);
-        let end_to_end = match &r.times().end {
-            RangeEnd::Closed(ref_end) => time_end.abs_diff(*ref_end),
-            RangeEnd::Open => u64::MAX,
-        };
-
-        if CANONIC {
-            let expected_is_time_end_rel_to_start = end_to_start <= end_to_end;
-            if expected_is_time_end_rel_to_start != is_time_end_rel_to_start {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            let expected_end_time_diff = core::cmp::min(end_to_start, end_to_end);
-
-            if expected_end_time_diff != end_time_diff {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-
-            let expected_add_or_subtract_end_time_diff = (is_time_end_rel_to_start
-                && time_end >= r.times().start)
-                || (!is_time_end_rel_to_start && time_end >= r.times().end);
-
-            if expected_add_or_subtract_end_time_diff != add_or_subtract_end_time_diff {
-                return Err(DecodeError::Other(Blame::TheirFault));
-            }
-        }
-
-        RangeEnd::Closed(time_end)
-    };
-
-    Ok(Range3d::new(
-        Range {
-            start: subspace_start,
-            end: subspace_end,
-        },
-        Range {
-            start: path_start,
-            end: path_end,
-        },
-        Range {
-            start: time_start,
-            end: time_end,
-        },
-    ))
 }

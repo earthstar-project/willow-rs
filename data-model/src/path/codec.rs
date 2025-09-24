@@ -42,7 +42,7 @@ where
         .relative_encode(consumer, &component_count_tag.encoding_width())
         .await?;
 
-    // Then, encode the components. Each is prefixed by its lenght as an 8-bit-tag CompactU64, except for the final component.
+    // Then, encode the components. Each is prefixed by its length as an 8-bit-tag CompactU64, except for the final component.
     for (i, component) in components.enumerate() {
         // The length of the final component is omitted (because a decoder can infer it from the total length and all prior components' lengths).
         if i as u64 + 1 != component_count {
@@ -525,6 +525,22 @@ where
     Ok(())
 }
 
+pub fn path_extends_path_encoding_len<const MCL: usize, const MCC: usize, const MPL: usize>(
+    path: &Path<MCL, MCC, MPL>,
+    extends: &Path<MCL, MCC, MPL>,
+) -> usize {
+    let extends_count = extends.component_count();
+
+    let path_len = path.path_length() - extends.path_length();
+    let diff = path.component_count() - extends_count;
+
+    encoding_len_from_iterator_of_components(
+        path_len as u64,
+        diff,
+        path.suffix_components(extends_count),
+    )
+}
+
 pub async fn decode_path_extends_path<const MCL: usize, const MCC: usize, const MPL: usize, P>(
     producer: &mut P,
     prefix: &Path<MCL, MCC, MPL>,
@@ -533,6 +549,38 @@ where
     P: BulkProducer<Item = u8>,
 {
     let suffix = Path::<MCL, MCC, MPL>::decode(producer)
+        .await
+        .map_err(DecodeError::map_other_from)?;
+
+    let prefix_count = prefix.component_count();
+
+    let total_length = prefix.path_length() + suffix.path_length();
+    let total_count = prefix_count + suffix.component_count();
+
+    let mut path_builder =
+        PathBuilder::new_from_prefix(total_length, total_count, prefix, prefix_count)
+            .map_err(|_err| DecodeError::Other(Blame::TheirFault))?;
+
+    for component in suffix.components() {
+        path_builder.append_component(component);
+    }
+
+    Ok(path_builder.build())
+}
+
+pub async fn decode_path_extends_path_canonic<
+    const MCL: usize,
+    const MCC: usize,
+    const MPL: usize,
+    P,
+>(
+    producer: &mut P,
+    prefix: &Path<MCL, MCC, MPL>,
+) -> Result<Path<MCL, MCC, MPL>, DecodeError<P::Final, P::Error, Blame>>
+where
+    P: BulkProducer<Item = u8>,
+{
+    let suffix = Path::<MCL, MCC, MPL>::decode_canonic(producer)
         .await
         .map_err(DecodeError::map_other_from)?;
 

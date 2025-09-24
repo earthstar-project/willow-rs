@@ -153,6 +153,22 @@ impl<T> Range<T> {
             end: RangeEnd::Open,
         }
     }
+
+    /// Returns whether this range is open.
+    pub fn is_open(&self) -> bool {
+        match self.end {
+            RangeEnd::Open => true,
+            _ => false,
+        }
+    }
+
+    /// Returns the end value if the range is closed, or `None` if the range is open.
+    pub fn get_end(&self) -> Option<&T> {
+        match self.end {
+            RangeEnd::Open => None,
+            RangeEnd::Closed(ref t) => Some(t),
+        }
+    }
 }
 
 impl<T> Range<T>

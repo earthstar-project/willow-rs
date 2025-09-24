@@ -1,5 +1,7 @@
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
+use ufotofu_codec::Encodable;
+use ufotofu_codec_endian::U64BE;
 
 use crate::{
     entry::{Entry, Timestamp},
@@ -84,6 +86,50 @@ where
             && self.paths.includes(entry.path())
             && self.times.includes(&entry.timestamp())
     }
+
+    /// Returns whether a [`Range3d`] fully [includes](https://willowprotocol.org/specs/grouping-entries/index.html#area_include_area) another [`Range3d`].
+    pub fn includes_range(&self, other: &Self) -> bool {
+        self.subspaces().includes_range(other.subspaces())
+            && self.paths().includes_range(other.paths())
+            && self.times().includes_range(other.times())
+    }
+
+    /// Returns whether an [`Range3d`] [includes](https://willowprotocol.org/specs/grouping-entries/index.html#range3d_include) includes an entry with a given subspace_id, path, and timestamp.
+    pub fn includes_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        self.subspaces.includes(subspace_id)
+            && self.paths.includes(path)
+            && self.times.includes(&timestamp)
+    }
+
+    /// Returns whether an [`Entry`] can cause prefix-pruning in this [`Range3d`].
+    pub fn could_be_pruned_by<N, PD>(&self, entry: &Entry<MCL, MCC, MPL, N, S, PD>) -> bool {
+        self.could_be_pruned_by_triplet(entry.subspace_id(), entry.path(), entry.timestamp())
+    }
+
+    /// Returns whether an [`Entry`] of the given subspace_id, path, and timestamp can cause prefix-pruning in this [`Range3d`].
+    pub fn could_be_pruned_by_triplet(
+        &self,
+        subspace_id: &S,
+        path: &Path<MCL, MCC, MPL>,
+        timestamp: Timestamp,
+    ) -> bool {
+        if !self.subspaces.includes(subspace_id) {
+            return false;
+        }
+
+        if timestamp < self.times().start {
+            return false;
+        }
+
+        self.paths().includes(path)
+            || path.is_prefix_of(&self.paths.start)
+            || path.is_prefixed_by(&self.paths.start)
+    }
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, S> Range3d<MCL, MCC, MPL, S>
@@ -159,6 +205,61 @@ where
             paths: Arbitrary::arbitrary(u)?,
             times: Arbitrary::arbitrary(u)?,
         })
+    }
+}
+
+/// This is an "inofficial" encoding not on the encodings spec page.
+///
+/// ## An Absolute Encoding Relation for 3dRange
+///
+/// - First byte is a header of bitflags:
+///     - most significant bit: `1` iff the subspace range is open.
+///     - second-most significant bit: `1` iff the path range is open.
+///     - third-most significant bit: `1` iff the timestamp range is open.
+///     - remaining five bits: arbitrary.
+/// - encoding of the start of the subspace range
+/// - encoding of the end of the subspace range, or empty string if the subspace range is open
+/// - encoding of the start of the path range
+/// - encoding of the end of the path range, or empty string if the path range is open
+/// - encoding of the start of the timestamp range as an 8-byte big-endian integer
+/// - encoding of the end of the timestamp range as an 8-byte big-endian integer, or empty string if the timestamp range is open
+impl<const MCL: usize, const MCC: usize, const MPL: usize, S: Encodable> Encodable
+    for Range3d<MCL, MCC, MPL, S>
+{
+    async fn encode<C>(&self, consumer: &mut C) -> Result<(), C::Error>
+    where
+        C: ufotofu::BulkConsumer<Item = u8>,
+    {
+        let mut header = 0;
+
+        if self.subspaces().is_open() {
+            header |= 0b1000_0000;
+        }
+        if self.paths().is_open() {
+            header |= 0b0100_0000;
+        }
+        if self.times().is_open() {
+            header |= 0b0010_0000;
+        }
+
+        consumer.consume(header).await?;
+
+        self.subspaces().start.encode(consumer).await?;
+        if let Some(end) = self.subspaces().get_end() {
+            end.encode(consumer).await?;
+        }
+
+        self.paths().start.encode(consumer).await?;
+        if let Some(end) = self.paths().get_end() {
+            end.encode(consumer).await?;
+        }
+
+        U64BE(self.times().start).encode(consumer).await?;
+        if let Some(end) = self.times().get_end() {
+            U64BE(*end).encode(consumer).await?;
+        }
+
+        Ok(())
     }
 }
 

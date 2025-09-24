@@ -16,6 +16,7 @@ use std::{
     mem::MaybeUninit,
     num::NonZeroU64,
     ops::Deref,
+    rc::Rc,
 };
 
 use either::Either::{self, *};
@@ -26,7 +27,10 @@ use futures::{
 
 use ufotofu::{BufferedProducer, BulkConsumer, BulkProducer, Consumer, Producer};
 
-use ufotofu_codec::{Decodable, DecodeError, Encodable, EncodableKnownSize};
+use ufotofu_codec::{
+    Decodable, DecodeError, Encodable, EncodableKnownSize, RelativeDecodable,
+    RelativeEncodableKnownSize,
+};
 use ufotofu_queues::Fixed;
 use wb_async_utils::{
     shared_consumer::{self, SharedConsumer},
@@ -35,10 +39,12 @@ use wb_async_utils::{
 };
 
 use crate::{
-    client_logic::{self, ClientLogic, LogicalChannelClientError},
+    client_logic::{self, ClientLogic},
     frames::*,
     server_logic::{self, ReceiveSendToChannelError, ServerLogic},
 };
+
+pub use crate::client_logic::LogicalChannelClientError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelOptions {
@@ -55,50 +61,26 @@ pub struct InitOptions {
 }
 
 /// The state for an Lcmux session for channels `0` to `NUM_CHANNELS - 1`.
-///
-/// This struct is opaque, but we expose it to allow for control over where it is allocated.
 #[derive(Debug)]
-pub struct State<const NUM_CHANNELS: usize, P, PR, C, CR>
-where
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    channel_states: [(client_logic::State, server_logic::State<Fixed<u8>>); NUM_CHANNELS],
-    p: SharedProducer<PR, P>,
-    c: SharedConsumer<CR, C>,
+struct State<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
+    p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+    c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
     number_of_nonempty_urgent_channels: Cell<usize>,
     no_urgency_notifier: TakeCell<()>, // empty while number_of_nonempty_urgent_channels is nonzero
 }
 
-impl<const NUM_CHANNELS: usize, P, PR, C, CR> State<NUM_CHANNELS, P, PR, C, CR>
-where
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr>
+    State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 {
     /// Create a new opaque state for an LCMUX session.
     ///
     /// The `buffer_capacity` specifies how many bytes each logical channel can buffer at most.
     /// The `watermark` specifies how many guarantees must become grantable at least before they are actually granted.
-    pub fn new(
-        p: SharedProducer<PR, P>,
-        c: SharedConsumer<CR, C>,
-        options: [&ChannelOptions; NUM_CHANNELS],
+    fn new(
+        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
     ) -> Self {
         Self {
-            channel_states: core::array::from_fn(|i| {
-                (
-                    client_logic::State::new(i as u64),
-                    server_logic::State::new(
-                        Fixed::new(options[i].buffer_capacity),
-                        options[i].buffer_capacity,
-                        options[i].watermark,
-                    ),
-                )
-            }),
             p,
             c,
             number_of_nonempty_urgent_channels: Cell::new(0),
@@ -129,60 +111,83 @@ where
 #[derive(Debug)]
 pub struct Session<
     const NUM_CHANNELS: usize,
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    C: Consumer,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
+    GlobalMessageDecodeRelativeTo,
 > {
     /// A struct with an async function whose Future must be polled to completion to run the LCMUX session. Yields `Ok(())` if every logical channel got closed by both peers, yields an `Err` if *any* channel encounters any error.
-    pub bookkeeping: Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>,
+    pub bookkeeping: Bookkeeping<NUM_CHANNELS, P, PFinal, PErr, C, CErr>,
     /// A struct for sending global messages to the other peer.
-    pub global_sender: GlobalMessageSender<NUM_CHANNELS, R>,
+    pub global_sender: GlobalMessageSender<NUM_CHANNELS, P, PFinal, PErr, C, CErr>,
     /// A struct for receiving global messages from the other peer.
     pub global_receiver: GlobalMessageReceiver<
         NUM_CHANNELS,
-        R,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
+        CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
     >,
     /// A struct for sending global messages to the other peer.
     /// For each logical channel, a way to send data to that channel via `SendToChannel` frames.
-    pub channel_senders: [ChannelSender<NUM_CHANNELS, R, P, PR, C, CR>; NUM_CHANNELS],
+    pub channel_senders: [ChannelSender<NUM_CHANNELS, P, PFinal, PErr, C, CErr>; NUM_CHANNELS],
     /// For each logical channel, a producer of the bytes that were sent to that channel via `SendToChannel` frames.
-    pub channel_receivers: [ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>; NUM_CHANNELS],
+    pub channel_receivers: [ChannelReceiver<NUM_CHANNELS, P, PFinal, PErr, C, CErr>; NUM_CHANNELS],
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
-    Session<NUM_CHANNELS, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
+impl<
+        const NUM_CHANNELS: usize,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
+    Session<
+        NUM_CHANNELS,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
 where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>> + Clone,
     P: Producer,
-    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr>,
+    CErr: Clone,
 {
     /// Creates a new LCMUX session.
-    pub fn new(state_ref: R, which_channels_are_urgent: [bool; NUM_CHANNELS]) -> Self {
-        let client_logics: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
-            ClientLogic::new(ProjectIthClientState {
-                r: state_ref.clone(),
-                i: channel_id,
-                phantom: PhantomData,
-            })
-        });
+    pub fn new(
+        p: SharedProducer<Rc<shared_producer::State<P, PFinal, PErr>>, P, PFinal, PErr>,
+        c: SharedConsumer<Rc<shared_consumer::State<C, CErr>>, C, CErr>,
+        options: [&ChannelOptions; NUM_CHANNELS],
+        which_channels_are_urgent: [bool; NUM_CHANNELS],
+        decode_global_messages_relative_to: GlobalMessageDecodeRelativeTo,
+    ) -> Self {
+        let state = Rc::new(State::new(p, c));
+
+        let client_logics: [_; NUM_CHANNELS] =
+            core::array::from_fn(|channel_id| ClientLogic::new(channel_id as u64));
         let server_logics: [_; NUM_CHANNELS] = core::array::from_fn(|channel_id| {
-            ServerLogic::new(ProjectIthServerState {
-                r: state_ref.clone(),
-                i: channel_id,
-                phantom: PhantomData,
-            })
+            ServerLogic::new(
+                Fixed::new(options[channel_id].buffer_capacity),
+                options[channel_id].buffer_capacity,
+                options[channel_id].watermark,
+            )
         });
 
         // Now we do a silly dance to create a bunch of arrays of the components.
@@ -232,26 +237,30 @@ where
 
         Self {
             bookkeeping: Bookkeeping {
-                state: state_ref.clone(),
+                state: state.clone(),
                 client_grant_absolutions: Some(client_grant_absolutions),
                 server_guarantees_to_gives: Some(server_guarantees_to_gives),
                 server_start_droppings: Some(server_start_droppings),
             },
             global_sender: GlobalMessageSender {
-                state: state_ref.clone(),
+                state: state.clone(),
             },
             global_receiver: GlobalMessageReceiver {
-                state: state_ref.clone(),
+                state: state.clone(),
                 client_receivers,
                 server_receivers,
                 urgent_channels: which_channels_are_urgent,
                 phantom: PhantomData,
+                decode_relative_to: decode_global_messages_relative_to,
             },
-            channel_senders: client_senders.map(|send_to_channel| ChannelSender(send_to_channel)),
+            channel_senders: client_senders.map(|send_to_channel| ChannelSender {
+                state: state.clone(),
+                send_to_channel,
+            }),
             channel_receivers: server_received_datas.map(|receive_data| {
                 let ret = ChannelReceiver {
                     received_data: receive_data,
-                    session_state: state_ref.clone(),
+                    session_state: state.clone(),
                     is_urgent: which_channels_are_urgent[i],
                 };
                 i += 1;
@@ -279,17 +288,16 @@ where
 }
 
 #[derive(Debug)]
-pub struct ChannelSender<const NUM_CHANNELS: usize, R, P, PR, C, CR>(
-    client_logic::SendToChannel<ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>>,
-);
+pub struct ChannelSender<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
+    send_to_channel: client_logic::SendToChannel,
+    state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
+}
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> ChannelSender<NUM_CHANNELS, R, P, PR, C, CR>
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr>
+    ChannelSender<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: BulkConsumer<Item = u8, Final: Clone, Error: Clone>,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    C: BulkConsumer<Item = u8, Final: Clone, Error = CErr>,
+    CErr: Clone,
 {
     /// Send a message to a logical channel. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
     pub async fn send_to_channel<M>(
@@ -299,16 +307,33 @@ where
     where
         M: EncodableKnownSize,
     {
-        let consumer = self.0.state.r.c.clone();
-        self.0.send_to_channel(&consumer, message).await
+        let consumer = self.state.c.clone();
+        self.send_to_channel
+            .send_to_channel(&consumer, message)
+            .await
+    }
+
+    /// Send a message to a logical channel, using a relative encoding. Waits for the necessary guarantees to become available before requesting exclusive access to the consumer for writing the encoded message (and its header).
+    pub async fn send_to_channel_relative<M, RelativeTo>(
+        &mut self,
+        message: &M,
+        relative_to: &RelativeTo,
+    ) -> Result<(), LogicalChannelClientError<C::Error>>
+    where
+        M: RelativeEncodableKnownSize<RelativeTo>,
+    {
+        let consumer = self.state.c.clone();
+        self.send_to_channel
+            .send_to_channel_relative(&consumer, message, relative_to)
+            .await
     }
 
     /// Send a `LimitSending` frame to the server.
     ///
     /// This method does not check that you send valid limits or that you respect them on the future.
     pub async fn limit_sending(&mut self, bound: u64) -> Result<(), C::Error> {
-        let consumer = self.0.state.r.c.clone();
-        self.0.limit_sending(&consumer, bound).await
+        let consumer = self.state.c.clone();
+        self.send_to_channel.limit_sending(&consumer, bound).await
     }
 
     /// Same as `self.limit_sending(0)`.
@@ -318,30 +343,14 @@ where
 }
 
 #[derive(Debug)]
-pub struct ChannelReceiver<
-    const NUM_CHANNELS: usize,
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    C: Consumer,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-> {
-    received_data:
-        server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>,
-    session_state: R,
+pub struct ChannelReceiver<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
+    received_data: server_logic::ReceivedData<Fixed<u8>>,
+    session_state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
     is_urgent: bool,
 }
 
-// (server_logic::ReceivedData<ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>, Fixed<u8>>, bool);
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Producer
-    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> Producer
+    for ChannelReceiver<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 {
     type Item = u8;
 
@@ -370,28 +379,16 @@ where
     }
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> BufferedProducer
-    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> BufferedProducer
+    for ChannelReceiver<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 {
     async fn slurp(&mut self) -> Result<(), Self::Error> {
         self.received_data.slurp().await
     }
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> BulkProducer
-    for ChannelReceiver<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> BulkProducer
+    for ChannelReceiver<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 {
     async fn expose_items<'a>(
         &'a mut self,
@@ -421,33 +418,19 @@ where
 
 /// Call and poll to completion the `keep_the_books` method on this struct to run an LCMUX session.
 #[derive(Debug)]
-pub struct Bookkeeping<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
-    state: R,
-    client_grant_absolutions: Option<
-        [client_logic::GrantAbsolution<ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>>;
-            NUM_CHANNELS],
-    >,
-    server_guarantees_to_gives: Option<
-        [server_logic::GuaranteesToGive<
-            ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
-            Fixed<u8>,
-        >; NUM_CHANNELS],
-    >,
-    server_start_droppings: Option<
-        [server_logic::StartDropping<
-            ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
-            Fixed<u8>,
-        >; NUM_CHANNELS],
-    >,
+pub struct Bookkeeping<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
+    state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
+    client_grant_absolutions: Option<[client_logic::GrantAbsolution; NUM_CHANNELS]>,
+    server_guarantees_to_gives: Option<[server_logic::GuaranteesToGive<Fixed<u8>>; NUM_CHANNELS]>,
+    server_start_droppings: Option<[server_logic::StartDropping<Fixed<u8>>; NUM_CHANNELS]>,
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Bookkeeping<NUM_CHANNELS, R, P, PR, C, CR>
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr>
+    Bookkeeping<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    P: Producer<Final = PFinal, Error = PErr>,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
+    CErr: Clone,
 {
     /// You must call this function once and poll it to completion to run the session. Otherwise, GrantAbsolution, GiveGuarantees, and StartDropping frames will not be sent.
     ///
@@ -566,17 +549,15 @@ where
 
 /// Send global messages to the other peer via this struct.
 #[derive(Debug)]
-pub struct GlobalMessageSender<const NUM_CHANNELS: usize, R> {
-    state: R,
+pub struct GlobalMessageSender<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr> {
+    state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> GlobalMessageSender<NUM_CHANNELS, R>
+impl<const NUM_CHANNELS: usize, P, PFinal, PErr, C, CErr>
+    GlobalMessageSender<NUM_CHANNELS, P, PFinal, PErr, C, CErr>
 where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    C: Consumer<Item = u8, Final = (), Error = CErr> + BulkConsumer,
+    CErr: Clone,
 {
     pub async fn send_global_message<CMessage: EncodableKnownSize>(
         &mut self,
@@ -591,51 +572,103 @@ where
 
         message.encode(&mut c).await
     }
+
+    pub async fn send_global_message_relative<
+        CMessage: RelativeEncodableKnownSize<RelativeTo>,
+        RelativeTo,
+    >(
+        &mut self,
+        message: CMessage,
+        relative_to: &RelativeTo,
+    ) -> Result<(), C::Error> {
+        let mut c = self.state.deref().c.access_consumer().await;
+
+        let header = SendGlobalHeader {
+            length: message.relative_len_of_encoding(relative_to) as u64,
+        };
+        header.encode(&mut c).await?;
+
+        message.relative_encode(&mut c, relative_to).await
+    }
 }
 
 /// Receive global messenges from the other peer via the [`Producer`] implementation of this struct. The producer must constantly be read, as it internally decodes and processes all control messages.
 #[derive(Debug)]
 pub struct GlobalMessageReceiver<
     const NUM_CHANNELS: usize,
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    C: Consumer,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
+    P,
+    PFinal,
+    PErr,
+    C,
+    CErr,
     GlobalMessage,
     GlobalMessageDecodeErrorReason,
+    GlobalMessageDecodeRelativeTo,
 > {
-    state: R,
-    client_receivers: [client_logic::MessageReceiver<
-        ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>,
-    >; NUM_CHANNELS],
-    server_receivers: [server_logic::MessageReceiver<
-        ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>,
-        Fixed<u8>,
-    >; NUM_CHANNELS],
+    state: Rc<State<NUM_CHANNELS, P, PFinal, PErr, C, CErr>>,
+    client_receivers: [client_logic::MessageReceiver; NUM_CHANNELS],
+    server_receivers: [server_logic::MessageReceiver<Fixed<u8>>; NUM_CHANNELS],
     urgent_channels: [bool; NUM_CHANNELS],
     phantom: PhantomData<(GlobalMessage, GlobalMessageDecodeErrorReason)>,
+    decode_relative_to: GlobalMessageDecodeRelativeTo,
 }
 
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR, GlobalMessage, GlobalMessageDecodeErrorReason>
-    Producer
-    for GlobalMessageReceiver<
-        NUM_CHANNELS,
-        R,
+impl<
+        const NUM_CHANNELS: usize,
         P,
-        PR,
+        PFinal,
+        PErr,
         C,
-        CR,
+        CErr,
         GlobalMessage,
         GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
+    GlobalMessageReceiver<
+        NUM_CHANNELS,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    >
+{
+    /// Get a mutable reference to the value from which global messages are being relatively decoded.
+    pub fn get_relative_to_mut(&mut self) -> &mut GlobalMessageDecodeRelativeTo {
+        &mut self.decode_relative_to
+    }
+}
+
+impl<
+        const NUM_CHANNELS: usize,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
+    > Producer
+    for GlobalMessageReceiver<
+        NUM_CHANNELS,
+        P,
+        PFinal,
+        PErr,
+        C,
+        CErr,
+        GlobalMessage,
+        GlobalMessageDecodeErrorReason,
+        GlobalMessageDecodeRelativeTo,
     >
 where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: BulkProducer<Item = u8, Final: Clone, Error: Clone>,
-    C: Consumer<Item = u8, Final = (), Error: Clone> + BulkConsumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-    GlobalMessage: Decodable<ErrorReason = GlobalMessageDecodeErrorReason>,
+    P: BulkProducer<Item = u8, Final = PFinal, Error = PErr>,
+    PFinal: Clone,
+    PErr: Clone,
+    GlobalMessage: RelativeDecodable<GlobalMessageDecodeRelativeTo, GlobalMessageDecodeErrorReason>,
 {
     type Item = GlobalMessage;
 
@@ -778,7 +811,9 @@ where
                         Right(fin) => return Ok(Right(fin)),
                     }
 
-                    return Ok(Left(GlobalMessage::decode(&mut p).await?));
+                    return Ok(Left(
+                        GlobalMessage::relative_decode(&mut p, &self.decode_relative_to).await?,
+                    ));
                 }
             }
         }
@@ -855,80 +890,6 @@ where
             GlobalMessageError::DecodeGlobalMessage(_)
             | GlobalMessageError::UnsupportedChannel(_)
             | GlobalMessageError::Other => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ProjectIthClientState<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
-    r: R,
-    i: usize,
-    phantom: PhantomData<(P, PR, C, CR)>,
-}
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Deref
-    for ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    type Target = client_logic::State;
-
-    fn deref(&self) -> &Self::Target {
-        &self.r.deref().channel_states[self.i].0
-    }
-}
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Clone
-    for ProjectIthClientState<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            r: self.r.clone(),
-            i: self.i,
-            phantom: self.phantom,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ProjectIthServerState<const NUM_CHANNELS: usize, R, P, PR, C, CR> {
-    r: R,
-    i: usize,
-    phantom: PhantomData<(P, PR, C, CR)>,
-}
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Deref
-    for ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Deref<Target = State<NUM_CHANNELS, P, PR, C, CR>>,
-    P: Producer,
-    C: Consumer,
-    PR: Deref<Target = shared_producer::State<P>> + Clone,
-    CR: Deref<Target = shared_consumer::State<C>> + Clone,
-{
-    type Target = server_logic::State<Fixed<u8>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.r.deref().channel_states[self.i].1
-    }
-}
-
-impl<const NUM_CHANNELS: usize, R, P, PR, C, CR> Clone
-    for ProjectIthServerState<NUM_CHANNELS, R, P, PR, C, CR>
-where
-    R: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            r: self.r.clone(),
-            i: self.i,
-            phantom: self.phantom,
         }
     }
 }

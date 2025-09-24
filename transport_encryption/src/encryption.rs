@@ -277,7 +277,7 @@ where
 }
 
 /// The possible errors emitted by a decryptor.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum DecryptionError<ProducerError> {
     /// The inner consumer emitted an error.
     Inner(ProducerError),

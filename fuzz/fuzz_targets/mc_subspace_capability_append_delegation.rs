@@ -1,11 +1,11 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use meadowcap::{McSubspaceCapability, SillyPublicKey, SillySig, SubspaceDelegation};
+use meadowcap::{EnumerationDelegation, McEnumerationCapability, SillyPublicKey, SillySig};
 
 fuzz_target!(|data: (
-    SubspaceDelegation<SillyPublicKey, SillySig>,
-    McSubspaceCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
+    EnumerationDelegation<SillyPublicKey, SillySig>,
+    McEnumerationCapability<SillyPublicKey, SillySig, SillyPublicKey, SillySig>
 )| {
     let (delegation, mc_cap) = data;
 

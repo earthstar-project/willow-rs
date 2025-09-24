@@ -13,8 +13,10 @@ use ufotofu::{BulkProducer, Producer};
 use wb_async_utils::TakeCell;
 
 use crate::{
-    entry::AuthorisedEntry, grouping::Area, AuthorisationToken, Entry, LengthyAuthorisedEntry,
-    NamespaceId, Path, PayloadDigest, SubspaceId,
+    entry::AuthorisedEntry,
+    grouping::{Area, Range3d},
+    AuthorisationToken, Entry, LengthyAuthorisedEntry, NamespaceId, Path, PayloadDigest,
+    SubspaceId,
 };
 
 #[cfg(feature = "dev")]
@@ -72,6 +74,8 @@ pub enum PayloadAppendError<PayloadSourceError, OE> {
     NoSuchEntry,
     /// The operation supplied an expected payload_digest, but it did not match the digest of the entry.
     WrongEntry,
+    /// The `expected_available_bytes` did not match the number of available payload bytes (before appending).
+    IncorrectAvailableLength,
     /// The payload source produced more bytes than were expected for this payload.
     TooManyBytes,
     /// The completed payload's digest is not what was expected.
@@ -101,6 +105,12 @@ impl<PayloadSourceError: Display + Error, OE: Display + Error> Display
                 write!(
                     f,
                     "The entry to whose payload to append to had an unexpected payload_digest."
+                )
+            }
+            PayloadAppendError::IncorrectAvailableLength => {
+                write!(
+                    f,
+                    "The entry to whose payload to append to had an unexpected number of payload bytes available already."
                 )
             }
             PayloadAppendError::TooManyBytes => write!(
@@ -389,7 +399,8 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
     /// - The payload digest of the entry at the given subspace_id and path is not equal to the supplied `expected_digest` (*if* one was supplied).
     /// - The payload source produced more bytes than were expected for this payload.
     /// - The payload source yielded an error.
-    /// - The final payload's digest did not match the expected digest
+    /// - The final payload's digest did not match the expected digest.
+    /// - The number of available payload bytes prior to appending did not match the `expected_available_bytes`.
     /// - Something else went wrong, e.g. there was no space for the payload on disk.
     ///
     /// This method **does not** and **cannot** verify the integrity of partial payloads. This means that arbitrary (and possibly malicious) payloads smaller than the expected size will be stored unless partial verification is implemented upstream (e.g. as part of a sync protocol).
@@ -398,6 +409,7 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         subspace_id: &S,
         path: &Path<MCL, MCC, MPL>,
         expected_digest: Option<PD>,
+        expected_available_bytes: Option<u64>,
         payload_source: &mut Producer,
     ) -> impl Future<
         Output = Result<PayloadAppendSuccess, PayloadAppendError<PayloadSourceError, Self::Error>>,
@@ -451,14 +463,14 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
         protected: Option<&Area<MCL, MCC, MPL, S>>,
     ) -> impl Future<Output = Result<usize, Self::Error>>;
 
-    /// Forces persistence of all previous mutations
+    /// Forces persistence of all previous mutations.
     fn flush(&self) -> impl Future<Output = Result<(), Self::Error>>;
 
     /// Returns a [`ufotofu::Producer`] of bytes for the payload corresponding to the given subspace id and path, starting at the supplied offset. If an `expected_digest` is supplied and the entry turns out to not have that digest, then this method does nothing and reports a `PayloadError::WrongEntry` error. If the supplied `offset` is equal to or greater than the number of available payload bytes, this reports a `PayloadError::OutOfBounds`.
     fn payload(
-        &self,
-        subspace_id: &S,
-        path: &Path<MCL, MCC, MPL>,
+        self: Rc<Self>,
+        subspace_id: S,
+        path: Path<MCL, MCC, MPL>,
         offset: u64,
         expected_digest: Option<PD>,
     ) -> impl Future<
@@ -480,20 +492,15 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
 
     /// Queries which entries are [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`Area`], returning a producer of [`LengthyAuthorisedEntry`] **produced in an arbitrary order decided by the store implementation**.
     fn query_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
-    ) -> impl Future<
-        Output = Result<
-            impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>,
-            Self::Error,
-        >,
-    >;
+    ) -> impl Producer<Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>, Final = ()>;
 
     /// Subscribes to events concerning entries [included](https://willowprotocol.org/specs/grouping-entries/index.html#area_include) by an [`crate::grouping::Area`], returning a producer of `StoreEvent`s which occurred since the moment of calling this function.
     fn subscribe_area(
-        &self,
-        area: &Area<MCL, MCC, MPL, S>,
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> impl Future<
         Output = impl Producer<
@@ -501,6 +508,23 @@ pub trait Store<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, 
             Final = (),
             Error = Self::Error,
         >,
+    >;
+
+    fn query_and_subscribe_area(
+        self: Rc<Self>,
+        area: Area<MCL, MCC, MPL, S>,
+        ignore: QueryIgnoreParams,
+    ) -> Result<
+        impl Producer<
+            Item = LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>,
+            Final = impl Producer<
+                Item = StoreEvent<MCL, MCC, MPL, N, S, PD, AT>,
+                Final = (),
+                Error = Self::Error,
+            >,
+            Error = Self::Error,
+        >,
+        Self::Error,
     >;
 }
 
@@ -583,7 +607,7 @@ where
     /// Create a new subscription: setting up the internals, and returning the external part.
     pub fn add_subscription(
         this: Rc<RefCell<Self>>,
-        area: Area<MCL, MCC, MPL, S>,
+        range: Range3d<MCL, MCC, MPL, S>,
         ignore: QueryIgnoreParams,
     ) -> Subscriber<MCL, MCC, MPL, N, S, PD, AT, Err> {
         let cell = Rc::new(TakeCell::new());
@@ -597,7 +621,7 @@ where
             events: this,
             next_op_id: cell,
             slab_key: key,
-            area,
+            range,
             ignore,
             buffered_event: None,
         }
@@ -704,7 +728,7 @@ pub struct Subscriber<const MCL: usize, const MCC: usize, const MPL: usize, N, S
     next_op_id: Rc<TakeCell<Result<u64, Err>>>,
     /// The key by which the internal subscriber part is stored in the EventSystem. Upon dropping, the Subscriber, the corresponding InternalSubscriber is removed from the slab.
     slab_key: usize,
-    area: Area<MCL, MCC, MPL, S>,
+    range: Range3d<MCL, MCC, MPL, S>,
     ignore: QueryIgnoreParams,
     /// Some store ops trigger *two* events. In those cases, the second event is stored here. Each call to `produce` checks for a buffered event first before continuing to process the op queue.
     buffered_event: Option<StoreEvent<MCL, MCC, MPL, N, S, PD, AT>>,
@@ -765,7 +789,7 @@ where
                                     previous_available,
                                     now_available,
                                 } => {
-                                    if !self.area.includes_entry(entry.entry())
+                                    if !self.range.includes_entry(entry.entry())
                                         || self
                                             .ignore
                                             .ignores_lengthy_authorised_entry(entry, *now_available)
@@ -795,9 +819,14 @@ where
                                     }
                                 }
                                 QueuedOp::AreaForgotten { area, protected } => {
-                                    if area.intersection(&self.area).is_some() {
+                                    if Range3d::from(area.clone())
+                                        .intersection(&self.range)
+                                        .is_some()
+                                    {
                                         if let Some(prot) = protected {
-                                            if prot.includes_area(&self.area) {
+                                            if Range3d::from(prot.clone())
+                                                .includes_range(&self.range)
+                                            {
                                                 // continue with area, since the subscribed area is fully protected
                                                 continue;
                                             }
@@ -812,9 +841,14 @@ where
                                     }
                                 }
                                 QueuedOp::AreaPayloadsForgotten { area, protected } => {
-                                    if area.intersection(&self.area).is_some() {
+                                    if Range3d::from(area.clone())
+                                        .intersection(&self.range)
+                                        .is_some()
+                                    {
                                         if let Some(prot) = protected {
-                                            if prot.includes_area(&self.area) {
+                                            if Range3d::from(prot.clone())
+                                                .includes_range(&self.range)
+                                            {
                                                 // continue with area, since the subscribed area is fully protected
                                                 continue;
                                             }
@@ -829,7 +863,7 @@ where
                                     }
                                 }
                                 QueuedOp::EntryForgotten { entry } => {
-                                    if self.area.includes_entry(entry.entry().entry())
+                                    if self.range.includes_entry(entry.entry().entry())
                                         && !self.ignore.ignores_lengthy_authorised_entry(
                                             entry.entry(),
                                             entry.available(),
@@ -850,7 +884,7 @@ where
                                     // );
 
                                     // Is the entry in the subscribed-to area?
-                                    if self.area.includes_entry(entry.entry()) {
+                                    if self.range.includes_entry(entry.entry()) {
                                         // println!("Entry included in area {:?}", self.area);
 
                                         if self.ignore.ignores_fresh_entry(entry.entry()) {
@@ -873,7 +907,7 @@ where
                                                 cause: entry.clone(),
                                             }));
                                         }
-                                    } else if self.area.could_be_pruned_by(entry.entry()) {
+                                    } else if self.range.could_be_pruned_by(entry.entry()) {
                                         // println!("Insertion outside area but might still prune something inside the area");
 
                                         // Insertion outside area but might still prune something inside the area.
@@ -888,7 +922,7 @@ where
                                 }
 
                                 QueuedOp::PayloadForgotten { entry } => {
-                                    if self.area.includes_entry(entry.entry().entry())
+                                    if self.range.includes_entry(entry.entry().entry())
                                         && !self.ignore.ignores_lengthy_authorised_entry(
                                             entry.entry(),
                                             entry.available(),

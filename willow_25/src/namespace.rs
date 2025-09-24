@@ -15,7 +15,7 @@ use arbitrary::Arbitrary;
 
 use crate::SigningKey25;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct NamespaceId25(VerifyingKey);
 
 /// An [ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) public key suitable for the Willow Data Model's [`NamespaceId`](https://willowprotocol.org/specs/data-model/index.html#NamespaceId) parameter, and Meadowcap's [`NamespacePublicKey`](https://willowprotocol.org/specs/meadowcap/index.html#NamespacePublicKey) parameter.

@@ -120,7 +120,7 @@ pub async fn create_drop<
     consumer: C,
     namespace_id: N,
     areas: AreaIterator,
-    store: &StoreType,
+    store: std::rc::Rc<StoreType>,
     encrypt: EncryptFn,
     into_inner: IntoInnerFn,
     default_auth_token: AT,
@@ -185,16 +185,13 @@ where
     // For each area
     for area in next_areas_vec {
         // Get the producer of entries from this area.
-        let mut entry_producer = store
-            .query_area(
-                &area,
-                QueryIgnoreParams {
-                    ignore_incomplete_payloads: false,
-                    ignore_empty_payloads: false,
-                },
-            )
-            .await
-            .map_err(CreateDropError::StoreErr)?;
+        let mut entry_producer = store.clone().query_area(
+            area,
+            QueryIgnoreParams {
+                ignore_incomplete_payloads: false,
+                ignore_empty_payloads: false,
+            },
+        );
 
         while let Ok(lengthy) = entry_producer.produce_item().await {
             let authed_entry = lengthy.entry();
@@ -293,10 +290,10 @@ where
                 .map_err(CreateDropError::ConsumerProblem)?;
 
             if has_full_payload {
-                let payload = store
+                let payload = store.clone()
                     .payload(
-                        authed_entry.entry().subspace_id(),
-                        authed_entry.entry().path(),
+                        authed_entry.entry().subspace_id().clone(),
+                        authed_entry.entry().path().clone(),
                         0,
                         Some(authed_entry.entry().payload_digest().clone()),
                     )
@@ -467,6 +464,7 @@ where
                     authed_entry.entry().subspace_id(),
                     authed_entry.entry().path(),
                     Some(authed_entry.entry().payload_digest().clone()),
+                    Some(0),
                     &mut payload_producer,
                 )
                 .await

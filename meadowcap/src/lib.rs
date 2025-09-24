@@ -237,11 +237,11 @@ pub use mc_capability::*;
 mod owned_capability;
 pub use owned_capability::*;
 
-mod mc_subspace_capability;
-pub use mc_subspace_capability::*;
+mod mc_enumeration_capability;
+pub use mc_enumeration_capability::*;
 
 mod parameters;
 pub use parameters::*;
 
-mod private_interest_intersection;
-pub use private_interest_intersection::*;
+mod personal_private_interest;
+pub use personal_private_interest::*;

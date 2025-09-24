@@ -1,1 +1,119 @@
+use std::hash::Hash;
 
+use ufotofu_codec::{
+    Blame, Decodable, DecodableCanonic, EncodableKnownSize, EncodableSync, RelativeDecodable,
+    RelativeEncodable, RelativeEncodableKnownSize,
+};
+use willow_data_model::{
+    grouping::Area, AuthorisationToken, AuthorisedEntry, Entry, LengthyAuthorisedEntry,
+    NamespaceId, PayloadDigest, SubspaceId,
+};
+use willow_pio::PersonalPrivateInterest;
+
+pub trait WgpsNamespaceId:
+    NamespaceId
+    + Hash
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+{
+}
+
+pub trait WgpsSubspaceId:
+    SubspaceId
+    + Hash
+    + Default
+    + EncodableSync
+    + EncodableKnownSize
+    + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+    + Clone
+    + Ord
+{
+}
+
+pub trait WgpsPayloadDigest:
+    PayloadDigest + EncodableKnownSize + DecodableCanonic<ErrorReason = Blame, ErrorCanonic = Blame>
+{
+}
+
+pub trait WgpsAuthorisationToken<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
+    AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + EncodableKnownSize
+    + for<'a> RelativeEncodableKnownSize<(
+        &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+        &'a Entry<MCL, MCC, MPL, N, S, PD>,
+    )> + AuthorisationToken<MCL, MCC, MPL, N, S, PD>
+    + for<'a> RelativeDecodable<
+        (
+            &'a AuthorisedEntry<MCL, MCC, MPL, N, S, PD, Self>,
+            &'a Entry<MCL, MCC, MPL, N, S, PD>,
+        ),
+        Blame,
+    > + 'static
+{
+}
+
+/// The semantics a valid read capability must provide to be usable with the WGPS.
+pub trait ReadCapability<const MCL: usize, const MCC: usize, const MPL: usize> {
+    type NamespaceId;
+    type SubspaceId;
+
+    fn granted_area(&self) -> &Area<MCL, MCC, MPL, Self::SubspaceId>;
+    fn granted_namespace(&self) -> &Self::NamespaceId;
+}
+
+/// The semantics a valid read capability must provide to be usable with the WGPS, together with other trait bounds it has to satisfy in order to work with our specific WGPS implementation.
+pub trait WgpsReadCapability<const MCL: usize, const MCC: usize, const MPL: usize>:
+    ReadCapability<MCL, MCC, MPL>
+    + RelativeDecodable<
+        PersonalPrivateInterest<MCL, MCC, MPL, Self::NamespaceId, Self::SubspaceId>,
+        Blame,
+    > + Hash
+    + Eq
+    + Clone
+    + RelativeEncodableKnownSize<
+        PersonalPrivateInterest<MCL, MCC, MPL, Self::NamespaceId, Self::SubspaceId>,
+    > + 'static
+{
+}
+
+/// The semantics a valid enumeration capability must provide to be usable with the WGPS.
+pub trait EnumerationCapability {
+    type NamespaceId;
+    type Receiver;
+
+    fn granted_namespace(&self) -> &Self::NamespaceId;
+    fn receiver(&self) -> &Self::Receiver;
+}
+
+/// The semantics a valid enumeration capability must provide to be usable with the WGPS, together with other trait bounds it has to satisfy in order to work with our specific WGPS implementation.
+pub trait WgpsEnumerationCapability:
+    EnumerationCapability
+    + Clone
+    + Eq
+    + Hash
+    + RelativeEncodableKnownSize<(Self::NamespaceId, Self::Receiver)>
+    + RelativeDecodable<(Self::NamespaceId, Self::Receiver), Blame>
+    + 'static
+{
+}
+
+pub trait Fingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT> {
+    const NEUTRAL: Self;
+
+    type FFP;
+
+    fn singleton(lengthy: LengthyAuthorisedEntry<MCL, MCC, MPL, N, S, PD, AT>) -> Self;
+
+    fn combine(&self, other: Self) -> Self;
+
+    fn finalise(&self) -> Self::FFP;
+}
+
+pub trait WgpsFingerprint<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD, AT>:
+    Fingerprint<MCL, MCC, MPL, N, S, PD, AT>
+    + EncodableKnownSize
+    + Decodable<ErrorReason = Blame>
+    + Eq
+    + 'static
+{
+}
