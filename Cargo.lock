@@ -1578,6 +1578,7 @@ dependencies = [
  "willow-encoding",
  "willow-pio",
  "willow-sideload",
+ "willow-store-simple-sled",
 ]
 
 [[package]]
