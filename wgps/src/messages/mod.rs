@@ -531,10 +531,14 @@ where
             compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::two());
         header |= receiver_handle_tag.data_at_offset(2);
 
-        let max_count_tag = compact_u64::Tag::min_tag(self.max_count, compact_u64::TagWidth::two());
+        let max_count = self.max_count.wrapping_add(1);
+
+        let max_count_tag = compact_u64::Tag::min_tag(max_count, compact_u64::TagWidth::two());
         header |= max_count_tag.data_at_offset(4);
 
-        let max_size_tag = compact_u64::Tag::min_tag(self.max_size, compact_u64::TagWidth::two());
+        let max_size = self.max_size.wrapping_add(1);
+
+        let max_size_tag = compact_u64::Tag::min_tag(max_size, compact_u64::TagWidth::two());
         header |= max_size_tag.data_at_offset(6);
 
         consumer.consume(header).await?;
@@ -547,11 +551,11 @@ where
             .relative_encode(consumer, &receiver_handle_tag.encoding_width())
             .await?;
 
-        CompactU64(self.max_count)
+        CompactU64(max_count)
             .relative_encode(consumer, &max_count_tag.encoding_width())
             .await?;
 
-        CompactU64(self.max_size)
+        CompactU64(max_size)
             .relative_encode(consumer, &max_size_tag.encoding_width())
             .await?;
 
@@ -577,8 +581,10 @@ where
             compact_u64::Tag::min_tag(self.sender_handle, compact_u64::TagWidth::two());
         let receiver_handle_tag =
             compact_u64::Tag::min_tag(self.receiver_handle, compact_u64::TagWidth::two());
-        let max_count_tag = compact_u64::Tag::min_tag(self.max_count, compact_u64::TagWidth::two());
-        let max_size_tag = compact_u64::Tag::min_tag(self.max_size, compact_u64::TagWidth::two());
+        let max_count = self.max_count.wrapping_add(1);
+        let max_count_tag = compact_u64::Tag::min_tag(max_count, compact_u64::TagWidth::two());
+        let max_size = self.max_size.wrapping_add(1);
+        let max_size_tag = compact_u64::Tag::min_tag(max_size, compact_u64::TagWidth::two());
 
         let sender_handle_len = CompactU64(self.sender_handle)
             .relative_len_of_encoding(&sender_handle_tag.encoding_width());
@@ -587,10 +593,10 @@ where
             .relative_len_of_encoding(&receiver_handle_tag.encoding_width());
 
         let max_count_len =
-            CompactU64(self.max_count).relative_len_of_encoding(&max_count_tag.encoding_width());
+            CompactU64(max_count).relative_len_of_encoding(&max_count_tag.encoding_width());
 
         let max_size_len =
-            CompactU64(self.max_size).relative_len_of_encoding(&max_size_tag.encoding_width());
+            CompactU64(max_size).relative_len_of_encoding(&max_size_tag.encoding_width());
 
         let cap_len = self.capability.relative_len_of_encoding(r);
 
@@ -635,12 +641,14 @@ where
         let max_count = CompactU64::relative_decode(producer, &max_count_tag)
             .await
             .map_err(DecodeError::map_other_from)?
-            .0;
+            .0
+            .wrapping_sub(1);
 
         let max_size = CompactU64::relative_decode(producer, &max_size_tag)
             .await
             .map_err(DecodeError::map_other_from)?
-            .0;
+            .0
+            .wrapping_sub(1);
 
         let max_payload_power = producer.produce_item().await?;
 
