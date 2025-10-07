@@ -7,9 +7,9 @@ use crate::grouping::area::Area;
 pub struct AreaOfInterest<const MCL: usize, const MCC: usize, const MPL: usize, S> {
     /// To be included in this [`AreaOfInterest`], an [`crate::Entry`] must be included in the [`Area`].
     pub area: Area<MCL, MCC, MPL, S>,
-    /// To be included in this AreaOfInterest, an Entry’s timestamp must be among the max_count greatest Timestamps, unless max_count is zero.
+    /// To be included in this AreaOfInterest, an Entry’s timestamp must be among the max_count greatest Timestamps, unless max_count is u64::MAX.
     pub max_count: u64,
-    /// The total payload_lengths of all included Entries is at most max_size, unless max_size is zero.
+    /// The total payload_lengths of all included Entries is at most max_size, unless max_size is u64::MAX.
     pub max_size: u64,
 }
 
