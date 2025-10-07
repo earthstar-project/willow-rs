@@ -1306,11 +1306,11 @@ where
             let (length, _digest, _auth_token, _local_length) =
                 decode_entry_values::<PD, AT>(&entry_value).await;
 
-            if aoi.max_count != 0 && current_count + 1 > aoi.max_count {
+            if aoi.max_count != u64::MAX && current_count + 1 > aoi.max_count {
                 break;
             }
 
-            if aoi.max_size != 0 && current_size + length > aoi.max_count {
+            if aoi.max_size != u64::MAX && current_size + length > aoi.max_size {
                 break;
             }
 
