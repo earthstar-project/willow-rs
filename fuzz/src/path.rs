@@ -2,33 +2,40 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstructured};
-use willow_data_model::{Component, InvalidPathError, Path};
 
+use willow_data_model_generic::prelude::*;
 /*
 * A known-good, simple implementation of paths. Used in testing to compare the behaviour of the optimised implementation against it.
 */
 
-#[derive(Debug)]
-/// An error indicating a [`PathComponent`'s bytestring is too long.
-pub struct ComponentTooLongError;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PathComponentBox<const MCL: usize>(Box<[u8]>);
 
-/// A bytestring representing an individual component of a [`Path`]. Provides access to the raw bytes via the [`AsRef<u8>`] trait.
+/// An implementation of [`PathComponent`] for [`PathComponentBox`].
 ///
-/// ## Implementation notes
+/// ## Type parameters
 ///
-/// - This trait provides an immutable interface, so cloning of a [`PathComponent`] implementation is expected to be cheap.
-/// - Implementations of the [`Ord`] trait must correspond to lexicographically comparing the AsRef bytes.
-pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
-    /// The maximum bytelength of a path component, corresponding to Willow's [`max_component_length`](https://willowprotocol.org/specs/data-model/index.html#max_component_length) parameter.
-    const MAX_COMPONENT_LENGTH: usize;
+/// - `MCL`: A [`usize`] used as [`PathComponent::MAX_COMPONENT_LENGTH`].
+impl<const MCL: usize> PathComponentBox<MCL> {
+    const MAX_COMPONENT_LENGTH: usize = MCL;
 
-    /// Construct a new [`PathComponent`] from the provided slice, or return a [`ComponentTooLongError`] if the resulting component would be longer than [`PathComponent::MAX_COMPONENT_LENGTH`].
-    fn new(components: &[u8]) -> Result<Self, ComponentTooLongError>;
+    /// Create a new component by cloning and appending all bytes from the slice into a [`Vec<u8>`], or return a [`InvalidComponentError`] if the bytelength of the slice exceeds [`PathComponent::MAX_COMPONENT_LENGTH`].
+    pub fn new(bytes: &[u8]) -> Result<Self, InvalidComponentError> {
+        if bytes.len() > Self::MAX_COMPONENT_LENGTH {
+            return Err(InvalidComponentError);
+        }
 
-    /// Construct a new [`PathComponent`] from the concatenation of `head` and the `tail`, or return a [`ComponentTooLongError`] if the resulting component would be longer than [`PathComponent::MAX_COMPONENT_LENGTH`].
+        Ok(Self(bytes.into()))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Construct a new [`PathComponent`] from the concatenation of `head` and the `tail`, or return a [`InvalidComponentError`] if the resulting component would be longer than [`PathComponent::MAX_COMPONENT_LENGTH`].
     ///
     /// This operation occurs when computing prefix successors, and the default implementation needs to perform an allocation. Implementers of this trait can override this with something more efficient if possible.
-    fn new_with_tail(head: &[u8], tail: u8) -> Result<Self, ComponentTooLongError> {
+    pub fn new_with_tail(head: &[u8], tail: u8) -> Result<Self, InvalidComponentError> {
         let mut vec = Vec::with_capacity(head.len() + 1);
         vec.extend_from_slice(head);
         vec.push(tail);
@@ -37,18 +44,8 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
     }
 
     /// Return a new [`PathComponent`] which corresponds to the empty string.
-    fn empty() -> Self {
+    pub fn new_empty() -> Self {
         Self::new(&[]).unwrap()
-    }
-
-    /// The length of the component's `as_ref` bytes.
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
-    /// Whether the component is an empty bytestring or not.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     /// Try to append a zero byte to the end of the component.
@@ -66,14 +63,17 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
         Some(Self::new(&new_component_vec).unwrap())
     }
 
-    /// Create a new copy which differs at index `i`.
-    /// Implementers may panic if `i` is out of bound.
-    fn set_byte(&self, i: usize, value: u8) -> Self;
+    fn set_byte(&self, i: usize, value: u8) -> Self {
+        let mut new_component = self.clone();
 
-    /// Interpret the component as a binary number, and increment that number by 1.
+        new_component.0[i] = value;
+
+        new_component
+    }
+
+    /// Interpret the component as a binary number, and increment that number by 1. When a byte overflows, remove it.
     /// If doing so would increase the bytelength of the component, return `None`.
-    fn try_increment_fixed_width(&self) -> Option<Self> {
-        // Wish we could avoid this allocation somehow.
+    fn try_increment_fixed_width_dropping_trailings(&self) -> Option<Self> {
         let mut new_component = self.clone();
 
         for i in (0..self.len()).rev() {
@@ -81,6 +81,14 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
 
             if byte == 255 {
                 new_component = new_component.set_byte(i, 0);
+
+                if new_component.len() > 1 {
+                    new_component =
+                        PathComponentBox::new(&new_component.as_ref()[..new_component.len() - 1])
+                            .unwrap();
+                } else {
+                    return None;
+                }
             } else {
                 return Some(new_component.set_byte(i, byte + 1));
             }
@@ -101,43 +109,6 @@ pub trait PathComponent: Eq + AsRef<[u8]> + Clone + PartialOrd + Ord {
         }
 
         None
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PathComponentBox<const MCL: usize>(Box<[u8]>);
-
-/// An implementation of [`PathComponent`] for [`PathComponentBox`].
-///
-/// ## Type parameters
-///
-/// - `MCL`: A [`usize`] used as [`PathComponent::MAX_COMPONENT_LENGTH`].
-impl<const MCL: usize> PathComponent for PathComponentBox<MCL> {
-    const MAX_COMPONENT_LENGTH: usize = MCL;
-
-    /// Create a new component by cloning and appending all bytes from the slice into a [`Vec<u8>`], or return a [`ComponentTooLongError`] if the bytelength of the slice exceeds [`PathComponent::MAX_COMPONENT_LENGTH`].
-    fn new(bytes: &[u8]) -> Result<Self, ComponentTooLongError> {
-        if bytes.len() > Self::MAX_COMPONENT_LENGTH {
-            return Err(ComponentTooLongError);
-        }
-
-        Ok(Self(bytes.into()))
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn set_byte(&self, i: usize, value: u8) -> Self {
-        let mut new_component = self.clone();
-
-        new_component.0[i] = value;
-
-        new_component
     }
 }
 
@@ -167,9 +138,23 @@ pub struct PathRc<const MCL: usize, const MCC: usize, const MPL: usize>(
 );
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL> {
-    pub fn new(components: &[PathComponentBox<MCL>]) -> Result<Self, InvalidPathError> {
+    pub fn new() -> Self {
+        PathRc(Vec::new().into())
+    }
+
+    pub fn from_component(comp: PathComponentBox<MCL>) -> Result<Self, PathFromComponentsError> {
+        Self::from_components(&[comp])
+    }
+
+    pub fn from_slice<T: AsRef<[u8]>>(comp: T) -> Result<Self, PathError> {
+        Self::from_slices(&[comp])
+    }
+
+    pub fn from_components(
+        components: &[PathComponentBox<MCL>],
+    ) -> Result<Self, PathFromComponentsError> {
         if components.len() > MCC {
-            return Err(InvalidPathError::TooManyComponents);
+            return Err(PathFromComponentsError::TooManyComponents);
         };
 
         let mut path_vec = Vec::new();
@@ -179,7 +164,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
             total_length += component.len();
 
             if total_length > MPL {
-                return Err(InvalidPathError::PathTooLong);
+                return Err(PathFromComponentsError::PathTooLong);
             } else {
                 path_vec.push(component.clone());
             }
@@ -188,32 +173,66 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
         Ok(PathRc(path_vec.into()))
     }
 
-    pub fn empty() -> Self {
-        PathRc(Vec::new().into())
-    }
+    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, PathError> {
+        if slices.len() > MCC {
+            return Err(PathError::TooManyComponents);
+        };
 
-    pub fn create_prefix(&self, length: usize) -> Self {
-        if length == 0 {
-            return Self::empty();
+        let mut path_vec = Vec::new();
+        let mut total_length = 0;
+
+        for component in slices {
+            if component.as_ref().len() > MCL {
+                return Err(PathError::ComponentTooLong);
+            }
+            total_length += component.as_ref().len();
+
+            if total_length > MPL {
+                return Err(PathError::PathTooLong);
+            } else {
+                path_vec.push(PathComponentBox::new(component.as_ref())?);
+            }
         }
 
-        let until = core::cmp::min(length, self.0.len());
-        let slice = &self.0[0..until];
-
-        Self::new(slice).unwrap()
+        Ok(PathRc(path_vec.into()))
     }
 
-    pub fn append(&self, component: PathComponentBox<MCL>) -> Result<Self, InvalidPathError> {
+    pub fn from_components_iter<I>(
+        _total_length: usize,
+        iter: &mut I,
+    ) -> Result<Self, PathFromComponentsError>
+    where
+        I: ExactSizeIterator<Item = PathComponentBox<MCL>>,
+    {
+        let components: Vec<_> = iter.collect();
+
+        Self::from_components(&components[..])
+    }
+
+    pub fn from_slices_iter<'a, I, T>(_total_length: usize, iter: &mut I) -> Result<Self, PathError>
+    where
+        I: ExactSizeIterator<Item = T>,
+        T: AsRef<[u8]>,
+    {
+        let components: Vec<_> = iter.collect();
+
+        Self::from_slices(&components[..])
+    }
+
+    pub fn append_component(
+        &self,
+        comp: PathComponentBox<MCL>,
+    ) -> Result<Self, PathFromComponentsError> {
         let total_component_count = self.0.len();
 
         if total_component_count + 1 > MCC {
-            return Err(InvalidPathError::TooManyComponents);
+            return Err(PathFromComponentsError::TooManyComponents);
         }
 
         let total_path_length = self.0.iter().fold(0, |acc, item| acc + item.0.len());
 
-        if total_path_length + component.as_ref().len() > MPL {
-            return Err(InvalidPathError::PathTooLong);
+        if total_path_length + comp.as_ref().len() > MPL {
+            return Err(PathFromComponentsError::PathTooLong);
         }
 
         let mut new_path_vec = Vec::new();
@@ -222,31 +241,94 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
             new_path_vec.push(component.clone())
         }
 
-        new_path_vec.push(component);
+        new_path_vec.push(comp);
 
         Ok(PathRc(new_path_vec.into()))
     }
 
-    pub fn components(
+    pub fn append_slice<T: AsRef<[u8]>>(&self, comp: T) -> Result<Self, PathError> {
+        let component = PathComponentBox::new(comp.as_ref())?;
+        Ok(self.append_component(component)?)
+    }
+
+    pub fn append_components(
         &self,
-    ) -> impl DoubleEndedIterator<Item = &PathComponentBox<MCL>>
-           + ExactSizeIterator<Item = &PathComponentBox<MCL>> {
-        self.0.iter()
+        components: &[PathComponentBox<MCL>],
+    ) -> Result<Self, PathFromComponentsError> {
+        let mut p = self.clone();
+
+        for component in components {
+            p = p.append_component(component.clone())?;
+        }
+
+        Ok(p)
+    }
+
+    pub fn append_slices<T: AsRef<[u8]>>(&self, components: &[T]) -> Result<Self, PathError> {
+        let mut p = self.clone();
+
+        for component in components {
+            p = p.append_slice(component)?;
+        }
+
+        Ok(p)
+    }
+
+    pub fn append_path(&self, other: &Self) -> Result<Self, PathFromComponentsError> {
+        let mut p = self.clone();
+
+        for component in other.components() {
+            p = p.append_component(component.clone())?;
+        }
+
+        Ok(p)
+    }
+
+    pub fn greater_but_not_prefixed(&self) -> Option<Self> {
+        for (i, component) in self.components().enumerate().rev() {
+            if let Some(successor_comp) = component.try_append_zero_byte() {
+                if let Ok(path) = self
+                    .create_prefix(i)
+                    .unwrap()
+                    .append_component(successor_comp)
+                {
+                    return Some(path);
+                }
+            }
+
+            if let Some(successor_comp) = component.greater_but_not_prefixed() {
+                return self
+                    .create_prefix(i)
+                    .unwrap()
+                    .append_component(successor_comp)
+                    .ok();
+            }
+        }
+
+        None
     }
 
     pub fn component_count(&self) -> usize {
         self.0.len()
     }
 
-    pub fn component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
-        self.0.get(i)
+    pub fn is_empty(&self) -> bool {
+        self.component_count() == 0
     }
 
-    /// Return all possible prefixes of a path, including the empty path and the path itself.
-    pub fn all_prefixes(&self) -> impl Iterator<Item = Self> + '_ {
-        let self_len = self.components().count();
+    pub fn total_length(&self) -> usize {
+        self.components().fold(0, |acc, x| acc + x.len())
+    }
 
-        (0..=self_len).map(|i| self.create_prefix(i))
+    pub fn total_length_of_prefix(&self, i: usize) -> usize {
+        if i > self.component_count() {
+            panic!();
+        }
+
+        self.create_prefix(i)
+            .unwrap()
+            .components()
+            .fold(0, |acc, x| acc + x.len())
     }
 
     /// Test whether this path is a prefix of the given path.
@@ -267,6 +349,59 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
         other.is_prefix_of(self)
     }
 
+    pub fn is_related_to(&self, other: &Self) -> bool {
+        self.is_prefix_of(other) || other.is_prefix_of(self)
+    }
+
+    pub fn component(&self, i: usize) -> Option<&PathComponentBox<MCL>> {
+        self.0.get(i)
+    }
+
+    pub fn component_unchecked(&self, i: usize) -> &PathComponentBox<MCL> {
+        self.component(i).unwrap()
+    }
+
+    pub fn components(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &PathComponentBox<MCL>>
+           + ExactSizeIterator<Item = &PathComponentBox<MCL>> {
+        self.0.iter()
+    }
+
+    pub fn suffix_components(
+        &self,
+        i: usize,
+    ) -> impl DoubleEndedIterator<Item = &PathComponentBox<MCL>>
+           + ExactSizeIterator<Item = &PathComponentBox<MCL>> {
+        self.components().skip(i)
+    }
+
+    pub fn create_prefix(&self, length: usize) -> Option<Self> {
+        if length > self.component_count() {
+            return None;
+        }
+
+        if length == 0 {
+            return Some(Self::new());
+        }
+
+        let until = core::cmp::min(length, self.0.len());
+        let slice = &self.0[0..until];
+
+        Some(Self::from_components(slice).unwrap())
+    }
+
+    pub unsafe fn create_prefix_unchecked(&self, component_count: usize) -> Self {
+        self.create_prefix(component_count).unwrap()
+    }
+
+    /// Return all possible prefixes of a path, including the empty path and the path itself.
+    pub fn all_prefixes(&self) -> impl Iterator<Item = Self> + '_ {
+        let self_len = self.components().count();
+
+        (0..=self_len).map(move |i| self.create_prefix(i).unwrap())
+    }
+
     /// Return the longest common prefix of this path and the given path.
     pub fn longest_common_prefix(&self, other: &Self) -> Self {
         let mut lcp_len = 0;
@@ -279,45 +414,35 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathRc<MCL, MCC, MPL>
             lcp_len += 1
         }
 
-        self.create_prefix(lcp_len)
+        self.create_prefix(lcp_len).unwrap()
     }
 
     /// Return the least path which is greater than `self`, or return `None` if `self` is the greatest possible path.
     pub fn successor(&self) -> Option<Self> {
         // Try and add an empty component.
-        if let Ok(path) = self.append(PathComponentBox::<MCL>::empty()) {
+        if let Ok(path) = self.append_component(PathComponentBox::<MCL>::new_empty()) {
             return Some(path);
         }
 
         for (i, component) in self.components().enumerate().rev() {
             // Try and do the *next* simplest thing (add a 0 byte to the component).
             if let Some(component) = component.try_append_zero_byte() {
-                if let Ok(path) = self.create_prefix(i).append(component) {
+                if let Ok(path) = self.create_prefix(i).unwrap().append_component(component) {
                     return Some(path);
                 }
             }
 
             // Otherwise we need to increment the component fixed-width style!
-            if let Some(incremented_component) = component.try_increment_fixed_width() {
+            if let Some(incremented_component) =
+                component.try_increment_fixed_width_dropping_trailings()
+            {
                 // We can unwrap here because neither the max path length, component count, or component length has changed.
-                return Some(self.create_prefix(i).append(incremented_component).unwrap());
-            }
-        }
-
-        None
-    }
-
-    /// Return the least path that is greater than `self` and which is not prefixed by `self`, or `None` if `self` is the empty path *or* if `self` is the greatest path.
-    pub fn greater_but_not_prefixed(&self) -> Option<Self> {
-        for (i, component) in self.components().enumerate().rev() {
-            if let Some(successor_comp) = component.try_append_zero_byte() {
-                if let Ok(path) = self.create_prefix(i).append(successor_comp) {
-                    return Some(path);
-                }
-            }
-
-            if let Some(successor_comp) = component.greater_but_not_prefixed() {
-                return self.create_prefix(i).append(successor_comp).ok();
+                return Some(
+                    self.create_prefix(i)
+                        .unwrap()
+                        .append_component(incremented_component)
+                        .unwrap(),
+                );
             }
         }
 
@@ -351,7 +476,7 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
         let boxx: Box<[PathComponentBox<MCL>]> = Arbitrary::arbitrary(u)?;
-        Self::new(&boxx).map_err(|_| ArbitraryError::IncorrectFormat)
+        Self::from_components(&boxx).map_err(|_| ArbitraryError::IncorrectFormat)
     }
 
     #[inline]
@@ -360,315 +485,397 @@ impl<'a, const MCL: usize, const MCC: usize, const MPL: usize> Arbitrary<'a>
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::cmp::Ordering::Less;
+/*
+Instructions for how to create paths; for fuzz testing.
+*/
 
-    use super::*;
+#[derive(Debug, Arbitrary)]
+pub enum CreatePath {
+    Empty,
+    FromComponent(Vec<u8>),
+    FromSlice(Vec<u8>),
+    FromComponents(Vec<Vec<u8>>),
+    FromSlices(Vec<Vec<u8>>),
+    FromComponentsIter(Vec<Vec<u8>>),
+    FromSlicesIter(Vec<Vec<u8>>),
+    AppendComponent(Box<CreatePath>, Vec<u8>),
+    AppendSlice(Box<CreatePath>, Vec<u8>),
+    AppendComponents(Box<CreatePath>, Vec<Vec<u8>>),
+    AppendSlices(Box<CreatePath>, Vec<Vec<u8>>),
+    AppendPath(Box<CreatePath>, Box<CreatePath>),
+    GreaterButNotPrefixed(Box<CreatePath>),
+    Successor(Box<CreatePath>),
+    CreatePrefix(Box<CreatePath>, usize),
+}
 
-    const MCL: usize = 8;
-    const MCC: usize = 4;
-    const MPL: usize = 16;
+// When a construction is invalid for reasons other than a PathError, simply return `Err(PathError::PathTooLong)`.
+pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
+    cp: &CreatePath,
+) -> Result<PathRc<MCL, MCC, MPL>, PathError> {
+    match cp {
+        CreatePath::Empty => Ok(PathRc::new()),
+        CreatePath::FromComponent(comp) => {
+            Ok(PathRc::from_component(PathComponentBox::new(&comp[..])?)?)
+        }
+        CreatePath::FromSlice(comp) => PathRc::from_slice(&comp[..]),
+        CreatePath::FromComponents(raw_material) => {
+            let mut components = vec![];
 
-    #[test]
-    fn empty() {
-        let empty_path = PathRc::<MCL, MCC, MPL>::empty();
+            for comp in raw_material {
+                components.push(PathComponentBox::new(&comp[..])?);
+            }
 
-        assert_eq!(empty_path.components().count(), 0);
-    }
+            Ok(PathRc::from_components(&components[..])?)
+        }
+        CreatePath::FromSlices(raw_material) => {
+            let mut components = vec![];
 
-    #[test]
-    fn new() {
-        let component_too_long = PathComponentBox::<MCL>::new(b"aaaaaaaaz");
+            for comp in raw_material {
+                components.push(&comp[..]);
+            }
 
-        assert!(matches!(component_too_long, Err(ComponentTooLongError)));
+            PathRc::from_slices(&components[..])
+        }
+        CreatePath::FromComponentsIter(raw_material) => {
+            let mut components = vec![];
+            let mut total_length = 0;
 
-        let too_many_components = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"z").unwrap(),
-        ]);
+            for comp in raw_material {
+                components.push(PathComponentBox::new(&comp[..])?);
+                total_length += comp.len();
+            }
 
-        assert!(matches!(
-            too_many_components,
-            Err(InvalidPathError::TooManyComponents)
-        ));
+            Ok(PathRc::from_components_iter(
+                total_length,
+                &mut components.into_iter(),
+            )?)
+        }
+        CreatePath::FromSlicesIter(raw_material) => {
+            let mut components = vec![];
+            let mut total_length = 0;
 
-        let path_too_long = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"aaaaaaaa").unwrap(),
-            PathComponentBox::new(b"aaaaaaaa").unwrap(),
-            PathComponentBox::new(b"z").unwrap(),
-        ]);
+            for comp in raw_material {
+                components.push(&comp[..]);
+                total_length += comp.len();
+            }
 
-        assert!(matches!(path_too_long, Err(InvalidPathError::PathTooLong)));
-    }
+            PathRc::from_slices_iter(total_length, &mut components.into_iter())
+        }
+        CreatePath::AppendComponent(rec, comp) => {
+            let base = create_path_rc(rec)?;
+            Ok(base.append_component(PathComponentBox::new(comp)?)?)
+        }
+        CreatePath::AppendSlice(rec, comp) => {
+            let base = create_path_rc(rec)?;
+            base.append_slice(PathComponentBox::<MCL>::new(&comp[..])?)
+        }
+        CreatePath::AppendComponents(rec, raw_material) => {
+            let base = create_path_rc(rec)?;
 
-    #[test]
-    fn append() {
-        let path = PathRc::<MCL, MCC, MPL>::empty();
+            let mut components = vec![];
 
-        let r1 = path.append(PathComponentBox::new(b"a").unwrap());
-        assert!(r1.is_ok());
-        let p1 = r1.unwrap();
-        assert_eq!(p1.components().count(), 1);
+            for comp in raw_material {
+                components.push(PathComponentBox::new(&comp[..])?);
+            }
 
-        let r2 = p1.append(PathComponentBox::new(b"b").unwrap());
-        assert!(r2.is_ok());
-        let p2 = r2.unwrap();
-        assert_eq!(p2.components().count(), 2);
+            Ok(base.append_components(&components[..])?)
+        }
+        CreatePath::AppendSlices(rec, raw_material) => {
+            let base = create_path_rc(rec)?;
 
-        let r3 = p2.append(PathComponentBox::new(b"c").unwrap());
-        assert!(r3.is_ok());
-        let p3 = r3.unwrap();
-        assert_eq!(p3.components().count(), 3);
+            let mut components = vec![];
 
-        let r4 = p3.append(PathComponentBox::new(b"d").unwrap());
-        assert!(r4.is_ok());
-        let p4 = r4.unwrap();
-        assert_eq!(p4.components().count(), 4);
+            for comp in raw_material {
+                components.push(&comp[..]);
+            }
 
-        let r5 = p4.append(PathComponentBox::new(b"z").unwrap());
-        assert!(r5.is_err());
+            base.append_slices(&components[..])
+        }
+        CreatePath::AppendPath(rec, p2) => {
+            let base = create_path_rc(rec)?;
+            let p2 = create_path_rc(p2)?;
+            Ok(base.append_path(&p2)?)
+        }
+        CreatePath::GreaterButNotPrefixed(rec) => {
+            let base = create_path_rc(rec)?;
+            base.greater_but_not_prefixed()
+                .ok_or(PathError::PathTooLong)
+        }
+        CreatePath::Successor(rec) => {
+            let base = create_path_rc(rec)?;
+            base.successor().ok_or(PathError::PathTooLong)
+        }
+        CreatePath::CreatePrefix(rec, len) => {
+            let base = create_path_rc(rec)?;
 
-        let collected = p4
-            .components()
-            .map(|comp| comp.as_ref())
-            .collect::<Vec<&[u8]>>();
-
-        assert_eq!(collected, vec![[b'a'], [b'b'], [b'c'], [b'd'],])
-    }
-
-    #[test]
-    fn prefix() {
-        let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let prefix0 = path.create_prefix(0);
-
-        assert_eq!(prefix0, PathRc::empty());
-
-        let prefix1 = path.create_prefix(1);
-
-        assert_eq!(
-            prefix1,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
-        );
-
-        let prefix2 = path.create_prefix(2);
-
-        assert_eq!(
-            prefix2,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(b"a").unwrap(),
-                PathComponentBox::new(b"b").unwrap()
-            ])
-            .unwrap()
-        );
-
-        let prefix3 = path.create_prefix(3);
-
-        assert_eq!(
-            prefix3,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(b"a").unwrap(),
-                PathComponentBox::new(b"b").unwrap(),
-                PathComponentBox::new(b"c").unwrap()
-            ])
-            .unwrap()
-        );
-
-        let prefix4 = path.create_prefix(4);
-
-        assert_eq!(
-            prefix4,
-            PathRc::<MCL, MCC, MPL>::new(&[
-                PathComponentBox::new(b"a").unwrap(),
-                PathComponentBox::new(b"b").unwrap(),
-                PathComponentBox::new(b"c").unwrap()
-            ])
-            .unwrap()
-        )
-    }
-
-    #[test]
-    fn prefixes() {
-        let path = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let prefixes: Vec<PathRc<MCL, MCC, MPL>> = path.all_prefixes().collect();
-
-        assert_eq!(
-            prefixes,
-            vec![
-                PathRc::<MCL, MCC, MPL>::new(&[]).unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(b"a").unwrap(),
-                    PathComponentBox::new(b"b").unwrap()
-                ])
-                .unwrap(),
-                PathRc::<MCL, MCC, MPL>::new(&[
-                    PathComponentBox::new(b"a").unwrap(),
-                    PathComponentBox::new(b"b").unwrap(),
-                    PathComponentBox::new(b"c").unwrap()
-                ])
-                .unwrap(),
-            ]
-        )
-    }
-
-    #[test]
-    fn is_prefix_of() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"x").unwrap(),
-            PathComponentBox::new(b"y").unwrap(),
-            PathComponentBox::new(b"z").unwrap(),
-        ])
-        .unwrap();
-
-        assert!(path_a.is_prefix_of(&path_b));
-        assert!(!path_a.is_prefix_of(&path_c));
-
-        let path_d = PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[]).unwrap()]).unwrap();
-        let path_e = PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(&[0]).unwrap()]).unwrap();
-
-        assert!(!path_d.is_prefix_of(&path_e));
-
-        let empty_path = PathRc::empty();
-
-        assert!(empty_path.is_prefix_of(&path_d));
-    }
-
-    #[test]
-    fn is_prefixed_by() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"x").unwrap(),
-            PathComponentBox::new(b"y").unwrap(),
-            PathComponentBox::new(b"z").unwrap(),
-        ])
-        .unwrap();
-
-        assert!(path_b.is_prefixed_by(&path_a));
-        assert!(!path_c.is_prefixed_by(&path_a));
-    }
-
-    #[test]
-    fn longest_common_prefix() {
-        let path_a = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"x").unwrap(),
-        ])
-        .unwrap();
-
-        let path_b = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"b").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let path_c = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"x").unwrap(),
-            PathComponentBox::new(b"y").unwrap(),
-            PathComponentBox::new(b"z").unwrap(),
-        ])
-        .unwrap();
-
-        let lcp_a_b = path_a.longest_common_prefix(&path_b);
-
-        assert_eq!(
-            lcp_a_b,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
-        );
-
-        let lcp_b_a = path_b.longest_common_prefix(&path_a);
-
-        assert_eq!(lcp_b_a, lcp_a_b);
-
-        let lcp_a_x = path_a.longest_common_prefix(&path_c);
-
-        assert_eq!(lcp_a_x, PathRc::empty());
-
-        let path_d = PathRc::<MCL, MCC, MPL>::new(&[
-            PathComponentBox::new(b"a").unwrap(),
-            PathComponentBox::new(b"x").unwrap(),
-            PathComponentBox::new(b"c").unwrap(),
-        ])
-        .unwrap();
-
-        let lcp_b_d = path_b.longest_common_prefix(&path_d);
-
-        assert_eq!(
-            lcp_b_d,
-            PathRc::<MCL, MCC, MPL>::new(&[PathComponentBox::new(b"a").unwrap()]).unwrap()
-        )
-    }
-
-    fn make_test_path<const MCL: usize, const MCC: usize, const MPL: usize>(
-        vector: &[Vec<u8>],
-    ) -> PathRc<MCL, MCC, MPL> {
-        let components: Vec<_> = vector
-            .iter()
-            .map(|bytes_vec| PathComponentBox::new(bytes_vec).expect("the component was too long"))
-            .collect();
-
-        PathRc::new(&components).expect("the path was invalid")
-    }
-
-    #[test]
-    fn ordering() {
-        let test_vector = vec![(vec![vec![0, 0], vec![]], vec![vec![0, 0, 0]], Less)];
-
-        for (a, b, expected) in test_vector {
-            let path_a: PathRc<3, 3, 3> = make_test_path(&a);
-            let path_b: PathRc<3, 3, 3> = make_test_path(&b);
-
-            let ordering = path_a.cmp(&path_b);
-
-            if ordering != expected {
-                println!("a: {a:?}");
-                println!("b: {b:?}");
-
-                assert_eq!(ordering, expected);
+            if *len > base.component_count() {
+                Err(PathError::PathTooLong)
+            } else {
+                Ok(base.create_prefix(*len).unwrap())
             }
         }
     }
+}
+
+pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
+    cp: &CreatePath,
+) -> Result<Path<MCL, MCC, MPL>, PathError> {
+    match cp {
+        CreatePath::Empty => Ok(Path::new()),
+        CreatePath::FromComponent(comp) => Ok(Path::from_component(Component::new(&comp[..])?)?),
+        CreatePath::FromSlice(comp) => Path::from_slice(&comp[..]),
+        CreatePath::FromComponents(raw_material) => {
+            let mut components = vec![];
+
+            for comp in raw_material {
+                components.push(Component::new(&comp[..])?);
+            }
+
+            Ok(Path::from_components(&components[..])?)
+        }
+        CreatePath::FromSlices(raw_material) => {
+            let mut components = vec![];
+
+            for comp in raw_material {
+                components.push(&comp[..]);
+            }
+
+            Path::from_slices(&components[..])
+        }
+        CreatePath::FromComponentsIter(raw_material) => {
+            let mut components = vec![];
+            let mut total_length = 0;
+
+            for comp in raw_material {
+                components.push(Component::new(&comp[..])?);
+                total_length += comp.len();
+            }
+
+            Ok(Path::from_components_iter(
+                total_length,
+                &mut components.into_iter(),
+            )?)
+        }
+        CreatePath::FromSlicesIter(raw_material) => {
+            let mut components = vec![];
+            let mut total_length = 0;
+
+            for comp in raw_material {
+                components.push(&comp[..]);
+                total_length += comp.len();
+            }
+
+            Path::from_slices_iter(total_length, &mut components.into_iter())
+        }
+        CreatePath::AppendComponent(rec, comp) => {
+            let base = create_path(rec)?;
+            Ok(base.append_component(Component::new(comp)?)?)
+        }
+        CreatePath::AppendSlice(rec, comp) => {
+            let base = create_path(rec)?;
+            base.append_slice(Component::<MCL>::new(&comp[..])?)
+        }
+        CreatePath::AppendComponents(rec, raw_material) => {
+            let base = create_path(rec)?;
+
+            let mut components = vec![];
+
+            for comp in raw_material {
+                components.push(Component::new(&comp[..])?);
+            }
+
+            Ok(base.append_components(&components[..])?)
+        }
+        CreatePath::AppendSlices(rec, raw_material) => {
+            let base = create_path(rec)?;
+
+            let mut components = vec![];
+
+            for comp in raw_material {
+                components.push(&comp[..]);
+            }
+
+            base.append_slices(&components[..])
+        }
+        CreatePath::AppendPath(rec, p2) => {
+            let base = create_path(rec)?;
+            let p2 = create_path(p2)?;
+            Ok(base.append_path(&p2)?)
+        }
+        CreatePath::GreaterButNotPrefixed(rec) => {
+            let base = create_path(rec)?;
+            base.greater_but_not_prefixed()
+                .ok_or(PathError::PathTooLong)
+        }
+        CreatePath::Successor(rec) => {
+            let base = create_path(rec)?;
+            base.successor().ok_or(PathError::PathTooLong)
+        }
+        CreatePath::CreatePrefix(rec, len) => {
+            let base = create_path(rec)?;
+
+            if *len > base.component_count() {
+                Err(PathError::PathTooLong)
+            } else {
+                Ok(base.create_prefix(*len).unwrap())
+            }
+        }
+    }
+}
+
+/*
+Check that the two `Path`s behave just like `PathRc`s. For fuzz testing.
+*/
+pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: usize>(
+    ctrl1: &PathRc<MCL, MCC, MPL>,
+    ctrl2: &PathRc<MCL, MCC, MPL>,
+    p1: &Path<MCL, MCC, MPL>,
+    p2: &Path<MCL, MCC, MPL>,
+) {
+    assert_eq!(ctrl1.component_count(), p1.component_count());
+
+    assert_eq!(ctrl1.is_empty(), p1.is_empty());
+
+    assert_eq!(
+        ctrl1.total_length(),
+        p1.total_length(),
+        "control: {:?}\nactual: {:?}",
+        ctrl1,
+        p1
+    );
+
+    for i in 0..=ctrl1.component_count() {
+        assert_eq!(
+            ctrl1.total_length_of_prefix(i),
+            p1.total_length_of_prefix(i)
+        );
+    }
+
+    assert_eq!(ctrl1.is_prefix_of(ctrl2), p1.is_prefix_of(p2));
+    assert_eq!(ctrl1.is_prefixed_by(ctrl2), p1.is_prefixed_by(p2));
+    assert_eq!(ctrl1.is_related_to(ctrl2), p1.is_related_to(p2));
+
+    for i in 0..ctrl1.component_count() {
+        assert_eq!(
+            ctrl1.component(i).map(|comp| comp.as_ref()),
+            p1.component(i).map(|comp| comp.as_ref())
+        );
+
+        unsafe {
+            assert_eq!(
+                ctrl1.component_unchecked(i).as_ref(),
+                p1.component_unchecked(i).as_ref(),
+            );
+        }
+
+        assert_eq!(
+            ctrl1.component(i).unwrap().as_ref(),
+            p1.owned_component(i).unwrap().as_ref()
+        );
+
+        unsafe {
+            assert_eq!(
+                ctrl1.component(i).unwrap().as_ref(),
+                p1.owned_component_unchecked(i).as_ref()
+            );
+        }
+    }
+
+    assert!(p1.component(p1.component_count()).is_none());
+    assert!(p1.owned_component(p1.component_count()).is_none());
+
+    assert!(ctrl1
+        .components()
+        .map(|comp| comp.as_ref())
+        .eq(p1.components().map(|comp| comp.as_ref())));
+
+    for i in 0..=ctrl1.component_count() {
+        assert_eq!(
+            ctrl1.suffix_components(i).count(),
+            p1.suffix_components(i).count()
+        );
+
+        ctrl1
+            .suffix_components(i)
+            .map(|comp| comp.as_ref())
+            .eq(p1.suffix_components(i).map(|comp| comp.as_ref()));
+    }
+
+    assert!(ctrl1
+        .components()
+        .map(|comp| Box::<[u8]>::from(comp.as_ref()))
+        .eq(p1
+            .owned_components()
+            .map(|comp| Box::<[u8]>::from(comp.as_ref()))));
+
+    for i in 0..=ctrl1.component_count() {
+        assert_eq!(
+            ctrl1.suffix_components(i).count(),
+            p1.suffix_owned_components(i).count()
+        );
+
+        ctrl1
+            .suffix_components(i)
+            .map(|comp| Box::<[u8]>::from(comp.as_ref()))
+            .eq(p1
+                .suffix_owned_components(i)
+                .map(|comp| Box::<[u8]>::from(comp.as_ref())));
+    }
+
+    for i in 0..=ctrl1.component_count() {
+        assert_paths_are_equal(
+            &ctrl1.create_prefix(i).unwrap(),
+            &p1.create_prefix(i).unwrap(),
+        );
+
+        unsafe {
+            assert_paths_are_equal(
+                &ctrl1.create_prefix_unchecked(i),
+                &p1.create_prefix_unchecked(i),
+            );
+        }
+    }
+    assert!(p1.create_prefix(p1.component_count() + 1).is_none());
+
+    assert_eq!(ctrl1.all_prefixes().count(), p1.all_prefixes().count());
+    for (ctrl_prefix, p_prefix) in ctrl1.all_prefixes().zip(p1.all_prefixes()) {
+        assert_paths_are_equal(&ctrl_prefix, &p_prefix);
+    }
+
+    let ctrl_lcp = ctrl1.longest_common_prefix(ctrl2);
+    let p_lcp = p1.longest_common_prefix(p2);
+    assert_paths_are_equal(&ctrl_lcp, &p_lcp);
+
+    assert_eq!(ctrl1 == ctrl2, p1 == p2);
+
+    if ctrl1 == ctrl2 {
+        let mut h1 = DefaultHasher::new();
+        p1.hash(&mut h1);
+        let digest1 = h1.finish();
+
+        let mut h2 = DefaultHasher::new();
+        p1.hash(&mut h2);
+        let digest2 = h2.finish();
+
+        assert_eq!(digest1, digest2);
+    }
+
+    assert_eq!(ctrl1.partial_cmp(ctrl2), p1.partial_cmp(p2));
+    assert_eq!(ctrl1.cmp(ctrl2), p1.cmp(p2));
+}
+
+fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
+    ctrl: &PathRc<MCL, MCC, MPL>,
+    p: &Path<MCL, MCC, MPL>,
+) {
+    assert!(
+        ctrl.components()
+            .map(|comp| comp.as_ref())
+            .eq(p.components().map(|comp| comp.as_ref())),
+        "Unequal paths.\nctrl: {:?}\np: {:?}",
+        ctrl,
+        p,
+    );
 }
 
 /*
@@ -743,7 +950,9 @@ pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const M
                 println!("baseline: {baseline:?}");
                 println!("successor: {greater_but_not_prefixed:?}");
                 println!("candidate: {candidate:?}");
-                panic!("the successor is meant to be greater than the baseline, but wasn't!! BOOOOOOOOO\n\n\n\n");
+                panic!(
+                    "the successor is meant to be greater than the baseline, but wasn't!! BOOOOOOOOO\n\n\n\n"
+                );
             }
 
             if greater_but_not_prefixed.is_prefixed_by(&baseline) {
@@ -751,7 +960,9 @@ pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const M
                 println!("baseline: {baseline:?}");
                 println!("successor: {greater_but_not_prefixed:?}");
                 println!("candidate: {candidate:?}");
-                panic!("successor was prefixed by the path it was derived from! BoooOOooOOooOo\n\n\n\n");
+                panic!(
+                    "successor was prefixed by the path it was derived from! BoooOOooOOooOo\n\n\n\n"
+                );
             }
 
             if !baseline.is_prefix_of(&candidate)
@@ -769,255 +980,4 @@ pub fn test_greater_but_not_prefixed<const MCL: usize, const MCC: usize, const M
             }
         }
     }
-}
-
-/*
-Instructions for how to create paths; for fuzz testing.
-*/
-
-// TODO complete this
-#[derive(Debug, Arbitrary)]
-pub enum CreatePath {
-    Empty,
-    Singleton(Vec<u8>),
-    FromIter(Vec<Vec<u8>>),
-    FromSlice(Vec<Vec<u8>>),
-    Append(Box<CreatePath>, Vec<u8>),
-    AppendSlice(Box<CreatePath>, Vec<Vec<u8>>),
-    CreatePrefix(Box<CreatePath>, usize),
-}
-
-pub fn create_path_rc<const MCL: usize, const MCC: usize, const MPL: usize>(
-    cp: &CreatePath,
-) -> Result<PathRc<MCL, MCC, MPL>, Option<InvalidPathError>> {
-    match cp {
-        CreatePath::Empty => Ok(PathRc::empty()),
-        CreatePath::Singleton(comp) => match PathComponentBox::new(comp) {
-            Err(_) => Err(None),
-            Ok(comp) => PathRc::new(&[comp]).map_err(Some),
-        },
-        CreatePath::FromIter(raw_material) | CreatePath::FromSlice(raw_material) => {
-            let mut p = PathRc::empty();
-
-            for comp in raw_material {
-                match PathComponentBox::new(comp) {
-                    Ok(comp) => match p.append(comp) {
-                        Err(err) => {
-                            return Err(Some(err));
-                        }
-                        Ok(yay) => p = yay,
-                    },
-                    Err(_) => return Err(None),
-                }
-            }
-
-            Ok(p)
-        }
-        CreatePath::Append(rec, comp) => {
-            let base = create_path_rc(rec)?;
-
-            match PathComponentBox::new(comp) {
-                Err(_) => Err(None),
-                Ok(comp) => base.append(comp).map_err(Some),
-            }
-        }
-        CreatePath::AppendSlice(rec, comps) => {
-            let mut base = create_path_rc(rec)?;
-
-            for comp in comps {
-                match PathComponentBox::new(comp) {
-                    Ok(comp) => match base.append(comp) {
-                        Err(err) => {
-                            return Err(Some(err));
-                        }
-                        Ok(yay) => base = yay,
-                    },
-                    Err(_) => return Err(None),
-                }
-            }
-
-            Ok(base)
-        }
-        CreatePath::CreatePrefix(rec, len) => {
-            let base = create_path_rc(rec)?;
-
-            if *len > base.component_count() {
-                Err(None)
-            } else {
-                Ok(base.create_prefix(*len))
-            }
-        }
-    }
-}
-
-pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
-    cp: &CreatePath,
-) -> Result<Path<MCL, MCC, MPL>, Option<InvalidPathError>> {
-    match cp {
-        CreatePath::Empty => Ok(Path::new_empty()),
-        CreatePath::Singleton(comp) => match Component::new(comp) {
-            None => Err(None),
-            Some(comp) => Path::new_singleton(comp).map_err(Some),
-        },
-        CreatePath::FromIter(raw_material) => {
-            let mut comps = vec![];
-            let mut total_length = 0;
-            for comp in raw_material.iter() {
-                match Component::new(comp) {
-                    Some(yay) => {
-                        total_length += yay.len();
-                        comps.push(yay);
-                    }
-                    None => return Err(None),
-                }
-            }
-
-            Path::new_from_iter(total_length, &mut comps.into_iter()).map_err(Some)
-        }
-        CreatePath::FromSlice(raw_material) => {
-            let mut comps = vec![];
-            for comp in raw_material.iter() {
-                match Component::new(comp) {
-                    Some(yay) => {
-                        comps.push(yay);
-                    }
-                    None => return Err(None),
-                }
-            }
-
-            Path::new_from_slice(&comps).map_err(Some)
-        }
-        CreatePath::Append(rec, comp) => {
-            let base = create_path(rec)?;
-
-            match Component::new(comp) {
-                None => Err(None),
-                Some(comp) => base.append(comp).map_err(Some),
-            }
-        }
-        CreatePath::AppendSlice(rec, raw_material) => {
-            let base = create_path(rec)?;
-
-            let mut comps = vec![];
-            for comp in raw_material.iter() {
-                match Component::new(comp) {
-                    Some(yay) => {
-                        comps.push(yay);
-                    }
-                    None => return Err(None),
-                }
-            }
-
-            base.append_slice(&comps).map_err(Some)
-        }
-        CreatePath::CreatePrefix(rec, len) => {
-            let base = create_path(rec)?;
-
-            match base.create_prefix(*len) {
-                Some(yay) => Ok(yay),
-                None => Err(None),
-            }
-        }
-    }
-}
-
-/*
-Check that the two `Path`s behave just like `PathRc`s. For fuzz testing.
-*/
-pub fn assert_isomorphic_paths<const MCL: usize, const MCC: usize, const MPL: usize>(
-    ctrl1: &PathRc<MCL, MCC, MPL>,
-    ctrl2: &PathRc<MCL, MCC, MPL>,
-    p1: &Path<MCL, MCC, MPL>,
-    p2: &Path<MCL, MCC, MPL>,
-) {
-    assert_eq!(ctrl1.component_count(), p1.component_count());
-
-    assert_eq!(ctrl1.component_count() == 0, p1.is_empty());
-
-    assert_eq!(
-        ctrl1.components().fold(0, |acc, comp| acc + comp.len()),
-        p1.path_length()
-    );
-
-    for i in 0..ctrl1.component_count() {
-        assert_eq!(
-            ctrl1.component(i).map(|comp| comp.as_ref()),
-            p1.component(i).map(|comp| comp.into_inner())
-        );
-
-        match p1.owned_component(i) {
-            None => assert_eq!(ctrl1.component(i), None),
-            Some(comp) => assert_eq!(ctrl1.component(i).unwrap().as_ref(), comp.as_ref()),
-        }
-    }
-
-    assert!(ctrl1
-        .components()
-        .map(|comp| comp.as_ref())
-        .eq(p1.components().map(|comp| comp.into_inner())));
-
-    assert_eq!(ctrl1.all_prefixes().count(), p1.all_prefixes().count());
-
-    for (ctrl_prefix, p_prefix) in ctrl1.all_prefixes().zip(p1.all_prefixes()) {
-        assert_paths_are_equal(&ctrl_prefix, &p_prefix);
-    }
-
-    assert_eq!(ctrl1.is_prefix_of(ctrl2), p1.is_prefix_of(p2));
-    assert_eq!(ctrl1.is_prefixed_by(ctrl2), p1.is_prefixed_by(p2));
-
-    let ctrl_lcp = ctrl1.longest_common_prefix(ctrl2);
-    let p_lcp = p1.longest_common_prefix(p2);
-    assert_paths_are_equal(&ctrl_lcp, &p_lcp);
-
-    match (ctrl1.successor(), p1.successor()) {
-        (None, None) => {}
-        (Some(succ_ctrl1), Some(succ_p1)) => {
-            assert_paths_are_equal(&succ_ctrl1, &succ_p1);
-        }
-        _ => {
-            panic!("Not good (successor)");
-        }
-    }
-
-    match (
-        ctrl1.greater_but_not_prefixed(),
-        p1.greater_but_not_prefixed(),
-    ) {
-        (None, None) => {}
-        (Some(succ_ctrl1), Some(succ_p1)) => {
-            assert_paths_are_equal(&succ_ctrl1, &succ_p1);
-        }
-        _ => {
-            panic!("Not good (greater_but_not_prefixed)");
-        }
-    }
-
-    assert_eq!(ctrl1 == ctrl2, p1 == p2);
-
-    if ctrl1 == ctrl2 {
-        let mut h1 = DefaultHasher::new();
-        p1.hash(&mut h1);
-        let digest1 = h1.finish();
-
-        let mut h2 = DefaultHasher::new();
-        p1.hash(&mut h2);
-        let digest2 = h2.finish();
-
-        assert_eq!(digest1, digest2);
-    }
-
-    assert_eq!(ctrl1.partial_cmp(ctrl2), p1.partial_cmp(p2));
-    assert_eq!(ctrl1.cmp(ctrl2), p1.cmp(p2));
-}
-
-fn assert_paths_are_equal<const MCL: usize, const MCC: usize, const MPL: usize>(
-    ctrl: &PathRc<MCL, MCC, MPL>,
-    p: &Path<MCL, MCC, MPL>,
-) {
-    assert!(
-        ctrl.components()
-            .map(|comp| comp.as_ref())
-            .eq(p.components().map(|comp| comp.into_inner())),
-        "Unequal paths.\nctrl: {ctrl:?}\np: {p:?}",
-    );
 }

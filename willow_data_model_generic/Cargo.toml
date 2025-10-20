@@ -1,0 +1,28 @@
+[package]
+name = "willow_data_model_generic"
+version = "0.4.0"
+edition = "2024"
+description = "The core datatypes of Willow, an eventually consistent data store with improved distributed deletion."
+license = "MIT OR Apache-2.0"
+
+[features]
+dev = ["dep:arbitrary"]
+
+[dependencies]
+either = "1.10.0"
+bytes = "1.10.1"
+derive_builder = "0.20.2"
+
+# Dependencies when enabling the `dev` feature:
+arbitrary = { version = "1.0.2", features = ["derive"], optional = true }
+
+[dev-dependencies]
+pollster = "0.4.0"
+
+# docs.rs-specific configuration
+[package.metadata.docs.rs]
+# document all features
+all-features = true
+
+[lints.rust]
+missing_docs = "warn"
