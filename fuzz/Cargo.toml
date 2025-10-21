@@ -9,9 +9,7 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-willow_data_model_generic = { path = "../willow_data_model_generic", features = [
-    "dev",
-] }
+willow_data_model = { path = "../willow_data_model", features = ["dev"] }
 pollster = "0.4.0"
 arbitrary = { version = "1.0.2", features = ["derive"] }
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }

@@ -27,7 +27,7 @@ use crate::prelude::*;
 /// # Example
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 ///
 /// let entry = Entry::builder()
 ///     .namespace_id("family")
@@ -73,7 +73,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// // Supplying incomplete data errors.
     /// assert!(
@@ -109,7 +109,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// // Supplying all necessary data yields an entry.
     /// let first_entry = Entry::builder()
@@ -210,8 +210,8 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     /// # Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")
@@ -251,7 +251,7 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     ///
     /// ```
     /// use core::cmp::Ordering;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")
@@ -303,8 +303,8 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     /// # Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")
@@ -350,8 +350,8 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     /// # Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")
@@ -407,8 +407,8 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     ///
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")
@@ -475,8 +475,8 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
     ///
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let entry = Entry::builder()
     ///     .namespace_id("family")

@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstructured};
 
-use willow_data_model_generic::prelude::*;
+use willow_data_model::prelude::*;
 /*
 * A known-good, simple implementation of paths. Used in testing to compare the behaviour of the optimised implementation against it.
 */

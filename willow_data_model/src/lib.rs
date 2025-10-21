@@ -14,11 +14,11 @@ pub use path::Path;
 
 pub mod entry;
 
-/// A “prelude” for crates using the `willow_data_model_generic` crate.
+/// A “prelude” for crates using the `willow_data_model` crate.
 ///
 /// This prelude is similar to the standard library’s prelude in that you’ll almost always want to import its entire contents, but unlike the standard library’s prelude you’ll have to do so manually:
 ///
-/// `use willow_data_model_generic::prelude::*;`
+/// `use willow_data_model::prelude::*;`
 ///
 /// The prelude may grow over time.
 pub mod prelude {

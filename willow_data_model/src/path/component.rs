@@ -19,7 +19,7 @@ impl<const MCL: usize> Component<MCL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// assert!(Component::<3>::new(b"yay").is_ok());
     /// assert!(Component::<3>::new(b"too_long").is_err());
     /// ```
@@ -48,7 +48,7 @@ impl<const MCL: usize> Component<MCL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let unchecked_component = unsafe { Component::<3>::new_unchecked(b"yay") };
     /// assert_eq!(unchecked_component.as_ref(), b"yay");
     /// ```
@@ -112,7 +112,7 @@ impl<const MCL: usize> OwnedComponent<MCL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// assert!(OwnedComponent::<3>::new(b"yay").is_ok());
     /// assert!(OwnedComponent::<3>::new(b"too_long").is_err());
     /// ```
@@ -138,7 +138,7 @@ impl<const MCL: usize> OwnedComponent<MCL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let unchecked_component = unsafe { OwnedComponent::<3>::new_unchecked(b"yay") };
     /// assert_eq!(unchecked_component.as_ref(), b"yay");
     /// ```
@@ -156,7 +156,7 @@ impl<const MCL: usize> OwnedComponent<MCL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let empty_component = OwnedComponent::<3>::new_empty();
     /// assert_eq!(empty_component.as_ref(), &[]);
     /// assert_eq!(empty_component, OwnedComponent::<3>::default());
@@ -206,7 +206,7 @@ impl<const MCL: usize> fmt::Debug for OwnedComponent<MCL> {
 /// #### Example
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 /// assert_eq!(Component::<4>::new(b"too_long"), Err(InvalidComponentError));
 /// ```
 pub struct InvalidComponentError;
@@ -268,4 +268,72 @@ fn test_fmt() {
         &format!("{}", Component::<17>::new(b".- ~_ab190%/").unwrap()),
         ".-%20~_ab190%25%2f"
     );
+}
+
+enum ParsePathError {
+    ComponentTooLong(usize),
+    FancyCharacter(char),
+    PathTooLong(usize),
+    TooManyComponents(usize),
+    InvalidPercentEncoding,
+}
+
+// The successful return consists of the component bytes, and number of parsed input bytes. If the number of input bytes is less than `s.len()`, then the component was terminated by a string.
+fn parse_component(s: &str, max_component_len: usize) -> Result<(usize, Vec<u8>), ParsePathError> {
+    let mut comp_data = vec![];
+
+    let mut percent_state = 0; // 0 if not parsing a percent encoding, 1 when parsing its first character, 2 when parsing its second character. This is hacky but I don't care =S
+    let mut high_nibble = 0u8;
+
+    for (offset, c) in s.char_indices() {
+        if percent_state == 0 {
+            if c == '/' {
+                if comp_data.len() > max_component_len {
+                    return Err(ParsePathError::ComponentTooLong(comp_data.len()));
+                } else {
+                    return Ok((offset + c.len_utf8(), comp_data));
+                }
+            } else if c.is_ascii() {
+                let mut buf = [0];
+                c.encode_utf8(&mut buf);
+
+                if byte_is_unreserved(buf[0]) {
+                    comp_data.push(buf[0]);
+                } else if c == '%' {
+                    percent_state += 1;
+                } else {
+                    return Err(ParsePathError::FancyCharacter(c));
+                }
+            } else {
+                return Err(ParsePathError::FancyCharacter(c));
+            }
+        } else if percent_state == 1 {
+            if c.is_ascii_hexdigit() {
+                high_nibble = (c.to_digit(16).unwrap() as u8) << 4;
+                percent_state = 2;
+            } else {
+                return Err(ParsePathError::InvalidPercentEncoding);
+            }
+        } else {
+            debug_assert!(percent_state == 2);
+
+            if c.is_ascii_hexdigit() {
+                let new_byte = high_nibble + (c.to_digit(16).unwrap() as u8);
+                comp_data.push(new_byte);
+                percent_state = 0;
+            } else {
+                return Err(ParsePathError::InvalidPercentEncoding);
+            }
+        }
+    }
+
+    if percent_state == 0 {
+        if comp_data.len() > max_component_len {
+            return Err(ParsePathError::ComponentTooLong(comp_data.len()));
+        } else {
+            return Ok((s.len(), comp_data));
+        }
+    } else {
+        return Err(ParsePathError::InvalidPercentEncoding);
+    }
 }

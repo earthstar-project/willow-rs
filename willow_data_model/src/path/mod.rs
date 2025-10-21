@@ -38,7 +38,7 @@ use crate::prelude::*;
 /// #### Examples
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 /// assert_eq!(
 ///     Path::<4, 4, 2>::from_component(Component::new(b"oops").unwrap()),
 ///     Err(PathFromComponentsError::PathTooLong),
@@ -84,7 +84,7 @@ impl std::error::Error for PathFromComponentsError {}
 /// #### Examples
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 /// assert_eq!(Path::<4, 4, 2>::from_slice(b"oops"), Err(PathError::PathTooLong));
 /// assert_eq!(Path::<2, 2, 9>::from_slices(&[b"", b"", b""]), Err(PathError::TooManyComponents));
 /// assert_eq!(Path::<4, 4, 9>::from_slice(b"oopsie"), Err(PathError::ComponentTooLong));
@@ -154,7 +154,7 @@ impl From<InvalidComponentError> for PathError {
 /// Because appending [`Component`]s takes time linear in the length of the full [`Path`], you should not build up [`Path`]s this way. Instead, use [`Path::from_components`], [`Path::from_slices`], [`Path::from_components_iter`], [`Path::from_slices_iter`], or a [`PathBuilder`].
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
 ///
 /// assert_eq!(p.component_count(), 2);
@@ -183,7 +183,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Default for Path<MCL,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// assert_eq!(Path::<4, 4, 4>::default().component_count(), 0);
     /// assert_eq!(Path::<4, 4, 4>::default(), Path::<4, 4, 4>::new());
     /// ```
@@ -202,7 +202,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// assert_eq!(Path::<4, 4, 4>::new().component_count(), 0);
     /// assert_eq!(Path::<4, 4, 4>::new(), Path::<4, 4, 4>::default());
     /// ```
@@ -223,7 +223,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p = Path::<4, 4, 4>::from_component(Component::new(b"hi!")?)?;
     /// assert_eq!(p.component_count(), 1);
     ///
@@ -250,7 +250,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p = Path::<4, 4, 4>::from_slice(b"hi!")?;
     /// assert_eq!(p.component_count(), 1);
     ///
@@ -279,7 +279,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let components: Vec<&Component<4>> = vec![
     ///     &Component::new(b"hi")?,
     ///     &Component::new(b"!")?,
@@ -308,7 +308,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// # Example
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// // Ok
     /// let path = Path::<12, 3, 30>::from_slices(&["alfie", "notes"]).unwrap();
     ///
@@ -348,7 +348,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let components: Vec<&Component<4>> = vec![
     ///     &Component::new(b"hi")?,
     ///     &Component::new(b"!")?,
@@ -386,7 +386,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let components: Vec<&[u8]> = vec![b"hi", b"!"];
     /// assert!(Path::<4, 4, 4>::from_slices_iter(3, &mut components.into_iter()).is_ok());
     /// # Ok::<(), PathError>(())
@@ -416,7 +416,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p0: Path<4, 4, 4> = Path::new();
     /// let p1 = p0.append_component(Component::new(b"hi")?)?;
     /// let p2 = p1.append_component(Component::new(b"!")?)?;
@@ -453,7 +453,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p0: Path<4, 4, 4> = Path::new();
     /// let p1 = p0.append_slice(b"hi")?;
     /// let p2 = p1.append_slice(b"!")?;
@@ -480,7 +480,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p0: Path<4, 4, 4> = Path::new();
     /// let p1 = p0.append_components(&[Component::new(b"hi")?, Component::new(b"!")?])?;
     /// assert_eq!(
@@ -525,7 +525,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p0: Path<4, 4, 4> = Path::new();
     /// let p1 = p0.append_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(
@@ -567,7 +567,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p0: Path<4, 4, 4> = Path::new();
     /// let p1 = p0.append_path(&Path::from_slices(&[b"hi", b"ho"])?)?;
     /// assert_eq!(
@@ -670,7 +670,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.component_count(), 2);
     /// # Ok::<(), PathError>(())
@@ -688,7 +688,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// assert_eq!(Path::<4, 4, 4>::new().is_empty(), true);
     ///
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
@@ -710,7 +710,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.total_length(), 4);
     /// # Ok::<(), PathError>(())
@@ -730,7 +730,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.total_length_of_prefix(0), 0);
     /// assert_eq!(p.total_length_of_prefix(1), 2);
@@ -751,7 +751,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert!(Path::new().is_prefix_of(&p));
     /// assert!(Path::from_slice(b"hi")?.is_prefix_of(&p));
@@ -779,7 +779,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert!(p.is_prefixed_by(&Path::new()));
     /// assert!(p.is_prefixed_by(&Path::from_slice(b"hi")?));
@@ -800,7 +800,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slice(b"hi")?;
     /// assert!(p.is_related_to(&Path::new()));
     /// assert!(p.is_related_to(&Path::from_slice(b"hi")?));
@@ -821,7 +821,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.component(0), Some(Component::new(b"hi")?));
     /// assert_eq!(p.component(1), Some(Component::new(b"ho")?));
@@ -849,7 +849,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(unsafe { p.component_unchecked(0) }, Component::new(b"hi")?);
     /// assert_eq!(unsafe { p.component_unchecked(1) }, Component::new(b"ho")?);
@@ -868,7 +868,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.owned_component(0), Some(OwnedComponent::new(b"hi")?));
     /// assert_eq!(p.owned_component(1), Some(OwnedComponent::new(b"ho")?));
@@ -898,7 +898,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.owned_component(0), Some(OwnedComponent::new(b"hi")?));
     /// assert_eq!(p.owned_component(1), Some(OwnedComponent::new(b"ho")?));
@@ -922,7 +922,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let mut comps = p.components();
     /// assert_eq!(comps.next(), Some(Component::new(b"hi")?));
@@ -948,7 +948,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let mut comps = p.suffix_components(1);
     /// assert_eq!(comps.next(), Some(Component::new(b"ho")?));
@@ -976,7 +976,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let mut comps = p.owned_components();
     /// assert_eq!(comps.next(), Some(OwnedComponent::new(b"hi")?));
@@ -1003,7 +1003,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let mut comps = p.suffix_owned_components(1);
     /// assert_eq!(comps.next(), Some(OwnedComponent::new(b"ho")?));
@@ -1032,7 +1032,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(p.create_prefix(0), Some(Path::new()));
     /// assert_eq!(p.create_prefix(1), Some(Path::from_slice(b"hi")?));
@@ -1062,7 +1062,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// assert_eq!(unsafe { p.create_prefix_unchecked(0) }, Path::new());
     /// assert_eq!(unsafe { p.create_prefix_unchecked(1) }, Path::from_slice(b"hi")?);
@@ -1087,7 +1087,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let mut prefixes = p.all_prefixes();
     /// assert_eq!(prefixes.next(), Some(Path::new()));
@@ -1113,7 +1113,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p1: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"ho"])?;
     /// let p2: Path<4, 4, 4> = Path::from_slices(&[b"hi", b"he"])?;
     /// assert_eq!(p1.longest_common_prefix(&p2), Path::from_slice(b"hi")?);
@@ -1187,7 +1187,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Maximum for Path<MCL,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p = Path::<4, 4, 4>::maximum();
     /// assert_eq!(p.component_count(), 4);
     /// assert_eq!(p.component(0).unwrap().as_ref(), &[255, 255, 255, 255]);
@@ -1234,7 +1234,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Successor for Path<MC
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     ///
     /// let p: Path<3, 3, 3> = Path::from_slices(&[
     ///     [255].as_slice(),

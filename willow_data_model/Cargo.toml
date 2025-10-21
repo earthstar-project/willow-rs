@@ -1,5 +1,5 @@
 [package]
-name = "willow_data_model_generic"
+name = "willow_data_model"
 version = "0.4.0"
 edition = "2024"
 description = "The core datatypes of Willow, an eventually consistent data store with improved distributed deletion."

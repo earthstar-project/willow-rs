@@ -11,7 +11,7 @@ use super::Representation;
 /// Enforces that each [`Component`] has a length of at most `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)), that each [`Path`] has at most `MCC` ([**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) [`Component`]s, and that the total size in bytes of all [`Component`]s is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
 ///
 /// ```
-/// use willow_data_model_generic::prelude::*;
+/// use willow_data_model::prelude::*;
 /// let mut builder = PathBuilder::<4, 4, 4>::new(4, 2)?;
 /// builder.append_component(Component::new(b"hi")?);
 /// builder.append_slice(b"ho")?;
@@ -35,7 +35,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let mut builder = PathBuilder::<4, 4, 4>::new(4, 2)?;
     /// builder.append_component(Component::new(b"hi")?);
     /// builder.append_slice(b"ho")?;
@@ -81,7 +81,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// Runs in `O(target_total_length + target_component_count)`, performs a single allocation of `O(total_length + component_count)` bytes.
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let p = Path::<4, 4, 4>::from_slices(&[b"hi", b"he"])?;
     /// let mut builder = PathBuilder::new_from_prefix(4, 2, &p, 1)?;
     /// builder.append_component(Component::new(b"ho")?);
@@ -153,7 +153,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let mut builder = PathBuilder::<4, 4, 4>::new(4, 2)?;
     /// builder.append_component(Component::new(b"hi")?);
     /// builder.append_component(Component::new(b"ho")?);
@@ -191,7 +191,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let mut builder = PathBuilder::<4, 4, 4>::new(4, 2)?;
     /// builder.append_slice(b"hi")?;
     /// builder.append_slice(b"ho")?;
@@ -216,7 +216,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// #### Examples
     ///
     /// ```
-    /// use willow_data_model_generic::prelude::*;
+    /// use willow_data_model::prelude::*;
     /// let mut builder = PathBuilder::<4, 4, 4>::new(4, 2)?;
     /// builder.append_component(Component::new(b"hi")?);
     /// builder.append_slice(b"ho")?;
