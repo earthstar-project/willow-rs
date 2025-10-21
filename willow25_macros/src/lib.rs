@@ -103,6 +103,11 @@ fn parse_path(
         comps.push(comp);
     }
 
+    // Due to the way the parser is implemented, a trailing slash is swallowed, so we explicity add an empty component here if the literal ends with a slash.
+    if s.as_bytes()[input_len - 1] == 0x2f {
+        comps.push(vec![]);
+    }
+
     if decoded_len > max_path_len {
         return Err(ParsePathError::PathTooLong(decoded_len));
     } else if comps.len() > max_component_count {
@@ -204,12 +209,12 @@ pub fn path_internal(input: TokenStream) -> TokenStream {
 
             for comp in path_contents {
                 comps.push(quote! {
-                    &[ #(#comp),* ].as_slice()
+                    &[ #(#comp),* ]
                 });
             }
 
             quote! {
-                &[ #(#comps),* ].as_slice()
+                &[ #(#comps),* ]
             }
         }
     };

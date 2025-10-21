@@ -23,17 +23,12 @@ impl<const MCL: usize> Component<MCL> {
     /// assert!(Component::<3>::new(b"yay").is_ok());
     /// assert!(Component::<3>::new(b"too_long").is_err());
     /// ```
-    pub fn new<S: AsRef<[u8]> + ?Sized>(s: &S) -> Result<&Self, InvalidComponentError> {
-        if s.as_ref().len() <= MCL {
+    pub fn new<'s>(s: &'s [u8]) -> Result<&'s Self, InvalidComponentError> {
+        if s.len() <= MCL {
             Ok(unsafe { Self::new_unchecked(s) })
         } else {
             Err(InvalidComponentError)
         }
-    }
-
-    /// Creates a `&'static` reference to the empty component.
-    pub fn new_empty() -> &'static Self {
-        unsafe { Self::new_unchecked(&[]) }
     }
 
     /// Creates a [`Component`] from a byte slice, without verifying its length.
@@ -52,9 +47,24 @@ impl<const MCL: usize> Component<MCL> {
     /// let unchecked_component = unsafe { Component::<3>::new_unchecked(b"yay") };
     /// assert_eq!(unchecked_component.as_ref(), b"yay");
     /// ```
-    pub unsafe fn new_unchecked<S: AsRef<[u8]> + ?Sized>(s: &S) -> &Self {
-        debug_assert!(s.as_ref().len() <= MCL);
-        unsafe { &*(s.as_ref() as *const [u8] as *const Self) }
+    pub unsafe fn new_unchecked<'s>(s: &'s [u8]) -> &'s Self {
+        debug_assert!(s.len() <= MCL);
+        unsafe { &*(s as *const [u8] as *const Self) }
+    }
+
+    /// Creates a `&'static` reference to the empty component.
+    pub fn new_empty() -> &'static Self {
+        unsafe { Self::new_unchecked(&[]) }
+    }
+
+    /// Returns the raw bytes of the component.
+    ///
+    /// ```
+    /// use willow25::prelude::*;
+    /// assert_eq!(Component::<3>::new(b"yay").unwrap().as_bytes(), b"yay");
+    /// ```
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -78,21 +88,21 @@ impl<const MCL: usize> Borrow<[u8]> for Component<MCL> {
     }
 }
 
-impl<const MCL: usize> fmt::Display for Component<MCL> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        FmtHelper(&self).fmt(f)
-    }
-}
-
 impl<const MCL: usize> fmt::Debug for Component<MCL> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Component").field(&FmtHelper(&self)).finish()
     }
 }
 
+impl<const MCL: usize> fmt::Display for Component<MCL> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        FmtHelper(&self).fmt(f)
+    }
+}
+
 /// An owned [component](https://willowprotocol.org/specs/data-model/index.html#Component) of a Willow [Path](https://willowprotocol.org/specs/data-model/index.html#Path), using reference counting for cheap cloning. Typically obtained from a [`Path`](super::Path) instead of being created independently.
 ///
-/// This type enforces a const-generic [maximum component length](https://willowprotocol.org/specs/data-model/index.html#max_component_length). Use the [`AsRef`], [`Deref`], or [`Borrow`] implementation to access the immutable byte slice.
+/// This type enforces a const-generic [maximum component length](https://willowprotocol.org/specs/data-model/index.html#max_component_length). Use the [`AsRef`], [`Deref`], or [`Borrow`] implementation to access wrapped the immutable byte slice.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct OwnedComponent<const MCL: usize>(pub(crate) Bytes);
 
@@ -158,6 +168,16 @@ impl<const MCL: usize> OwnedComponent<MCL> {
     pub fn new_empty() -> Self {
         Self(Bytes::new())
     }
+
+    /// Returns the raw bytes of the component.
+    ///
+    /// ```
+    /// use willow25::prelude::*;
+    /// assert_eq!(OwnedComponent::<3>::new(b"yay").unwrap().as_bytes(), b"yay");
+    /// ```
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0.as_ref()
+    }
 }
 
 impl<const MCL: usize> Deref for OwnedComponent<MCL> {
@@ -180,17 +200,17 @@ impl<const MCL: usize> Borrow<[u8]> for OwnedComponent<MCL> {
     }
 }
 
-impl<const MCL: usize> fmt::Display for OwnedComponent<MCL> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        FmtHelper(self).fmt(f)
-    }
-}
-
 impl<const MCL: usize> fmt::Debug for OwnedComponent<MCL> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("OwnedComponent")
             .field(&FmtHelper(self))
             .finish()
+    }
+}
+
+impl<const MCL: usize> fmt::Display for OwnedComponent<MCL> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        FmtHelper(self).fmt(f)
     }
 }
 
@@ -256,7 +276,10 @@ fn percent_encode_fmt(f: &mut fmt::Formatter<'_>, byte: u8) -> fmt::Result {
 
 #[test]
 fn test_fmt() {
-    assert_eq!(&format!("{}", Component::<17>::new("").unwrap()), "<empty>");
+    assert_eq!(
+        &format!("{}", Component::<17>::new(b"").unwrap()),
+        "<empty>"
+    );
     assert_eq!(&format!("{}", Component::<17>::new(b" ").unwrap()), "%20");
     assert_eq!(
         &format!("{}", Component::<17>::new(b".- ~_ab190%/").unwrap()),

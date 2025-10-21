@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-dev = ["dep:arbitrary"]
+dev = ["dep:arbitrary", "willow_data_model/dev"]
 
 [dependencies]
 willow25_macros = { path = "../willow25_macros", version = "0.1.0" }

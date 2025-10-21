@@ -197,7 +197,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///
     /// #### Complexity
     ///
-    /// Runs in `O(1)`, performs no allocations.
+    /// Runs in `O(1)`.
     ///
     /// #### Examples
     ///
@@ -844,7 +844,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// assert_eq!(unsafe { p.component_unchecked(1) }, Component::new(b"ho")?);
     /// # Ok::<(), PathError>(())
     /// ```
-    pub unsafe fn component_unchecked(&'_ self, i: usize) -> &Component<MCL> {
+    pub unsafe fn component_unchecked(&self, i: usize) -> &Component<MCL> {
         Representation::component(&self.data, i)
     }
 
