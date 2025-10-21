@@ -72,12 +72,6 @@ impl<const MCL: usize> AsRef<[u8]> for Component<MCL> {
     }
 }
 
-// impl<const MCL: usize> AsRef<Component<MCL>> for Component<MCL> {
-//     fn as_ref(&self) -> &Component<MCL> {
-//         &self
-//     }
-// }
-
 impl<const MCL: usize> Borrow<[u8]> for Component<MCL> {
     fn borrow(&self) -> &[u8] {
         &self.0
@@ -85,7 +79,7 @@ impl<const MCL: usize> Borrow<[u8]> for Component<MCL> {
 }
 
 impl<const MCL: usize> fmt::Display for Component<MCL> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         FmtHelper(&self).fmt(f)
     }
 }
@@ -268,72 +262,4 @@ fn test_fmt() {
         &format!("{}", Component::<17>::new(b".- ~_ab190%/").unwrap()),
         ".-%20~_ab190%25%2f"
     );
-}
-
-enum ParsePathError {
-    ComponentTooLong(usize),
-    FancyCharacter(char),
-    PathTooLong(usize),
-    TooManyComponents(usize),
-    InvalidPercentEncoding,
-}
-
-// The successful return consists of the component bytes, and number of parsed input bytes. If the number of input bytes is less than `s.len()`, then the component was terminated by a string.
-fn parse_component(s: &str, max_component_len: usize) -> Result<(usize, Vec<u8>), ParsePathError> {
-    let mut comp_data = vec![];
-
-    let mut percent_state = 0; // 0 if not parsing a percent encoding, 1 when parsing its first character, 2 when parsing its second character. This is hacky but I don't care =S
-    let mut high_nibble = 0u8;
-
-    for (offset, c) in s.char_indices() {
-        if percent_state == 0 {
-            if c == '/' {
-                if comp_data.len() > max_component_len {
-                    return Err(ParsePathError::ComponentTooLong(comp_data.len()));
-                } else {
-                    return Ok((offset + c.len_utf8(), comp_data));
-                }
-            } else if c.is_ascii() {
-                let mut buf = [0];
-                c.encode_utf8(&mut buf);
-
-                if byte_is_unreserved(buf[0]) {
-                    comp_data.push(buf[0]);
-                } else if c == '%' {
-                    percent_state += 1;
-                } else {
-                    return Err(ParsePathError::FancyCharacter(c));
-                }
-            } else {
-                return Err(ParsePathError::FancyCharacter(c));
-            }
-        } else if percent_state == 1 {
-            if c.is_ascii_hexdigit() {
-                high_nibble = (c.to_digit(16).unwrap() as u8) << 4;
-                percent_state = 2;
-            } else {
-                return Err(ParsePathError::InvalidPercentEncoding);
-            }
-        } else {
-            debug_assert!(percent_state == 2);
-
-            if c.is_ascii_hexdigit() {
-                let new_byte = high_nibble + (c.to_digit(16).unwrap() as u8);
-                comp_data.push(new_byte);
-                percent_state = 0;
-            } else {
-                return Err(ParsePathError::InvalidPercentEncoding);
-            }
-        }
-    }
-
-    if percent_state == 0 {
-        if comp_data.len() > max_component_len {
-            return Err(ParsePathError::ComponentTooLong(comp_data.len()));
-        } else {
-            return Ok((s.len(), comp_data));
-        }
-    } else {
-        return Err(ParsePathError::InvalidPercentEncoding);
-    }
 }

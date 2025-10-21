@@ -1,10 +1,6 @@
 use proc_macro::TokenStream;
-use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::Span;
 use quote::quote;
-use quote::quote_spanned;
-use syn::parse::{Parse, ParseStream, Result};
-use syn::{Block, Expr, Ident, LitStr, Pat, Token, braced, parse_macro_input};
+use syn::{LitStr, parse_macro_input};
 
 fn byte_is_unreserved(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
@@ -22,7 +18,7 @@ enum ParsePathError {
     TooManyComponents(usize),
 }
 
-// The successful return consists of the component bytes, and number of parsed input bytes. If the number of input bytes is less than `s.len()`, then the component was terminated by a string.
+// The successful return consists of the component bytes, and number of parsed input bytes. If the number of input bytes is less than `s.len()`, then the component was terminated by a slash.
 fn parse_component(
     s: &str,
     max_component_len: usize,
@@ -85,28 +81,59 @@ fn parse_component(
     }
 }
 
+fn parse_path(
+    s: &str,
+    max_component_len: usize,
+    max_component_count: usize,
+    max_path_len: usize,
+) -> core::result::Result<Vec<Vec<u8>>, ParsePathError> {
+    let input_len = s.len();
+    let mut offset = 1; // Skip past the leading slash.
+
+    let mut comps = vec![];
+    let mut decoded_len = 0;
+
+    while offset < input_len {
+        let (parsed, comp) = parse_component(
+            unsafe { core::str::from_utf8_unchecked(&s.as_bytes()[offset..]) },
+            max_component_len,
+        )?;
+        offset += parsed;
+        decoded_len += comp.len();
+        comps.push(comp);
+    }
+
+    if decoded_len > max_path_len {
+        return Err(ParsePathError::PathTooLong(decoded_len));
+    } else if comps.len() > max_component_count {
+        return Err(ParsePathError::TooManyComponents(comps.len()));
+    } else {
+        return Ok(comps);
+    }
+}
+
 #[proc_macro]
-pub fn component_raw(input: TokenStream) -> TokenStream {
+pub fn component_internal(input: TokenStream) -> TokenStream {
     let string_lit = parse_macro_input!(input as LitStr);
     let content = string_lit.value();
 
     let expanded = match parse_component(&content, 4096) {
         Err(ParsePathError::ComponentTooLong(_actual_len)) => syn::Error::new(
-            string_lit.span(),
-            "A component must not consist of more than 4096 characters.",
-        )
-        .to_compile_error(),
+                string_lit.span(),
+                "A component must not consist of more than 4096 (decoded) bytes.",
+            )
+            .to_compile_error(),
         Err(ParsePathError::FancyCharacter(_char)) => syn::Error::new(
-            string_lit.span(),
-            "Components must be specified using only ascii alphanumerics, one of the - . _ ~ characters, or a percent encoding.",
-        )
-        .to_compile_error(),
+                string_lit.span(),
+                "Components must be specified using only ascii alphanumerics, one of the - . _ ~ characters, or a percent encoding.",
+            )
+            .to_compile_error(),
         Err(ParsePathError::InvalidPercentEncoding) => syn::Error::new(
-            string_lit.span(),
-            "Percent encodings must consist of a % character followed by exactly two ascii hex digits.",
-        )
-        .to_compile_error(),
-        Err(ParsePathError::PathTooLong(_)) | Err(ParsePathError::TooManyComponents(_)) => unreachable!(),
+                string_lit.span(),
+                "Percent encodings must consist of a % character followed by exactly two ascii hex digits.",
+            )
+            .to_compile_error(),
+        Err(ParsePathError::PathTooLong(_len)) | Err(ParsePathError::TooManyComponents(_len)) => unreachable!(),
         Ok((len, comp_content)) => {
             if len < content.len() {
                 syn::Error::new(
@@ -115,9 +142,74 @@ pub fn component_raw(input: TokenStream) -> TokenStream {
                 )
                 .to_compile_error()
             } else {
-                quote!{
-                    &[ #(#comp_content),* ]
+                quote! {
+                    &[ #(#comp_content),* ].as_slice()
                 }
+            }
+        }
+    };
+
+    return TokenStream::from(expanded);
+}
+
+#[proc_macro]
+pub fn path_internal(input: TokenStream) -> TokenStream {
+    let string_lit = parse_macro_input!(input as LitStr);
+    let content = string_lit.value();
+
+    if content == "" {
+        return quote! {
+            &[]
+        }
+        .into();
+    } else if content.as_bytes()[0] != 0x2f
+    /* `/` */
+    {
+        return syn::Error::new(
+            string_lit.span(),
+            "Every non-empty path literal must start with a forward slash.",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let expanded = match parse_path(&content, 4096, 4096, 4096) {
+        Err(ParsePathError::ComponentTooLong(_actual_len)) => syn::Error::new(
+                string_lit.span(),
+                "Any individual path component must not consist of more than 4096 (decoded) bytes.",
+            )
+        .to_compile_error(),
+        Err(ParsePathError::FancyCharacter(_char)) => syn::Error::new(
+                string_lit.span(),
+                "Path components must be specified using only ascii alphanumerics, one of the - . _ ~ characters, or a percent encoding.",
+            )
+            .to_compile_error(),
+        Err(ParsePathError::InvalidPercentEncoding) => syn::Error::new(
+                string_lit.span(),
+                "Percent encodings must consist of a % character followed by exactly two ascii hex digits.",
+            )
+            .to_compile_error(),
+        Err(ParsePathError::PathTooLong(_len)) => syn::Error::new(
+                string_lit.span(),
+                "A path must not consist of more than 4096 (decoded) bytes.",
+            )
+            .to_compile_error(),
+        Err(ParsePathError::TooManyComponents(_count)) => syn::Error::new(
+                string_lit.span(),
+                "A path must not consist of more than 4096 individual components.",
+            )
+            .to_compile_error(),
+        Ok(path_contents) => {
+            let mut comps: Vec<proc_macro2::TokenStream> = vec![];
+
+            for comp in path_contents {
+                comps.push(quote! {
+                    &[ #(#comp),* ].as_slice()
+                });
+            }
+
+            quote! {
+                &[ #(#comps),* ].as_slice()
             }
         }
     };

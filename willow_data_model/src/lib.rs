@@ -10,7 +10,6 @@ mod ordering;
 pub use ordering::*;
 
 pub mod path;
-pub use path::Path;
 
 pub mod entry;
 

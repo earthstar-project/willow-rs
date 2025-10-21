@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["fuzz", "willow_data_model", "willow25_macros"]
+members = ["fuzz", "willow_data_model", "willow25_macros", "willow25"]
 
 resolver = "2"
 

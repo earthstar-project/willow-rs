@@ -74,6 +74,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     }
 
     /// Creates a builder for a [`Path`] of known total length and component count, efficiently prefilled with the first `prefix_component_count` [`Component`]s of a given `reference` [`Path`]. Panics if there are not enough [`Component`]s in the `reference`.
+    ///
     /// The missing component data must be filled in before building.
     ///
     /// #### Complexity
@@ -198,14 +199,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> PathBuilder<MCL, MCC,
     /// assert_eq!(builder.build(), Path::from_slices(&[b"hi", b"ho"])?);
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn append_slice<T: AsRef<[u8]>>(
-        &mut self,
-        component: T,
-    ) -> Result<(), InvalidComponentError> {
+    pub fn append_slice(&mut self, component: &[u8]) -> Result<(), InvalidComponentError> {
         Ok(self.append_component(Component::new(component.as_ref())?))
     }
 
-    /// Turn this builder into an immutable [`Path`].
+    /// Turns this builder into an immutable [`Path`].
     ///
     /// Panics if the number of [`Component`]s or the total length does not match what was claimed in [`PathBuilder::new`].
     ///

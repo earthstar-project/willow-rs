@@ -264,7 +264,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// );
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn from_slice<T: AsRef<[u8]>>(comp: T) -> Result<Self, PathError> {
+    pub fn from_slice(comp: &[u8]) -> Result<Self, PathError> {
         Ok(Self::from_component(Component::new(comp.as_ref())?)?)
     }
 
@@ -299,7 +299,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Self::from_components_iter(total_length, &mut components.iter().cloned())
     }
 
-    /// Create a new [`Path`] from a slice of byte slices, each of which must be of length at most `MCL`.
+    /// Create a new [`Path`] from a slice of byte slices.
     ///
     /// #### Complexity
     ///
@@ -324,7 +324,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// let result3 = Path::<12, 3, 30>::from_slices(&["overencumbered"]);
     /// assert_eq!(result3, Err(PathError::ComponentTooLong));
     /// ```
-    pub fn from_slices<T: AsRef<[u8]>>(slices: &[T]) -> Result<Self, PathError> {
+    pub fn from_slices(slices: &[&[u8]]) -> Result<Self, PathError> {
         let total_length = slices.iter().map(|it| it.as_ref().len()).sum();
         let mut builder = PathBuilder::new(total_length, slices.len())?;
 
@@ -373,7 +373,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
         Ok(builder.build())
     }
 
-    /// Creates a [`Path`] of known total length from an [`ExactSizeIterator`] of byte slices, each of which must be of length at most `MCL`.
+    /// Creates a [`Path`] of known total length from an [`ExactSizeIterator`] of byte slices.
     ///
     /// Copies the bytes of the [`Component`]s into an owned allocation on the heap.
     ///
@@ -391,10 +391,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// assert!(Path::<4, 4, 4>::from_slices_iter(3, &mut components.into_iter()).is_ok());
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn from_slices_iter<'a, I, T>(total_length: usize, iter: &mut I) -> Result<Self, PathError>
+    pub fn from_slices_iter<'a, I>(total_length: usize, iter: &mut I) -> Result<Self, PathError>
     where
-        I: ExactSizeIterator<Item = T>,
-        T: AsRef<[u8]>,
+        I: ExactSizeIterator<Item = &'a [u8]>,
     {
         let mut builder = PathBuilder::new(total_length, iter.len())?;
 
@@ -424,8 +423,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///     p2.append_component(Component::new(b"no!")?),
     ///     Err(PathFromComponentsError::PathTooLong),
     /// );
-    ///
-    ///
     /// # Ok::<(), PathError>(())
     /// ```
     pub fn append_component(&self, comp: &Component<MCL>) -> Result<Self, PathFromComponentsError> {
@@ -461,11 +458,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///     p2.append_slice(b"no!"),
     ///     Err(PathError::PathTooLong),
     /// );
-    ///
-    ///
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn append_slice<T: AsRef<[u8]>>(&self, comp: T) -> Result<Self, PathError> {
+    pub fn append_slice(&self, comp: &[u8]) -> Result<Self, PathError> {
         Ok(self.append_component(Component::new(comp.as_ref())?)?)
     }
 
@@ -487,8 +482,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///     p1.append_components(&[Component::new(b"no!")?]),
     ///     Err(PathFromComponentsError::PathTooLong),
     /// );
-    ///
-    ///
     /// # Ok::<(), PathError>(())
     /// ```
     pub fn append_components(
@@ -532,11 +525,9 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///     p1.append_slices(&[b"no!"]),
     ///     Err(PathError::PathTooLong),
     /// );
-    ///
-    ///
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn append_slices<T: AsRef<[u8]>>(&self, components: &[T]) -> Result<Self, PathError> {
+    pub fn append_slices(&self, components: &[&[u8]]) -> Result<Self, PathError> {
         let mut total_length = self.total_length();
         for comp in components {
             total_length += comp.as_ref().len();
@@ -574,8 +565,6 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     ///     p1.append_path(&Path::from_slice(b"no!")?),
     ///     Err(PathFromComponentsError::PathTooLong),
     /// );
-    ///
-    ///
     /// # Ok::<(), PathError>(())
     /// ```
     pub fn append_path(
@@ -828,7 +817,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Path<MCL, MCC, MPL> {
     /// assert_eq!(p.component(2), None);
     /// # Ok::<(), PathError>(())
     /// ```
-    pub fn component(&'_ self, i: usize) -> Option<&Component<MCL>> {
+    pub fn component(&self, i: usize) -> Option<&Component<MCL>> {
         if i < self.component_count {
             Some(Representation::component(&self.data, i))
         } else {
@@ -1310,7 +1299,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Successor for Path<MC
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Debug for Path<MCL, MCC, MPL> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Path").field(&FmtHelper(self)).finish()
     }
 }
