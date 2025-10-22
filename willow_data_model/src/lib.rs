@@ -21,7 +21,10 @@ pub mod entry;
 ///
 /// The prelude may grow over time.
 pub mod prelude {
-    pub use super::entry::{Entry, EntryBuilder, Entrylike, EntrylikeExt, Keylike, Timestamp};
+    pub use super::entry::{
+        Entry, EntryBuilder, Entrylike, EntrylikeExt, GenericHasher, Keylike, PayloadDigest,
+        Timestamp,
+    };
     pub use super::ordering::{Maximum, Minimum, Successor};
     pub use super::paths::*;
 }

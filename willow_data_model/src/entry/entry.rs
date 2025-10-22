@@ -7,20 +7,38 @@ use derive_builder::Builder;
 
 use crate::prelude::*;
 
-/// The metadata associated with each Willow Payload string.
+impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
+    EntryBuilder<MCL, MCC, MPL, N, S, PD>
+{
+    /// Sets the [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) and [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) of the entry being built to those of the given [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload).
+    pub fn payload<Payload: AsRef<[u8]>>(&mut self, payload: Payload) -> &mut Self
+    where
+        PD: PayloadDigest,
+    {
+        let new = self;
+
+        let mut hasher = PD::hasher();
+        hasher.write(payload.as_ref());
+        new.payload_digest = Some(hasher.finish());
+
+        new.payload_length = Some(payload.as_ref().len() as u64);
+
+        new
+    }
+}
+
+/// The metadata associated with each Willow [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload) string.
 ///
-/// Entries are the central concept in Willow. In order to make any bytestring of data accessible to Willow, you need to create an Entry describing its metadata. Specifically, an Entry consists of
+/// [Entries](https://willowprotocol.org/specs/data-model/index.html#Entry) are the central concept in Willow. In order to make any bytestring of data accessible to Willow, you need to create an Entry describing its metadata. Specifically, an Entry consists of
 ///
-/// - a *namespace id* (roughly, this addresses a universe of Willow data, fully independent from all data (i.e., Entries) of different namespace ids) of type `N`,
-/// - a *subspace id* (roughly, a fully indendent part of a namespace, typically subspaces correspond to individual users) of type `S`,
-/// - a *path* (roughly, a file-system-like way of arranging payloads hierarchically within a subspace) of type [`Path`],
-/// - a *timestamp* (newer Entries can overwrite certain older Entries),
-/// - a *payload digest* (a secure hash of the payload string being inserted into Willow), and
-/// - a *payload length* (the length of the payload string).
+/// - a [namespace_id](https://willowprotocol.org/specs/data-model/index.html#entry_namespace_id) (roughly, this addresses a universe of Willow data, fully independent from all data (i.e., Entries) of different namespace ids) of type `N`,
+/// - a [subspace_id](https://willowprotocol.org/specs/data-model/index.html#entry_subspace_id) (roughly, a fully indendent part of a namespace, typically subspaces correspond to individual users) of type `S`,
+/// - a [path](https://willowprotocol.org/specs/data-model/index.html#entry_path) (roughly, a file-system-like way of arranging payloads hierarchically within a subspace) of type [`Path`],
+/// - a [timestamp](https://willowprotocol.org/specs/data-model/index.html#entry_timestamp) (newer Entries can overwrite certain older Entries),
+/// - a [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) (the length of the payload string), and
+/// - a [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) (a secure hash of the payload string being inserted into Willow).
 ///
-/// For precise information about these six fields of an Entry, see the [specification](https://willowprotocol.org/specs/data-model/index.html#Entry) — it is quite readable.
-///
-/// T access these six fields, use the methods of the [`Entrylike`] trait (which [`Entry`] implements). The [`EntrylikeExt`] trait provides additional helper methods, for example, methods to check which Entries can delete which other Entries.
+/// To access these six fields, use the methods of the [`Entrylike`] trait (which [`Entry`] implements). The [`EntrylikeExt`] trait provides additional helper methods, for example, methods to check which Entries can delete which other Entries.
 ///
 /// To create Entries, use the [`Entry::builder`] or [`Entry::prefilled_builder`] functions.
 ///
@@ -48,18 +66,18 @@ use crate::prelude::*;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Builder)]
 #[cfg_attr(feature = "dev", derive(Arbitrary))]
 pub struct Entry<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> {
-    /// The identifier of the namespace to which the [`Entry`] belongs.
+    /// Sets the [namespace_id](https://willowprotocol.org/specs/data-model/index.html#entry_namespace_id) of the entry being built.
     namespace_id: N,
-    /// The identifier of the subspace to which the [`Entry`] belongs.
+    /// Sets the [subspace_id](https://willowprotocol.org/specs/data-model/index.html#entry_subspace_id) of the entry being built.
     subspace_id: S,
-    /// The [`Path`] to which the [`Entry`] was written.
+    /// Sets the [path](https://willowprotocol.org/specs/data-model/index.html#entry_path) of the entry being built.
     path: Path<MCL, MCC, MPL>,
-    /// The claimed creation time of the [`Entry`].
+    /// Sets the [timestamp](https://willowprotocol.org/specs/data-model/index.html#entry_timestamp) of the entry being built.
     timestamp: Timestamp,
-    /// The result of applying hash_payload to the Payload.
-    payload_digest: PD,
-    /// The length of the Payload in bytes.
+    /// Sets the [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) of the entry being built.
     payload_length: u64,
+    /// Sets the [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) of the entry being built.
+    payload_digest: PD,
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD> Entry<MCL, MCC, MPL, N, S, PD>
@@ -184,24 +202,37 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     }
 }
 
-/// An entrylike value is one that provides at least as much information as an [Entry](https://willowprotocol.org/specs/data-model/index.html#Entry) provides.
+/// A trait describing the metadata associated with each Willow [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload) string.
+///
+/// [Entries](https://willowprotocol.org/specs/data-model/index.html#Entry) are the central concept in Willow. In order to make any bytestring of data accessible to Willow, you need to create an Entry describing its metadata. Specifically, an Entry consists of
+///
+/// - a [namespace_id](https://willowprotocol.org/specs/data-model/index.html#entry_namespace_id) (roughly, this addresses a universe of Willow data, fully independent from all data (i.e., Entries) of different namespace ids) of type `N`,
+/// - a [subspace_id](https://willowprotocol.org/specs/data-model/index.html#entry_subspace_id) (roughly, a fully indendent part of a namespace, typically subspaces correspond to individual users) of type `S`,
+/// - a [path](https://willowprotocol.org/specs/data-model/index.html#entry_path) (roughly, a file-system-like way of arranging payloads hierarchically within a subspace) of type [`Path`],
+/// - a [timestamp](https://willowprotocol.org/specs/data-model/index.html#entry_timestamp) (newer Entries can overwrite certain older Entries),
+/// - a [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) (the length of the payload string), and
+/// - a [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) (a secure hash of the payload string being inserted into Willow).
+///
+/// This trait can be implemented by all types which provide exactly this information. We use this trait in order to be able to abstract over specific implementations of entries. If you want a concrete type for representing entries, use the [`Entry`] struct.
 pub trait Entrylike<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
     Keylike<MCL, MCC, MPL, S>
 {
-    /// Returns the NamespaceId of `self`.
+    /// Returns the [namespace_id](https://willowprotocol.org/specs/data-model/index.html#entry_namespace_id) of `self`.
     fn namespace_id(&self) -> &N;
 
-    /// Returns the Timestamp of `self`.
+    /// Returns the [timestamp](https://willowprotocol.org/specs/data-model/index.html#entry_timestamp) of `self`.
     fn timestamp(&self) -> Timestamp;
 
-    /// Returns the payload length of `self`.
+    /// Returns the [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) of `self`.
     fn payload_length(&self) -> u64;
 
-    /// Returns the PayloadDigest of `self`.
+    /// Returns the [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) of `self`.
     fn payload_digest(&self) -> &PD;
 }
 
-/// Functions for working with [`Entrylikes`](Entrylike).
+/// Methods for working with [`Entrylikes`](Entrylike).
+///
+/// This trait is automatically implememnted by all types implmenting [`Entrylikes`](Entrylike).
 pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>:
     Entrylike<MCL, MCC, MPL, N, S, PD>
 {
@@ -243,7 +274,7 @@ pub trait EntrylikeExt<const MCL: usize, const MCC: usize, const MPL: usize, N, 
             && self.payload_length() == other.payload_length();
     }
 
-    /// Compares `self` to another entry by timestamp, payload_digest second (in case of a tie), and payload_length third (in case of yet another tie). See also [`EntrylikeExt::is_newer_than`] and [`EntrylikeExt::is_older_than`].
+    /// Compares `self` to another entry by [timestamp](https://willowprotocol.org/specs/data-model/index.html#entry_timestamp), [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) (in case of a tie), and [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) third (in case of yet another tie). See also [`EntrylikeExt::is_newer_than`] and [`EntrylikeExt::is_older_than`].
     ///
     /// Comparing recency is primarily important to determine [which entries overwrite each other](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning); the [`EntrylikeExt::prunes`] method checks for that directly.
     ///

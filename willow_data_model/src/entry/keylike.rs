@@ -1,11 +1,13 @@
 use crate::prelude::*;
 
-/// A keylike value is one that can be used to "address" entries within a namespace, i.e., a type which specifies a SubspaceId and a Path.
+/// A keylike value is one that can be used to "address" [Entries](https://willowprotocol.org/specs/data-model/index.html#Entry) within a [namespace](https://willowprotocol.org/specs/data-model/index.html#namespace).
+///
+/// Within a namespace, entries can be uniquely identified by their [subspace_id](https://willowprotocol.org/specs/data-model/index.html#entry_subspace_id) (of type `S`) and their [path](https://willowprotocol.org/specs/data-model/index.html#entry_path).
 pub trait Keylike<const MCL: usize, const MCC: usize, const MPL: usize, S> {
-    /// Returns the SubspaceId of `self`.
+    /// Returns the [subspace_id](https://willowprotocol.org/specs/data-model/index.html#entry_subspace_id) of `self`.
     fn subspace_id(&self) -> &S;
 
-    /// Returns the Path of `self`.
+    /// Returns the [path](https://willowprotocol.org/specs/data-model/index.html#entry_path) of `self`.
     fn path(&self) -> &Path<MCL, MCC, MPL>;
 }
 
