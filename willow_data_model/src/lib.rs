@@ -9,7 +9,7 @@
 mod ordering;
 pub use ordering::*;
 
-pub mod path;
+pub mod paths;
 
 pub mod entry;
 
@@ -23,5 +23,5 @@ pub mod entry;
 pub mod prelude {
     pub use super::entry::{Entry, EntryBuilder, Entrylike, EntrylikeExt, Keylike, Timestamp};
     pub use super::ordering::{Maximum, Minimum, Successor};
-    pub use super::path::*;
+    pub use super::paths::*;
 }

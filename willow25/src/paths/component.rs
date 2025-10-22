@@ -11,7 +11,7 @@ use crate::MCL;
 ///
 /// This is an *unsized* type, meaning that it must always be used behind a pointer like `&` or [`Box`].
 ///
-/// Use the [`component!`](component) macro to create statically-known components, and the [`Component::new`], [`Component::new_empty`], and [`Component::new_unchecked`] methods for dynamically creating components.
+/// Use the [`component!`](crate::prelude::component) macro to create statically-known components, and the [`Component::new`], [`Component::new_empty`], and [`Component::new_unchecked`] methods for dynamically creating components.
 ///
 /// ```
 /// use willow25::prelude::*;
