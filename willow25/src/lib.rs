@@ -131,7 +131,7 @@ pub mod prelude {
 /// The [**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length) of [Willow’25](https://macromania--macromania.deno.dev/specs/willow25/index.html#willow25_data_model): `4096`.
 pub const MCL: usize = 4096;
 
-/// The [**m**ax\_**c**omponent\_**c**count](https://willowprotocol.org/specs/data-model/index.html#max_component_count) of [Willow’25](https://macromania--macromania.deno.dev/specs/willow25/index.html#willow25_data_model): `4096`.
+/// The [**m**ax\_**c**omponent\_**c**ount](https://willowprotocol.org/specs/data-model/index.html#max_component_count) of [Willow’25](https://macromania--macromania.deno.dev/specs/willow25/index.html#willow25_data_model): `4096`.
 pub const MCC: usize = 4096;
 
 /// The [**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length) of [Willow’25](https://macromania--macromania.deno.dev/specs/willow25/index.html#willow25_data_model): `4096`.

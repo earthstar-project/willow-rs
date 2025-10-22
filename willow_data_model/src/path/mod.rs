@@ -1,12 +1,22 @@
-//! An implementation of Willow [Paths]((https://willowprotocol.org/specs/data-model/index.html#Path)), centered around the [`Path`] struct.
+//! Functionality around Willow [Paths](https://willowprotocol.org/specs/data-model/index.html#Path).
 //!
-//! A Willow Path is any sequence of bytestrings — called [Components](https://willowprotocol.org/specs/data-model/index.html#Component) — fulfilling certain constraints:
-///
-/// - each Components respects a maximum length `MCL` ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)),
-/// - each Path has at most `MCC` ([**m**ax\_**c**omponent\_**c**ount](https://willowprotocol.org/specs/data-model/index.html#max_component_count)) components, and
-/// - the total size in bytes of all Components is at most `MPL` ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
-///
-/// The types in this module statically enforce these invariants for all (safely) created instances. The [`PathError`] is an enum with three variants to signal a violation of any of these constraints. Some parts of the API can use more fine-grained errors: trying to construct a [`Component`], which always represents a Willow [component](https://willowprotocol.org/specs/data-model/index.html#Component) of valid length, can yield an [`InvalidComponentError`]. And when creating a [`Path`] from guaranteed-valid [`Component`]s, the [`PathFromComponentsError`] signals only violations of the [max\_component\_count](https://willowprotocol.org/specs/data-model/index.html#max_component_count) or the [max\_path\_length](https://willowprotocol.org/specs/data-model/index.html#max_path_length).
+//! The central type of this module is the [`Path`] struct, which represents a single willow Path. [`Paths`](Path) are *immutable*, which means any operation that would traditionally mutate paths (for example, appending a new component) returns a new, independent value instead.
+//!
+//! The [`Path`] struct is generic over three const generic parameters, corresponding to the Willow parameters which limit the size of paths:
+//!
+//! - the `MCL` parameter gives the ([**m**ax\_**c**omponent\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_component_length)),
+//! - the `MCC` parameter gives the ([**m**ax\_**c**omponent\_**c**ount](https://willowprotocol.org/specs/data-model/index.html#max_component_count)), and
+//! - the `MPL` parameter gives the ([**m**ax\_**p**ath\_**l**ength](https://willowprotocol.org/specs/data-model/index.html#max_path_length)).
+//!
+//! All (safely created) [`Paths`](Path)respect those parameters. The functions in this module return [`PathErrors`](PathError) or [`PathFromComponentsErrors`](PathFromComponentsError) when those invariants would be violated.
+//!
+//! The type-level docs of [`Path`] list all the ways in which you can build up paths dynamically.
+//!
+//! The [`Path`] struct provides methods for checking various properties of paths: from simple properties ("[how many components does this have](Path::component_count)") to various comparisons ("[is this path a prefix of some other](Path::is_prefix_of)"), the methods should have you covered.
+//!
+//! Because [path prefixes](https://willowprotocol.org/specs/data-model/index.html#path_prefix) play such a [central role for deletion](https://willowprotocol.org/specs/data-model/index.html#prefix_pruning) in Willow, the functionality around prefixes is optimised. [Creating a prefix](Path::create_prefix) or even iterating over [all prefixes](Path::all_prefixes) performs no memory allocations.
+//!
+//! The [`Component`] type represents individual path [Components](https://willowprotocol.org/specs/data-model/index.html#Component). This type is a thin wrapper around `[u8]` (enforcing a maximal length of `MCL` bytes); like `[u8]` it must always be used as part of a pointer type — for example, `&Component<MCL>`. Alternatively, the [`OwnedComponent`] type can be used by itself — keeping an [`OwnedComponent`] alive will also keep around the heap allocation for the full [`Path`] from which it was constructed, though. Generally speaking, the more lightweight [`Component`] should be preferred over [`OwnedComponent`] where possible.
 
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured, size_hint::and_all};
