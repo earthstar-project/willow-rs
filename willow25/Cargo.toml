@@ -9,6 +9,7 @@ dev = ["dep:arbitrary", "willow_data_model/dev"]
 [dependencies]
 willow25_macros = { path = "../willow25_macros", version = "0.1.0" }
 willow_data_model = { path = "../willow_data_model", version = "0.4.0" }
+order_theory = "0.1.1"
 
 # Dependencies when enabling the `dev` feature:
 arbitrary = { version = "1.0.2", features = ["derive"], optional = true }

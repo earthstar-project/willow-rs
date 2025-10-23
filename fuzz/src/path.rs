@@ -1,6 +1,8 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
+use order_theory::TrySuccessor;
+
 use libfuzzer_sys::arbitrary::{self, Arbitrary, Error as ArbitraryError, Unstructured};
 
 use willow_data_model::prelude::*;
@@ -709,7 +711,7 @@ pub fn create_path<const MCL: usize, const MCC: usize, const MPL: usize>(
         }
         CreatePath::Successor(rec) => {
             let base = create_path(rec)?;
-            base.successor().ok_or(PathError::PathTooLong)
+            base.try_successor().ok_or(PathError::PathTooLong)
         }
         CreatePath::CreatePrefix(rec, len) => {
             let base = create_path(rec)?;

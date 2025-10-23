@@ -6,9 +6,6 @@
 //! [TODO]
 //!
 
-mod ordering;
-pub use ordering::*;
-
 pub mod paths;
 
 pub mod entry;
@@ -22,6 +19,5 @@ pub mod entry;
 /// The prelude may grow over time.
 pub mod prelude {
     pub use super::entry::{Entry, EntryBuilder, Entrylike, EntrylikeExt, Keylike, Timestamp};
-    pub use super::ordering::{Maximum, Minimum, Successor};
     pub use super::paths::*;
 }

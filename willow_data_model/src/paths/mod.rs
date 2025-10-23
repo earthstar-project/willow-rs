@@ -20,6 +20,7 @@
 
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured, size_hint::and_all};
+use order_theory::{GreatestElement, LeastElement, SuccessorExceptForGreatest, TrySuccessor};
 
 // The `Path` struct is tested in `fuzz/path.rs`, `fuzz/path2.rs`, `fuzz/path3.rs`, `fuzz/path3.rs` by comparing against a non-optimised reference implementation.
 // Further, the `successor` and `greater_but_not_prefixed` methods of that reference implementation are tested in `fuzz/path_successor.rs` and friends, and `fuzz/path_successor_of_prefix.rs` and friends.
@@ -39,8 +40,6 @@ use representation::Representation;
 
 mod component;
 pub use component::*;
-
-use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// An error arising from trying to construct an invalid [`Path`] from valid [`Component`]s.
@@ -1169,14 +1168,14 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Ord for Path<MCL, MCC
 }
 
 /// The least path is the empty path.
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Minimum for Path<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> LeastElement for Path<MCL, MCC, MPL> {
     /// Returns the least path.
-    fn minimum() -> Self {
+    fn least() -> Self {
         Self::new()
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Maximum for Path<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> GreatestElement for Path<MCL, MCC, MPL> {
     /// Creates the greatest possible [`Path`] (with respect to lexicographical ordering, which is also the [`Ord`] implementation of [`Path`]).
     ///
     /// #### Complexity
@@ -1194,7 +1193,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Maximum for Path<MCL,
     /// assert!(p.component(2).unwrap().is_empty());
     /// assert!(p.component(3).unwrap().is_empty());
     /// ```
-    fn maximum() -> Self {
+    fn greatest() -> Self {
         let max_comp_bytes = [255; MCL];
 
         let mut num_comps = if MCL == 0 {
@@ -1223,7 +1222,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Maximum for Path<MCL,
     }
 }
 
-impl<const MCL: usize, const MCC: usize, const MPL: usize> Successor for Path<MCL, MCC, MPL> {
+impl<const MCL: usize, const MCC: usize, const MPL: usize> TrySuccessor for Path<MCL, MCC, MPL> {
     /// Returns the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
     ///
     /// #### Complexity
@@ -1246,7 +1245,7 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Successor for Path<MC
     /// ])?));
     /// # Ok::<(), PathError>(())
     /// ```
-    fn successor(&self) -> Option<Self> {
+    fn try_successor(&self) -> Option<Self> {
         // If it is possible to append an empty component, then doing so yields the successor.
         if let Ok(path) = self.append_component(Component::new_empty()) {
             return Some(path);
@@ -1306,6 +1305,11 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize> Successor for Path<MC
         // Failed to increment any component, so `self` is the maximal path.
         None
     }
+}
+
+impl<const MCL: usize, const MCC: usize, const MPL: usize> SuccessorExceptForGreatest
+    for Path<MCL, MCC, MPL>
+{
 }
 
 impl<const MCL: usize, const MCC: usize, const MPL: usize> Debug for Path<MCL, MCC, MPL> {
@@ -1465,17 +1469,17 @@ fn fixed_width_increment_reporting_overflows(buf: &mut [u8]) -> usize {
 }
 
 #[test]
-fn new_max() {
-    let path1 = Path::<3, 3, 6>::maximum();
+fn greatest() {
+    let path1 = Path::<3, 3, 6>::greatest();
 
-    assert!(path1.successor().is_none());
+    assert!(path1.try_successor().is_none());
 
-    let path2 = Path::<4, 4, 16>::maximum();
-    assert!(path2.successor().is_none());
+    let path2 = Path::<4, 4, 16>::greatest();
+    assert!(path2.try_successor().is_none());
 
-    let path3 = Path::<0, 4, 0>::maximum();
-    assert!(path3.successor().is_none());
+    let path3 = Path::<0, 4, 0>::greatest();
+    assert!(path3.try_successor().is_none());
 
-    let path4 = Path::<4, 2, 6>::maximum();
-    assert!(path4.successor().is_none())
+    let path4 = Path::<4, 2, 6>::greatest();
+    assert!(path4.try_successor().is_none())
 }

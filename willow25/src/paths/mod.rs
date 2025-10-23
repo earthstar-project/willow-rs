@@ -17,6 +17,9 @@ use core::fmt;
 #[cfg(feature = "dev")]
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
 
+use order_theory::GreatestElement;
+use order_theory::LeastElement;
+use order_theory::TrySuccessor;
 use willow_data_model::prelude as wdm;
 
 mod builder;
@@ -894,14 +897,14 @@ impl Ord for Path {
 }
 
 /// The least path is the empty path.
-impl Minimum for Path {
+impl LeastElement for Path {
     /// Returns the least path.
-    fn minimum() -> Self {
-        Self(wdm::Path::<MCL, MCC, MPL>::minimum())
+    fn least() -> Self {
+        Self(wdm::Path::<MCL, MCC, MPL>::least())
     }
 }
 
-impl Maximum for Path {
+impl GreatestElement for Path {
     /// Creates the greatest possible [`Path`] (with respect to lexicographical ordering, which is also the [`Ord`] implementation of [`Path`]).
     ///
     /// It consists of a single component of `255` bytes, followed by 4095 empty components.
@@ -920,19 +923,19 @@ impl Maximum for Path {
     /// assert!(p.component(1).unwrap().is_empty());
     /// assert!(p.component(4095).unwrap().is_empty());
     /// ```
-    fn maximum() -> Self {
-        Self(wdm::Path::<MCL, MCC, MPL>::maximum())
+    fn greatest() -> Self {
+        Self(wdm::Path::<MCL, MCC, MPL>::greatest())
     }
 }
 
-impl Successor for Path {
+impl TrySuccessor for Path {
     /// Returns the least path which is strictly greater than `self`, or return `None` if `self` is the greatest possible path.
     ///
     /// #### Complexity
     ///
     /// Runs in `O(n + m)`, where `n` is the total length of the [`Path`] in bytes, and `m` is the number of [`Component`]s. Performs a single allocation of `O(n + m)` bytes.
-    fn successor(&self) -> Option<Self> {
-        self.0.successor().map(Self)
+    fn try_successor(&self) -> Option<Self> {
+        self.0.try_successor().map(Self)
     }
 }
 

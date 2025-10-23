@@ -1,5 +1,3 @@
-pub mod paths;
-
 /// Creates a statically-known [`Component`](prelude::Component).
 ///
 /// Use this macro when you need to create a statically known path component. You can specify the component as ascii:
@@ -111,6 +109,9 @@ pub use willow25_macros::component_internal;
 #[doc(hidden)]
 pub use willow25_macros::path_internal;
 
+pub mod entry;
+pub mod paths;
+
 /// A “prelude” for crates using the `willlow25` crate.
 ///
 /// This prelude is similar to the standard library’s prelude in that you’ll almost always want to import its entire contents, but unlike the standard library’s prelude you’ll have to do so manually:
@@ -124,7 +125,7 @@ pub mod prelude {
     pub use super::paths::*;
     pub use super::{MCC, MCL, MPL};
     pub use willow_data_model::prelude::{
-        InvalidComponentError, Maximum, Minimum, PathError, PathFromComponentsError, Successor,
+        InvalidComponentError, PathError, PathFromComponentsError,
     };
 }
 

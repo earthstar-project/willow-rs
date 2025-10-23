@@ -194,6 +194,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "order_theory"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7de29064a301a8481a0e8b355e5ff98c7e953817333864cabc0734993868aec"
+
+[[package]]
 name = "pollster"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -266,6 +272,7 @@ name = "willow25"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
+ "order_theory",
  "willow25_macros",
  "willow_data_model",
 ]
@@ -288,6 +295,7 @@ dependencies = [
  "bytes",
  "derive_builder",
  "either",
+ "order_theory",
  "pollster",
 ]
 
@@ -297,6 +305,7 @@ version = "0.0.0"
 dependencies = [
  "arbitrary",
  "libfuzzer-sys",
+ "order_theory",
  "pollster",
  "willow_data_model",
 ]
