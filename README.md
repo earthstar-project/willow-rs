@@ -1,3 +1,5 @@
+Repository moved to https://codeberg.org/worm-blossom/willow_rs
+
 # willow-rs
 
 > Protocols for synchronisable data stores. The best parts? Fine-grained
