@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use anyhash::{BuildHasher, Hasher, HasherWrite};
 #[cfg(feature = "dev")]
 use arbitrary::Arbitrary;
 
@@ -11,13 +12,15 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
     EntryBuilder<MCL, MCC, MPL, N, S, PD>
 {
     /// Sets the [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) and [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) of the entry being built to those of the given [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload).
+    ///
+    /// The type parameter `H` is the type of the [`Hasher`] which hashes the payload into a payload digest (of type `PD`). Its [`Default`] impl provides the initial state of the hasher.
     pub fn payload<Payload: AsRef<[u8]>>(&mut self, payload: Payload) -> &mut Self
     where
-        PD: PayloadDigest,
+        (): BuildHasher<PD>,
     {
         let new = self;
 
-        let mut hasher = PD::hasher();
+        let mut hasher = ().build_hasher();
         hasher.write(payload.as_ref());
         new.payload_digest = Some(hasher.finish());
 
@@ -25,6 +28,24 @@ impl<const MCL: usize, const MCC: usize, const MPL: usize, N, S, PD>
 
         new
     }
+
+    // /// Sets the [payload_length](https://willowprotocol.org/specs/data-model/index.html#entry_payload_length) and [payload_digest](https://willowprotocol.org/specs/data-model/index.html#entry_payload_digest) of the entry being built to those of the given [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload).
+    // ///
+    // /// The type parameter `H` is the type of the [`Hasher`] which hashes the payload into a payload digest (of type `PD`). Its [`Default`] impl provides the initial state of the hasher.
+    // pub fn payload<Payload: AsRef<[u8]>, H>(&mut self, payload: Payload) -> &mut Self
+    // where
+    //     H: Default + HasherWrite + Hasher<PD>,
+    // {
+    //     let new = self;
+
+    //     let mut hasher = H::default();
+    //     hasher.write(payload.as_ref());
+    //     new.payload_digest = Some(hasher.finish());
+
+    //     new.payload_length = Some(payload.as_ref().len() as u64);
+
+    //     new
+    // }
 }
 
 /// The metadata associated with each Willow [Payload](https://willowprotocol.org/specs/data-model/index.html#Payload) string.

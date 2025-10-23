@@ -3,6 +3,26 @@
 version = 4
 
 [[package]]
+name = "anyhash"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afbff139c450c74eeb6e7613ac54629f52571cda67e5985fc7d63123d1c41e6"
+dependencies = [
+ "anyhash-macros",
+]
+
+[[package]]
+name = "anyhash-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4fe49025a9ca41e12a7dd170de31c93acf54ad96c2eaf590a4d24272d59a166"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,6 +283,7 @@ dependencies = [
 name = "willow_data_model"
 version = "0.4.0"
 dependencies = [
+ "anyhash",
  "arbitrary",
  "bytes",
  "derive_builder",
